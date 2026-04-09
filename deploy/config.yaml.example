@@ -1,0 +1,114 @@
+# jt-glogarch Configuration Example
+# Copy this file to /opt/jt-glogarch/config.yaml and edit as needed.
+# Config search order: ./config.yaml, ~/.glogarch/config.yaml, /etc/glogarch/config.yaml
+
+# --- Graylog Servers ---
+servers:
+  - name: graylog-main
+    url: "http://192.168.1.132:9000"
+    auth_token: "your-api-token-here"
+    # username: admin
+    # password: admin
+    verify_ssl: false
+
+default_server: graylog-main
+
+# --- Export Settings ---
+# export_mode: api or opensearch
+export_mode: opensearch
+
+export:
+  base_path: /data/graylog-archives
+  batch_size: 1000              # API mode: messages per request (OpenSearch uses 10000 internally)
+  chunk_duration_minutes: 60    # Split archives into hourly files
+  max_file_size_mb: 50          # Auto-split if file exceeds this
+  min_disk_space_mb: 500        # Stop export if disk below this
+  delay_between_requests_ms: 5  # Delay between API requests
+  jvm_memory_threshold_pct: 85.0  # Stop if Graylog JVM heap exceeds this %
+  query: "*"
+  streams: []                   # Empty = all streams
+  fields: []                    # Empty = all fields
+
+# --- Import Settings ---
+import:
+  gelf_host: localhost
+  gelf_port: 32202
+  gelf_protocol: tcp            # tcp (default, has backpressure to prevent message loss) or udp
+  batch_size: 500
+  delay_between_batches_ms: 100
+
+# --- OpenSearch Direct ---
+opensearch:
+  hosts:
+    - "http://192.168.1.132:9200"
+    - "http://192.168.1.127:9200"
+  username: admin
+  password: your-opensearch-password
+  verify_ssl: false
+
+# --- Scheduling ---
+schedule:
+  export_cron: "0 3 * * *"     # Daily at 03:00
+  export_days: 180              # Archive last N days
+  cleanup_cron: "0 4 * * *"    # Daily at 04:00
+
+# --- Retention ---
+retention:
+  enabled: true
+  retention_days: 180           # Delete archives older than this
+
+# --- Rate Limiting ---
+rate_limit:
+  requests_per_second: 2.0
+  adaptive: true
+  max_cpu_percent: 80
+  backoff_seconds: 10
+
+# --- Notifications ---
+notify:
+  language: zh-TW               # en or zh-TW
+  on_export_complete: true
+  on_import_complete: true
+  on_cleanup_complete: false
+  on_error: true
+  on_verify_failed: true
+  telegram:
+    enabled: false
+    bot_token: ""
+    chat_id: ""
+  discord:
+    enabled: false
+    webhook_url: ""
+  slack:
+    enabled: false
+    webhook_url: ""
+  teams:
+    enabled: false
+    webhook_url: ""
+  nextcloud_talk:
+    enabled: false
+    server_url: ""
+    token: ""
+    username: ""
+    password: ""
+  email:
+    enabled: false
+    smtp_host: ""
+    smtp_port: 587
+    smtp_tls: true
+    smtp_user: ""
+    smtp_password: ""
+    from_addr: ""
+    to_addrs: []
+    subject_prefix: "[jt-glogarch]"
+
+# --- Web UI ---
+web:
+  host: 0.0.0.0
+  port: 8990
+  ssl_certfile: /opt/jt-glogarch/certs/server.crt
+  ssl_keyfile: /opt/jt-glogarch/certs/server.key
+
+# --- Database ---
+database_path: /opt/jt-glogarch/jt-glogarch.db
+log_level: INFO

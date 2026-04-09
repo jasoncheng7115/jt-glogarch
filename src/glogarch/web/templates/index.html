@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>jt-glogarch - Graylog Open Archive</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2 style="display:flex;align-items:center;gap:8px;white-space:nowrap"><img src="/static/favicon.svg" alt="" style="width:24px;height:24px;border-radius:3px;flex-shrink:0"><a href="https://github.com/jasoncheng7115/jt-glogarch" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">jt-glogarch</a></h2>
+            <small>Graylog Open Archive <span style="opacity:0.6">v1.3.0</span></small>
+        </div>
+        <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">‹</button>
+        <ul class="nav-links">
+            <li><a href="/" class="{% if page == 'dashboard' %}active{% endif %}" data-i18n="nav_dashboard" data-icon="dashboard"><span>Dashboard</span></a></li>
+            <li><a href="/archives" class="{% if page == 'archives' %}active{% endif %}" data-i18n="nav_archives" data-icon="archive"><span>Archives</span></a></li>
+            <li><a href="/jobs" class="{% if page == 'jobs' %}active{% endif %}" data-i18n="nav_jobs" data-icon="task"><span>Jobs</span></a></li>
+            <li><a href="/schedules" class="{% if page == 'schedules' %}active{% endif %}" data-i18n="nav_schedules" data-icon="clock"><span>Schedules</span></a></li>
+            <li><a href="/notify-settings" class="{% if page == 'notify-settings' %}active{% endif %}" data-i18n="nav_notify_settings" data-icon="bell"><span>Notify</span></a></li>
+            <li><a href="/logs" class="{% if page == 'logs' %}active{% endif %}" data-i18n="nav_logs" data-icon="log"><span>Sys Logs</span></a></li>
+        </ul>
+        <div id="sidebar-job-status" class="sidebar-job-status" style="display:none">
+            <span class="spinner-text" id="sidebar-job-text"></span>
+        </div>
+        <div class="sidebar-footer">
+            <div class="sidebar-controls">
+                <div class="lang-switcher">
+                    <select id="lang-select" class="no-custom" onchange="setLang(this.value)">
+                        <option value="en">English</option>
+                        <option value="zh-TW">繁體中文</option>
+                    </select>
+                </div>
+                <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle theme"></button>
+            </div>
+            <a href="/logout" class="logout-link" data-i18n="nav_logout" data-icon="logout">Logout</a>
+        </div>
+    </nav>
+
+    <main class="content">
+        {% if page == 'dashboard' %}
+        <h1 data-i18n="page_dashboard" data-icon="dashboard">Dashboard</h1>
+        <div class="cards" id="dashboard-cards">
+            <div class="card stat-card" id="card-archives">
+                <h3 data-i18n="total_archives" data-icon="archive">Total Archives</h3>
+                <div class="card-value" id="stat-total">--</div>
+            </div>
+            <div class="card stat-card" id="card-messages">
+                <h3 data-i18n="total_messages" data-icon="db">Total Records</h3>
+                <div class="card-value" id="stat-messages">--</div>
+            </div>
+            <div class="card stat-card" id="card-original">
+                <h3 data-i18n="original_size" data-icon="db">Original Size</h3>
+                <div class="card-value" id="stat-original">--</div>
+            </div>
+            <div class="card stat-card" id="card-size">
+                <h3 data-i18n="storage_used" data-icon="disk">Compressed</h3>
+                <div class="card-value" id="stat-size">--</div>
+            </div>
+            <div class="card stat-card" id="card-disk">
+                <h3 data-i18n="disk_available" data-icon="disk">Disk Available</h3>
+                <div class="card-value" id="stat-disk">--</div>
+            </div>
+        </div>
+        <div class="section">
+            <h2 data-i18n="servers" data-icon="server">Servers</h2>
+            <table id="servers-table">
+                <thead><tr>
+                    <th data-i18n="th_name">Name</th>
+                    <th data-i18n="th_url">URL</th>
+                    <th data-i18n="th_status">Status</th>
+                    <th data-i18n="th_version">Version</th>
+                </tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <div class="section">
+            <h2 data-i18n="opensearch_connection" data-icon="db">OpenSearch Connection</h2>
+            <div class="card" id="opensearch-card" style="margin-bottom:15px">
+                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                    <div id="opensearch-info" style="color:var(--text-muted);flex:1">Loading...</div>
+                    <button class="btn-secondary btn-sm" onclick="testOpenSearch()"
+                            data-i18n="btn_test_connection" data-icon="shield">Test Connection</button>
+                </div>
+                <div id="opensearch-result" style="margin-top:8px"></div>
+            </div>
+        </div>
+        <div class="section">
+            <h2 data-i18n="notifications" data-icon="globe">Notifications</h2>
+            <div class="card" id="notify-card" style="margin-bottom:15px">
+                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                    <div id="notify-info" style="color:var(--text-muted);flex:1">Loading...</div>
+                    <button class="btn-secondary btn-sm" onclick="testNotify()"
+                            data-i18n="btn_test_notify" data-icon="play">Test Notification</button>
+                </div>
+                <div id="notify-result" style="margin-top:8px"></div>
+            </div>
+        </div>
+        <div class="section">
+            <h2 data-i18n="recent_jobs" data-icon="task">Recent Jobs</h2>
+            <table id="recent-jobs-table">
+                <thead><tr>
+                    <th data-i18n="th_id">ID</th>
+                    <th data-i18n="th_type">Type</th>
+                    <th data-i18n="th_status">Status</th>
+                    <th data-i18n="th_progress">Progress</th>
+                    <th data-i18n="th_messages">Records</th>
+                    <th data-i18n="th_started">Started</th>
+                    <th data-i18n="th_elapsed">Elapsed</th>
+                </tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        {% elif page == 'archives' %}
+        <h1 data-i18n="page_archives" data-icon="archive">Archives</h1>
+        <div class="card" style="margin-bottom:15px;padding:15px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <span id="archive-path-info" style="color:var(--text-muted);font-size:0.9em"></span>
+                <button class="btn-secondary btn-sm" onclick="togglePathSettings()" data-i18n="btn_settings" data-icon="shield">Settings</button>
+                <button class="btn-secondary btn-sm" onclick="rescanArchives()" data-i18n="btn_rescan" data-icon="refresh">Rescan</button>
+                <span id="rescan-result" style="font-size:0.85em"></span>
+            </div>
+            <div id="path-settings" style="display:none;margin-top:12px">
+                <div class="form-group" style="margin-bottom:8px">
+                    <label data-i18n="new_archive_path">New Archive Path</label>
+                    <input type="text" id="new-archive-path" placeholder="/data/graylog-archives">
+                </div>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <button class="btn-primary btn-sm" onclick="saveArchivePath()" data-i18n="btn_save" data-icon="shield">Save</button>
+                    <button class="btn-secondary btn-sm" onclick="togglePathSettings()" data-i18n="btn_cancel">Cancel</button>
+                </div>
+                <div id="path-save-result" style="margin-top:8px"></div>
+            </div>
+        </div>
+        <div class="filters" id="archive-timeline-section" style="display:block">
+            <div id="archive-timeline"></div>
+        </div>
+        <div class="filter-grid">
+            <div class="filter-row">
+                <div class="filter-item">
+                    <label data-i18n="filter_server" style="font-size:0.8em;color:var(--text-muted)">Server</label>
+                    <input type="text" id="filter-server" data-i18n-placeholder="filter_server" placeholder="Server">
+                </div>
+                <div class="filter-item">
+                    <label data-i18n="filter_stream" style="font-size:0.8em;color:var(--text-muted)">Stream</label>
+                    <input type="text" id="filter-stream" data-i18n-placeholder="filter_stream" placeholder="Stream">
+                </div>
+                <div class="filter-item">
+                    <label data-i18n="th_from" style="font-size:0.8em;color:var(--text-muted)">From</label>
+                    <input type="datetime-local" id="filter-from">
+                </div>
+                <div class="filter-item">
+                    <label data-i18n="th_to" style="font-size:0.8em;color:var(--text-muted)">To</label>
+                    <input type="datetime-local" id="filter-to">
+                </div>
+            </div>
+            <div class="filter-actions">
+                <button onclick="loadArchives()" data-i18n="btn_filter" data-icon="filter">Filter</button>
+                <button class="btn-secondary" onclick="loadArchives()" data-i18n="btn_refresh" data-icon="refresh">Refresh</button>
+                <button class="btn-secondary" onclick="toggleColumnSettings()" data-i18n="btn_columns" data-icon="shield">Columns</button>
+            </div>
+        </div>
+        <div class="filters" id="batch-actions" style="display:none">
+            <button class="btn-primary" onclick="batchImport()" data-i18n="btn_batch_import" data-icon="download">Import Selected</button>
+            <button class="btn-danger" onclick="batchDelete()" data-i18n="btn_batch_delete" data-icon="trash">Delete Selected</button>
+            <span id="batch-count" style="color:var(--text-muted);font-size:0.9em"></span>
+        </div>
+        <div id="column-settings" class="column-settings" style="display:none">
+            <label><input type="checkbox" data-col="col-id"> ID</label>
+            <label><input type="checkbox" data-col="col-server" checked data-i18n-label="th_server"> Server</label>
+            <label><input type="checkbox" data-col="col-stream" checked> Stream</label>
+            <label><input type="checkbox" data-col="col-from" checked data-i18n-label="th_from"> From</label>
+            <label><input type="checkbox" data-col="col-to" checked data-i18n-label="th_to"> To</label>
+            <label><input type="checkbox" data-col="col-records" checked data-i18n-label="th_messages"> Records</label>
+            <label><input type="checkbox" data-col="col-compressed" checked data-i18n-label="th_size_compressed"> Compressed</label>
+            <label><input type="checkbox" data-col="col-original" data-i18n-label="th_size_original"> Original</label>
+            <label><input type="checkbox" data-col="col-status" checked data-i18n-label="th_status"> Status</label>
+            <label><input type="checkbox" data-col="col-filename" data-i18n-label="th_filename"> Filename</label>
+            <label><input type="checkbox" data-col="col-actions" checked data-i18n-label="th_actions"> Actions</label>
+        </div>
+        <table id="archives-table">
+            <thead>
+                <tr>
+                    <th style="width:40px"><input type="checkbox" id="archive-select-all" onclick="toggleArchiveSelectAll(this, event)"></th>
+                    <th class="col-id" data-i18n="th_id">ID</th>
+                    <th class="col-server" data-i18n="th_server">Server</th>
+                    <th class="col-stream" data-i18n="th_stream">Stream</th>
+                    <th class="col-from" data-i18n="th_from">From</th>
+                    <th class="col-to" data-i18n="th_to">To</th>
+                    <th class="col-records" data-i18n="th_messages">Records</th>
+                    <th class="col-compressed" data-i18n="th_size_compressed">Compressed</th>
+                    <th class="col-original" data-i18n="th_size_original">Original</th>
+                    <th class="col-status" data-i18n="th_status">Status</th>
+                    <th class="col-filename" data-i18n="th_filename">Filename</th>
+                    <th class="col-actions" data-i18n="th_actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <div class="pagination" id="archives-pagination"></div>
+
+        <!-- Import Modal -->
+        <div id="import-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeImportModal()">
+            <div class="modal-card">
+                <h3 data-i18n="page_import" data-icon="download">Import</h3>
+                <div id="import-modal-form">
+                    <!-- Import Mode Selector -->
+                    <div class="form-group">
+                        <label data-i18n="import_mode_label" data-icon="shield">Import Mode</label>
+                        <div class="mode-selector">
+                            <label class="mode-option mode-option-selected">
+                                <input type="radio" name="import-mode" value="gelf" checked onchange="onImportModeChange('gelf')">
+                                <div>
+                                    <div class="mode-title" data-i18n="import_mode_gelf">GELF (Graylog Pipeline)</div>
+                                    <div class="mode-desc" data-i18n="import_mode_gelf_desc">Goes through Graylog processing chain. Compatible with all rules.</div>
+                                </div>
+                            </label>
+                            <label class="mode-option">
+                                <input type="radio" name="import-mode" value="bulk" onchange="onImportModeChange('bulk')">
+                                <div>
+                                    <div class="mode-title" data-i18n="import_mode_bulk">OpenSearch Bulk (~5-10x)</div>
+                                    <div class="mode-desc" data-i18n="import_mode_bulk_desc">Direct write to OpenSearch. Skips Graylog processing.</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Bulk mode warning (hidden by default) -->
+                    <div id="bulk-mode-warning" class="bulk-warning" style="display:none">
+                        <strong data-i18n="bulk_warning_title">⚠ Advanced Mode</strong>
+                        <ul>
+                            <li data-i18n="bulk_warning_skip">Skips ALL Graylog processing rules (Pipelines, Extractors, Stream routing, Alerts)</li>
+                            <li data-i18n="bulk_warning_speed">5-10x faster than GELF, ideal for bulk historical restoration</li>
+                            <li data-i18n="bulk_warning_unsuitable">Not suitable if you want new pipeline rules to re-process old data</li>
+                            <li data-i18n="bulk_warning_creds">Needs OpenSearch connection (auto-detected from Graylog API)</li>
+                        </ul>
+                    </div>
+
+                    <!-- GELF-mode-specific fields -->
+                    <div id="gelf-mode-fields">
+                    <div class="form-group">
+                        <label data-i18n="import_gelf_host" data-icon="server">GELF Host</label>
+                        <input type="text" id="modal-gelf-host" placeholder="192.168.1.83" oninput="onGelfHostChange(this.value)">
+                        <small class="form-hint" data-i18n="import_gelf_hint">Graylog must have a matching GELF Input on this port.</small>
+                    </div>
+                    <div style="display:flex;gap:10px">
+                        <div class="form-group" style="flex:1">
+                            <label>GELF Port</label>
+                            <input type="number" id="modal-gelf-port" value="32202" min="1" max="65535" data-user-edited="false" oninput="this.dataset.userEdited='true'">
+                        </div>
+                        <div class="form-group" style="flex:1">
+                            <label data-i18n="import_protocol">Protocol</label>
+                            <select id="modal-gelf-protocol" onchange="onGelfProtocolChange(this.value)">
+                                <option value="udp">UDP</option>
+                                <option value="tcp" selected>TCP</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- Speed Control -->
+                    <div class="form-group">
+                        <label data-i18n="import_rate" data-icon="clock">Batch Delay (ms)</label>
+                        <div style="display:flex;align-items:center;gap:10px">
+                            <input type="range" id="modal-rate-ms" min="1" max="2000" value="100" style="flex:1" oninput="document.getElementById('rate-display').textContent=this.value+'ms'">
+                            <span id="rate-display" style="min-width:50px;font-weight:600">100ms</span>
+                        </div>
+                        <small class="form-hint" data-i18n="import_rate_hint">Lower = faster. Adjust based on target Graylog capacity.</small>
+                    </div>
+                    </div>
+                    <!-- /gelf-mode-fields -->
+
+                    <!-- Bulk-mode-specific fields (hidden by default) -->
+                    <div id="bulk-mode-fields" style="display:none">
+                        <div class="form-group">
+                            <label data-i18n="bulk_target_index" data-icon="db">Target Index Pattern</label>
+                            <input type="text" id="modal-bulk-index-pattern" value="jt_restored" placeholder="jt_restored">
+                            <small class="form-hint" data-i18n="bulk_target_index_hint">Documents will go to &lt;pattern&gt;_YYYY_MM_DD. A separate index keeps restored data isolated from live traffic.</small>
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="bulk_dedup_strategy">Dedup Strategy</label>
+                            <select id="modal-bulk-dedup">
+                                <option value="id" selected data-i18n-opt="bulk_dedup_id">Use gl2_message_id as _id (recommended, v1.1+ archives)</option>
+                                <option value="none" data-i18n-opt="bulk_dedup_none">No dedup (allow duplicates)</option>
+                                <option value="fail" data-i18n-opt="bulk_dedup_fail">Fail on duplicates</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="bulk_batch_docs">Batch Size (docs per bulk request)</label>
+                            <input type="number" id="modal-bulk-batch-docs" value="5000" min="100" max="20000">
+                            <small class="form-hint" data-i18n="bulk_batch_hint">5000 is a good default. Larger = faster but more memory.</small>
+                        </div>
+                        <div class="form-group">
+                            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                                <input type="checkbox" id="modal-bulk-os-autodetect" checked onchange="onBulkAutoDetectToggle(this.checked)">
+                                <span data-i18n="bulk_os_autodetect">Auto-detect OpenSearch URL from Graylog API</span>
+                            </label>
+                            <small class="form-hint" data-i18n="bulk_os_autodetect_hint">Will try http://&lt;graylog-host&gt;:9200. Uncheck to specify manually.</small>
+                        </div>
+                        <div id="bulk-os-manual" style="display:none">
+                            <div class="form-group">
+                                <label data-i18n="bulk_os_url">OpenSearch URL</label>
+                                <input type="text" id="modal-bulk-os-url" placeholder="http://192.168.1.83:9200">
+                            </div>
+                            <div style="display:flex;gap:10px">
+                                <div class="form-group" style="flex:1">
+                                    <label data-i18n="bulk_os_user">OpenSearch Username</label>
+                                    <input type="text" id="modal-bulk-os-user" placeholder="(defaults to Graylog username)">
+                                </div>
+                                <div class="form-group" style="flex:1">
+                                    <label data-i18n="bulk_os_pass">OpenSearch Password</label>
+                                    <input type="password" id="modal-bulk-os-pass">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- /bulk-mode-fields -->
+
+                    <!-- Target Name (shared between modes) -->
+                    <div class="form-group">
+                        <label data-i18n="import_target">Target Name (for tracking)</label>
+                        <input type="text" id="modal-target-name" data-i18n-placeholder="import_target_placeholder" placeholder="e.g., log4">
+                    </div>
+
+                    <!-- Target Graylog API (REQUIRED for compliance: pre-flight + reconciliation) -->
+                    <div class="form-group">
+                        <label data-i18n="import_target_api" data-icon="shield">Target Graylog API</label>
+                        <small class="form-hint" data-i18n="import_target_api_hint">Required. Used for pre-flight field mapping check, journal monitoring, and post-import reconciliation. Compliance: zero indexer failures.</small>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="monitor_api_url">Graylog API URL</label>
+                        <input type="text" id="modal-target-api-url" placeholder="http://192.168.1.83:9000" required data-user-edited="false" oninput="this.dataset.userEdited='true'">
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="monitor_api_token">API Token</label>
+                        <input type="text" id="modal-target-api-token" data-i18n-placeholder="monitor_api_token_placeholder" placeholder="API Token (or leave empty for user/pass)">
+                    </div>
+                    <div style="display:flex;gap:10px">
+                        <div class="form-group" style="flex:1">
+                            <label data-i18n="monitor_username">Username</label>
+                            <input type="text" id="modal-target-api-user">
+                        </div>
+                        <div class="form-group" style="flex:1">
+                            <label data-i18n="monitor_password">Password</label>
+                            <input type="password" id="modal-target-api-pass">
+                        </div>
+                    </div>
+
+                    <div style="display:flex;gap:10px;margin-top:15px">
+                        <button class="btn-primary" id="modal-import-btn" onclick="doImportSingle()" data-i18n="btn_start_import" data-icon="play">Start Import</button>
+                        <button class="btn-secondary" onclick="closeImportModal()" data-i18n="btn_cancel">Cancel</button>
+                    </div>
+                </div>
+                <div id="import-modal-progress" style="display:none;margin-top:12px">
+                    <div class="progress-bar"><div class="progress-fill" id="import-progress-bar"></div></div>
+                    <div class="progress-text" id="import-progress-text"></div>
+                    <div id="import-controls" style="display:none;margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <button class="btn-sm btn-secondary" id="import-pause-btn" data-i18n="btn_pause" data-state="running" onclick="toggleImportPause()">Pause</button>
+                        <label style="font-size:0.85em;display:flex;align-items:center;gap:6px">
+                            <span data-i18n="import_speed">Speed</span>: <input type="range" id="import-live-rate" min="1" max="2000" value="100" style="width:120px" oninput="updateImportRate(this.value)">
+                            <span id="import-live-rate-display">100ms</span>
+                        </label>
+                        <span id="import-journal-badge" style="font-size:0.8em;display:none"></span>
+                    </div>
+                </div>
+                <div id="modal-import-result" style="margin-top:10px"></div>
+            </div>
+        </div>
+
+        {% elif page == 'export' %}
+        <h1 data-i18n="page_export" data-icon="upload">Export</h1>
+        <div class="form-card form-card-narrow">
+            <div class="form-group">
+                <label data-i18n="export_mode_label" data-icon="shield">Export Mode</label>
+                <select id="export-mode" onchange="onExportModeChange()">
+                    <option value="api" data-i18n-opt="export_mode_api_desc">Graylog API</option>
+                    <option value="opensearch" data-i18n-opt="export_mode_os_desc">OpenSearch Direct</option>
+                </select>
+                <small class="form-hint" id="export-mode-hint"></small>
+                <div id="export-mode-coverage" style="display:none;margin-top:8px"></div>
+            </div>
+            <div class="form-group">
+                <label data-i18n="export_server" data-icon="server">Server</label>
+                <select id="export-server"></select>
+            </div>
+            <div class="form-group" id="export-stream-group">
+                <label data-i18n="export_stream">Stream Filter (API mode)</label>
+                <div id="export-stream-list" class="checkbox-list"></div>
+            </div>
+            <div class="form-group" id="export-indexset-group">
+                <label data-i18n="export_index_set" data-icon="db">Index Set</label>
+                <select id="export-indexset" onchange="onExportModeChange()">
+                    <option value="">-- All (default) --</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label data-i18n="export_range_type" data-icon="clock">Time Range</label>
+                <select id="export-range-type" onchange="onExportRangeChange()">
+                    <option value="days" data-i18n-opt="export_range_days">Last N days</option>
+                    <option value="custom" data-i18n-opt="export_range_custom">Custom time range</option>
+                </select>
+            </div>
+            <div id="export-days-group">
+                <div class="form-group">
+                    <label data-i18n="export_days">Days</label>
+                    <input type="number" id="export-days" value="7" min="1" data-i18n-placeholder="export_days_placeholder" placeholder="e.g. 180">
+                    <small class="form-hint" data-i18n="sched_days_help">Ensure logs within the last N days are archived. Already exported ranges are auto-skipped, only new data is processed.</small>
+                </div>
+            </div>
+            <div id="export-custom-group" style="display:none">
+                <div class="form-group">
+                    <label data-i18n="export_from" data-icon="clock">From</label>
+                    <input type="datetime-local" id="export-from">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="export_to" data-icon="clock">To</label>
+                    <input type="datetime-local" id="export-to">
+                </div>
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="export-resume" checked> <span data-i18n="export_resume">Resume from last checkpoint</span></label>
+            </div>
+            <button class="btn-primary" onclick="startExport()" data-i18n="btn_start_export" data-icon="play">Start Export</button>
+        </div>
+        <div id="export-progress" class="progress-section" style="display:none">
+            <h3 data-i18n="export_progress">Export Progress</h3>
+            <div class="progress-bar"><div class="progress-fill" id="export-progress-bar"></div></div>
+            <div class="progress-text" id="export-progress-text"></div>
+        </div>
+
+        {% elif page == 'jobs' %}
+        <h1 data-i18n="page_jobs" data-icon="task">Jobs</h1>
+        <button onclick="loadJobs()" class="btn-secondary" data-i18n="btn_refresh" data-icon="refresh" style="margin-bottom:15px">Refresh</button>
+        <table id="jobs-table">
+            <thead>
+                <tr>
+                    <th data-i18n="th_id">ID</th>
+                    <th data-i18n="th_type">Type</th>
+                    <th data-i18n="th_status">Status</th>
+                    <th data-i18n="th_progress">Progress</th>
+                    <th data-i18n="th_messages">Records</th>
+                    <th data-i18n="th_started">Started</th>
+                    <th data-i18n="th_completed">Completed</th>
+                    <th data-i18n="th_elapsed">Elapsed</th>
+                    <th data-i18n="th_error">Error</th>
+                    <th data-i18n="th_actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        {% elif page == 'schedules' %}
+        <h1 data-i18n="page_schedules" data-icon="clock">Schedules</h1>
+        <button class="btn-primary" onclick="openSchedModal()" id="btn-show-sched-form" data-i18n="add_schedule" data-icon="plus" style="margin-bottom:15px">Add Schedule</button>
+
+        <!-- Schedule Edit Modal -->
+        <div id="sched-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeSchedModal()">
+        <div class="modal-card" style="width:700px;max-width:90vw;max-height:90vh;overflow-y:auto">
+            <h3 id="sched-modal-title" data-i18n="add_schedule" data-icon="plus">Add Schedule</h3>
+            <div class="form-group">
+                <label data-i18n="sched_name">Name</label>
+                <input type="text" id="sched-name" placeholder="my-export">
+            </div>
+            <div class="form-group">
+                <label data-i18n="sched_type">Type</label>
+                <select id="sched-type" onchange="onSchedTypeChange()">
+                    <option value="export">Export</option>
+                    <option value="cleanup">Cleanup</option>
+                    <option value="verify">Verify</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label data-i18n="sched_frequency" data-icon="clock">Frequency</label>
+                <select id="sched-freq" onchange="onSchedFreqChange()">
+                    <option value="0 * * * *" data-i18n-opt="sched_every_hour">Every hour</option>
+                    <option value="0 */2 * * *" data-i18n-opt="sched_every_2h">Every 2 hours</option>
+                    <option value="0 */6 * * *" data-i18n-opt="sched_every_6h">Every 6 hours</option>
+                    <option value="0 */12 * * *" data-i18n-opt="sched_every_12h">Every 12 hours</option>
+                    <option value="0 0 * * *" data-i18n-opt="sched_daily">Daily (00:00)</option>
+                    <option value="0 3 * * *" data-i18n-opt="sched_daily_3am">Daily (03:00)</option>
+                    <option value="0 0 * * 0" data-i18n-opt="sched_weekly">Weekly (Sunday 00:00)</option>
+                    <option value="0 3 1-7 * 6" data-i18n-opt="sched_monthly_first_sat">Monthly (1st Saturday 03:00)</option>
+                    <option value="custom" data-i18n-opt="sched_custom">Custom cron</option>
+                </select>
+            </div>
+            <div class="form-group" id="sched-custom-group" style="display:none">
+                <label data-i18n="sched_custom_cron">Custom Cron Expression</label>
+                <input type="text" id="sched-cron" placeholder="0 * * * *">
+                <small class="form-hint" data-i18n="cron_help">Format: minute hour day month weekday (e.g. 0 */6 * * * = every 6 hours)</small>
+            </div>
+            <div id="sched-export-options">
+                <div class="form-group">
+                    <label data-i18n="sched_mode" data-icon="shield">Export Mode</label>
+                    <select id="sched-mode" onchange="onSchedModeChange()">
+                        <option value="api" data-i18n-opt="export_mode_api_desc">Graylog API</option>
+                        <option value="opensearch" data-i18n-opt="export_mode_os_desc">OpenSearch Direct</option>
+                    </select>
+                    <small class="form-hint" id="sched-mode-hint"></small>
+                    <div id="sched-mode-coverage" style="display:none;margin-top:8px"></div>
+                </div>
+                <div class="form-group" id="sched-days-group">
+                    <label data-i18n="sched_days">Export Range (days)</label>
+                    <input type="number" id="sched-days" value="180" min="1" data-i18n-placeholder="sched_days_placeholder">
+                    <small class="form-hint" data-i18n="sched_days_help">Covers the last N days from now. Already exported ranges are auto-skipped.</small>
+                </div>
+                <div class="form-group" id="sched-stream-group">
+                    <label data-i18n="export_stream">Stream Filter (API mode)</label>
+                    <div id="sched-stream-list" class="checkbox-list"></div>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="sched_indexset" data-icon="db">Index Set</label>
+                    <select id="sched-indexset">
+                        <option value="">-- All (default) --</option>
+                    </select>
+                </div>
+            </div>
+            <div id="sched-cleanup-options" style="display:none">
+                <div class="form-group">
+                    <label data-i18n="sched_retention_days" data-icon="trash">Retention Days</label>
+                    <input type="number" id="sched-retention-days" value="180" min="1">
+                    <small class="form-hint" data-i18n="sched_retention_hint">Archives older than this will be deleted.</small>
+                </div>
+            </div>
+            <div id="sched-verify-options" style="display:none">
+                <div class="form-group">
+                    <small class="form-hint" data-i18n="sched_verify_hint">Verify archive integrity by checking SHA256 hash of all completed archives.</small>
+                </div>
+            </div>
+            <div style="display:flex;gap:10px;margin-top:10px">
+                <button class="btn-primary" onclick="addSchedule()" id="sched-submit-btn" data-i18n="btn_save" data-icon="shield">Save</button>
+                <button class="btn-secondary" onclick="closeSchedModal()" data-i18n="btn_cancel">Cancel</button>
+            </div>
+        </div>
+        </div>
+        <table id="schedules-table">
+            <thead><tr>
+                <th data-i18n="th_name">Name</th>
+                <th data-i18n="th_type">Type</th>
+                <th data-i18n="th_cron">Cron</th>
+                <th data-i18n="export_mode_label">Mode</th>
+                <th data-i18n="notify_config">Config</th>
+                <th data-i18n="th_enabled">Enabled</th>
+                <th data-i18n="th_last_run">Last Run</th>
+                <th data-i18n="th_actions">Actions</th>
+            </tr></thead>
+            <tbody></tbody>
+        </table>
+        {% elif page == 'notify-settings' %}
+        <h1 data-i18n="page_notify_settings" data-icon="bell">Notification Settings</h1>
+
+        <div class="section">
+            <h2 data-i18n="notify_events">Trigger Events</h2>
+            <div class="card" style="padding:15px" id="notify-events-card">
+                <div id="notify-events-form"></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2 data-i18n="notify_language" data-icon="globe">Notification Language</h2>
+            <div class="form-card">
+                <div id="notify-lang-form"></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2 data-i18n="notify_channels">Channels</h2>
+            <div id="notify-channels-form"></div>
+        </div>
+
+        <div style="margin-top:15px;display:flex;gap:10px;align-items:center">
+            <button class="btn-primary" onclick="saveNotifySettings()" data-i18n="btn_save" data-icon="shield">Save</button>
+            <button class="btn-secondary" onclick="testNotifyFromSettings()" data-i18n="btn_test_notify" data-icon="play">Test</button>
+            <span id="notify-settings-result"></span>
+        </div>
+
+        {% elif page == 'logs' %}
+        <h1 data-i18n="page_logs" data-icon="log">System Logs</h1>
+
+        <div class="section">
+            <h2 data-i18n="log_realtime">Real-time Log</h2>
+            <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+                <select id="log-lines" class="no-custom" style="padding:4px 10px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text);font-size:0.8em;height:30px;box-sizing:border-box">
+                    <option value="50">50</option>
+                    <option value="100" selected>100</option>
+                    <option value="200">200</option>
+                    <option value="500">500</option>
+                </select>
+                <span data-i18n="log_lines" style="color:var(--text-muted);font-size:0.85em">Lines</span>
+                <button class="btn-secondary btn-sm" onclick="loadRealtimeLog()" data-i18n="btn_refresh" data-icon="refresh">Refresh</button>
+                <button class="btn-secondary btn-sm" onclick="document.getElementById('log-output').textContent=''" data-i18n="btn_clear_log">Clear</button>
+            </div>
+            <pre id="log-output" class="log-output"></pre>
+        </div>
+
+        <div class="section">
+            <h2 data-i18n="log_audit" data-icon="shield">Audit Log</h2>
+            <table id="audit-table">
+                <thead><tr>
+                    <th data-i18n="th_time">Time</th>
+                    <th data-i18n="login_username">User</th>
+                    <th data-i18n="th_action">Action</th>
+                    <th data-i18n="th_detail">Detail</th>
+                    <th data-i18n="th_ip">IP</th>
+                </tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+
+        {% endif %}
+    </main>
+
+    <script src="/static/js/i18n.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
