@@ -1,9 +1,11 @@
 # jt-glogarch
 
+**Language**: **English** | [繁體中文](README-zh_TW.md)
+
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.3.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.3.1-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -86,11 +88,22 @@ and can restore them back into any Graylog instance via GELF (UDP / TCP).
 
 ### Import (Restore)
 
-- GELF UDP (default, fast) or TCP sender
-- Preserves original `timestamp`, `source`, `level`, `facility`, and all custom fields
+Two import modes (selectable in the import dialog):
+
+- **GELF (Graylog Pipeline)** — default. Sends each message via GELF TCP/UDP
+  through the full Graylog input → process → indexer chain. Compatible with
+  pipeline rules, extractors, stream routing, and alerts.
+- **OpenSearch Bulk** — direct write to OpenSearch via `_bulk` API. 5-10×
+  faster, skips Graylog processing entirely. For "restore as-is" use cases.
+
+Both modes:
+- Preserve original `timestamp`, `source`, `level`, `facility`, and all custom fields
+- Run a complete pre-flight compliance check before any data is sent
+- Reconcile after import: 0 indexer failures = compliance pass
+
+GELF mode also has:
 - **Flow control** — pause/resume, real-time speed adjustment
-- **Journal monitoring** — auto-throttle based on target Graylog journal status (API or SSH)
-- Three monitoring modes: None, Graylog API, SSH
+- **Journal monitoring** — auto-throttle based on target Graylog journal status (Graylog API)
 
 
 ### Web UI
@@ -141,34 +154,37 @@ Bilingual messages (English / Traditional Chinese).
 
 
 ```
-+------------------------------------------------------------------+
-|                          jt-glogarch                             |
-|                                                                  |
-|   +-------------+         +-----------------------------+        |
-|   |   Web UI    |<--------|  FastAPI + Jinja2 + JS SPA  |        |
-|   |   (HTTPS)   |         +-----------------------------+        |
-|   +-------------+                                                |
-|                                                                  |
-|   +-------------+   +------------------+   +------------+        |
-|   |  REST API   |   |   APScheduler    |   |    CLI     |        |
-|   +------+------+   +--------+---------+   +------+-----+        |
-|          +-----------+-------+------------------+               |
-|                      v                                          |
-|   +----------------------------------------------------+        |
-|   |       Export / Import / Cleanup / Verify           |        |
-|   +-----+----------------+-----------------+-----------+        |
-|         |                |                 |                   |
-|         v                v                 v                   |
-|   +----------+   +---------------+   +---------------+         |
-|   |  SQLite  |   |   Streaming   |   |  GELF Sender  |         |
-|   |    DB    |   |    Writer     |   |  (UDP / TCP)  |         |
-|   +----------+   +-------+-------+   +-------+-------+         |
-+--------------------------+-------------------+----------------+
-                           v                   v
-                  +----------------+   +----------------+
-                  |    .json.gz    |   |    Graylog     |
-                  | Archive Files  |   |   GELF Input   |
-                  +----------------+   +----------------+
++--------------------------------------------------------------------+
+|                            jt-glogarch                             |
+|                                                                    |
+|   +-------------+         +------------------------------+         |
+|   |   Web UI    | <-----> |  FastAPI + Jinja2 + JS SPA   |         |
+|   |   (HTTPS)   |         +------------------------------+         |
+|   +-------------+                                                  |
+|                                                                    |
+|   +-------------+    +-----------------+    +-------------+        |
+|   |  REST API   |    |   APScheduler   |    |     CLI     |        |
+|   +------+------+    +--------+--------+    +------+------+        |
+|          |                    |                    |               |
+|          +--------------------+--------------------+               |
+|                               |                                    |
+|                               v                                    |
+|   +------------------------------------------------------------+   |
+|   |          Export / Import / Cleanup / Verify                |   |
+|   +-------+----------------+----------------+------------------+   |
+|           |                |                |                      |
+|           v                v                v                      |
+|   +-------------+  +---------------+  +---------------+            |
+|   |   SQLite    |  |   Streaming   |  |  GELF Sender  |            |
+|   |     DB      |  |    Writer     |  |  (UDP / TCP)  |            |
+|   +-------------+  +-------+-------+  +-------+-------+            |
+|                            |                  |                    |
++----------------------------+------------------+--------------------+
+                             v                  v
+                    +----------------+  +----------------+
+                    |    .json.gz    |  |    Graylog     |
+                    | Archive Files  |  |   GELF Input   |
+                    +----------------+  +----------------+
 ```
 
 
@@ -628,7 +644,7 @@ before any GELF send):
 
 ### Required: Target Graylog API credentials
 
-Since v1.2.0, the import dialog **requires** a Graylog API URL + token (or
+Since v1.3.0, the import dialog **requires** a Graylog API URL + token (or
 username/password). The same credentials power preflight, journal monitoring,
 and reconciliation. There is no longer a "no monitoring" option.
 
@@ -666,12 +682,11 @@ The import dialog has a **mode selector** at the top:
      "System / Indices" configuration needed.
 
 **Deduplication:**
-- v1.1+ archives preserve `gl2_message_id`, which bulk mode uses as the
-  OpenSearch document `_id`. Re-importing the same archive overwrites
-  the existing documents instead of creating duplicates.
-- v1.0 archives lack `gl2_message_id` → bulk mode auto-generates `_id`
-  per document, so re-imports DO create duplicates (use `--dedup-strategy fail`
-  to abort instead).
+- Archives preserve `gl2_message_id`, which bulk mode uses as the OpenSearch
+  document `_id`. Re-importing the same archive overwrites existing documents
+  instead of creating duplicates.
+- Two other strategies are available: `none` (allow duplicates) and `fail`
+  (abort if a duplicate is detected).
 
 
 
@@ -707,9 +722,9 @@ Target Name:  log-recovery
 >   gaps in the imported timeline. **Loss rates of 20-30% are common** when
 >   importing millions of messages over UDP without flow control.
 >
-> If you must use UDP, **always** enable Journal Monitoring (Graylog API or SSH)
-> so jt-glogarch can detect target buffer pressure and auto-throttle. Even then,
-> UDP cannot fully prevent drops during the initial burst.
+> If you must use UDP, journal monitoring (Graylog API) is always-on and will
+> auto-throttle when the target's uncommitted journal entries exceed 500K.
+> Even then, UDP cannot fully prevent drops during the initial burst.
 
 
 ### Step 3 — Set Initial Speed

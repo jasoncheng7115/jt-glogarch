@@ -395,7 +395,7 @@ class OpenSearchExporter:
                             time_to=c_to.strftime("%Y-%m-%dT%H:%M:%SZ"),
                             query="*",
                             exported_at=datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                            glogarch_version="1.3.0",
+                            glogarch_version="1.3.1",
                         )
                         path = self.storage.get_archive_path(
                             self.server_config.name, index_name, c_from, c_to, part=1,

@@ -350,7 +350,7 @@ async def trigger_import(request: Request, background_tasks: BackgroundTasks):
             os_password=os_password,
             target_index_pattern=target_index_pattern,
             dedup_strategy=dedup_strategy,
-            batch_docs=int(body.get("batch_docs", 5000)),
+            batch_docs=int(body.get("batch_docs", 10000)),
         )
         # Verify reachability before starting
         ok, err = await bulk_importer.verify_opensearch()
@@ -534,15 +534,33 @@ def list_jobs(request: Request, limit: int = 50):
 
 @router.get("/jobs/{job_id}")
 def get_job(request: Request, job_id: str):
-    # Check in-memory progress first (for Web UI triggered jobs)
+    db = _db(request)
+
+    # In-memory progress is the right answer ONLY while the job is still
+    # actively producing events. Once it has finished (phase=done/error or
+    # pct>=100), we MUST read from the DB so the caller sees the real
+    # error_message column (which carries informational notices like the
+    # bulk-mode "where to find your data" hint, not just errors). The old
+    # behaviour returned `last.get("error")` — null on success — which
+    # silently swallowed the where_msg notice.
     if job_id in _job_progress:
         events = _job_progress[job_id]
         if events:
             last = events[-1]
             is_done = last.get("phase") in ("error", "done") or last.get("pct", 0) >= 100
+            if is_done:
+                db_job = db.get_job(job_id)
+                if db_job:
+                    return _job_to_dict(db_job)
+                # DB row not yet flushed → fall through to in-memory
+            # Look up real job_type from DB if possible — in-memory progress
+            # events don't carry it, so the old code hardcoded "export"
+            # which mislabelled imports in the UI.
+            db_job = db.get_job(job_id)
+            jt = db_job.job_type.value if db_job else "export"
             return {
                 "id": job_id,
-                "job_type": "export",
+                "job_type": jt,
                 "status": "completed" if (is_done and last.get("phase") != "error") else ("failed" if last.get("phase") == "error" else "running"),
                 "progress_pct": last.get("pct", 0),
                 "messages_done": last.get("messages_done", 0),
@@ -555,7 +573,6 @@ def get_job(request: Request, job_id: str):
         return {"id": job_id, "job_type": "export", "status": "running", "progress_pct": 0, "messages_done": 0, "messages_total": None, "error_message": None, "started_at": None, "completed_at": None}
 
     # Fallback to DB
-    db = _db(request)
     job = db.get_job(job_id)
     if not job:
         return JSONResponse({"error": "Job not found"}, status_code=404)
@@ -567,6 +584,17 @@ def cancel_job(request: Request, job_id: str):
     """Cancel a running job."""
     # Set cancellation flag for background task (works for both in-memory and DB jobs)
     _cancel_flags[job_id] = True
+
+    # Active import jobs use ImportFlowControl.cancelled (NOT _cancel_flags)
+    # for their cancel checkpoint — the bulk loop reads fc.cancelled between
+    # batches. Trigger it here so cancel actually stops bulk imports mid-flight.
+    try:
+        from glogarch.import_.importer import get_import_control
+        ifc = get_import_control(job_id)
+        if ifc:
+            ifc.cancel()
+    except Exception:
+        pass
 
     # Check in-memory jobs first (Web UI triggered)
     if job_id in _job_progress:
@@ -827,6 +855,78 @@ def delete_schedule(request: Request, name: str):
 
 
 # --- Status ---
+
+@router.get("/health")
+def get_health(request: Request):
+    """Lightweight liveness/readiness probe for monitoring tools.
+
+    Returns 200 + JSON when DB is reachable, archive disk is writable, and
+    free space is above the configured min. Returns 503 otherwise. Designed
+    to be polled by external healthchecks (Prometheus blackbox, k8s probes,
+    Uptime Kuma, etc.).
+    """
+    import shutil as _sh
+    from pathlib import Path as _P
+    settings = _settings(request)
+    db = _db(request)
+    issues: list[str] = []
+
+    # DB ping
+    try:
+        db.conn.execute("SELECT 1").fetchone()
+        db_ok = True
+    except Exception as e:
+        db_ok = False
+        issues.append(f"db: {e}")
+
+    # Disk free
+    disk_free_mb = 0
+    disk_ok = True
+    try:
+        base = _P(settings.export.base_path)
+        if base.exists():
+            disk_free_mb = _sh.disk_usage(str(base)).free // (1024 * 1024)
+            min_mb = settings.export.min_disk_space_mb or 0
+            if disk_free_mb < min_mb:
+                disk_ok = False
+                issues.append(f"disk: free={disk_free_mb}MB < min={min_mb}MB")
+        else:
+            disk_ok = False
+            issues.append(f"disk: archive path not found: {base}")
+    except Exception as e:
+        disk_ok = False
+        issues.append(f"disk: {e}")
+
+    # Scheduler (best-effort — may not be present in pure-CLI deployments)
+    sched_ok = True
+    try:
+        sched = getattr(request.app.state, "scheduler", None)
+        if sched and hasattr(sched, "running") and not sched.running:
+            sched_ok = False
+            issues.append("scheduler: not running")
+    except Exception:
+        pass
+
+    healthy = db_ok and disk_ok and sched_ok
+
+    try:
+        from glogarch import __version__  # type: ignore
+    except Exception:
+        __version__ = "unknown"  # type: ignore[assignment]
+
+    body = {
+        "status": "healthy" if healthy else "unhealthy",
+        "version": __version__,
+        "checks": {
+            "db": db_ok,
+            "disk": disk_ok,
+            "scheduler": sched_ok,
+        },
+        "disk_free_mb": disk_free_mb,
+        "issues": issues,
+    }
+    return JSONResponse(body, status_code=200 if healthy else 503)
+
 
 @router.get("/status")
 def get_status(request: Request):

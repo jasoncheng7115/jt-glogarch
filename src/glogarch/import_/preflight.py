@@ -75,6 +75,9 @@ class PreflightResult:
     retention_strategy: str = ""
     estimated_indices_needed: int = 0
     capacity_warnings: list[str] = field(default_factory=list)
+    # Bulk-mode-specific
+    bulk_stream_id: str = ""
+    bulk_stream_title: str = ""
 
 
 class PreflightChecker:
@@ -85,12 +88,14 @@ class PreflightChecker:
         api_username: str = "",
         api_password: str = "",
         gelf_port: int | None = None,
+        verify_ssl: bool = False,
     ):
         self.api_url = api_url.rstrip("/")
         self.api_token = api_token
         self.api_username = api_username
         self.api_password = api_password
         self.gelf_port = gelf_port
+        self.verify_ssl = verify_ssl
 
     # ---------------------------------------------------------------- HTTP
 
@@ -101,7 +106,7 @@ class PreflightChecker:
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
-            verify=False,
+            verify=self.verify_ssl,
             timeout=30,
             auth=self._auth(),
             headers={
@@ -681,11 +686,84 @@ class PreflightChecker:
 
     # -------------------------------- Index set creation (for bulk mode)
 
+    async def find_or_create_stream(
+        self,
+        title: str,
+        index_set_id: str,
+        description: str = "",
+    ) -> tuple[str, bool]:
+        """Look up a Graylog stream by title; create + start one if missing.
+
+        Without a Stream bound to our custom index set, Graylog's Search UI
+        won't find the bulk-imported documents (Search filters by stream →
+        index set, and the default Search uses the Default Stream which is
+        bound to the default `graylog_*` index set, not our `jt_restored_*`
+        one). Bulk import then rewrites each doc's `streams` field to point
+        to this stream's UUID so the docs are routable.
+
+        Returns (stream_id, created).
+        """
+        async with self._client() as c:
+            # Check existing
+            r = await c.get(f"{self.api_url}/api/streams")
+            r.raise_for_status()
+            for s in r.json().get("streams", []):
+                if s.get("index_set_id") == index_set_id and s.get("title") == title:
+                    sid = s.get("id")
+                    # Make sure it's started
+                    try:
+                        await c.post(f"{self.api_url}/api/streams/{sid}/resume")
+                    except Exception:
+                        pass
+                    return sid, False
+
+            # Graylog 6 vs 7 have different POST /streams body schemas:
+            #   Graylog 7: CreateEntityRequest_CreateStreamRequest
+            #     → {"entity": {<stream-config>}, "share_request": null}
+            #   Graylog 6: UnwrappedCreateEntityRequest_CreateStreamRequest
+            #     → {<stream-config>, "share_request": null}  (flat with sibling)
+            # Try Graylog-7 wrapped form first; if 4xx, try Graylog-6 flat form.
+            inner = {
+                "title": title,
+                "description": description or f"Created by jt-glogarch for restored archive data",
+                "index_set_id": index_set_id,
+                "rules": [],
+                "matching_type": "AND",
+                "remove_matches_from_default_stream": False,
+            }
+            graylog7_body = {"entity": inner, "share_request": None}
+            graylog6_body = {**inner, "share_request": None}
+
+            r = await c.post(
+                f"{self.api_url}/api/streams",
+                content=json.dumps(graylog7_body),
+            )
+            if 400 <= r.status_code < 500 and r.status_code != 401:
+                # Wrapped form rejected — try Graylog 6 flat form
+                r = await c.post(
+                    f"{self.api_url}/api/streams",
+                    content=json.dumps(graylog6_body),
+                )
+            if r.status_code not in (200, 201):
+                raise RuntimeError(
+                    f"Failed to create stream: HTTP {r.status_code}: {r.text[:300]}"
+                )
+            sid = r.json().get("stream_id", "")
+            if not sid:
+                raise RuntimeError(f"Stream create response had no stream_id: {r.text[:200]}")
+            # Resume (start) the new stream — created streams default to paused
+            try:
+                await c.post(f"{self.api_url}/api/streams/{sid}/resume")
+            except Exception as e:
+                log.warning("Could not resume new stream", id=sid, error=str(e))
+            return sid, True
+
     async def find_or_create_index_set(
         self,
         title: str,
         prefix: str,
         description: str = "",
+        max_indices: int = 30,
     ) -> tuple[str, bool]:
         """Look up an index set by prefix; create one if missing.
 
@@ -711,10 +789,14 @@ class PreflightChecker:
                     "type": "org.graylog2.indexer.rotation.strategies.SizeBasedRotationStrategyConfig",
                     "max_size": 32 * 1024 * 1024 * 1024,  # 32 GiB per index
                 },
-                "retention_strategy_class": "org.graylog2.indexer.retention.strategies.NoopRetentionStrategy",
+                # Auto-delete oldest index when limit reached. This protects
+                # the cluster from runaway disk use after repeated bulk
+                # imports. Adjust ``max_indices`` (default 30) for longer
+                # retention windows.
+                "retention_strategy_class": "org.graylog2.indexer.retention.strategies.DeletionRetentionStrategy",
                 "retention_strategy": {
-                    "type": "org.graylog2.indexer.retention.strategies.NoopRetentionStrategyConfig",
-                    "max_number_of_indices": 2147483647,
+                    "type": "org.graylog2.indexer.retention.strategies.DeletionRetentionStrategyConfig",
+                    "max_number_of_indices": max_indices,
                 },
                 "creation_date": datetime.utcnow().isoformat() + "Z",
                 "index_analyzer": "standard",
@@ -972,33 +1054,52 @@ class PreflightChecker:
                     result.error = f"Bulk template setup failed: {e}"
                     return result
 
-                # Auto-create Graylog index set so user can search restored data
+                # Auto-create Graylog index set + stream so user can search
+                # the restored data immediately. Without a stream bound to the
+                # new index set, Graylog Search filters by stream → index set
+                # and won't query our jt_restored_* indices at all.
+                bulk_stream_title = f"jt-glogarch Restored ({bulk_target_pattern})"
                 try:
-                    set_id, created = await self.find_or_create_index_set(
-                        title=f"jt-glogarch Restored ({bulk_target_pattern})",
+                    set_id, set_created = await self.find_or_create_index_set(
+                        title=bulk_stream_title,
                         prefix=bulk_target_pattern,
                         description=f"Created by jt-glogarch bulk import. Indices: {bulk_target_pattern}_*",
                     )
-                    if created:
+                    if set_created:
                         log.info("Created Graylog index set for restored data",
                                  id=set_id, prefix=bulk_target_pattern)
                     else:
                         log.info("Graylog index set already exists",
                                  id=set_id, prefix=bulk_target_pattern)
+
+                    # Create / find Stream pointing at this index set
+                    stream_id, stream_created = await self.find_or_create_stream(
+                        title=bulk_stream_title,
+                        index_set_id=set_id,
+                    )
+                    result.bulk_stream_id = stream_id
+                    result.bulk_stream_title = bulk_stream_title
+                    if stream_created:
+                        log.info("Created Graylog stream for restored data",
+                                 id=stream_id, title=bulk_stream_title)
+                    else:
+                        log.info("Graylog stream already exists",
+                                 id=stream_id, title=bulk_stream_title)
                 except Exception as e:
                     # Non-fatal: data still goes into OpenSearch, just won't
-                    # show in Graylog UI by default. Operator can add manually.
-                    log.warning("Could not auto-create Graylog index set",
+                    # show in Graylog UI by default.
+                    log.warning("Could not auto-create Graylog index set / stream",
                                 error=str(e))
                     result.capacity_warnings.append(
-                        f"[bulk] Could not auto-create Graylog index set "
+                        f"[bulk] Could not auto-create Graylog index set/stream "
                         f"for prefix '{bulk_target_pattern}': {e}. "
-                        f"Add it manually in Graylog System / Indices to make "
-                        f"the restored data visible in the Graylog UI."
+                        f"Add them manually in Graylog System / Indices and "
+                        f"Streams to make the restored data visible in the UI."
                     )
 
                 log.info("Preflight (bulk): ready to send",
-                         fields_pinned=len(bulk_pins))
+                         fields_pinned=len(bulk_pins),
+                         stream_id=result.bulk_stream_id)
                 # No cycle needed for bulk
             else:
                 # =====================================================

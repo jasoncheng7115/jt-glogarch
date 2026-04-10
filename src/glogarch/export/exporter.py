@@ -270,19 +270,23 @@ class Exporter:
                 pass
 
         except Exception as e:
+            err_str = str(e)
+            if "401" in err_str or "Unauthorized" in err_str:
+                err_str = (f"Graylog API authentication failed (401). "
+                           f"Check that the API token is still valid: {err_str}")
             self.db.update_job(
                 job_id,
                 status=JobStatus.FAILED,
-                error_message=str(e),
+                error_message=err_str,
                 completed_at=datetime.utcnow(),
             )
-            result.errors.append(str(e))
-            log.error("Export failed", job_id=job_id, error=str(e))
+            result.errors.append(err_str)
+            log.error("Export failed", job_id=job_id, error=err_str)
             try:
                 from glogarch.notify.sender import notify_error
-                await notify_error("Export", str(e))
-            except Exception:
-                pass
+                await notify_error("Export", err_str)
+            except Exception as nerr:
+                log.warning("Notification send failed", error=str(nerr))
             raise
         finally:
             _export_lock.pop(server_key, None)
@@ -325,7 +329,7 @@ class Exporter:
             time_to=chunk_to.strftime("%Y-%m-%dT%H:%M:%SZ"),
             query=query,
             exported_at=datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            glogarch_version="1.3.0",
+            glogarch_version="1.3.1",
         )
 
         path = self.storage.get_archive_path(

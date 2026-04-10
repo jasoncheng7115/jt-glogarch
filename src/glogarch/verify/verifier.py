@@ -36,6 +36,7 @@ class Verifier:
         self,
         server: str | None = None,
         progress_callback: Callable[[dict], None] | None = None,
+        workers: int = 1,
     ) -> VerifyResult:
         """Verify all archives (or filter by server).
 
@@ -51,35 +52,65 @@ class Verifier:
 
         log.info("Verification started", total_archives=total)
 
-        # Step 1: Check each DB record
-        for idx, archive in enumerate(archives):
-            if progress_callback:
-                progress_callback({
-                    "phase": "verifying",
-                    "current": idx + 1,
-                    "total": total,
-                    "file_path": archive.file_path,
-                })
-
-            result.total_checked += 1
+        # Step 1: Check each DB record. Optionally parallelise SHA256 hashing
+        # across N worker threads — disk I/O bound, so threads work fine.
+        def _check_one(archive):
             file_path = Path(archive.file_path)
-
             if not file_path.exists():
-                result.missing_files.append(archive.file_path)
-                log.warning("Missing file", archive_id=archive.id, path=archive.file_path)
-                # Mark as missing in DB
-                self.db.update_archive_status(archive.id, ArchiveStatus.MISSING)
-                continue
+                return ("missing", archive, "")
+            is_valid, actual = verify_file(file_path, archive.checksum_sha256)
+            return ("valid" if is_valid else "corrupted", archive, actual)
 
-            is_valid, actual_checksum = verify_file(file_path, archive.checksum_sha256)
-            if is_valid:
-                result.valid += 1
-            else:
-                result.corrupted.append(archive.file_path)
-                log.error("Corrupted file", archive_id=archive.id, path=archive.file_path,
-                          expected=archive.checksum_sha256, actual=actual_checksum)
-                # Mark as corrupted in DB
-                self.db.update_archive_status(archive.id, ArchiveStatus.CORRUPTED)
+        if workers > 1:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                futures = {ex.submit(_check_one, a): a for a in archives}
+                done = 0
+                for fut in as_completed(futures):
+                    done += 1
+                    archive = futures[fut]
+                    if progress_callback:
+                        progress_callback({
+                            "phase": "verifying",
+                            "current": done,
+                            "total": total,
+                            "file_path": archive.file_path,
+                        })
+                    result.total_checked += 1
+                    status, _arc, actual = fut.result()
+                    if status == "missing":
+                        result.missing_files.append(archive.file_path)
+                        log.warning("Missing file", archive_id=archive.id, path=archive.file_path)
+                        self.db.update_archive_status(archive.id, ArchiveStatus.MISSING)
+                    elif status == "valid":
+                        result.valid += 1
+                    else:
+                        result.corrupted.append(archive.file_path)
+                        log.error("Corrupted file", archive_id=archive.id, path=archive.file_path,
+                                  expected=archive.checksum_sha256, actual=actual)
+                        self.db.update_archive_status(archive.id, ArchiveStatus.CORRUPTED)
+        else:
+            for idx, archive in enumerate(archives):
+                if progress_callback:
+                    progress_callback({
+                        "phase": "verifying",
+                        "current": idx + 1,
+                        "total": total,
+                        "file_path": archive.file_path,
+                    })
+                result.total_checked += 1
+                status, _arc, actual = _check_one(archive)
+                if status == "missing":
+                    result.missing_files.append(archive.file_path)
+                    log.warning("Missing file", archive_id=archive.id, path=archive.file_path)
+                    self.db.update_archive_status(archive.id, ArchiveStatus.MISSING)
+                elif status == "valid":
+                    result.valid += 1
+                else:
+                    result.corrupted.append(archive.file_path)
+                    log.error("Corrupted file", archive_id=archive.id, path=archive.file_path,
+                              expected=archive.checksum_sha256, actual=actual)
+                    self.db.update_archive_status(archive.id, ArchiveStatus.CORRUPTED)
 
         # Step 2: Orphan check — find files on disk not in DB
         db_paths = {a.file_path for a in archives}

@@ -1109,12 +1109,18 @@ async function doImportSingle() {
 
     if (result.job_id) {
         _activeImportJobId = result.job_id;
+        window._activeImportMode = mode;
         // Hide form, show progress
         document.getElementById('import-modal-form').style.display = 'none';
         const progressDiv = document.getElementById('import-modal-progress');
         if (progressDiv) progressDiv.style.display = 'block';
         const controls = document.getElementById('import-controls');
         if (controls) controls.style.display = 'flex';
+        // Hide GELF-only controls (pause + speed slider) when running bulk:
+        // bulk has no inter-batch delay and pause is not honored by the bulk
+        // loop, so the controls would just confuse the user.
+        const gelfControls = document.getElementById('import-gelf-controls');
+        if (gelfControls) gelfControls.style.display = (mode === 'bulk') ? 'none' : 'flex';
         // Set live rate slider
         const liveRate = document.getElementById('import-live-rate');
         if (liveRate) { liveRate.value = rateMs; document.getElementById('import-live-rate-display').textContent = rateMs + 'ms'; }
@@ -1123,8 +1129,15 @@ async function doImportSingle() {
         watchJob(result.job_id, 'import', () => {
             if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
             _activeImportJobId = null;
-            document.getElementById('import-modal-form').style.display = 'block';
+            // Keep the form HIDDEN after completion — only the progress bar
+            // and result text should be visible. User can dismiss the modal
+            // by clicking outside or via the explicit Close button shown
+            // by the post-completion handler below.
+            // (Form will be re-shown next time the modal is opened fresh.)
             if (controls) controls.style.display = 'none';
+            // Show a Close button so user can dismiss the modal cleanly.
+            const doneBtn = document.getElementById('import-done-btn');
+            if (doneBtn) doneBtn.style.display = 'inline-flex';
         });
         // Start journal status polling
         // Always poll journal status — we always have target API credentials now
@@ -1132,6 +1145,16 @@ async function doImportSingle() {
     } else {
         resultEl.innerHTML = `<span class="status-failed">${esc(result.error || 'Failed')}</span>`;
         if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+    }
+}
+
+async function cancelActiveImport() {
+    if (!_activeImportJobId) return;
+    if (!await customConfirm(t('confirm_cancel_import') || 'Cancel this import?')) return;
+    try {
+        await fetchJSON(`${API}/jobs/${_activeImportJobId}/cancel`, {method: 'POST'});
+    } catch (e) {
+        showAlert(t('error') + ': ' + (e && e.message ? e.message : e));
     }
 }
 
@@ -1575,7 +1598,7 @@ async function loadJobs() {
             <td>${formatDT(j.started_at)}</td>
             <td>${formatDT(j.completed_at)}</td>
             <td>${formatElapsed(j.started_at, j.completed_at)}</td>
-            <td style="color:var(--danger);font-size:0.85em;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${esc(j.error_message || '')}</td>
+            <td style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : 'var(--text-muted)'};font-size:0.85em;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${esc(j.error_message || '')}</td>
             <td>${cancelBtn}</td>
         </tr>`;
     }).join('');
@@ -1647,7 +1670,7 @@ async function loadSchedules() {
             <td>${formatDT(s.last_run_at)}${runningHtml}</td>
             <td><div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
                 <button class="btn-sm btn-primary" onclick="editSchedule('${esc(s.name)}')">${icon('shield')} ${t('btn_edit')}</button>
-                ${(s.job_type === 'export' || s.job_type === 'cleanup') && !runningJob ? `<button class="btn-sm btn-success" onclick="runScheduleNow('${esc(s.name)}')" title="${t('btn_run_now')}">${icon('play')} ${t('btn_run_now')}</button>` : ''}
+                ${(s.job_type === 'export' || s.job_type === 'cleanup' || s.job_type === 'verify') && !runningJob ? `<button class="btn-sm btn-success" onclick="runScheduleNow('${esc(s.name)}')" title="${t('btn_run_now')}">${icon('play')} ${t('btn_run_now')}</button>` : ''}
                 <button class="btn-sm ${s.enabled ? 'btn-secondary' : 'btn-primary'}" onclick="toggleSchedule('${esc(s.name)}',${!s.enabled})">${s.enabled ? t('btn_disable') : t('btn_enable')}</button>
                 ${s.name.startsWith('auto-') ? '' : `<button class="btn-sm btn-danger" onclick="deleteSchedule('${esc(s.name)}')">${icon('trash')}</button>`}
             </div></td>
@@ -1933,7 +1956,15 @@ function watchJob(jobId, type, onComplete) {
             } else if (msgs === 0) {
                 text.innerHTML = `<span style="color:var(--warning)">${t('export_no_data')}</span>`;
             } else {
-                text.innerHTML = `<span class="status-completed">${t('progress_completed')} (${formatNumber(msgs)} ${t('th_messages').toLowerCase()})</span>`;
+                let html = `<span class="status-completed">${t('progress_completed')} (${formatNumber(msgs)} ${t('th_messages').toLowerCase()})</span>`;
+                // Surface bulk-mode "where to find" notice (and any other
+                // post-completion info written into the job's error_message)
+                if (job.error_message) {
+                    const isViolation = job.error_message.indexOf('Compliance violation') !== -1;
+                    const colour = isViolation ? 'var(--warning)' : 'var(--accent)';
+                    html += `<div style="margin-top:8px;padding:8px 10px;background:rgba(108,99,255,0.08);border-left:3px solid ${colour};border-radius:4px;font-size:0.85em">${esc(job.error_message)}</div>`;
+                }
+                text.innerHTML = html;
             }
         }
         if (onComplete) onComplete(job);
@@ -1959,9 +1990,24 @@ function watchJob(jobId, type, onComplete) {
             text.textContent = `${phase} ${data.index || ''} — ${msgs}/${total} — ${(data.pct || 0).toFixed(1)}%`;
         }
     });
-    es.addEventListener('done', (e) => {
+    es.addEventListener('done', async (e) => {
         sseOk = true;
         cleanup();
+        // SSE 'done' event payload only has phase/pct/messages, NOT the
+        // job's error_message (where post-completion notes live, e.g.
+        // bulk-mode "find your data in stream X"). Fetch the full job
+        // record before showing the result so the notice surfaces.
+        try {
+            const resp = await fetch(`${API}/jobs/${jobId}`);
+            if (resp.ok) {
+                const job = await resp.json();
+                // Merge SSE event data with full job record
+                const evt = JSON.parse(e.data);
+                showResult({...job, ...evt, error_message: job.error_message});
+                return;
+            }
+        } catch (_) {}
+        // Fallback: just show what SSE gave us
         showResult(JSON.parse(e.data));
     });
     es.onerror = () => { es.close(); };
@@ -2046,7 +2092,7 @@ async function loadHistory() {
         <td style="text-align:right">${formatRecords(j.messages_done, j.messages_total)}</td>
         <td>${formatDT(j.started_at)}</td>
         <td>${formatDT(j.completed_at)}</td>
-        <td style="color:var(--danger);font-size:0.85em;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${j.error_message || ''}</td>
+        <td style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : 'var(--text-muted)'};font-size:0.85em;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${esc(j.error_message || '')}</td>
     </tr>`).join('');
 }
 

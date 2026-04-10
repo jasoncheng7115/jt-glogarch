@@ -1,9 +1,11 @@
 # jt-glogarch
 
+**語言**: [English](README.md) | **繁體中文**
+
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.3.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.3.1-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -79,16 +81,27 @@ Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
 - SHA256 完整性驗證(含 `.sha256` 附檔)
 - 排程定期 SHA256 重新檢查
 - 保留天數自動清理
-- 從磁碟重新掃描歸檔(偵測孤兒檔案 / 遺失檔案)
+- 從磁碟重新掃描歸檔(偵測孤立檔案 / 遺失檔案)
 
 
 ### 匯入(還原)
 
-- GELF UDP(預設,快速)或 TCP 發送器
+兩種匯入模式(對話框中選擇):
+
+- **GELF (Graylog Pipeline)** — 預設。每筆訊息透過 GELF TCP/UDP 經過完整的
+  Graylog input → process → indexer 處理鏈。相容 pipeline 規則、extractors、
+  stream routing 與 alerts。
+- **OpenSearch Bulk** — 直接透過 `_bulk` API 寫入 OpenSearch。速度快 5-10×,
+  完全跳過 Graylog 處理流程。適合「原樣還原」場景。
+
+兩種模式都會:
 - 完整保留原始 `timestamp`、`source`、`level`、`facility` 及所有自訂欄位
+- 在送任何資料前先跑完整的 pre-flight 合規檢查
+- 匯入後對帳:零 indexer failures = 合規通過
+
+GELF 模式還有:
 - **流量控制** — 暫停/繼續、即時調整速率
-- **Journal 監控** — 依目標 Graylog journal 狀態自動限速 (API 或 SSH)
-- 三種監控模式:無、Graylog API、SSH
+- **Journal 監控** — 依目標 Graylog journal 狀態自動限速(透過 Graylog API)
 
 
 ### Web 管理介面
@@ -139,34 +152,37 @@ Telegram • Discord • Slack • Microsoft Teams • Nextcloud Talk • Email 
 
 
 ```
-+------------------------------------------------------------------+
-|                          jt-glogarch                             |
-|                                                                  |
-|   +-------------+         +-----------------------------+        |
-|   |   Web UI    |<--------|  FastAPI + Jinja2 + JS SPA  |        |
-|   |   (HTTPS)   |         +-----------------------------+        |
-|   +-------------+                                                |
-|                                                                  |
-|   +-------------+   +------------------+   +------------+        |
-|   |  REST API   |   |   APScheduler    |   |    CLI     |        |
-|   +------+------+   +--------+---------+   +------+-----+        |
-|          +-----------+-------+------------------+               |
-|                      v                                          |
-|   +----------------------------------------------------+        |
-|   |       Export / Import / Cleanup / Verify           |        |
-|   +-----+----------------+-----------------+-----------+        |
-|         |                |                 |                   |
-|         v                v                 v                   |
-|   +----------+   +---------------+   +---------------+         |
-|   |  SQLite  |   |   Streaming   |   |  GELF Sender  |         |
-|   |    DB    |   |    Writer     |   |  (UDP / TCP)  |         |
-|   +----------+   +-------+-------+   +-------+-------+         |
-+--------------------------+-------------------+----------------+
-                           v                   v
-                  +----------------+   +----------------+
-                  |    .json.gz    |   |    Graylog     |
-                  | Archive Files  |   |   GELF Input   |
-                  +----------------+   +----------------+
++--------------------------------------------------------------------+
+|                            jt-glogarch                             |
+|                                                                    |
+|   +-------------+         +------------------------------+         |
+|   |   Web UI    | <-----> |  FastAPI + Jinja2 + JS SPA   |         |
+|   |   (HTTPS)   |         +------------------------------+         |
+|   +-------------+                                                  |
+|                                                                    |
+|   +-------------+    +-----------------+    +-------------+        |
+|   |  REST API   |    |   APScheduler   |    |     CLI     |        |
+|   +------+------+    +--------+--------+    +------+------+        |
+|          |                    |                    |               |
+|          +--------------------+--------------------+               |
+|                               |                                    |
+|                               v                                    |
+|   +------------------------------------------------------------+   |
+|   |          Export / Import / Cleanup / Verify                |   |
+|   +-------+----------------+----------------+------------------+   |
+|           |                |                |                      |
+|           v                v                v                      |
+|   +-------------+  +---------------+  +---------------+            |
+|   |   SQLite    |  |   Streaming   |  |  GELF Sender  |            |
+|   |     DB      |  |    Writer     |  |  (UDP / TCP)  |            |
+|   +-------------+  +-------+-------+  +-------+-------+            |
+|                            |                  |                    |
++----------------------------+------------------+--------------------+
+                             v                  v
+                    +----------------+  +----------------+
+                    |    .json.gz    |  |    Graylog     |
+                    | Archive Files  |  |   GELF Input   |
+                    +----------------+  +----------------+
 ```
 
 
@@ -606,7 +622,7 @@ OpenSearch 模式可選擇**保留最近 N 份 index**。下方的「可用 indi
 
 ### 必填:目標 Graylog API 帳密
 
-從 v1.2.0 開始,匯入對話框**必填** Graylog API URL + Token(或帳號/密碼)。
+從 v1.3.0 開始,匯入對話框**必填** Graylog API URL + Token(或帳號/密碼)。
 同一組帳密同時用於 preflight、journal 監控、與對帳。**沒有「不監控」這個
 選項了**。
 
@@ -639,10 +655,9 @@ OpenSearch 模式可選擇**保留最近 N 份 index**。下方的「可用 indi
      Graylog UI 上搜尋。不需手動到「System / Indices」設定。
 
 **去重機制:**
-- v1.1+ 歸檔保留 `gl2_message_id`,bulk 模式拿來當 OpenSearch 文件 `_id`。
+- 歸檔保留的 `gl2_message_id` 會被 bulk 模式拿來當 OpenSearch 文件 `_id`。
   重複匯入同一份歸檔會 overwrite 既有文件,不會產生重複。
-- v1.0 歸檔沒有 `gl2_message_id` → bulk 模式自動產生 `_id`,重複匯入
-  **會產生重複**(用 `--dedup-strategy fail` 來改成偵測到就中止)。
+- 也可以選 `不去重`(允許重複)或 `偵測到重複就中止` 兩種策略。
 
 
 
@@ -666,7 +681,7 @@ Protocol:     TCP   ← 預設。可靠,有 backpressure
 > Input 監聽這些 port。
 
 > **⚠️ UDP vs TCP — 重要警告:**
-> - **TCP(推薦,預設):** 有內建 backpressure。當目標 Graylog input buffer 滿
+> - **TCP(建議,預設):** 有內建 backpressure。當目標 Graylog input buffer 滿
 >   時,TCP 寫入會自然阻塞,jt-glogarch 會跟著降速,**不會掉訊息**。吞吐量
 >   約 1,000~3,000 筆/秒。
 > - **UDP(不建議用於大量匯入):** 較快(~5,000~10,000 筆/秒)但 buffer 滿時
@@ -675,9 +690,9 @@ Protocol:     TCP   ← 預設。可靠,有 backpressure
 >   軸會看到一段一段空白。**百萬筆等級的匯入若沒有流量控制,UDP 損失率常見
 >   20-30%。**
 >
-> 如果一定要用 UDP,**務必**同時開啟 Journal 監控(Graylog API 或 SSH),
-> 讓 jt-glogarch 偵測對面 buffer 壓力後自動降速。即使如此,UDP 在初始衝量
-> 時還是無法完全避免丟封包。
+> 即使使用 UDP,Journal 監控(透過 Graylog API)永遠開啟,當對方未處理的
+> journal entries 超過 50 萬時會自動降速。但 UDP 在初始衝量時還是無法完全
+> 避免丟封包。
 
 
 ### 步驟 3 — 設定初始速率
@@ -690,7 +705,7 @@ Protocol:     TCP   ← 預設。可靠,有 backpressure
 
 ### 步驟 4 — 提供目標 Graylog API 帳密(必填)
 
-從 v1.3.0 開始**必填**。同一組帳密用於 preflight、journal 監控、匯入後對帳。
+從 v1.3.1 開始**必填**。同一組帳密用於 preflight、journal 監控、匯入後對帳。
 
 ```
 Graylog API URL:  http://192.168.1.132:9000

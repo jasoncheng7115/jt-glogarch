@@ -168,6 +168,28 @@ class ArchiveDB:
 
     # --- Archives ---
 
+    @staticmethod
+    def _maybe_compress_schema(schema: str | None) -> str | None:
+        """If field_schema JSON exceeds ~4 KiB, store as zlib+base64 with a
+        sentinel prefix. Stays backwards-compatible: callers that read the
+        column just need to detect the prefix and decompress.
+        """
+        if not schema or len(schema) < 4096:
+            return schema
+        import base64, zlib
+        return "zlib:" + base64.b64encode(zlib.compress(schema.encode("utf-8"), 6)).decode("ascii")
+
+    @staticmethod
+    def decompress_schema(schema: str | None) -> str | None:
+        """Inverse of _maybe_compress_schema. Safe on uncompressed input."""
+        if not schema or not schema.startswith("zlib:"):
+            return schema
+        import base64, zlib
+        try:
+            return zlib.decompress(base64.b64decode(schema[5:])).decode("utf-8")
+        except Exception:
+            return None
+
     def record_archive(self, record: ArchiveRecord) -> int:
         with self._lock:
             cur = self.conn.execute(
@@ -191,7 +213,7 @@ class ArchiveDB:
                     record.checksum_sha256,
                     record.status.value,
                     _dt_to_str(record.created_at),
-                    record.field_schema,
+                    self._maybe_compress_schema(record.field_schema),
                 ),
             )
             self.conn.commit()
@@ -208,7 +230,7 @@ class ArchiveDB:
             f"SELECT id, field_schema, file_path FROM archives WHERE id IN ({placeholders})",
             archive_ids,
         ).fetchall()
-        return {r["id"]: r["field_schema"] for r in rows}
+        return {r["id"]: self.decompress_schema(r["field_schema"]) for r in rows}
 
     def update_archive_status(
         self, archive_id: int, status: ArchiveStatus, **kwargs: str | int
@@ -404,6 +426,7 @@ class ArchiveDB:
     # --- Jobs ---
 
     def create_job(self, job: JobRecord) -> None:
+        from glogarch.utils.sanitize import sanitize
         with self._lock:
             self.conn.execute(
                 """INSERT INTO jobs (id, job_type, status, progress_pct, messages_done,
@@ -417,7 +440,7 @@ class ArchiveDB:
                     job.messages_done,
                     job.messages_total,
                     job.config_json,
-                    job.error_message,
+                    sanitize(job.error_message),
                     _dt_to_str(job.started_at),
                     _dt_to_str(job.completed_at),
                     _dt_to_str(job.created_at),
@@ -427,6 +450,7 @@ class ArchiveDB:
             self.conn.commit()
 
     def update_job(self, job_id: str, **kwargs) -> None:
+        from glogarch.utils.sanitize import sanitize
         ALLOWED_JOB_COLS = {"status", "progress_pct", "messages_done", "messages_total",
                             "config_json", "error_message", "started_at", "completed_at", "source"}
         sets = []
@@ -438,6 +462,9 @@ class ArchiveDB:
                 val = val.value
             if isinstance(val, datetime):
                 val = _dt_to_str(val)
+            # Strip credentials from any user-visible message column
+            if key == "error_message" and val is not None:
+                val = sanitize(val)
             sets.append(f"{key} = ?")
             vals.append(val)
         if not sets:
@@ -516,10 +543,11 @@ class ArchiveDB:
 
     def audit(self, action: str, detail: str = "", username: str = "", ip_address: str = "") -> None:
         """Record an audit log entry."""
+        from glogarch.utils.sanitize import sanitize
         with self._lock:
             self.conn.execute(
                 "INSERT INTO audit_log (timestamp, username, action, detail, ip_address) VALUES (?, ?, ?, ?, ?)",
-                (_dt_to_str(datetime.utcnow()), username, action, detail[:500], ip_address),
+                (_dt_to_str(datetime.utcnow()), username, action, (sanitize(detail) or "")[:500], ip_address),
             )
             self.conn.commit()
 

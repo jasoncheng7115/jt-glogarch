@@ -96,14 +96,13 @@ class ImportHistoryRecord(BaseModel):
 class ArchiveMetadata(BaseModel):
     """Metadata stored inside each .json.gz archive file.
 
-    Format version history:
-        1.0 — initial format. All `gl2_*` Graylog internal fields stripped.
-        1.1 — preserves `gl2_message_id` to enable deterministic dedup when
-              importing via the OpenSearch _bulk path (introduced in v1.2.0).
-              GELF import path is unaffected.
+    The archive format preserves `gl2_message_id` (used as a dedup key by
+    the OpenSearch bulk import path); other `gl2_*` Graylog internal fields
+    are stripped because they reference source-cluster nodes/inputs that
+    don't exist in the target.
     """
 
-    version: str = "1.1"
+    version: str = "1.0"
     server: str
     stream_id: str | None = None
     stream_name: str | None = None

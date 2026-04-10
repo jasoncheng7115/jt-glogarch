@@ -365,7 +365,7 @@ def streams(server: str | None):
 @click.option("--dedup-strategy", type=click.Choice(["id", "none", "fail"]), default="id",
               help="[bulk mode] How to handle duplicate gl2_message_id: "
                    "'id' (use as _id, overwrite on re-import), 'none' (always create new), 'fail' (abort on duplicate)")
-@click.option("--batch-docs", type=int, default=5000,
+@click.option("--batch-docs", type=int, default=10000,
               help="[bulk mode] Documents per _bulk request (default 5000)")
 @click.option("--no-preflight", is_flag=True, default=False,
               help="DANGEROUS: skip preflight check (no compliance guarantees, no zero-loss promise)")
@@ -515,6 +515,8 @@ def import_cmd(archive_id: tuple[int, ...], time_from: str | None, time_to: str 
     console.print()
     console.print(f"[green]Done![/green] Archives: {result.archives_processed}, "
                   f"Messages sent: {result.messages_sent}")
+    for notice in getattr(result, 'notices', []):
+        console.print(f"[bold cyan]ⓘ[/bold cyan] {notice}")
     if result.errors:
         for err in result.errors:
             if "Compliance violation" in err:
@@ -580,7 +582,9 @@ def list_cmd(server: str | None, stream: str | None, time_from: str | None,
 
 @cli.command()
 @click.option("--server", "-s", default=None, help="Verify only archives from this server")
-def verify(server: str | None):
+@click.option("--workers", "-w", default=1, type=int,
+              help="Number of parallel SHA256 workers (default: 1)")
+def verify(server: str | None, workers: int):
     """Verify archive file integrity."""
     from glogarch.verify.verifier import Verifier
 
@@ -605,7 +609,8 @@ def verify(server: str | None):
             progress.update(task, completed=pct,
                             description=f"Checking {current}/{total}")
 
-        result = verifier.verify_all(server=server, progress_callback=_progress)
+        result = verifier.verify_all(server=server, progress_callback=_progress,
+                                     workers=workers)
 
     console.print()
     console.print(f"[bold]Verification Report[/bold]")
@@ -874,3 +879,146 @@ log_level: INFO
     from pathlib import Path
     Path(output).write_text(example)
     console.print(f"[green]Example config written to {output}[/green]")
+
+
+@cli.command("streams-cleanup")
+@click.option("--server", "-s", default=None, help="Server name from config")
+@click.option("--prefix", default="jt_restored",
+              help="Stream/index-set name prefix to scan (default: jt_restored)")
+@click.option("--dry-run", is_flag=True, help="List only, do not delete")
+@click.option("--yes", is_flag=True, help="Skip confirmation")
+def streams_cleanup(server: str | None, prefix: str, dry_run: bool, yes: bool):
+    """List/delete restored Streams + Index Sets created by jt-glogarch.
+
+    Repeated bulk imports leave behind one Stream + Index Set per target
+    pattern. Use this to clean up after testing or when retiring an
+    archive set. Both the Graylog Stream and the underlying Index Set are
+    removed (Graylog also drops the OpenSearch indices).
+    """
+    import asyncio
+    import httpx
+    settings = get_settings()
+    sc = settings.get_server(server)
+
+    async def _run():
+        auth = None
+        headers = {"Accept": "application/json", "X-Requested-By": "jt-glogarch-cli"}
+        if sc.auth_token:
+            auth = (sc.auth_token, "token")
+        elif sc.username:
+            auth = (sc.username, sc.password or "")
+
+        async with httpx.AsyncClient(verify=False, timeout=30, auth=auth, headers=headers) as c:
+            # Streams
+            r = await c.get(f"{sc.url}/api/streams")
+            r.raise_for_status()
+            streams = [s for s in r.json().get("streams", [])
+                       if (s.get("title") or "").startswith(prefix)]
+            r = await c.get(f"{sc.url}/api/system/indices/index_sets")
+            r.raise_for_status()
+            isets = [s for s in r.json().get("index_sets", [])
+                     if (s.get("index_prefix") or "").startswith(prefix)]
+
+            console.print(f"[bold]Streams matching '{prefix}*':[/bold] {len(streams)}")
+            for s in streams:
+                console.print(f"  - {s.get('title')} ({s.get('id')})")
+            console.print(f"[bold]Index sets matching '{prefix}*':[/bold] {len(isets)}")
+            for s in isets:
+                console.print(f"  - {s.get('title')} (prefix={s.get('index_prefix')}, id={s.get('id')})")
+
+            if dry_run or (not streams and not isets):
+                return
+
+            if not yes:
+                if not click.confirm(
+                    f"Delete {len(streams)} stream(s) and {len(isets)} index set(s)? "
+                    "This cannot be undone."
+                ):
+                    return
+
+            for s in streams:
+                rr = await c.delete(f"{sc.url}/api/streams/{s['id']}")
+                if rr.status_code in (200, 204):
+                    console.print(f"[green]Deleted stream:[/green] {s.get('title')}")
+                else:
+                    console.print(f"[red]Failed to delete stream {s.get('title')}: HTTP {rr.status_code}[/red]")
+            for s in isets:
+                rr = await c.delete(f"{sc.url}/api/system/indices/index_sets/{s['id']}?delete_indices=true")
+                if rr.status_code in (200, 204):
+                    console.print(f"[green]Deleted index set:[/green] {s.get('title')}")
+                else:
+                    console.print(f"[red]Failed to delete index set {s.get('title')}: HTTP {rr.status_code}[/red]")
+
+    asyncio.run(_run())
+
+
+@cli.command("db-backup")
+@click.option("--dest", "-d", default="/var/backups/jt-glogarch",
+              help="Backup directory")
+@click.option("--keep", default=14, type=int,
+              help="Number of backups to keep (older are pruned)")
+def db_backup(dest: str, keep: int):
+    """Snapshot the SQLite metadata DB to a backup directory.
+
+    Uses SQLite's online .backup API — safe to run while jt-glogarch is
+    actively writing. Recommended cron entry::
+
+        0 4 * * * /usr/bin/python3 -m glogarch db-backup
+    """
+    from pathlib import Path
+    from glogarch.maintenance.db_rebuild import backup_db, prune_backups
+    settings = get_settings()
+    src = Path(settings.database_path)
+    dest_p = Path(dest)
+    try:
+        out = backup_db(src, dest_p)
+    except Exception as e:
+        console.print(f"[red]Backup failed:[/red] {e}")
+        sys.exit(1)
+    pruned = prune_backups(dest_p, keep=keep)
+    size_mb = out.stat().st_size / 1024 / 1024
+    console.print(f"[green]Backup written:[/green] {out} ({size_mb:.2f} MB)")
+    if pruned:
+        console.print(f"[dim]Pruned {pruned} old backup(s)[/dim]")
+
+
+@cli.command("db-rebuild")
+@click.option("--archive-root", "-r", default=None,
+              help="Override archive base path (default: from config)")
+@click.option("--dry-run", is_flag=True,
+              help="Show what would be inserted without writing")
+@click.option("--yes", is_flag=True, help="Skip confirmation")
+def db_rebuild(archive_root: str | None, dry_run: bool, yes: bool):
+    """Rebuild SQLite metadata DB by scanning the archive directory.
+
+    Use this after disaster recovery: if the SQLite DB is lost or corrupted,
+    this command walks the archive root, reads each .json.gz metadata block
+    + its .sha256 sidecar, and inserts a row per file. Existing rows are
+    preserved (no duplicates).
+    """
+    from pathlib import Path
+    from glogarch.maintenance.db_rebuild import rebuild
+    settings = get_settings()
+    root = Path(archive_root) if archive_root else Path(settings.export.base_path)
+
+    if not yes and not dry_run:
+        console.print(f"[yellow]About to scan {root} and insert any missing "
+                      f"archives into {settings.database_path}[/yellow]")
+        if not click.confirm("Continue?"):
+            return
+
+    db = _get_db()
+    try:
+        summary = rebuild(db, root, dry_run=dry_run)
+    except Exception as e:
+        console.print(f"[red]Rebuild failed:[/red] {e}")
+        sys.exit(1)
+
+    table = Table(title="DB Rebuild Summary")
+    table.add_column("Metric")
+    table.add_column("Count", justify="right")
+    for k, v in summary.items():
+        table.add_row(k, str(v))
+    console.print(table)
+    if dry_run:
+        console.print("[dim]Dry run — no changes written[/dim]")

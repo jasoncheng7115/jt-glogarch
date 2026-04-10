@@ -8,12 +8,17 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from glogarch import __version__ as _APP_VERSION
+
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 
 def _render(name: str, request: Request, context: dict | None = None):
-    ctx = {"request": request}
+    # ``version`` is auto-injected into every template so there is only ONE
+    # place to bump the version (``glogarch/__init__.py``). Never hardcode
+    # version strings inside the HTML templates — always use ``{{ version }}``.
+    ctx = {"request": request, "version": _APP_VERSION}
     if context:
         ctx.update(context)
     return templates.TemplateResponse(request=request, name=name, context=ctx)

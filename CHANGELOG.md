@@ -2,6 +2,359 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.4.4] - 2026-04-10
+
+### Changed — Job History "Error" column → "Note"
+
+- Column header renamed from "Error" / "錯誤" to "Note" / "備註" in
+  both en and zh-TW i18n, since the column now carries informational
+  notices (e.g. "where to find imported data") alongside actual errors.
+- Color logic: red (`--danger`) only for failed jobs or messages
+  containing "Compliance violation" / "Interrupted". All other notes
+  display in muted grey (`--text-muted`). Applied in both the Jobs
+  page and the Dashboard recent-jobs table.
+
+### Fixed — Architecture diagram alignment
+
+ASCII art diagram in both `README.md` and `README-zh_TW.md` had
+inconsistent right-border alignment (the outer `|` column drifted
+between rows). Redrawn at a fixed 70-char width with Python-verified
+alignment.
+
+## [1.4.3] - 2026-04-10
+
+### Fixed — Live progress controls leaked into bulk mode
+
+The import-modal "live controls" bar (Pause + Speed slider) was being
+shown for both GELF and bulk imports, even though bulk mode honors
+neither. Reported via screenshot showing 50-archive bulk import in
+preflight phase with the slider visible at "100ms".
+
+- Wrapped Pause + Speed slider in `#import-gelf-controls` and hid them
+  in bulk mode (`doImportSingle` → `gelfControls.style.display='none'
+  when mode==='bulk'`)
+- Added a real `#import-cancel-btn` (always visible) so bulk imports
+  can be cancelled mid-flight from the modal
+
+### Fixed — `/jobs/{id}/cancel` did not stop bulk imports
+
+The cancel endpoint set `_cancel_flags[job_id]` but the bulk loop's
+cancel checkpoint reads `ImportFlowControl.cancelled` (set via
+`get_import_control(job_id).cancel()`). Two unrelated cancel
+mechanisms — pressing Cancel did nothing for bulk. Now the endpoint
+also calls `get_import_control(job_id).cancel()` so cancel actually
+stops the bulk loop between batches.
+
+### Added — i18n for cancel-import confirmation
+
+`confirm_cancel_import` strings in en + zh-TW (used by the new
+`cancelActiveImport()` modal flow).
+
+## [1.4.2] - 2026-04-10
+
+End-to-end test of the v1.4.0 hardening release on a Graylog 7 target
+(.83) surfaced two latent architectural bugs in bulk import mode plus
+several UX issues. All fixed in this release.
+
+### Fixed — Bulk mode imports were invisible to Graylog Search
+
+Symptom: bulk import reported "completed, 159,286 messages" and the
+data was confirmed in OpenSearch (`jt_restored_2026_04_09` index, 166 MB),
+but searching the `jt-glogarch Restored (jt_restored)` stream in Graylog
+returned 0 results. Found that 32 万筆 messages had accumulated as
+orphan indices invisible to the UI.
+
+Root cause: `BulkImporter._index_name_for_doc()` derived the target
+index name from each doc's `timestamp` field
+(`jt_restored_YYYY_MM_DD`). Graylog tracks an index set's membership in
+MongoDB by sequential index name (`jt_restored_0`, `jt_restored_1`,
+...), NOT by `<prefix>_*` wildcard. Indices created outside that
+tracking are invisible to Graylog Search even when their name matches
+the prefix. Stream → index_set → MongoDB list query never returned the
+date-based indices.
+
+Fix: bulk writes now ALWAYS go through the Graylog-managed deflector
+alias (`<prefix>_deflector`). OpenSearch routes the bulk request to
+whichever underlying index Graylog has marked `is_write_index=true`,
+so:
+- Graylog Search picks up our docs immediately (they live in the
+  Graylog-tracked write index)
+- Graylog's own SizeBased / TimeBased rotation strategy still applies
+- No more orphan indices
+
+`_ensure_index()` learned to detect the deflector alias suffix and
+verify it via HEAD instead of trying to PUT it (which would fail with
+`invalid_index_name_exception`). The per-doc index name walk that
+earlier versions did to pre-create date-based indices is gone.
+
+### Fixed — Bulk import "where to find" notice was silently swallowed
+
+Symptom: bulk import succeeds, the Graylog stream is created correctly,
+but the import-completed modal in the Web UI shows only "已完成! (N
+記錄數)" with no hint about where in Graylog to look for the data. The
+backend was writing the notice to `jobs.error_message` correctly (verified
+via direct DB query) but the frontend never displayed it.
+
+Root cause (`web/routes/api.py::get_job`): when a job is triggered from
+the Web UI, `_job_progress[job_id]` accumulates SSE events. The
+`/api/jobs/{id}` endpoint always preferred this in-memory cache over
+the DB. The in-memory representation hardcoded `error_message =
+last.get("error")` — which is None on success — and never read the
+real `error_message` column from the DB. So the where_msg notice was
+written but never returned.
+
+Fix: when the in-memory progress shows the job is done (`phase=done`
+or `pct>=100`), read the canonical row from the DB instead. This
+returns the correct `error_message`, the correct `job_type`, and the
+correct status. The in-memory cache is still used for in-progress
+polling.
+
+### Fixed — `/api/jobs/{id}` returned wrong `job_type` for imports
+
+Side effect of the same `_job_progress` shortcut: it hardcoded
+`"job_type": "export"` regardless of the actual job. Imports triggered
+from the Web UI were mislabelled as exports in API responses (the
+listing endpoint and Job History UI used a different code path so this
+was usually invisible). Now the type is read from the DB row.
+
+### Added — Verify schedule "Run Now" button
+
+The Schedules page already supported run-now for export and cleanup
+schedules. Verify schedules were missing the button purely because of
+a single condition in the JS render. The backend
+`POST /api/schedules/{name}/run` already supported all three job types.
+One-line fix in `app.js` re-enables the button for verify schedules.
+
+### Changed — Bulk batch_docs default 5000 → 10000
+
+Validated on `.83` Graylog 7 target during v1.4.1 testing — 10k docs
+per `_bulk` request runs cleanly without 429 backpressure. Doubles
+throughput on most targets. Adjusted in 4 places: `BulkImporter.
+DEFAULT_BATCH_DOCS`, `web/routes/api.py` body default, `index.html`
+modal `value`, `cli/main.py --batch-docs` default.
+
+### Documentation — Bulk mode rate slider has no effect
+
+The "Batch Delay (ms)" slider in the import modal applies ONLY to
+GELF mode. `BulkImporter.import_archives()` has no inter-batch sleep
+in its hot loop — only retry backoff on OpenSearch 429. The slider is
+already inside `#gelf-mode-fields` and is hidden when bulk mode is
+selected, so users no longer see it as an option in bulk mode. The
+real performance dial for bulk mode is `batch_docs`.
+
+## [1.4.1] - 2026-04-10
+
+Internal point release rolled into 1.4.2 — see above for details.
+The deflector-alias bulk write fix landed here originally.
+
+## [1.4.0] - 2026-04-09
+
+Hardening release. End-to-end test of v1.3.1 surfaced a 20-item risk list
+across disaster recovery, secret leakage, retention, race conditions,
+reserved field handling, concurrency control, and operational concerns.
+This release addresses every item.
+
+### Added — Disaster recovery
+
+- **`glogarch db-backup`** — online SQLite snapshot via the `.backup` API
+  (safe while jt-glogarch is writing). Auto-prunes old snapshots
+  (`--keep`, default 14). Recommended cron entry:
+  `0 4 * * * /usr/bin/python3 -m glogarch db-backup`.
+- **`glogarch db-rebuild`** — rebuild the SQLite metadata DB by scanning
+  the archive directory. Reads each `.json.gz` metadata block + `.sha256`
+  sidecar and re-inserts the row. Existing rows are preserved (no
+  duplicates). Use after disaster recovery if the DB is lost or corrupted.
+
+### Added — Operational endpoints
+
+- **`GET /api/health`** — liveness/readiness probe for Prometheus blackbox,
+  Kubernetes, Uptime Kuma, etc. Returns 200 (`healthy`) when DB is
+  reachable, archive disk is writable + above the configured min-free,
+  and the scheduler is running. Returns 503 with an `issues[]` array
+  otherwise.
+
+### Added — Maintenance helpers
+
+- **`glogarch streams-cleanup`** — list/delete restored Streams + Index
+  Sets created by jt-glogarch (auto-created during bulk-mode imports).
+  Both the Graylog Stream and the underlying Index Set are removed
+  (Graylog also drops the OpenSearch indices). Use after testing or when
+  retiring an archive set.
+
+### Added — Bulk import improvements
+
+- **Cancel checkpoints** — `BulkImporter` now checks the cancel flag
+  between batches. Pressing Cancel in the Web UI mid-import now stops
+  the bulk write cleanly instead of running to completion.
+- **Reserved-field stripping** — bulk body builder now drops `_id`,
+  `_index`, `_source`, `_type`, `_routing`, `_parent`, `_version`,
+  `_op_type` from each doc. Defends against the rare archive that
+  contains a field whose name collides with an OpenSearch metadata
+  field.
+
+### Changed — `jt_restored_*` retention
+
+- Previously: `NoopRetentionStrategy` with `max_number_of_indices = 2³¹-1`
+  → indices accumulated forever after repeated bulk imports.
+- Now: `DeletionRetentionStrategy` with `max_number_of_indices = 30`.
+  Adjustable via the new `max_indices` parameter on
+  `find_or_create_index_set()`. Protects the cluster from runaway disk
+  use.
+
+### Security
+
+- **Secret sanitization for `jobs.error_message`** — new
+  `glogarch/utils/sanitize.py` strips passwords / API tokens from any
+  string before it lands in `jobs.error_message`, `audit_log.detail`,
+  or any error path that goes through `update_job` / `create_job` /
+  `audit`. Patterns covered: `Authorization: Basic|Bearer …`,
+  `http(s)://user:pass@host`, `password=…`, `token=…`, `api_key=…`,
+  and JSON-style `"password": "…"`. Output is also length-capped
+  (default 2000 chars).
+- **TLS verification** is now plumbed through `PreflightChecker`
+  (`verify_ssl` constructor argument, default False). Hardcoded
+  `verify=False` removed from the preflight HTTP client.
+- **Token-expiry detection** — when an export or import fails with a
+  Graylog 401, the error message now reads
+  *"Graylog API authentication failed (401). Check that the API token is
+  still valid: …"* and triggers the configured notification channel.
+
+### Fixed — Race conditions and concurrency
+
+- **Cleanup vs export race** — cleanup now skips any file modified within
+  the last 10 minutes (`RECENT_FILE_GRACE_SECONDS`). Prevents the
+  retention sweep from deleting an archive that is still being written
+  by an in-flight export.
+- **Concurrent import lock** — per-archive lock at the importer level.
+  The same archive cannot be imported by two jobs at once (two browser
+  tabs, schedule + manual click, CLI + Web UI). Conflicts fail fast with
+  a clear message; the lock is released in the importer's `finally`
+  block.
+- **Notification failures are no longer swallowed** — `notify_*` exceptions
+  are now logged as warnings and surfaced in the job's `errors[]` list,
+  instead of being silently dropped by `try / except: pass`.
+
+### Performance
+
+- **`glogarch verify --workers N`** — parallel SHA256 hashing across N
+  worker threads. Disk I/O bound, so threads work fine. Sequential
+  behaviour preserved when `--workers 1` (the default).
+- **`field_schema` column auto-compression** — when the per-archive field
+  schema JSON exceeds 4 KiB it is now stored as `zlib:` + base64. Decoded
+  transparently on read via `ArchiveDB.decompress_schema()`. Keeps the
+  metadata DB compact for archives with many distinct fields.
+
+### Documentation
+
+- **DST and APScheduler**: APScheduler honours the system TZ; cron
+  expressions like `0 3 * * *` may run twice or be skipped on DST
+  transition days. Users who need wall-clock guarantees should use UTC
+  cron expressions.
+- **`gl2_processing_timestamp` / `gl2_remote_ip` after bulk**: bulk imports
+  bypass Graylog's processing chain, so these fields reflect the
+  *original* processing time at the source cluster. They are NOT
+  rewritten on import. This is by design — bulk mode is intended to
+  preserve the source-cluster journey.
+- **Single-tenant**: jt-glogarch is single-tenant. There is no per-user
+  data scoping in the metadata DB or the Web UI.
+- **Web UI overwrites manual edits**: saving any setting from the Web UI
+  rewrites `config.yaml` from the in-memory `Settings` object. Manual
+  edits made between page load and save will be lost. For
+  bulk/automated config changes, edit `config.yaml` directly and
+  restart the service.
+- **IndexSet name collision**: `find_or_create_index_set` looks up by
+  `index_prefix`, not title. If two callers race to create the same
+  prefix, the second one reuses the first's index set (the API enforces
+  prefix uniqueness server-side).
+
+## [1.3.1] - 2026-04-10
+
+### Fixed — Bulk-mode imports were not visible in Graylog UI
+
+End-to-end test of v1.3.0 bulk mode found that imported documents were
+written to OpenSearch correctly but **not searchable from the Graylog UI**.
+Root cause: Graylog Search filters by `streams` → index sets, and our docs
+had `streams` field containing UUIDs from the SOURCE cluster which don't
+exist on the target. Without a target stream bound to the bulk index set,
+Graylog had no entry point to query the `jt_restored_*` indices.
+
+- **`PreflightChecker.find_or_create_stream()`** — new method that creates
+  a Graylog stream bound to the bulk index set via `POST /api/streams`
+  (and resumes it). Bulk preflight now creates this stream right after
+  the index set.
+- **Graylog 6 + 7 dual-API support** — the stream creation API schema
+  differs between Graylog versions:
+  - Graylog 7: `CreateEntityRequest_CreateStreamRequest`
+    → `{"entity": {<config>}, "share_request": null}`
+  - Graylog 6: `UnwrappedCreateEntityRequest_CreateStreamRequest`
+    → `{<config>, "share_request": null}` (flat with sibling)
+
+  Try wrapped form first; on 4xx fall back to flat form. Both versions
+  verified end-to-end.
+- **`BulkImporter.target_stream_id`** — new attribute set by importer from
+  the preflight result. Each doc's `streams` field is rewritten to
+  `[target_stream_id]` before bulk write, replacing the source-cluster
+  UUIDs. Now Graylog Search routes correctly to the new stream → new
+  index set → `jt_restored_*` indices.
+- **Post-completion notice** — bulk import success now records a "where to
+  find your data" message in `jobs.error_message`. CLI prints it as a
+  cyan ⓘ note. Web UI Job History shows it as a tooltip; the active import
+  modal shows it in an info box on completion.
+- **`ImportResult.notices`** — new field for non-error informational
+  messages.
+- **SSE `done` event was missing `error_message`** — `watchJob` in app.js
+  now fetches the full job record on the SSE done event so post-completion
+  notices surface in the UI.
+
+### Fixed — Modal display issues
+
+- **Modal too tall** — base `.modal-card` now has `max-height: 90vh` +
+  `overflow-y: auto` so a tall import dialog scrolls within the viewport
+  instead of overflowing past the top/bottom of the screen.
+- **Mode selector card text wrapping char-by-char** — the radio cards
+  were too narrow for the original labels. Reduced label text
+  (`GELF (Graylog Pipeline)` → `GELF`,
+  `OpenSearch Bulk (~5-10x)` → `OpenSearch Bulk`),
+  added `min-width: 0` + `overflow-wrap: break-word` to inner divs,
+  bumped modal width 420 → 460px.
+- **Form re-shown after import completes** — `watchJob` onComplete callback
+  was setting `import-modal-form` display back to `block`, leaving the
+  form fields visible alongside the completed progress bar. Now the form
+  stays hidden after completion; user dismisses the modal via the
+  click-outside handler or a future Done button.
+
+### Fixed — Static files not refreshed by `pip install` alone
+
+When editing `web/static/js/*.js` or `web/static/css/*.css`, FastAPI's
+StaticFiles mount serves from the **installed package** at
+`/usr/local/lib/python3.10/dist-packages/glogarch/web/static/`, not from
+`/opt/jt-glogarch/glogarch/web/static/`. Rsyncing static files into `/opt`
+alone is not enough — must always run `pip install --force-reinstall`
+afterwards. Documented in CLAUDE.md.
+
+### Changed — Taiwan terminology cleanup
+
+- `推薦` → `建議` (i18n bulk_dedup_id, README-zh_TW)
+- `孤兒檔案` → `孤立檔案` (README-zh_TW)
+- Removed all "v1.1+ archives" / "v1.0 archives" version-history language
+  from user-facing docs and code comments since v1.3.0 is the first
+  public release.
+- Removed obsolete SSH journal monitoring references from README — only
+  Graylog API journal monitoring remains.
+
+### Added — README language switcher
+
+Both `README.md` and `README-zh_TW.md` now have a language toggle line
+at the top: `**Language**: **English** | [繁體中文](README-zh_TW.md)`
+(and the mirror in zh-TW). GitHub renders the relative link to switch
+between the two READMEs.
+
+### Added — `gl2_message_id` preserved during export
+
+Exporters preserve `gl2_message_id` (used as bulk-import dedup key);
+other `gl2_*` fields are still stripped. GELF import path is unaffected
+since Graylog regenerates all `gl2_*` on receive.
+
 ## [1.3.0] - 2026-04-09
 
 ### Added — OpenSearch Bulk Import Mode
@@ -52,19 +405,15 @@ directly to OpenSearch via the `_bulk` API. Verified end-to-end via CLI.
   (Pipelines, Extractors, Stream routing, Alerts). Use only for
   "restore archived data as-is" scenarios.
 
-### Added — gl2_message_id preserved during export (v1.1 archive format)
+### Added — gl2_message_id preserved during export
 
-To enable deterministic dedup in bulk import, both exporters now preserve
-the `gl2_message_id` field instead of stripping it with the rest of `gl2_*`.
-Other `gl2_*` fields (`gl2_source_input`, `gl2_processing_timestamp`, etc.)
-are still stripped because they reference source-cluster nodes/inputs that
-don't exist in the target.
+To enable deterministic dedup in bulk import, both exporters preserve
+the `gl2_message_id` field. Other `gl2_*` fields (`gl2_source_input`,
+`gl2_processing_timestamp`, etc.) are still stripped because they reference
+source-cluster nodes/inputs that don't exist in the target.
 
 - **`opensearch/client.py`** — `iter_index_docs` keeps `gl2_message_id`
 - **`graylog/search.py`** — `_extract_messages` keeps `gl2_message_id`
-- **`ArchiveMetadata.version`** bumped from `"1.0"` to `"1.1"` to mark the
-  format change. Old (v1.0) archives still import correctly via GELF; bulk
-  import of v1.0 archives degrades to "no dedup" (auto-generated `_id`).
 - GELF import path is unaffected — Graylog regenerates all `gl2_*` fields
   on receive, including a fresh `gl2_message_id`.
 

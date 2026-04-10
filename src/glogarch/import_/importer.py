@@ -80,6 +80,36 @@ def get_import_control(job_id: str) -> ImportFlowControl | None:
     return _import_controls.get(job_id)
 
 
+# Global registry of in-flight archive imports — prevents the same archive
+# from being imported by two concurrent jobs (e.g. user clicks Import in two
+# browser tabs, or schedule + manual click race). Maps archive_id → job_id.
+import threading as _threading
+_active_archive_imports: dict[int, str] = {}
+_active_archive_lock = _threading.Lock()
+
+
+def _claim_archives(archive_ids: list[int], job_id: str) -> list[int]:
+    """Try to claim ``archive_ids`` for ``job_id``. Returns the list of IDs
+    that were already locked by another job (the conflicts)."""
+    conflicts: list[int] = []
+    with _active_archive_lock:
+        for aid in archive_ids:
+            owner = _active_archive_imports.get(aid)
+            if owner and owner != job_id:
+                conflicts.append(aid)
+        if not conflicts:
+            for aid in archive_ids:
+                _active_archive_imports[aid] = job_id
+    return conflicts
+
+
+def _release_archives(archive_ids: list[int], job_id: str) -> None:
+    with _active_archive_lock:
+        for aid in archive_ids:
+            if _active_archive_imports.get(aid) == job_id:
+                _active_archive_imports.pop(aid, None)
+
+
 class ImportResult:
     """Result of an import operation."""
 
@@ -87,6 +117,7 @@ class ImportResult:
         self.archives_processed: int = 0
         self.messages_sent: int = 0
         self.errors: list[str] = []
+        self.notices: list[str] = []  # informational messages (e.g. "find your data in stream X")
         self.job_id: str = ""
 
 
@@ -182,6 +213,25 @@ class Importer:
                                    completed_at=datetime.utcnow())
                 return result
 
+            # === Concurrency lock: prevent two jobs from importing the same
+            # archive simultaneously (two browser tabs, schedule + manual,
+            # CLI + Web UI). Conflicts → fail fast with a clear error.
+            claim_ids = [a.id for a in archives if a.id is not None]
+            conflicts = _claim_archives(claim_ids, job_id)
+            if conflicts:
+                err = (
+                    f"Archive(s) {conflicts} are already being imported by "
+                    "another job. Wait for it to finish or cancel it first."
+                )
+                log.warning(err)
+                self.db.update_job(
+                    job_id, status=JobStatus.FAILED,
+                    error_message=err, completed_at=datetime.utcnow(),
+                )
+                result.errors.append(err)
+                return result
+            self._claimed_archive_ids = claim_ids
+
             total_archives = len(archives)
             total_messages = sum(a.message_count for a in archives)
             self.db.update_job(job_id, messages_total=total_messages)
@@ -242,6 +292,11 @@ class Importer:
             if self.mode == "bulk":
                 if not self.bulk_importer:
                     raise RuntimeError("mode='bulk' but no bulk_importer provided")
+                # Tell BulkImporter the target stream ID so it can rewrite
+                # each doc's streams field. Without this rewrite, Graylog
+                # Search filters the docs out (source-cluster stream UUIDs).
+                if preflight_result and preflight_result.bulk_stream_id:
+                    self.bulk_importer.target_stream_id = preflight_result.bulk_stream_id
                 from pathlib import Path as _P
                 paths = [_P(a.file_path) for a in archives]
 
@@ -259,9 +314,21 @@ class Importer:
 
                 bulk_result = await self.bulk_importer.import_archives(
                     paths, progress_callback=_bulk_cb,
+                    cancel_check=lambda: fc.cancelled,
                 )
                 result.archives_processed = bulk_result.archives_processed
                 result.messages_sent = bulk_result.messages_sent
+
+                # Tell the user where to find the imported data in Graylog UI
+                where_msg = ""
+                if preflight_result and preflight_result.bulk_stream_id:
+                    where_msg = (
+                        f"To search the imported data: in Graylog Search, "
+                        f"select stream '{preflight_result.bulk_stream_title}' "
+                        f"(id: {preflight_result.bulk_stream_id})."
+                    )
+                    log.info("Bulk import: where to find data", msg=where_msg)
+                    result.notices.append(where_msg)
 
                 # Build precise reconciliation report from bulk response
                 if bulk_result.messages_failed > 0:
@@ -272,11 +339,13 @@ class Importer:
                     )
                     log.warning(msg)
                     result.errors.append(msg)
+                    # Combine the violation with the where-to-find note
+                    full_msg = msg + ((" | " + where_msg) if where_msg else "")
                     self.db.update_job(
                         job_id, status=JobStatus.COMPLETED, progress_pct=100.0,
                         messages_done=bulk_result.messages_indexed,
                         completed_at=datetime.utcnow(),
-                        error_message=msg,
+                        error_message=full_msg,
                     )
                 else:
                     log.info(
@@ -284,10 +353,14 @@ class Importer:
                         sent=bulk_result.messages_sent,
                         indexed=bulk_result.messages_indexed,
                     )
+                    # Even with 0 failures, surface the where-to-find note via
+                    # error_message column so the Job History row shows it on
+                    # hover (where-to-find is informational, not a violation).
                     self.db.update_job(
                         job_id, status=JobStatus.COMPLETED, progress_pct=100.0,
                         messages_done=bulk_result.messages_indexed,
                         completed_at=datetime.utcnow(),
+                        error_message=(where_msg or None),
                     )
 
                 try:
@@ -468,21 +541,33 @@ class Importer:
                 await notify_import_complete(
                     result.archives_processed, result.messages_sent, result.errors,
                 )
-            except Exception:
-                pass
+            except Exception as nerr:
+                # Surface notification failures so they're not silently lost.
+                log.warning("Notification send failed", error=str(nerr))
+                result.errors.append(f"notify: {nerr}")
 
         except Exception as e:
+            err_str = str(e)
+            # Friendlier message on Graylog API auth failures
+            if "401" in err_str or "Unauthorized" in err_str:
+                err_str = (f"Graylog API authentication failed (401). "
+                           f"Check that the API token is still valid: {err_str}")
             self.db.update_job(job_id, status=JobStatus.FAILED,
-                               error_message=str(e), completed_at=datetime.utcnow())
-            result.errors.append(str(e))
-            log.error("Import failed", job_id=job_id, error=str(e))
+                               error_message=err_str, completed_at=datetime.utcnow())
+            result.errors.append(err_str)
+            log.error("Import failed", job_id=job_id, error=err_str)
             try:
                 from glogarch.notify.sender import notify_error
-                await notify_error("Import", str(e))
-            except Exception:
-                pass
+                await notify_error("Import", err_str)
+            except Exception as nerr:
+                log.warning("Notification send failed", error=str(nerr))
             raise
         finally:
             _import_controls.pop(job_id, None)
+            # Release the per-archive concurrency lock
+            claimed = getattr(self, "_claimed_archive_ids", None)
+            if claimed:
+                _release_archives(claimed, job_id)
+                self._claimed_archive_ids = None
 
         return result

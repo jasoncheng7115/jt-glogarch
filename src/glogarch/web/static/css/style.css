@@ -535,8 +535,10 @@
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 30px;
-    width: 420px;
+    width: 460px;
     max-width: 90vw;
+    max-height: 90vh;
+    overflow-y: auto;
     box-shadow: 0 8px 30px rgba(0,0,0,0.3);
 }
 
@@ -1319,7 +1321,8 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
     margin-top: 6px;
 }
 .mode-option {
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;            /* allow flex children to shrink below content size */
     border: 2px solid var(--border);
     border-radius: 8px;
     padding: 10px 12px;
@@ -1328,10 +1331,18 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
     align-items: flex-start;
     gap: 8px;
     transition: all 0.15s ease;
+    box-sizing: border-box;
 }
 .mode-option input[type="radio"] {
-    margin-top: 2px;
+    margin: 2px 0 0 0;
     flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+}
+.mode-option > div {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
 }
 .mode-option:hover {
     border-color: var(--accent-hover);
@@ -1344,13 +1355,18 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
 .mode-title {
     font-weight: 600;
     color: var(--text);
-    font-size: 0.9em;
-    margin-bottom: 2px;
+    font-size: 0.85em;
+    margin-bottom: 3px;
+    line-height: 1.25;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
 }
 .mode-desc {
     color: var(--text-muted);
-    font-size: 0.78em;
-    line-height: 1.3;
+    font-size: 0.75em;
+    line-height: 1.35;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
 }
 
 /* Bulk-mode advanced warning box */

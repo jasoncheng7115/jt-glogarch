@@ -11,7 +11,7 @@
     <nav class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <h2 style="display:flex;align-items:center;gap:8px;white-space:nowrap"><img src="/static/favicon.svg" alt="" style="width:24px;height:24px;border-radius:3px;flex-shrink:0"><a href="https://github.com/jasoncheng7115/jt-glogarch" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">jt-glogarch</a></h2>
-            <small>Graylog Open Archive <span style="opacity:0.6">v1.3.0</span></small>
+            <small>Graylog Open Archive <span style="opacity:0.6">v{{ version }}</span></small>
         </div>
         <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">‹</button>
         <ul class="nav-links">
@@ -281,14 +281,14 @@
                         <div class="form-group">
                             <label data-i18n="bulk_dedup_strategy">Dedup Strategy</label>
                             <select id="modal-bulk-dedup">
-                                <option value="id" selected data-i18n-opt="bulk_dedup_id">Use gl2_message_id as _id (recommended, v1.1+ archives)</option>
+                                <option value="id" selected data-i18n-opt="bulk_dedup_id">Use gl2_message_id as _id (recommended)</option>
                                 <option value="none" data-i18n-opt="bulk_dedup_none">No dedup (allow duplicates)</option>
                                 <option value="fail" data-i18n-opt="bulk_dedup_fail">Fail on duplicates</option>
                             </select>
                         </div>
                         <div class="form-group">
                             <label data-i18n="bulk_batch_docs">Batch Size (docs per bulk request)</label>
-                            <input type="number" id="modal-bulk-batch-docs" value="5000" min="100" max="20000">
+                            <input type="number" id="modal-bulk-batch-docs" value="10000" min="100" max="20000">
                             <small class="form-hint" data-i18n="bulk_batch_hint">5000 is a good default. Larger = faster but more memory.</small>
                         </div>
                         <div class="form-group">
@@ -356,11 +356,18 @@
                     <div class="progress-bar"><div class="progress-fill" id="import-progress-bar"></div></div>
                     <div class="progress-text" id="import-progress-text"></div>
                     <div id="import-controls" style="display:none;margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                        <button class="btn-sm btn-secondary" id="import-pause-btn" data-i18n="btn_pause" data-state="running" onclick="toggleImportPause()">Pause</button>
-                        <label style="font-size:0.85em;display:flex;align-items:center;gap:6px">
-                            <span data-i18n="import_speed">Speed</span>: <input type="range" id="import-live-rate" min="1" max="2000" value="100" style="width:120px" oninput="updateImportRate(this.value)">
-                            <span id="import-live-rate-display">100ms</span>
-                        </label>
+                        <!-- GELF-only: pause + live rate slider. Hidden when
+                             import mode is bulk (bulk has no inter-batch
+                             delay and pause is not honored by the bulk loop). -->
+                        <span id="import-gelf-controls" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                            <button class="btn-sm btn-secondary" id="import-pause-btn" data-i18n="btn_pause" data-state="running" onclick="toggleImportPause()">Pause</button>
+                            <label style="font-size:0.85em;display:flex;align-items:center;gap:6px">
+                                <span data-i18n="import_speed">Speed</span>: <input type="range" id="import-live-rate" min="1" max="2000" value="100" style="width:120px" oninput="updateImportRate(this.value)">
+                                <span id="import-live-rate-display">100ms</span>
+                            </label>
+                        </span>
+                        <!-- Cancel button — works for both modes. -->
+                        <button class="btn-sm btn-danger" id="import-cancel-btn" onclick="cancelActiveImport()" data-i18n="btn_cancel">Cancel</button>
                         <span id="import-journal-badge" style="font-size:0.8em;display:none"></span>
                     </div>
                 </div>

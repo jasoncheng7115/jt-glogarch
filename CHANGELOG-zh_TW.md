@@ -2,6 +2,308 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.4.4] - 2026-04-10
+
+### 變更 — 作業歷程「錯誤」欄改為「備註」
+
+- 欄位標題從「Error / 錯誤」改為「Note / 備註」(en + zh-TW i18n),
+  因為這欄現在同時存放資訊提示（如「去哪查看匯入的資料」）與真正的
+  錯誤訊息。
+- 顏色邏輯:紅色(`--danger`)只用於 failed 狀態或訊息含
+  「Compliance violation」/「Interrupted」的情況。其他備註用灰色
+  (`--text-muted`)低調顯示。作業歷程頁面與儀表板最近任務表格都有改。
+
+### 修正 — 架構圖對齊
+
+`README.md` 與 `README-zh_TW.md` 裡的 ASCII art 架構圖右邊框 `|`
+沒對齊。用 Python 驗證每行寬度後重畫為固定 70 字元寬。
+
+## [1.4.3] - 2026-04-10
+
+### 修正 — 即時控制條跑進 bulk 模式
+
+匯入 modal 的「即時控制條」(暫停 + 速率 slider)在 GELF 與 bulk 模式
+都會顯示,但 bulk 模式兩個都不認帳。使用者截圖回報 50 份歸檔正在做
+preflight 時 slider 還顯示「100ms」。
+
+- 把暫停 + 速率 slider 包進 `#import-gelf-controls`,bulk 模式時整個
+  hide 掉(`doImportSingle` → `gelfControls.style.display='none'`)
+- 新增一個常駐的 `#import-cancel-btn`,讓 bulk 匯入也能從 modal 中途
+  取消
+
+### 修正 — `/jobs/{id}/cancel` 取消不掉 bulk 匯入
+
+cancel endpoint 之前只 set `_cancel_flags[job_id]`,但 bulk loop 的
+取消檢查點是讀 `ImportFlowControl.cancelled`(要透過
+`get_import_control(job_id).cancel()` 觸發)。兩條不同的 cancel 機制 —
+按取消對 bulk 完全沒效果。現在 endpoint 也會呼叫
+`get_import_control(job_id).cancel()`,bulk loop 在 batch 之間就會
+真的停下來。
+
+### 新增 — 取消匯入確認的 i18n
+
+en + zh-TW 都加上 `confirm_cancel_import` 字串(供新的
+`cancelActiveImport()` modal 流程使用)。
+
+## [1.4.2] - 2026-04-10
+
+v1.4.0 強化版發行後在 Graylog 7 目標 (.83) 端對端測試時又抓到兩個
+潛在的架構 bug 與幾個 UX 問題,本版本一次處理。
+
+### 修正 — Bulk 模式匯入後 Graylog Search 看不到資料
+
+症狀:bulk 匯入回報「已完成,159,286 筆訊息」,OpenSearch 也確實有
+資料(`jt_restored_2026_04_09` 索引,166 MB),但在 Graylog 上搜尋
+`jt-glogarch Restored (jt_restored)` stream 顯示 0 筆結果。發現 32
+萬筆訊息都成了 UI 看不到的孤兒索引。
+
+根因:`BulkImporter._index_name_for_doc()` 之前是用每筆文件的
+`timestamp` 推算目標索引名稱(`jt_restored_YYYY_MM_DD`)。Graylog
+是用 MongoDB 追蹤 index set 的索引清單(`jt_restored_0`、
+`jt_restored_1`...),**不是用 `<prefix>_*` wildcard**。Graylog 不認得
+不是它自己建的索引,即使前綴對得上也不會列入 stream 搜尋範圍。
+Stream → index_set → MongoDB 清單查詢永遠不會回傳那些日期分區索引。
+
+修法:bulk 寫入現在**永遠走 Graylog 管理的 deflector alias**
+(`<prefix>_deflector`)。OpenSearch 會把 bulk request 自動路由到 Graylog
+標記為 `is_write_index=true` 的底層索引,所以:
+- Graylog Search 立刻就看得到我們的文件(寫進 Graylog 自己追蹤的
+  寫入索引裡)
+- Graylog 自己的 SizeBased / TimeBased rotation 還是繼續適用
+- 不會再有孤兒索引
+
+`_ensure_index()` 學會偵測 deflector alias 結尾,改用 HEAD 驗證而不是
+PUT(否則會 fail with `invalid_index_name_exception`)。舊版預先掃描
+全部文件以建立日期索引的邏輯也整個拿掉了。
+
+### 修正 — Bulk 匯入完成「去哪查看」提示被吞掉
+
+症狀:bulk 匯入成功,Graylog stream 也正確建好,但 Web UI 匯入完成
+modal 只顯示「已完成! (N 記錄數)」,沒提示要去 Graylog 哪裡找資料。
+後端確實有把 notice 寫進 `jobs.error_message`(直接查 DB 確認過),
+但前端就是不顯示。
+
+根因 (`web/routes/api.py::get_job`):從 Web UI 觸發的 job 會把 SSE
+事件累積到 `_job_progress[job_id]`。`/api/jobs/{id}` endpoint 一律
+**優先回 in-memory 版本而完全不查 DB**。in-memory 的 `error_message`
+是 `last.get("error")` — 成功時是 None,**根本不會去讀 DB 的真正
+error_message column**。所以 where_msg 寫了卻永遠回 null。
+
+修法:in-memory 顯示 job 已完成(`phase=done` 或 `pct>=100`)時,改
+讀 DB 裡的 row。這樣會回正確的 `error_message`、正確的 `job_type`、
+正確的 status。in-memory cache 還是用於正在進行中的 polling。
+
+### 修正 — `/api/jobs/{id}` 把 import 誤回成 export
+
+`_job_progress` 捷徑的另一個副作用:之前硬寫 `"job_type": "export"`
+不管實際是什麼 job。從 Web UI 觸發的 import 在這個 endpoint 都被
+誤標成 export(列表 endpoint 與 Job History 是用另一條程式路徑所以
+通常看不出來)。現在改從 DB row 讀真正的 type。
+
+### 新增 — Verify 排程「立即執行」按鈕
+
+排程頁面之前只有 export 與 cleanup 排程有「立即執行」按鈕,verify
+排程被遺漏 — 純粹是 JS render 條件少寫了 verify。後端
+`POST /api/schedules/{name}/run` 三種類型本來就支援。`app.js` 一行
+修改解決。
+
+### 變更 — Bulk batch_docs 預設 5000 → 10000
+
+v1.4.1 在 .83 (Graylog 7) 測試驗證 — 每個 `_bulk` request 10k 筆跑
+得很順,沒有遇到 429 backpressure。對多數 target 可以直接讓吞吐量
+翻倍。共改 4 處:`BulkImporter.DEFAULT_BATCH_DOCS`、`web/routes/api.py`
+body 預設、`index.html` modal `value`、`cli/main.py --batch-docs` 預設。
+
+### 文件 — Bulk 模式速率 slider 沒有作用
+
+匯入 modal 的「Batch Delay (ms)」slider **只**對 GELF 模式有用。
+`BulkImporter.import_archives()` 的 hot loop 沒有任何 inter-batch
+sleep — 只有 OpenSearch 回 429 時的 retry backoff。這條 slider
+原本就在 `#gelf-mode-fields` 內,選 bulk 模式時整個 div 會 hide,
+所以使用者不會在 bulk 模式看到它。Bulk 真正能調的旋鈕是
+`batch_docs`。
+
+## [1.4.1] - 2026-04-10
+
+內部 point release,內容已併入 1.4.2 — 請見上方。Deflector alias 寫入
+修法是這版先落地的。
+
+## [1.4.0] - 2026-04-09
+
+強化版本。v1.3.1 端對端測試後盤點出 20 項風險,涵蓋災難復原、密碼洩漏、
+保留策略、競態條件、保留欄位處理、併發控制與運維面向。本版本一次處理完。
+
+### 新增 — 災難復原
+
+- **`glogarch db-backup`** — 透過 SQLite 線上 `.backup` API 製作快照
+  (執行中也可安全備份)。自動清掉舊快照(`--keep`,預設 14)。建議
+  cron 設定:`0 4 * * * /usr/bin/python3 -m glogarch db-backup`。
+- **`glogarch db-rebuild`** — 掃描歸檔目錄重建 SQLite metadata DB。讀取
+  每個 `.json.gz` 內的 metadata 區塊與 `.sha256` 副檔案,逐筆寫回
+  資料表。已存在的 row 不會重複寫入。SQLite DB 遺失或損毀時用。
+
+### 新增 — 維運端點
+
+- **`GET /api/health`** — liveness/readiness 探針,可給 Prometheus blackbox、
+  Kubernetes、Uptime Kuma 等監控工具使用。DB 可連、歸檔磁碟可寫且
+  剩餘空間高於設定值、排程器執行中時回傳 200(`healthy`);否則回傳
+  503 並附 `issues[]` 陣列。
+
+### 新增 — 維護工具
+
+- **`glogarch streams-cleanup`** — 列出/刪除 jt-glogarch 在 bulk 模式
+  匯入時自動建立的 Streams 與 Index Sets。會同時刪除 Graylog Stream
+  與底層 Index Set(Graylog 也會把 OpenSearch 索引刪掉)。測試後或
+  封存某批歸檔後使用。
+
+### 新增 — Bulk 匯入改進
+
+- **取消檢查點** — `BulkImporter` 在 batch 之間檢查 cancel 旗標。在
+  Web UI 中按取消可即時停止匯入,不會跑完整批。
+- **保留欄位過濾** — bulk body builder 會把 `_id`、`_index`、`_source`、
+  `_type`、`_routing`、`_parent`、`_version`、`_op_type` 從每筆文件
+  剔除,避免歸檔中極少數含這類欄位的文件導致 bulk 整批被拒絕。
+
+### 變更 — `jt_restored_*` 保留策略
+
+- 舊版:`NoopRetentionStrategy`,`max_number_of_indices = 2³¹-1`,
+  → 重複 bulk 匯入後索引會無限累積。
+- 新版:`DeletionRetentionStrategy`,`max_number_of_indices = 30`,
+  可透過 `find_or_create_index_set()` 新增的 `max_indices` 參數調整。
+  避免叢集磁碟用量失控。
+
+### 安全
+
+- **`jobs.error_message` 密碼/Token 過濾** — 新增
+  `glogarch/utils/sanitize.py`,任何要寫入 `jobs.error_message`、
+  `audit_log.detail` 或經由 `update_job` / `create_job` / `audit` 的字串
+  都會先脫敏。涵蓋 `Authorization: Basic|Bearer …`、
+  `http(s)://user:pass@host`、`password=…`、`token=…`、`api_key=…` 與
+  JSON 風格的 `"password": "…"`。輸出長度也有上限(預設 2000 字)。
+- **TLS verification** 串接到 `PreflightChecker`(`verify_ssl` 建構參數,
+  預設 False)。preflight HTTP client 不再硬寫 `verify=False`。
+- **Token 過期偵測** — 匯出/匯入若因 Graylog 401 失敗,錯誤訊息現在會
+  顯示「Graylog API authentication failed (401). Check that the API
+  token is still valid: …」並觸發通知。
+
+### 修正 — 競態條件與併發
+
+- **清理 vs 匯出競態** — 清理會跳過最近 10 分鐘內被修改的檔案
+  (`RECENT_FILE_GRACE_SECONDS`),避免保留期掃描刪掉還在被匯出寫入
+  的歸檔檔。
+- **同時匯入鎖** — 在 importer 層加上 per-archive 鎖。同一個歸檔不會
+  被兩個 job 同時匯入(兩個瀏覽器分頁、排程 + 手動點按、CLI + Web UI)。
+  衝突會立即失敗並顯示明確訊息;鎖會在 importer 的 `finally` 區塊
+  自動釋放。
+- **通知失敗不再被吞掉** — `notify_*` 例外現在會記錄為 warning 並寫進
+  job 的 `errors[]`,不再被 `try / except: pass` 默默吞掉。
+
+### 效能
+
+- **`glogarch verify --workers N`** — 平行 SHA256 驗證,N 個 worker
+  thread。磁碟 I/O bound,thread 模式即可。`--workers 1`(預設)維持
+  原本的循序行為。
+- **`field_schema` 欄位自動壓縮** — 單一歸檔的 field schema JSON 超過
+  4 KiB 時改以 `zlib:` + base64 儲存,讀取時透過
+  `ArchiveDB.decompress_schema()` 自動解壓。讓欄位數很多的歸檔不會把
+  metadata DB 撐肥。
+
+### 文件
+
+- **DST 與 APScheduler**:APScheduler 依系統時區運作;像 `0 3 * * *`
+  這種 cron 在日光節約時間切換日可能會跑兩次或被跳過。需要絕對時間
+  保證的使用者請改用 UTC cron。
+- **bulk 匯入後的 `gl2_processing_timestamp` / `gl2_remote_ip`**:bulk
+  模式跳過 Graylog 的處理鏈路,所以這些欄位反映的是「來源叢集」原本
+  的處理時間,不會在匯入時被改寫。這是設計決策 — bulk 模式就是要
+  保留來源叢集的歷程。
+- **單租戶**:jt-glogarch 為單租戶設計。metadata DB 與 Web UI 都沒有
+  per-user 的資料隔離。
+- **Web UI 會覆寫手動修改的 config**:從 Web UI 儲存任何設定都會以
+  記憶體中的 `Settings` 物件重寫 `config.yaml`,在頁面載入後到儲存
+  之間做的手動編輯會被覆蓋。需要批次/自動化變更請直接編輯
+  `config.yaml` 並重啟服務。
+- **IndexSet 名稱衝突**:`find_or_create_index_set` 是以 `index_prefix`
+  查詢而非 title。兩個呼叫端搶建同一個 prefix 時,後到者會直接重用
+  前者建立的 index set(API 在伺服器端會強制 prefix 唯一)。
+
+## [1.3.1] - 2026-04-10
+
+### 修正 — Bulk 模式匯入後在 Graylog UI 上看不到資料
+
+v1.3.0 bulk 模式端對端測試發現,匯入的訊息確實有寫進 OpenSearch 但
+**在 Graylog UI 上搜尋不到**。原因:Graylog 搜尋會以 `streams` → index sets
+做過濾,而我們的訊息 `streams` 欄位是來源 cluster 的舊 stream UUIDs,
+目標 cluster 不認得。沒有目標 stream 綁到 bulk index set,Graylog 完全
+不會去 query `jt_restored_*` indices。
+
+- **`PreflightChecker.find_or_create_stream()`** — 新方法,透過
+  `POST /api/streams` 建立綁到 bulk index set 的 Graylog stream(並 resume)。
+  Bulk preflight 會在建完 index set 後立刻建這個 stream。
+- **Graylog 6 + 7 雙 API 支援** — Stream 建立 API schema 在 Graylog 6 跟 7
+  之間有差異:
+  - Graylog 7: `CreateEntityRequest_CreateStreamRequest`
+    → `{"entity": {<config>}, "share_request": null}`
+  - Graylog 6: `UnwrappedCreateEntityRequest_CreateStreamRequest`
+    → `{<config>, "share_request": null}`(平級 sibling)
+
+  程式先試 wrapped 版本,4xx 就退一步試 flat 版本。兩個版本都端對端
+  驗證通過。
+- **`BulkImporter.target_stream_id`** — 新屬性,由 importer 從 preflight
+  result 設定。每筆 doc 在 bulk write 之前會把 `streams` 欄位 rewrite 成
+  `[target_stream_id]`,蓋掉來源 cluster 的舊 UUIDs。Graylog 搜尋現在
+  會正確路由到新 stream → 新 index set → `jt_restored_*` indices。
+- **完成後通知** — bulk 匯入成功會在 `jobs.error_message` 寫一行
+  「去哪找你的資料」訊息。CLI 用青色 ⓘ 印出;Web UI 在作業歷程顯示
+  tooltip;進行中的匯入對話框也會在完成時用 info box 顯示。
+- **`ImportResult.notices`** — 新欄位,放非錯誤的資訊類訊息。
+- **SSE `done` 事件原本沒帶 `error_message`** — `watchJob` 在 done 事件
+  收到時會額外 fetch 一次完整 job record,讓完成後的 notice 能在 UI 上
+  顯示。
+
+### 修正 — Modal 顯示問題
+
+- **Modal 太高超出視窗** — `.modal-card` 加上 `max-height: 90vh` +
+  `overflow-y: auto`,匯入對話框內容過高時會在 modal 內部 scroll,
+  不會超出視窗上下緣。
+- **模式選擇卡文字字字換行** — radio 卡片寬度不夠塞原本的標籤。
+  縮短 label(`GELF (Graylog Pipeline)` → `GELF`、
+  `OpenSearch Bulk (~5-10x)` → `OpenSearch Bulk`),內 div 加
+  `min-width: 0` + `overflow-wrap: break-word`,modal 寬度從 420 調到 460px。
+- **匯入完成後 form 還在顯示** — `watchJob` 完成 callback 原本把
+  `import-modal-form` display 改回 `block`,讓表單欄位跟完成的進度條疊
+  在一起。現在完成後 form 保持隱藏,使用者點 modal 外面 dismiss。
+
+### 修正 — 修改 static 檔案後 `pip install` 沒生效
+
+修改 `web/static/js/*.js` 或 `web/static/css/*.css` 時,FastAPI 的
+StaticFiles mount 是從**安裝後的 package** 路徑
+`/usr/local/lib/python3.10/dist-packages/glogarch/web/static/` 服務,
+不是 `/opt/jt-glogarch/glogarch/web/static/`。只 rsync static 檔案到 /opt
+是不夠的 — 必須再跑一次 `pip install --force-reinstall` 才會更新。
+已記錄在 CLAUDE.md。
+
+### 變更 — 台灣用語清理
+
+- `推薦` → `建議`(i18n bulk_dedup_id、README-zh_TW)
+- `孤兒檔案` → `孤立檔案`(README-zh_TW)
+- 移除所有「v1.1+ 歸檔」/「v1.0 歸檔」的版本歷史措辭(從使用者文件
+  與程式註解),因為 v1.3.0 是第一次公開發行。
+- 從 README 移除過時的 SSH journal 監控引用 — 只剩 Graylog API journal
+  監控。
+
+### 新增 — README 語言切換連結
+
+`README.md` 跟 `README-zh_TW.md` 兩個檔案頂部都加上語言切換列:
+`**Language**: **English** | [繁體中文](README-zh_TW.md)`(中文版鏡像同樣)。
+GitHub 渲染時會用相對連結讓兩份 README 互相切換。
+
+### 新增 — 匯出時保留 `gl2_message_id`
+
+兩個 exporter 都保留 `gl2_message_id`(用於 bulk 匯入去重);其他
+`gl2_*` 欄位仍會被剝除。GELF 匯入路徑不受影響,因為 Graylog 收到時會
+重新生成所有 `gl2_*`。
+
 ## [1.3.0] - 2026-04-09
 
 ### 新增 — OpenSearch Bulk 匯入模式
@@ -47,18 +349,14 @@ jt-glogarch 所有重要變更皆記錄於此檔案。
 - **權衡點清楚記錄** — bulk mode 跳過所有 Graylog 處理(Pipeline、
   Extractors、Stream routing、Alerts)。只適合「歷史資料原樣還原」場景。
 
-### 新增 — 匯出時保留 gl2_message_id(歸檔格式 v1.1)
+### 新增 — 匯出時保留 gl2_message_id
 
-為了讓 bulk 匯入能做精準去重,兩個 exporter 都改為**保留** `gl2_message_id`
-欄位,而不是跟其他 `gl2_*` 一起被剝除。其他 `gl2_*` 欄位
-(`gl2_source_input`、`gl2_processing_timestamp` 等)仍會被剝除,因為它們
-指向來源 cluster 的節點/輸入,在目標 cluster 不存在。
+為了讓 bulk 匯入能做精準去重,兩個 exporter 都會**保留** `gl2_message_id`
+欄位。其他 `gl2_*` 欄位(`gl2_source_input`、`gl2_processing_timestamp` 等)
+仍會被剝除,因為它們指向來源 cluster 的節點/輸入,在目標 cluster 不存在。
 
 - **`opensearch/client.py`** — `iter_index_docs` 保留 `gl2_message_id`
 - **`graylog/search.py`** — `_extract_messages` 保留 `gl2_message_id`
-- **`ArchiveMetadata.version`** 從 `"1.0"` 升到 `"1.1"` 標記格式變更。
-  舊版(v1.0)歸檔仍可正常透過 GELF 匯入;v1.0 歸檔做 bulk 匯入時退化
-  為「不去重」(自動生成 `_id`)。
 - GELF 匯入路徑不受影響 — Graylog 收到訊息後會自己重新生成所有
   `gl2_*` 欄位,包含全新的 `gl2_message_id`。
 

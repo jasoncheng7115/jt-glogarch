@@ -25,10 +25,16 @@ STATIC_DIR = WEB_DIR / "static"
 
 
 class APIAuthMiddleware(BaseHTTPMiddleware):
-    """Protect /api/* endpoints — require session authentication."""
+    """Protect /api/* endpoints — require session authentication.
+
+    /api/health is exempt so external monitoring tools (Prometheus blackbox,
+    k8s probes, Uptime Kuma) can poll it without credentials.
+    """
+
+    PUBLIC_API_PATHS = {"/api/health"}
 
     async def dispatch(self, request: Request, call_next):
-        if request.url.path.startswith("/api/"):
+        if request.url.path.startswith("/api/") and request.url.path not in self.PUBLIC_API_PATHS:
             if not request.session.get("authenticated", False):
                 return JSONResponse({"error": "Not authenticated"}, status_code=401)
         return await call_next(request)
@@ -71,7 +77,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="jt-glogarch",
         description="Graylog Open Archive",
-        version="1.3.0",
+        version="1.3.1",
         lifespan=lifespan,
     )
 

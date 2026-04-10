@@ -13,11 +13,12 @@ Trade-offs vs GELF import:
     + No alert / pipeline / extractor side effects
     - Skips ALL Graylog processing rules (pipelines, extractors, stream routing)
     - Requires direct OpenSearch credentials in addition to Graylog API
-    - `gl2_*` fields (other than gl2_message_id from v1.1+ archives) are missing
+    - Most `gl2_*` fields are stripped at archive time (gl2_message_id is
+      preserved for dedup purposes)
 
 For zero-loss compliance, BulkImporter:
-    1. Uses preserved `gl2_message_id` (v1.1+ archives) as the OpenSearch _id
-       so re-imports overwrite instead of duplicate.
+    1. Uses the preserved `gl2_message_id` as the OpenSearch _id so re-imports
+       overwrite instead of duplicate.
     2. Adds a `_jt_glogarch_imported_at` marker field for traceability.
     3. Reads per-document errors from _bulk response and reports them as
        Compliance violations in the job result.
@@ -59,7 +60,7 @@ class BulkImporter:
 
     # OpenSearch typically accepts up to ~100MB bulk requests; we keep ours
     # well under that to leave headroom for large messages.
-    DEFAULT_BATCH_DOCS = 5000
+    DEFAULT_BATCH_DOCS = 10000
     DEFAULT_BATCH_BYTES_LIMIT = 50 * 1024 * 1024  # 50 MB
 
     def __init__(
@@ -83,6 +84,13 @@ class BulkImporter:
         self.marker_field = marker_field
         self.marker_value = marker_value or datetime.utcnow().isoformat() + "Z"
         self.verify_tls = verify_tls
+        # If set, BulkImporter overwrites each doc's `streams` field with this
+        # ID. Required for the doc to be searchable via Graylog UI: Graylog
+        # Search routes via streams → index sets, and the source-archive
+        # `streams` array contains UUIDs from the source cluster that don't
+        # exist on the target. Preflight creates a target stream bound to the
+        # bulk target index set and passes its ID here.
+        self.target_stream_id: str = ""
 
     def _client(self) -> httpx.AsyncClient:
         auth = None
@@ -95,18 +103,22 @@ class BulkImporter:
             headers={"Content-Type": "application/x-ndjson"},
         )
 
-    @staticmethod
-    def _index_name_for_doc(doc: dict, target_pattern: str) -> str:
-        """Build the actual index name for a doc.
-        Uses doc's timestamp to create a daily index under the pattern.
+    def _index_name_for_doc(self, doc: dict, target_pattern: str) -> str:
+        """Return the index/alias the doc should be written into.
+
+        We ALWAYS write to the Graylog-managed deflector alias
+        (``<prefix>_deflector``). Do NOT use date-based indices like
+        ``<prefix>_YYYY_MM_DD`` — Graylog tracks its index set membership
+        in MongoDB by sequential index name (``<prefix>_0``, ``_1``, ...),
+        not by wildcard. Indices created outside that tracking are
+        invisible to Graylog Search even when their name matches the
+        prefix. By writing to the deflector alias OpenSearch routes our
+        bulk writes to whichever managed index Graylog has marked as
+        ``is_write_index``, so Graylog Search picks them up immediately
+        and Graylog's own SizeBased / TimeBased rotation strategy still
+        applies.
         """
-        ts = doc.get("timestamp", "")
-        if ts and len(ts) >= 10:
-            # Extract YYYY-MM-DD
-            day = ts[:10].replace("-", "_")
-        else:
-            day = datetime.utcnow().strftime("%Y_%m_%d")
-        return f"{target_pattern}_{day}"
+        return f"{target_pattern}_deflector"
 
     def _build_bulk_body(
         self, docs: list[dict]
@@ -114,11 +126,28 @@ class BulkImporter:
         """Serialize a batch of docs into NDJSON bulk format.
         Returns (body_bytes, doc_count).
         """
+        # OpenSearch reserved top-level fields. If a source archive happens to
+        # contain a field named ``_id`` / ``_type`` / ``_index`` / ``_source``
+        # / ``_routing`` (rare but possible after custom pipeline rules), the
+        # bulk request will be rejected with "Field [_id] is a metadata field
+        # and cannot be added inside a document." We strip them defensively.
+        RESERVED_OS_FIELDS = ("_id", "_index", "_source", "_type", "_routing",
+                              "_parent", "_version", "_op_type")
         lines: list[str] = []
         for doc in docs:
+            for rf in RESERVED_OS_FIELDS:
+                if rf in doc:
+                    doc.pop(rf, None)
             # Inject the marker field
             if self.marker_field:
                 doc[self.marker_field] = self.marker_value
+
+            # Rewrite streams field to point to our target stream so Graylog
+            # Search can find the doc. The source archive's streams field
+            # contains UUIDs from the SOURCE cluster's streams which don't
+            # exist on the target — Graylog filters them out.
+            if self.target_stream_id:
+                doc["streams"] = [self.target_stream_id]
 
             index_name = self._index_name_for_doc(doc, self.target_index_pattern)
 
@@ -126,11 +155,12 @@ class BulkImporter:
             action: dict = {"index": {"_index": index_name}}
 
             if self.dedup_strategy == "id":
-                # Use gl2_message_id as deterministic _id (v1.1+ archives)
+                # Use gl2_message_id as deterministic _id so re-imports
+                # overwrite instead of duplicate
                 msg_id = doc.get("gl2_message_id")
                 if msg_id:
                     action["index"]["_id"] = msg_id
-                # else: let OpenSearch auto-generate (graceful degrade for v1.0 archives)
+                # else: let OpenSearch auto-generate
 
             lines.append(json.dumps(action, ensure_ascii=False))
             lines.append(json.dumps(doc, ensure_ascii=False, default=str))
@@ -203,11 +233,25 @@ class BulkImporter:
         action.auto_create_index = false. The OpenSearch index template
         installed by preflight applies on creation, so we don't need to
         specify mappings here.
+
+        Special-case: when ``index_name`` ends with ``_deflector`` it's the
+        Graylog-managed write alias, NOT a real index — Graylog created it
+        when the index set was provisioned and it always points at the
+        current ``<prefix>_<N>`` write target. We just verify the alias
+        resolves and return without trying to PUT it (which would fail
+        with "invalid_index_name_exception").
         """
-        # HEAD first (cheap)
+        # HEAD first (cheap). For the deflector alias this also confirms
+        # Graylog has the write index ready.
         r = await client.head(f"{self.opensearch_url}/{index_name}")
         if r.status_code == 200:
             return
+        if index_name.endswith("_deflector"):
+            raise RuntimeError(
+                f"Graylog deflector alias '{index_name}' does not exist on "
+                f"OpenSearch. Preflight should have created the index set + "
+                f"initial write index — check the import set up on Graylog."
+            )
         # PUT to create
         r = await client.put(
             f"{self.opensearch_url}/{index_name}",
@@ -232,25 +276,23 @@ class BulkImporter:
         self,
         archive_paths: list[Path],
         progress_callback: Callable[[dict], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> BulkImportResult:
         """Bulk-import every archive in archive_paths."""
         result = BulkImportResult()
         start = time.time()
 
-        # Compute total messages + collect unique index names so we can
-        # pre-create them (action.auto_create_index is typically false on
-        # Graylog clusters).
+        # Compute total messages. We always write to the deflector alias
+        # (single target per pattern) so the per-doc index name walk that
+        # earlier versions did is no longer needed. Just count.
         total_msgs = 0
-        index_names: set[str] = set()
         for p in archive_paths:
             try:
                 msgs = self._read_archive(p)
                 total_msgs += len(msgs)
-                for m in msgs:
-                    if isinstance(m, dict):
-                        index_names.add(self._index_name_for_doc(m, self.target_index_pattern))
             except Exception as e:
                 log.warning("Cannot pre-count archive", path=str(p), error=str(e))
+        index_names: set[str] = {f"{self.target_index_pattern}_deflector"}
 
         if total_msgs == 0:
             log.warning("No messages to import")
@@ -278,6 +320,11 @@ class BulkImporter:
 
                 # Send in batches
                 for batch_start in range(0, len(msgs), self.batch_docs):
+                    if cancel_check and cancel_check():
+                        log.info("Bulk import cancelled by user",
+                                 sent_so_far=result.messages_sent)
+                        result.duration_sec = time.time() - start
+                        return result
                     batch = msgs[batch_start:batch_start + self.batch_docs]
                     body, count = self._build_bulk_body(batch)
                     result.bytes_sent += len(body)

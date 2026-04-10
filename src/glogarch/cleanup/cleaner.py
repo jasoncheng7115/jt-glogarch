@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
+
+# Skip files modified within this many seconds — they may still be being
+# written by an in-flight export. Prevents cleanup from racing the writer
+# and deleting a partial archive that the DB record will momentarily point at.
+RECENT_FILE_GRACE_SECONDS = 600  # 10 minutes
 
 from glogarch.archive.storage import ArchiveStorage
 from glogarch.core.config import ExportConfig, RetentionConfig
@@ -77,6 +83,19 @@ class Cleaner:
                 continue
 
             try:
+                # Race guard: never delete a file that was modified very
+                # recently — an export job may still be writing it.
+                try:
+                    mtime = os.path.getmtime(archive.file_path)
+                    if (time.time() - mtime) < RECENT_FILE_GRACE_SECONDS:
+                        log.warning(
+                            "Skipping recent file (race guard)",
+                            file_path=archive.file_path,
+                            age_seconds=int(time.time() - mtime),
+                        )
+                        continue
+                except FileNotFoundError:
+                    pass
                 self.storage.delete_archive_file(archive.file_path)
                 self.db.update_archive_status(archive.id, ArchiveStatus.DELETED)
                 result.files_deleted += 1
