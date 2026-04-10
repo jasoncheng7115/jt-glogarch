@@ -5,7 +5,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.3.1-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.4.4-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -152,6 +152,23 @@ Bilingual messages (English / Traditional Chinese).
 
 ## Architecture & How It Works
 
+### Overview
+
+```
++-----------------+     +------------------+     +------------------+
+|  Graylog Open   |     |   jt-glogarch    |     |  Graylog Open    |
+|  (Production)   |     |                  |     |  (Query / DR)    |
+|                 |     |  +------------+  |     |                  |
+|  Logs --------->|---->|  | .json.gz   |  |---->|  Restored Logs   |
+|                 | API |  | Archives   |  | GELF|                  |
+|  OpenSearch     | or  |  | + SHA256   |  |  or |  Searchable in   |
+|  Indices        | OS  |  +------------+  | Bulk|  Graylog UI      |
++-----------------+     +------------------+     +------------------+
+      Export (API          Storage + DB             Import (GELF TCP
+      or OpenSearch)       + Web UI + CLI           or OS Bulk)
+```
+
+### Internal Architecture
 
 ```
 +--------------------------------------------------------------------+
@@ -295,7 +312,7 @@ sudo bash deploy/install.sh
 sudo vi /opt/jt-glogarch/config.yaml
 
 # 4. Start the service
-sudo systemctl enable --now glogarch
+sudo systemctl enable --now jt-glogarch
 
 # 5. Open the Web UI
 echo "Open: https://$(hostname):8990"
@@ -339,9 +356,9 @@ cp /opt/jt-glogarch/deploy/config.yaml.example /opt/jt-glogarch/config.yaml
 chown jt-glogarch:jt-glogarch /opt/jt-glogarch/config.yaml
 
 # 6. Install systemd unit
-cp /opt/jt-glogarch/deploy/glogarch.service /etc/systemd/system/
+cp /opt/jt-glogarch/deploy/jt-glogarch.service /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now glogarch
+systemctl enable --now jt-glogarch
 ```
 
 
@@ -349,10 +366,10 @@ systemctl enable --now glogarch
 
 ```bash
 # Service status
-systemctl status glogarch
+systemctl status jt-glogarch
 
 # Live logs
-journalctl -u glogarch -f
+journalctl -u jt-glogarch -f
 
 # Test Web UI (should return HTTP 200)
 curl -sk https://localhost:8990/login -o /dev/null -w '%{http_code}\n'
@@ -605,7 +622,7 @@ are sent in the configured language.
 
 ![System Logs](images/syslog.png)
 
-Real-time tail of `journalctl -u glogarch` plus an audit log of user actions
+Real-time tail of `journalctl -u jt-glogarch` plus an audit log of user actions
 (login, export started, settings saved, etc.).
 
 
@@ -944,7 +961,7 @@ timedatectl
 **Set it to your local timezone:**
 ```bash
 sudo timedatectl set-timezone Asia/Taipei
-sudo systemctl restart glogarch
+sudo systemctl restart jt-glogarch
 ```
 
 After restart, the scheduler picks up the new timezone. You can verify the next

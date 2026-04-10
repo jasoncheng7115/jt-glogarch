@@ -1,0 +1,27 @@
+[Unit]
+Description=jt-glogarch - Graylog Open Archive
+Documentation=https://github.com/jasoncheng7115/jt-glogarch
+After=network.target
+
+[Service]
+Type=simple
+User=jt-glogarch
+Group=jt-glogarch
+WorkingDirectory=/opt/jt-glogarch
+ExecStart=/usr/local/bin/glogarch server
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+# Security
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/data/graylog-archives /opt/jt-glogarch
+
+[Install]
+WantedBy=multi-user.target

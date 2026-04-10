@@ -143,12 +143,12 @@ if [ -d /etc/systemd/system ]; then
     read -p "Install systemd service? [y/N] " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        cp "$INSTALL_DIR/deploy/glogarch.service" /etc/systemd/system/
+        cp "$INSTALL_DIR/deploy/jt-glogarch.service" /etc/systemd/system/
         systemctl daemon-reload
         echo "Service installed."
-        echo "  Enable:  systemctl enable --now glogarch"
-        echo "  Status:  systemctl status glogarch"
-        echo "  Logs:    journalctl -u glogarch -f"
+        echo "  Enable:  systemctl enable --now jt-glogarch"
+        echo "  Status:  systemctl status jt-glogarch"
+        echo "  Logs:    journalctl -u jt-glogarch -f"
     fi
 fi
 
@@ -159,4 +159,4 @@ echo "Next steps:"
 echo "  1. Edit $INSTALL_DIR/config.yaml with your Graylog server details"
 echo "  2. Run: glogarch status"
 echo "  3. Run: glogarch export --days 180"
-echo "  4. systemctl enable --now glogarch  (Web UI: https://$(hostname):8990)"
+echo "  4. systemctl enable --now jt-glogarch  (Web UI: https://$(hostname):8990)"

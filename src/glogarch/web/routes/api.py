@@ -1380,7 +1380,7 @@ def get_realtime_log(request: Request, lines: int = 100):
     import subprocess
     try:
         result = subprocess.run(
-            ["journalctl", "-u", "glogarch", "-n", str(min(lines, 1000)), "--no-pager"],
+            ["journalctl", "-u", "jt-glogarch", "-n", str(min(lines, 1000)), "--no-pager"],
             capture_output=True, text=True, timeout=5,
         )
         return {"lines": result.stdout}

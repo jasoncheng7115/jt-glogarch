@@ -589,7 +589,7 @@ hourly archives spanning 2 days.
 - README updated with installation SOP improvements
 - install.sh now cleans `build/` cache before pip install
 - Deployed and verified on fresh Ubuntu 22.04 LXC
-- Repository URL corrected throughout README/CHANGELOG/`glogarch.service` to `https://github.com/jasoncheng7115/jt-glogarch`
+- Repository URL corrected throughout README/CHANGELOG/`jt-glogarch.service` to `https://github.com/jasoncheng7115/jt-glogarch`
 - New FAQ entry: scheduled job didn't run at expected time → check that the system timezone matches the timezone you wrote your cron expression in (APScheduler inherits the system timezone)
 
 ## [1.0.0] - 2026-04-06
