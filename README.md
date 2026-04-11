@@ -1,4 +1,4 @@
-# jt-glogarch
+# jt-glogarch v1.5.0
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)
 
