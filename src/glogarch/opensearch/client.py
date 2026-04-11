@@ -42,26 +42,50 @@ class OpenSearchClient:
         await self.close()
 
     async def _request(self, method: str, path: str, **kwargs) -> dict:
-        """Send request with automatic failover to next host on connection error."""
-        last_error = None
+        """Send request with automatic failover and retry on transient errors.
+
+        - ConnectError / ConnectTimeout → try next host immediately
+        - HTTP 500 / 502 / 503 / 429   → retry same host with backoff (up to 3×)
+        - Other HTTP errors             → raise immediately
+        """
+        import asyncio as _aio
+        last_error: Exception | None = None
+        max_retries = 3
         for attempt in range(len(self._hosts)):
             host_idx = (self._active_host + attempt) % len(self._hosts)
             url = f"{self._hosts[host_idx]}{path}"
-            try:
-                resp = await self._client.request(method, url, **kwargs)
-                resp.raise_for_status()
-                # Mark this host as active (it worked)
-                if host_idx != self._active_host:
-                    log.info("Failover to host", host=self._hosts[host_idx])
-                    self._active_host = host_idx
-                return resp.json()
-            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
-                last_error = e
-                log.warning("Host unreachable, trying next",
-                            host=self._hosts[host_idx], error=str(e))
-                continue
-        # All hosts failed
-        raise last_error  # type: ignore[misc]
+            for retry in range(max_retries):
+                try:
+                    resp = await self._client.request(method, url, **kwargs)
+                    if resp.status_code in (429, 500, 502, 503):
+                        wait = 2 ** retry
+                        log.warning("Transient error, retrying",
+                                    host=self._hosts[host_idx],
+                                    status=resp.status_code,
+                                    retry=retry + 1, wait=wait)
+                        await _aio.sleep(wait)
+                        continue
+                    resp.raise_for_status()
+                    if host_idx != self._active_host:
+                        log.info("Failover to host", host=self._hosts[host_idx])
+                        self._active_host = host_idx
+                    return resp.json()
+                except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                    last_error = e
+                    log.warning("Host unreachable, trying next",
+                                host=self._hosts[host_idx], error=str(e))
+                    break  # try next host
+                except httpx.HTTPStatusError as e:
+                    raise  # non-transient HTTP error
+            else:
+                # Retries exhausted on this host — raise last response
+                last_error = httpx.HTTPStatusError(
+                    f"Retries exhausted: HTTP {resp.status_code}",
+                    request=resp.request, response=resp)
+                break
+        if last_error:
+            raise last_error
+        raise RuntimeError("No hosts configured")
 
     async def get(self, path: str, **kwargs) -> dict:
         return await self._request("GET", path, **kwargs)
@@ -156,11 +180,16 @@ class OpenSearchClient:
 
         No depth limit — can handle any number of documents.
         """
+        # Use _doc as tiebreaker instead of _id. Sorting by _id forces
+        # OpenSearch to load the entire _id field into fielddata (in-heap),
+        # which blows the circuit breaker on large indices (e.g. 680K docs
+        # → 1.6 GB fielddata > 1.5 GB limit → circuit_breaking_exception).
+        # _doc is an implicit sort by index order — zero-cost, no fielddata.
         body: dict[str, Any] = {
             "size": batch_size,
             "sort": [
                 {"timestamp": "asc"},
-                {"_id": "asc"},
+                {"_doc": "asc"},
             ],
         }
 

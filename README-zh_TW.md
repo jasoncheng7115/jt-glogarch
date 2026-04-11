@@ -5,7 +5,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.4.4-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.5.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -153,18 +153,20 @@ Telegram • Discord • Slack • Microsoft Teams • Nextcloud Talk • Email 
 ### 整體流程
 
 ```
-+-----------------+     +------------------+     +------------------+
-|  Graylog Open   |     |   jt-glogarch    |     |  Graylog Open    |
-|  (正式環境)     |     |                  |     |  (查詢 / DR)     |
-|                 |     |  +------------+  |     |                  |
-|  Logs --------->|---->|  | .json.gz   |  |---->|  還原的 Logs     |
-|                 | API |  | 歸檔檔案   |  | GELF|                  |
-|  OpenSearch     | 或  |  | + SHA256   |  | 或  |  可在 Graylog    |
-|  索引           | OS  |  +------------+  | Bulk|  UI 上搜尋       |
-+-----------------+     +------------------+     +------------------+
-     匯出 (API 或          儲存 + DB                匯入 (GELF TCP
-     OpenSearch 直連)      + Web UI + CLI           或 OpenSearch Bulk)
++-----------------+     +------------------+     +-----------------+
+|  Graylog Open   |     |   jt-glogarch    |     |  Graylog Open   |
+|  (Production)   |     |                  |     |  (Query / DR)   |
+|                 |     |  +------------+  |     |                 |
+|  Logs --------->|---->|  | .json.gz   |  |---->|  Restored Logs  |
+|                 | API |  | Archives   |  | GELF|                 |
+|  OpenSearch     | or  |  | + SHA256   |  |  or |  Searchable in  |
+|  Indices        | OS  |  +------------+  | Bulk|  Graylog UI     |
++-----------------+     +------------------+     +-----------------+
 ```
+
+> **正式環境** Graylog 透過 API 或 OpenSearch 匯出 →
+> **jt-glogarch** 壓縮歸檔（`.json.gz` + SHA256）→
+> **查詢/DR 環境** Graylog 透過 GELF 或 OpenSearch Bulk 匯入還原
 
 ### 內部架構
 

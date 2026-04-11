@@ -172,8 +172,8 @@ def load_settings(config_path: str | Path | None = None) -> Settings:
     search_paths = [
         config_path,
         Path("config.yaml"),
-        Path.home() / ".glogarch" / "config.yaml",
-        Path("/etc/glogarch/config.yaml"),
+        Path.home() / ".jt-glogarch" / "config.yaml",
+        Path("/etc/jt-glogarch/config.yaml"),
     ]
 
     for p in search_paths:

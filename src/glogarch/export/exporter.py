@@ -29,6 +29,7 @@ from glogarch.graylog.client import GraylogClient
 from glogarch.graylog.search import GraylogSearch
 from glogarch.graylog.system import SystemMonitor
 from glogarch.ratelimit.limiter import RateLimiter
+from glogarch import __version__
 from glogarch.utils.logging import get_logger
 
 log = get_logger("export")
@@ -329,7 +330,7 @@ class Exporter:
             time_to=chunk_to.strftime("%Y-%m-%dT%H:%M:%SZ"),
             query=query,
             exported_at=datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            glogarch_version="1.3.1",
+            glogarch_version=__version__,
         )
 
         path = self.storage.get_archive_path(

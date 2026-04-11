@@ -2,6 +2,55 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.5.0] - 2026-04-11
+
+### Fixed — OpenSearch `_id` fielddata circuit breaker (critical)
+
+Scheduled OpenSearch exports were failing on large indices (650K+ docs)
+with `circuit_breaking_exception: [fielddata] Data too large, data for
+[_id] would be [1.6gb], which is larger than the limit of [1.5gb]`.
+Three indices (graylog_489, 490, 492) failed consistently every night.
+
+Root cause: `search_after` pagination used `{"_id": "asc"}` as
+tiebreaker sort. Sorting by `_id` forces OpenSearch to load the entire
+field into heap-resident fielddata — 680K doc IDs consumed 1.6 GB,
+exceeding the default circuit breaker limit.
+
+Fix: replaced `_id` tiebreaker with `_doc` (index insertion order).
+Zero-cost, no fielddata needed. Verified: graylog_495 (680K docs)
+now exports in 3m53s with zero errors.
+
+### Fixed — OpenSearch transient error retry
+
+`OpenSearchClient._request()` previously only retried on connection
+errors (ConnectError / ConnectTimeout). HTTP 500, 502, 503, and 429
+responses raised immediately without retry or host failover.
+
+Now: transient HTTP errors trigger exponential backoff retry (up to
+3 attempts with 1s/2s/4s waits) before falling back to the next host.
+Non-transient errors (4xx) still raise immediately.
+
+### Changed — Notification format overhaul
+
+- Removed emoji from body lines — one status emoji on the title line
+  only (✅ success, ⚠️ partial errors, ❌ failure)
+- Each stat on its own line with clean `label: value` format
+- Long URLs in error messages auto-shortened to `<url>` to prevent
+  line-breaking in chat clients
+- Import notifications now include duration
+- Title examples: `✅ 匯出成功`, `⚠️ 匯出完成（有錯誤）`, `❌ 驗證失敗`
+
+### Fixed — Document / implementation consistency (reported by reviewer)
+
+- **FastAPI `version` was hardcoded `"1.3.1"`** in `web/app.py` instead of
+  reading `glogarch.__version__`. Now uses the single source of truth.
+- **Export metadata `glogarch_version` was hardcoded `"1.3.1"`** in both
+  `export/exporter.py` and `opensearch/exporter.py`. Fixed to read
+  `__version__` so archive files always carry the correct version.
+- **Config search path `/etc/glogarch/`** did not match the install script's
+  `CONFIG_DIR="/etc/jt-glogarch"`. Renamed to `/etc/jt-glogarch/` (and
+  home dir fallback to `~/.jt-glogarch/`).
+
 ## [1.4.4] - 2026-04-10
 
 ### Changed — Job History "Error" column → "Note"

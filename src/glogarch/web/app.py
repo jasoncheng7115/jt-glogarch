@@ -74,10 +74,11 @@ def create_app() -> FastAPI:
         scheduler.stop()
         db.close()
 
+    from glogarch import __version__
     app = FastAPI(
         title="jt-glogarch",
         description="Graylog Open Archive",
-        version="1.3.1",
+        version=__version__,
         lifespan=lifespan,
     )
 

@@ -2,6 +2,53 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.5.0] - 2026-04-11
+
+### 修正 — OpenSearch `_id` fielddata circuit breaker（嚴重）
+
+排程 OpenSearch 匯出在大 index（650K+ docs）上持續失敗：
+`circuit_breaking_exception: [fielddata] Data too large, data for [_id] would be [1.6gb], which is larger than the limit of [1.5gb]`。三個
+index（graylog_489、490、492）每晚都失敗。
+
+根因：`search_after` 分頁用 `{"_id": "asc"}` 做 tiebreaker sort。
+以 `_id` 排序會強迫 OpenSearch 把整個欄位載入 heap-resident
+fielddata — 680K 筆文件 ID 佔了 1.6 GB，超過 circuit breaker 預設
+限制。
+
+修法：tiebreaker 從 `_id` 改成 `_doc`（index 寫入順序），零成本，
+不需要 fielddata。驗證：graylog_495（680K docs）現在 3m53s 匯出
+完成，零錯誤。
+
+### 修正 — OpenSearch 暫態錯誤 retry
+
+`OpenSearchClient._request()` 之前只在連線錯誤（ConnectError /
+ConnectTimeout）時重試。HTTP 500、502、503、429 回應直接 raise，
+不會重試也不會 failover 到下一台 host。
+
+修法：暫態 HTTP 錯誤會做 exponential backoff retry（最多 3 次，
+間隔 1s/2s/4s），耗盡後才 failover 到下一台。非暫態錯誤（4xx）
+仍然直接 raise。
+
+### 變更 — 通知格式全面改版
+
+- 內文行拿掉 emoji — 只在標題行放一個狀態 emoji
+  （✅ 成功、⚠️ 部分錯誤、❌ 失敗）
+- 每個統計值獨立一行，乾淨的 `標籤: 值` 格式
+- 錯誤訊息中的長 URL 自動縮為 `<url>`，避免在聊天軟體中斷行
+- 匯入通知加上耗時
+- 標題範例：`✅ 匯出成功`、`⚠️ 匯出完成（有錯誤）`、`❌ 驗證失敗`
+
+### 修正 — 文件與實作一致性（reviewer 回報）
+
+- **FastAPI `version` 硬寫 `"1.3.1"`**（`web/app.py`）而非讀
+  `glogarch.__version__`。改為讀取唯一版本來源。
+- **匯出 metadata 的 `glogarch_version` 硬寫 `"1.3.1"`**（`export/exporter.py`
+  與 `opensearch/exporter.py`）。改為讀 `__version__`，讓歸檔檔案
+  永遠帶正確版號。
+- **Config 搜尋路徑 `/etc/glogarch/`** 與安裝腳本的
+  `CONFIG_DIR="/etc/jt-glogarch"` 不一致。改為 `/etc/jt-glogarch/`
+  （home 目錄 fallback 也改為 `~/.jt-glogarch/`）。
+
 ## [1.4.4] - 2026-04-10
 
 ### 變更 — 作業歷程「錯誤」欄改為「備註」

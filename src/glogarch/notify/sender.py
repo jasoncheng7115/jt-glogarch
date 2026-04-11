@@ -247,55 +247,59 @@ async def _send_email(cfg, title: str, message: str, ts: str) -> dict:
 
 _MSG = {
     "en": {
-        "export_ok": "Export Complete",
-        "export_err": "Export Completed with Errors",
-        "export_body": ("✓ Chunks exported: {chunks}\n"
-                        "⊘ Chunks skipped: {skipped}\n"
-                        "📊 Records: {records}\n"
-                        "💾 Files written: {files}\n"
-                        "📦 Original size: {original}\n"
-                        "🗜 Compressed: {compressed}\n"
-                        "⏱ Duration: {duration}\n"
-                        "🔧 Mode: {mode}"),
-        "import_ok": "Import Complete",
-        "import_err": "Import Completed with Errors",
-        "import_body": ("📁 Archives: {archives}\n"
-                        "📊 Records sent: {records}\n"
-                        "⏱ Duration: {duration}"),
-        "cleanup_ok": "Cleanup Complete",
-        "cleanup_body": "🗑 Files deleted: {deleted}\n💾 Space freed: {freed}",
-        "verify_ok": "Verification Complete",
-        "verify_body": "✓ Valid: {valid}\n📁 Total checked: {total}",
-        "verify_fail": "Verification Failed",
-        "corrupted": "✗ Corrupted: {n}",
-        "missing": "✗ Missing: {n}",
-        "error_title": "{op} Error",
+        "export_ok": "✅ Export Complete",
+        "export_err": "⚠️ Export Completed with Errors",
+        "export_body": ("Exported: {chunks} chunks\n"
+                        "Skipped: {skipped}\n"
+                        "Records: {records}\n"
+                        "Files: {files}\n"
+                        "Original: {original}\n"
+                        "Compressed: {compressed}\n"
+                        "Duration: {duration}\n"
+                        "Mode: {mode}"),
+        "import_ok": "✅ Import Complete",
+        "import_err": "⚠️ Import Completed with Errors",
+        "import_body": ("Archives: {archives}\n"
+                        "Records: {records}\n"
+                        "Duration: {duration}"),
+        "cleanup_ok": "✅ Cleanup Complete",
+        "cleanup_body": ("Deleted: {deleted} files\n"
+                         "Freed: {freed}"),
+        "verify_ok": "✅ Verification Complete",
+        "verify_body": ("Valid: {valid}\n"
+                        "Checked: {total}"),
+        "verify_fail": "❌ Verification Failed",
+        "corrupted": "Corrupted: {n}",
+        "missing": "Missing: {n}",
+        "error_title": "❌ {op} Error",
         "errors": "Errors: {n}",
     },
     "zh-TW": {
-        "export_ok": "匯出完成",
-        "export_err": "匯出完成（有錯誤）",
-        "export_body": ("✓ 已匯出區段: {chunks}\n"
-                        "⊘ 已略過區段: {skipped}\n"
-                        "📊 記錄數: {records}\n"
-                        "💾 寫入檔案: {files}\n"
-                        "📦 原始大小: {original}\n"
-                        "🗜 壓縮後: {compressed}\n"
-                        "⏱ 耗時: {duration}\n"
-                        "🔧 模式: {mode}"),
-        "import_ok": "匯入完成",
-        "import_err": "匯入完成（有錯誤）",
-        "import_body": ("📁 歸檔數: {archives}\n"
-                        "📊 已發送記錄: {records}\n"
-                        "⏱ 耗時: {duration}"),
-        "cleanup_ok": "清理完成",
-        "cleanup_body": "🗑 已刪除檔案: {deleted}\n💾 釋放空間: {freed}",
-        "verify_ok": "驗證完成",
-        "verify_body": "✓ 通過: {valid}\n📁 總檢查: {total}",
-        "verify_fail": "驗證失敗",
-        "corrupted": "✗ 損壞: {n}",
-        "missing": "✗ 遺失: {n}",
-        "error_title": "{op} 錯誤",
+        "export_ok": "✅ 匯出成功",
+        "export_err": "⚠️ 匯出完成（有錯誤）",
+        "export_body": ("匯出區段: {chunks}\n"
+                        "略過區段: {skipped}\n"
+                        "記錄數: {records}\n"
+                        "寫入檔案: {files}\n"
+                        "原始大小: {original}\n"
+                        "壓縮後: {compressed}\n"
+                        "耗時: {duration}\n"
+                        "模式: {mode}"),
+        "import_ok": "✅ 匯入成功",
+        "import_err": "⚠️ 匯入完成（有錯誤）",
+        "import_body": ("歸檔數: {archives}\n"
+                        "記錄數: {records}\n"
+                        "耗時: {duration}"),
+        "cleanup_ok": "✅ 清理成功",
+        "cleanup_body": ("刪除檔案: {deleted}\n"
+                         "釋放空間: {freed}"),
+        "verify_ok": "✅ 驗證成功",
+        "verify_body": ("通過: {valid}\n"
+                        "總檢查: {total}"),
+        "verify_fail": "❌ 驗證失敗",
+        "corrupted": "損壞: {n}",
+        "missing": "遺失: {n}",
+        "error_title": "❌ {op} 失敗",
         "errors": "錯誤: {n}",
     },
 }
@@ -342,18 +346,31 @@ async def notify_export_complete(
     if errors:
         lines.append(_t("errors", n=len(errors)))
         for e in errors[:3]:
-            lines.append(f"  - {e[:100]}")
+            # Strip long URLs from error strings to keep notifications compact
+            import re as _re
+            short = _re.sub(r"https?://\S+", "<url>", str(e))
+            lines.append(f"  - {short[:80]}")
     event = NotifyEvent.ERROR if errors else NotifyEvent.EXPORT_COMPLETE
     await send_notification(event, title, "\n".join(lines))
 
 
-async def notify_import_complete(archives: int, records: int, errors: list[str]):
+async def notify_import_complete(archives: int, records: int, errors: list[str],
+                                 duration_seconds: float = 0):
     title = _t("import_err") if errors else _t("import_ok")
-    lines = [_t("import_body", archives=archives, records=f"{records:,}")]
+    def _fmt_dur(s):
+        if s < 60: return f"{int(s)}s"
+        m = int(s // 60)
+        if m < 60: return f"{m}m{int(s % 60)}s"
+        h = m // 60
+        return f"{h}h{m % 60}m"
+    lines = [_t("import_body", archives=archives, records=f"{records:,}",
+                 duration=_fmt_dur(duration_seconds))]
     if errors:
         lines.append(_t("errors", n=len(errors)))
         for e in errors[:3]:
-            lines.append(f"  - {e[:100]}")
+            import re as _re
+            short = _re.sub(r"https?://\S+", "<url>", str(e))
+            lines.append(f"  - {short[:80]}")
     event = NotifyEvent.ERROR if errors else NotifyEvent.IMPORT_COMPLETE
     await send_notification(event, title, "\n".join(lines))
 

@@ -21,6 +21,7 @@ from glogarch.export.exporter import ExportResult, _ensure_naive
 from glogarch.graylog.client import GraylogClient
 from glogarch.opensearch.client import OpenSearchClient
 from glogarch.ratelimit.limiter import RateLimiter
+from glogarch import __version__
 from glogarch.utils.logging import get_logger
 
 log = get_logger("opensearch.export")
@@ -395,7 +396,7 @@ class OpenSearchExporter:
                             time_to=c_to.strftime("%Y-%m-%dT%H:%M:%SZ"),
                             query="*",
                             exported_at=datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                            glogarch_version="1.3.1",
+                            glogarch_version=__version__,
                         )
                         path = self.storage.get_archive_path(
                             self.server_config.name, index_name, c_from, c_to, part=1,
