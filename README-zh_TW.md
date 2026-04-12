@@ -1,11 +1,11 @@
-# jt-glogarch v1.5.0
+# jt-glogarch v1.5.1
 
 **語言**: [English](README.md) | **繁體中文**
 
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.5.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.5.1-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。

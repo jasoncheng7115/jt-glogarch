@@ -93,21 +93,38 @@ CREATE INDEX IF NOT EXISTS idx_audit_timestamp
 
 
 def _dt_to_str(dt: datetime | None) -> str | None:
+    """Convert datetime to a naive-UTC ISO string for DB storage.
+
+    If the input is timezone-aware, it is first converted to UTC
+    (``astimezone(timezone.utc)``) before stripping tzinfo. This
+    ensures the absolute point in time is preserved regardless of the
+    source timezone — a previous implementation simply did
+    ``replace(tzinfo=None)`` which silently stored local-time values
+    as if they were UTC.
+    """
     if dt is None:
         return None
-    # Strip timezone info to store consistent naive UTC
+    from datetime import timezone
     if dt.tzinfo is not None:
-        dt = dt.replace(tzinfo=None)
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _str_to_dt(s: str | None) -> datetime | None:
+    """Parse an ISO string from the DB back to a naive-UTC datetime.
+
+    The DB stores all timestamps as naive UTC with a ``Z`` suffix.
+    This function strips timezone info after parsing so callers always
+    get a naive ``datetime`` representing UTC — consistent with
+    ``_dt_to_str``.
+    """
     if not s:
         return None
-    # Always return naive UTC datetime for consistent comparison
+    from datetime import timezone
     dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
     if dt.tzinfo is not None:
-        dt = dt.replace(tzinfo=None)
+        # Convert to UTC first (should already be, but be safe), then strip
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
 
 

@@ -1,11 +1,11 @@
-# jt-glogarch v1.5.0
+# jt-glogarch v1.5.1
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)
 
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.5.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.5.1-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.

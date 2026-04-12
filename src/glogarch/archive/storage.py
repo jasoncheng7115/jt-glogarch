@@ -44,7 +44,15 @@ class ArchiveStorage:
     def get_archive_dir(
         self, server_name: str, stream_name: str | None, time_from: datetime
     ) -> Path:
-        """Get the directory path for an archive file."""
+        """Get the directory path for an archive file.
+
+        If any directory in the path exists but is not writable by the
+        current process (e.g. created by a previous ``root`` run), and
+        the current process IS root, it will be ``chown``-ed to the
+        ``jt-glogarch`` user automatically. This prevents the common
+        mistake of running ``glogarch export`` as root and then having
+        the scheduled ``jt-glogarch`` service fail on subsequent exports.
+        """
         stream = stream_name or "all"
         # Sanitize names for filesystem
         stream = stream.replace("/", "_").replace(" ", "_")
@@ -56,8 +64,55 @@ class ArchiveStorage:
             / time_from.strftime("%m")
             / time_from.strftime("%d")
         )
-        d.mkdir(parents=True, exist_ok=True)
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            # A parent directory may be owned by root. Try to fix it.
+            self._fix_dir_ownership(self.base_path, d)
+            d.mkdir(parents=True, exist_ok=True)
         return d
+
+    @staticmethod
+    def _fix_dir_ownership(base_path: Path, target: Path) -> None:
+        """Chown any non-``jt-glogarch``-owned directory between
+        ``base_path`` and ``target`` (inclusive). Only acts on
+        directories under ``base_path`` — never touches system dirs.
+        Only works when running as root.
+        """
+        import os
+        import pwd
+
+        if os.getuid() != 0:
+            raise PermissionError(
+                f"Cannot create archive directory '{target}': permission denied. "
+                f"A parent directory is not writable by the current user. "
+                f"Fix with: chown -R jt-glogarch:jt-glogarch {base_path}"
+            )
+
+        try:
+            pw = pwd.getpwnam("jt-glogarch")
+        except KeyError:
+            raise PermissionError(
+                f"Cannot fix ownership: user 'jt-glogarch' does not exist"
+            )
+
+        # Only walk directories under base_path — never touch /tmp, /data, etc.
+        try:
+            rel = target.relative_to(base_path)
+        except ValueError:
+            return
+        cumulative = base_path
+        for part in rel.parts:
+            cumulative = cumulative / part
+            if cumulative.exists() and cumulative.stat().st_uid != pw.pw_uid:
+                log.warning("Fixing directory ownership",
+                            path=str(cumulative), new_owner="jt-glogarch")
+                os.chown(cumulative, pw.pw_uid, pw.pw_gid)
+                for child in cumulative.iterdir():
+                    try:
+                        os.chown(child, pw.pw_uid, pw.pw_gid)
+                    except OSError:
+                        pass
 
     def get_archive_filename(
         self,

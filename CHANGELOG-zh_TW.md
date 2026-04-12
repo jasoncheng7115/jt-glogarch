@@ -2,6 +2,21 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.5.1] - 2026-04-12
+
+### 修正 — 歸檔目錄權限自動修復
+
+以 root 身份執行 `glogarch export`（沒用 `sudo -u jt-glogarch`）會建出
+root 擁有的子目錄。之後排程以 `jt-glogarch` 服務帳號執行時就會因為
+`PermissionError` 失敗。
+
+- **`ArchiveStorage._fix_dir_ownership()`** — `mkdir` 遇到
+  PermissionError 且當前是 root 時，自動把 `base_path` 底下非
+  `jt-glogarch` 擁有的目錄 chown 為 `jt-glogarch`。限定只修歸檔目錄，
+  不會動到 `base_path` 以上的系統目錄。
+- **CLI root 警告** — 以 root 執行任何 `glogarch` 指令時會顯示警告，
+  建議使用 `sudo -u jt-glogarch`。
+
 ## [1.5.0] - 2026-04-11
 
 ### 修正 — OpenSearch `_id` fielddata circuit breaker（嚴重）
@@ -37,6 +52,36 @@ ConnectTimeout）時重試。HTTP 500、502、503、429 回應直接 raise，
 - 錯誤訊息中的長 URL 自動縮為 `<url>`，避免在聊天軟體中斷行
 - 匯入通知加上耗時
 - 標題範例：`✅ 匯出成功`、`⚠️ 匯出完成（有錯誤）`、`❌ 驗證失敗`
+
+### 修正 — Preflight `collect_field_schema` 無法處理壓縮 schema（code review）
+
+`json.loads()` 直接解析 `field_schema` 欄位，但 `ArchiveDB.record_archive()`
+會把大型 schema 壓成 `zlib:…`。導致 preflight 對大型歸檔靜默 fallback 成
+`{}`，mixed-type field conflict 偵測失效。改為使用
+`ArchiveDB.decompress_schema()` 解壓，解析失敗時 `log.warning` 而非靜默
+吞掉。backfill 路徑也改用 `_maybe_compress_schema()` 確保儲存一致。
+
+### 修正 — `_dt_to_str()` / `_str_to_dt()` timezone 處理（code review）
+
+`replace(tzinfo=None)` 只拔掉 tzinfo 卻沒先轉 UTC。`+08:00` 的 datetime
+會被當成 UTC 存進去，絕對時間偏移 8 小時。改為先
+`astimezone(timezone.utc)` 再 strip。內部全用 `datetime.utcnow()`（naive
+UTC），既有 DB 資料不受影響。
+
+### 修正 — Cross-conflict 偵測漏掉自動建立的 numeric mapping（code review）
+
+`get_current_custom_mapping()` 之前只讀 Graylog custom field mappings API。
+OpenSearch 自動建立的 numeric mapping 看不到，preflight 會漏掉
+cross-conflict（target=long，archive=string）。改為先查 active write index
+的實際 OpenSearch mapping（`GET /<deflector>/_mapping`），custom mappings
+作為補充。
+
+### 新增 — 55 筆單元測試（pytest）
+
+首個公開測試套件。涵蓋：密碼脫敏（10）、DB datetime round-trip（5）、
+field_schema 壓縮（6）、DB 重建/備份（5）、清理競態（3）、bulk 匯入
+機制（7）、並發匯入鎖（5）、通知格式（7）、OpenSearch `_doc` 排序（1）、
+`/api/health` 結構（2）、preflight conflict 計算（4）。
 
 ### 修正 — 文件與實作一致性（reviewer 回報）
 

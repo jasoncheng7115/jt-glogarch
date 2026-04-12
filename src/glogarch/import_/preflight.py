@@ -186,12 +186,23 @@ class PreflightChecker:
         with_db = 0
         scanned = 0
         for r in rows:
-            schema_json = r["field_schema"]
-            if schema_json:
+            schema_raw = r["field_schema"]
+            if schema_raw:
                 with_db += 1
                 try:
-                    parsed = json.loads(schema_json)
-                except Exception:
+                    # Handle zlib-compressed schemas written by
+                    # ArchiveDB._maybe_compress_schema() — reuse the
+                    # existing decompress helper so we don't duplicate
+                    # the decompression logic.
+                    from glogarch.core.database import ArchiveDB
+                    schema_json = ArchiveDB.decompress_schema(schema_raw)
+                    parsed = json.loads(schema_json) if schema_json else {}
+                except Exception as e:
+                    log.warning(
+                        "Cannot parse field_schema for archive",
+                        archive_id=r["id"],
+                        error=str(e),
+                    )
                     parsed = {}
                 for k, types in parsed.items():
                     if k in _RESERVED_FIELDS:
@@ -207,13 +218,17 @@ class PreflightChecker:
                 fields = self._scan_file_for_field_types(p)
                 for k, types in fields.items():
                     union.setdefault(k, set()).update(types)
-                # Backfill so the next import is fast
+                # Backfill so the next import is fast. Use the DB's
+                # compression helper so large schemas are stored
+                # consistently with record_archive().
                 try:
-                    backfill = json.dumps(
+                    from glogarch.core.database import ArchiveDB
+                    backfill_raw = json.dumps(
                         {k: sorted(v) for k, v in fields.items()},
                         sort_keys=True,
                         ensure_ascii=False,
                     )
+                    backfill = ArchiveDB._maybe_compress_schema(backfill_raw)
                     with db._lock:
                         db.conn.execute(
                             "UPDATE archives SET field_schema = ? WHERE id = ?",
@@ -466,8 +481,31 @@ class PreflightChecker:
             raise RuntimeError("No index sets found on target Graylog")
 
     async def get_current_custom_mapping(self, index_set_id: str) -> dict[str, str]:
-        """Read the current per-index-set custom field mappings.
-        Returns {field_name: opensearch_type}."""
+        """Read the effective field mappings for the target index set.
+
+        Returns {field_name: opensearch_type_family}.
+
+        We query the **actual OpenSearch mapping** of the active write
+        index (via the Graylog API proxy at ``/api/system/indices/…``),
+        not just the Graylog custom_field_mappings endpoint. This is
+        critical because many numeric mappings are auto-created by
+        OpenSearch on first document and never appear in Graylog's
+        custom mappings list — cross-conflict detection would miss
+        them otherwise.
+
+        Falls back to the custom-mappings API when the index-level
+        query is not available (older Graylog versions).
+        """
+        out: dict[str, str] = {}
+
+        # --- Primary: read actual OS mapping from active write index ---
+        try:
+            await self._read_actual_os_mapping(index_set_id, out)
+        except Exception as e:
+            log.debug("Could not read actual OS mapping, falling back to custom mappings",
+                      error=str(e))
+
+        # --- Fallback / supplement: Graylog custom field mappings ---
         async with self._client() as c:
             try:
                 r = await c.get(
@@ -475,17 +513,61 @@ class PreflightChecker:
                 )
                 if r.status_code == 200:
                     data = r.json()
-                    out: dict[str, str] = {}
                     for entry in data.get("custom_field_mappings", data) or []:
                         if isinstance(entry, dict):
                             fname = entry.get("field_name") or entry.get("field")
                             ftype = entry.get("type")
-                            if fname and ftype:
+                            if fname and ftype and fname not in out:
                                 out[fname] = ftype
-                    return out
             except Exception:
                 pass
-            return {}
+        return out
+
+    async def _read_actual_os_mapping(
+        self, index_set_id: str, out: dict[str, str]
+    ) -> None:
+        """Query the active write index's mapping directly from OpenSearch.
+
+        Populates ``out`` with {field_name: os_type}. Only top-level
+        ``properties`` are considered — nested fields are ignored.
+
+        We derive the OpenSearch URL from the Graylog API URL (port
+        9000 → 9200) via ``auto_detect_opensearch_url``, then read the
+        deflector alias mapping. This is more reliable than trying to
+        proxy through Graylog's API (which doesn't expose a generic
+        index-mapping endpoint).
+        """
+        async with self._client() as c:
+            # Find index prefix for this index_set
+            r = await c.get(f"{self.api_url}/api/system/indices/index_sets")
+            r.raise_for_status()
+            prefix = ""
+            for s in r.json().get("index_sets", []):
+                if s.get("id") == index_set_id:
+                    prefix = s.get("index_prefix", "")
+                    break
+            if not prefix:
+                return
+
+        # Query OpenSearch directly for the deflector's mapping
+        os_url = await self.auto_detect_opensearch_url()
+        if not os_url:
+            return
+        auth = (self.api_username, self.api_password) if self.api_username else None
+        async with httpx.AsyncClient(
+            verify=self.verify_ssl, timeout=15, auth=auth
+        ) as osc:
+            deflector = f"{prefix}_deflector"
+            r = await osc.get(f"{os_url}/{deflector}/_mapping")
+            if r.status_code != 200:
+                return
+            # Response: {real_index_name: {mappings: {properties: {...}}}}
+            data = r.json()
+            for idx_data in data.values():
+                props = (idx_data.get("mappings") or {}).get("properties") or {}
+                for fname, fdef in props.items():
+                    if isinstance(fdef, dict) and "type" in fdef:
+                        out[fname] = fdef["type"]
 
     async def ensure_field_limit_template(
         self, index_prefix: str, limit: int = 10000

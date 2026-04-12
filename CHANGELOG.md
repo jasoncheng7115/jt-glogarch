@@ -2,6 +2,23 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.5.1] - 2026-04-12
+
+### Fixed — Archive directory ownership auto-repair
+
+Running `glogarch export` as root (without `sudo -u jt-glogarch`)
+created archive subdirectories owned by root. Subsequent scheduled
+exports by the `jt-glogarch` service user then failed with
+`PermissionError: Cannot create archive file`.
+
+- **`ArchiveStorage._fix_dir_ownership()`** — when `mkdir` fails with
+  PermissionError and the process is running as root, automatically
+  chown non-`jt-glogarch`-owned directories under `base_path` to
+  `jt-glogarch`. Scoped to archive directories only — never touches
+  system directories above `base_path`.
+- **CLI root warning** — running any `glogarch` command as root now
+  prints a warning recommending `sudo -u jt-glogarch`.
+
 ## [1.5.0] - 2026-04-11
 
 ### Fixed — OpenSearch `_id` fielddata circuit breaker (critical)
@@ -39,6 +56,41 @@ Non-transient errors (4xx) still raise immediately.
   line-breaking in chat clients
 - Import notifications now include duration
 - Title examples: `✅ 匯出成功`, `⚠️ 匯出完成（有錯誤）`, `❌ 驗證失敗`
+
+### Fixed — Preflight `collect_field_schema` failed on compressed schemas (code review)
+
+`json.loads()` was called directly on the raw `field_schema` column, but
+`ArchiveDB.record_archive()` compresses large schemas as `zlib:…`. This
+caused preflight to silently fall back to `{}` for large archives, making
+mixed-type field conflict detection ineffective. Now uses
+`ArchiveDB.decompress_schema()` and logs a warning on parse failure
+instead of silently swallowing. Backfill path also uses
+`_maybe_compress_schema()` for consistency.
+
+### Fixed — `_dt_to_str()` / `_str_to_dt()` timezone handling (code review)
+
+`replace(tzinfo=None)` stripped timezone info without first converting to
+UTC. A `+08:00` datetime would be stored as if it were UTC, shifting the
+absolute time by 8 hours. Now calls `astimezone(timezone.utc)` before
+stripping. All internal code uses `datetime.utcnow()` (naive UTC) so
+existing DB data is unaffected.
+
+### Fixed — Cross-conflict detection missed auto-created numeric mappings (code review)
+
+`get_current_custom_mapping()` only read Graylog's custom field mappings
+API. Numeric mappings auto-created by OpenSearch on first document were
+invisible, so preflight could miss cross-conflicts (target=long,
+archive=string). Now queries the actual OpenSearch mapping of the active
+write index via `GET /<deflector>/_mapping` as primary source, with
+custom mappings as fallback.
+
+### Added — 55 unit tests (pytest)
+
+First public test suite. Covers: secret sanitization (10), DB datetime
+round-trip (5), field_schema compression (6), DB rebuild/backup (5),
+cleanup race guard (3), bulk import mechanics (7), concurrent import
+lock (5), notification format (7), OpenSearch `_doc` sort (1),
+`/api/health` structure (2), preflight conflict computation (4).
 
 ### Fixed — Document / implementation consistency (reported by reviewer)
 

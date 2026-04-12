@@ -49,6 +49,16 @@ def cli(config_path: str | None, verbose: bool):
     setup_logging(level)
     load_settings(config_path)
 
+    # Warn if running as root instead of jt-glogarch — directories created
+    # by root will cause PermissionError for the jt-glogarch service later.
+    import os
+    user = os.environ.get("USER") or os.environ.get("LOGNAME") or ""
+    if os.getuid() == 0 and user != "jt-glogarch":
+        console.print(
+            "[yellow]⚠ Running as root. Directories created will be owned by root.[/yellow]\n"
+            "[yellow]  Recommended: sudo -u jt-glogarch python3 -m glogarch ...[/yellow]"
+        )
+
 
 @cli.command()
 @click.option("--from", "time_from", default=None, help="Start time (ISO format or YYYY-MM-DD)")
