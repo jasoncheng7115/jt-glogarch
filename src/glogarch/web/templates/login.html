@@ -122,6 +122,16 @@
 
         {% if error == "auth_failed" %}
         <div class="login-error" data-i18n="login_failed">Login failed. Please check your Graylog credentials.</div>
+        {% elif error == "graylog_offline_with_local" %}
+        <div class="login-error" style="background:rgba(255,152,0,0.1);border-color:var(--warning);color:var(--warning)">
+            <strong data-i18n="login_graylog_offline_title">⚠ Graylog is unreachable</strong><br>
+            <span data-i18n="login_graylog_offline_local">Please use the jt-glogarch local admin account to login.<br>Username: <b>localadmin</b>, Password: the emergency password set in config.yaml</span>
+        </div>
+        {% elif error == "graylog_offline" %}
+        <div class="login-error" style="background:rgba(244,67,54,0.1);border-color:var(--danger)">
+            <strong data-i18n="login_graylog_offline_title">⚠ Graylog is unreachable</strong><br>
+            <span data-i18n="login_graylog_offline_no_local">Cannot authenticate. No local admin password configured.<br>Set <code>web.localadmin_password_hash</code> in config.yaml for emergency access.</span>
+        </div>
         {% endif %}
 
         <form method="POST" action="/login">

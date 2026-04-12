@@ -1,6 +1,6 @@
 # jt-glogarch Configuration Example
 # Copy this file to /opt/jt-glogarch/config.yaml and edit as needed.
-# Config search order: ./config.yaml, ~/.glogarch/config.yaml, /etc/glogarch/config.yaml
+# Config search order: ./config.yaml, ~/.jt-glogarch/config.yaml, /etc/jt-glogarch/config.yaml
 
 # --- Graylog Servers ---
 servers:

@@ -163,6 +163,9 @@ const I18N = {
         btn_login: 'Login',
         login_note: 'Authenticates via Graylog API',
         login_failed: 'Login failed. Please check your Graylog credentials.',
+        login_graylog_offline_title: '⚠ Graylog is unreachable',
+        login_graylog_offline_local: 'Please use the jt-glogarch local admin account to login. Username: localadmin',
+        login_graylog_offline_no_local: 'Cannot authenticate. No local admin password configured. Set web.localadmin_password_hash in config.yaml for emergency access.',
 
         theme_light: 'Light',
         theme_dark: 'Dark',
@@ -429,7 +432,7 @@ const I18N = {
         bulk_target_index_hint: '文件會寫入 <pattern>_YYYY_MM_DD。獨立的 index 讓還原資料與即時流量隔離。',
         bulk_dedup_strategy: '重複處理策略',
         bulk_dedup_id: '用 gl2_message_id 當 _id（建議）',
-        bulk_dedup_none: '不去重（允許重複文件）',
+        bulk_dedup_none: '不刪除重複資料（允許重複文件）',
         bulk_dedup_fail: '偵測到重複就中止',
         bulk_batch_docs: '批次大小（每次 bulk 請求的文件數）',
         bulk_batch_hint: '預設 5000 通常剛好。越大越快但耗記憶體。',
@@ -481,6 +484,9 @@ const I18N = {
         btn_login: '登入',
         login_note: '經由 Graylog API 帳號認證',
         login_failed: '登入失敗，請確認 Graylog 帳號密碼是否正確。',
+        login_graylog_offline_title: '⚠ Graylog 無法連線',
+        login_graylog_offline_local: '請使用 jt-glogarch 本機管理員帳號登入。帳號：localadmin',
+        login_graylog_offline_no_local: '無法認證。尚未設定本機管理員密碼。請在 config.yaml 設定 web.localadmin_password_hash 以啟用緊急登入。',
 
         theme_light: '淺色',
         theme_dark: '深色',

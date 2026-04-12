@@ -2,6 +2,28 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.5.2] - 2026-04-12
+
+### 新增 — 緊急本機管理員登入
+
+Graylog 離線時 Web UI 完全無法登入（認證委派給 Graylog REST API）。
+這在災難復原場景是致命缺陷。
+
+- **`web.localadmin_password_hash`** 設定選項 — 儲存 SHA256 hash。
+  Graylog API 連不上且此欄位有設定時，登入頁面接受本機密碼作為
+  fallback。帳號必須輸入 `localadmin`。
+- **登入頁面回饋** — 三種錯誤狀態：
+  - Graylog 拒絕帳密 →「登入失敗」
+  - Graylog 離線 + 有設 hash → 橘色警告，提示使用 `localadmin` 帳號
+  - Graylog 離線 + 沒設 hash → 紅色錯誤，提示設定 config
+- **`glogarch hash-password`** CLI 指令 — 互動式產生 SHA256 hash，
+  直接貼入 `config.yaml`。
+- **向下相容** — 欄位預設空字串（停用）。舊版設定檔沒有此欄位時
+  行為完全不變。
+- 登入邏輯：永遠先嘗試 Graylog API。本機 fallback 只在 Graylog
+  連不上（連線錯誤/逾時）時啟用，Graylog 拒絕密碼（帳密錯誤）時
+  **不會** fallback。
+
 ## [1.5.1] - 2026-04-12
 
 ### 修正 — 歸檔目錄權限自動修復
@@ -56,9 +78,9 @@ ConnectTimeout）時重試。HTTP 500、502、503、429 回應直接 raise，
 ### 修正 — Preflight `collect_field_schema` 無法處理壓縮 schema（code review）
 
 `json.loads()` 直接解析 `field_schema` 欄位，但 `ArchiveDB.record_archive()`
-會把大型 schema 壓成 `zlib:…`。導致 preflight 對大型歸檔靜默 fallback 成
+會把大型 schema 壓成 `zlib:…`。導致 preflight 對大型歸檔無聲地 fallback 成
 `{}`，mixed-type field conflict 偵測失效。改為使用
-`ArchiveDB.decompress_schema()` 解壓，解析失敗時 `log.warning` 而非靜默
+`ArchiveDB.decompress_schema()` 解壓，解析失敗時 `log.warning` 而非無聲地
 吞掉。backfill 路徑也改用 `_maybe_compress_schema()` 確保儲存一致。
 
 ### 修正 — `_dt_to_str()` / `_str_to_dt()` timezone 處理（code review）
@@ -90,7 +112,7 @@ field_schema 壓縮（6）、DB 重建/備份（5）、清理競態（3）、bul
 - **匯出 metadata 的 `glogarch_version` 硬寫 `"1.3.1"`**（`export/exporter.py`
   與 `opensearch/exporter.py`）。改為讀 `__version__`，讓歸檔檔案
   永遠帶正確版號。
-- **Config 搜尋路徑 `/etc/glogarch/`** 與安裝腳本的
+- **Config 搜尋路徑 `/etc/glogarch/`** 與安裝指令碼的
   `CONFIG_DIR="/etc/jt-glogarch"` 不一致。改為 `/etc/jt-glogarch/`
   （home 目錄 fallback 也改為 `~/.jt-glogarch/`）。
 
@@ -223,7 +245,7 @@ sleep — 只有 OpenSearch 回 429 時的 retry backoff。這條 slider
 ## [1.4.0] - 2026-04-09
 
 強化版本。v1.3.1 端對端測試後盤點出 20 項風險，涵蓋災難復原、密碼洩漏、
-保留策略、競態條件、保留欄位處理、併發控制與運維面向。本版本一次處理完。
+保留策略、競態條件、保留欄位處理、並行控制與運維面向。本版本一次處理完。
 
 ### 新增 — 災難復原
 
@@ -278,7 +300,7 @@ sleep — 只有 OpenSearch 回 429 時的 retry backoff。這條 slider
   顯示「Graylog API authentication failed (401). Check that the API
   token is still valid: …」並觸發通知。
 
-### 修正 — 競態條件與併發
+### 修正 — 競態條件與並行
 
 - **清理 vs 匯出競態** — 清理會跳過最近 10 分鐘內被修改的檔案
   (`RECENT_FILE_GRACE_SECONDS`），避免保留期掃描刪掉還在被匯出寫入
@@ -392,7 +414,7 @@ GitHub 渲染時會用相對連結讓兩份 README 互相切換。
 
 ### 新增 — 匯出時保留 `gl2_message_id`
 
-兩個 exporter 都保留 `gl2_message_id`（用於 bulk 匯入去重）；其他
+兩個 exporter 都保留 `gl2_message_id`（用於 bulk 匯入重複資料刪除）；其他
 `gl2_*` 欄位仍會被剝除。GELF 匯入路徑不受影響，因為 Graylog 收到時會
 重新生成所有 `gl2_*`。
 
@@ -408,7 +430,7 @@ GitHub 渲染時會用相對連結讓兩份 README 互相切換。
   - 每日 index 命名：`<pattern>_YYYY_MM_DD`，依每筆文件的 timestamp 決定
   - 預先建立目標 index(Graylog 環境的 OpenSearch 通常設
     `action.auto_create_index = false`，bulk write 必須先建）
-  - 三種去重策略：`id`（用 `gl2_message_id` 當 `_id`，重複匯入會
+  - 三種重複資料刪除策略：`id`（用 `gl2_message_id` 當 `_id`，重複匯入會
     overwrite)、`none`、`fail`
   - 遇到 OpenSearch 429（限流）指數退讓
   - 注入 marker 欄位 `_jt_glogarch_imported_at` 方便追蹤
@@ -427,7 +449,7 @@ GitHub 渲染時會用相對連結讓兩份 README 互相切換。
   - 兩張 radio 卡：`GELF (Graylog Pipeline)`（預設）與
     `OpenSearch Bulk (~5-10x)`
   - Bulk mode 顯示橘色警告區塊，清楚說明跳過了什麼
-  - Bulk-mode 專屬欄位：目標 index pattern、去重策略、批次大小、
+  - Bulk-mode 專屬欄位：目標 index pattern、重複資料刪除策略、批次大小、
     OpenSearch 自動偵測 checkbox + 手動 URL/帳密
   - 切換模式時欄位群組 hide/show，內容保留；Graylog API 帳密兩 mode 共用
   - 新增 23 個 i18n 字串（中英）
@@ -443,7 +465,7 @@ GitHub 渲染時會用相對連結讓兩份 README 互相切換。
 
 ### 新增 — 匯出時保留 gl2_message_id
 
-為了讓 bulk 匯入能做精準去重，兩個 exporter 都會**保留** `gl2_message_id`
+為了讓 bulk 匯入能做精準重複資料刪除，兩個 exporter 都會**保留** `gl2_message_id`
 欄位。其他 `gl2_*` 欄位（`gl2_source_input`、`gl2_processing_timestamp` 等）
 仍會被剝除，因為它們指向來源 cluster 的節點/輸入，在目標 cluster 不存在。
 
@@ -570,7 +592,7 @@ importer 的 `finally` block 沒跑完，歸檔被永久標記為 `importing`，
 
 ### 變更 — 合規流程連帶調整
 - **匯入對話框重構**：移除 Journal 監控下拉（無/API/SSH）與整個 SSH 監控的程式碼。目標 Graylog API 帳密改為一律必填，一組帳密同時用於 preflight、journal 監控、對帳。
-- **GELF 預設改為 TCP / port 32202**（之前是 UDP / 12201）。UDP 仍可選，但 README 明確警告大量匯入時會靜默丟封包。
+- **GELF 預設改為 TCP / port 32202**（之前是 UDP / 12201）。UDP 仍可選，但 README 明確警告大量匯入時會無聲地丟封包。
 - **TCP backpressure + Journal 監控** 永遠啟用。匯入時偵測對方 `uncommitted_journal_entries` 超過 50 萬就自動暫停 30 秒，避免擠爆對方 buffer。
 - **`POST /api/import`、`POST /api/export`、`POST /api/schedules/{name}/run`** 改為在背景執行緒（`asyncio.run(...)` 包在 `loop.run_in_executor`）跑，主 FastAPI event loop 不再被 gzip / JSON / GELF 的 CPU 工作卡死。Web UI 在百萬筆等級的匯入/匯出期間仍可正常切頁。
 - **`ArchiveScheduler._run_export`** 改用 sync wrapper（`_run_export_in_thread`）註冊到 APScheduler，原因同上。
@@ -616,7 +638,7 @@ importer 的 `finally` block 沒跑完，歸檔被永久標記為 `importing`，
 ### 新增
 - **雙模式匯出**：Graylog API + OpenSearch Direct
 - **OpenSearch 單次掃描匯出**：整個 index 一次掃描，依小時切分歸檔檔案（速度提升 5 倍）
-- **跨模式去重**：切換 API/OpenSearch 模式不會重複匯出
+- **跨模式重複資料刪除**：切換 API/OpenSearch 模式不會重複匯出
 - **GELF UDP 匯入**：新增 UDP 發送器（預設），Web UI 可選擇通訊協定
 - **JVM 記憶體保護**：API 匯出時監控 Graylog heap，超過 85% 自動停止並通知管理員
 - **驗證排程**：新增「驗證」作業類型，定期 SHA256 完整性檢查

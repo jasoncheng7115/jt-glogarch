@@ -126,6 +126,10 @@ class WebConfig(BaseModel):
     port: int = 8990
     ssl_certfile: str = "/opt/jt-glogarch/certs/server.crt"
     ssl_keyfile: str = "/opt/jt-glogarch/certs/server.key"
+    # Emergency local admin — SHA256 hash of password. Used as fallback
+    # when Graylog API is unreachable. Empty string = disabled (default).
+    # Generate with: python3 -c "import hashlib;print(hashlib.sha256(input('Password: ').encode()).hexdigest())"
+    localadmin_password_hash: str = ""
 
 
 class Settings(BaseModel):

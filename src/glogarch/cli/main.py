@@ -1032,3 +1032,26 @@ def db_rebuild(archive_root: str | None, dry_run: bool, yes: bool):
     console.print(table)
     if dry_run:
         console.print("[dim]Dry run — no changes written[/dim]")
+
+
+@cli.command("hash-password")
+@click.option("--password", "-p", prompt=True, hide_input=True,
+              confirmation_prompt=True, help="Password to hash")
+def hash_password(password: str):
+    """Generate SHA256 hash for localadmin_password_hash.
+
+    Use this to set the emergency local admin password in config.yaml.
+    When Graylog is offline, this password allows Web UI login.
+
+    Example::
+
+        glogarch hash-password
+        # Paste the output into config.yaml:
+        # web:
+        #   localadmin_password_hash: "the-hash-value"
+    """
+    import hashlib
+    h = hashlib.sha256(password.encode()).hexdigest()
+    console.print(f"\n[bold]SHA256 hash:[/bold]\n{h}")
+    console.print(f"\n[dim]Add to config.yaml:[/dim]")
+    console.print(f"[green]web:\n  localadmin_password_hash: \"{h}\"[/green]")

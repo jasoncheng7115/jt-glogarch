@@ -2,6 +2,32 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.5.2] - 2026-04-12
+
+### Added — Emergency local admin login
+
+When Graylog is offline, the Web UI was completely inaccessible because
+authentication is delegated to the Graylog REST API. This is a critical
+gap for disaster recovery scenarios.
+
+- **`web.localadmin_password_hash`** config option — stores a SHA256
+  hash of the emergency password. When Graylog API is unreachable AND
+  this hash is configured, the login page accepts the local password
+  as fallback. Username must be `localadmin`.
+- **Login page feedback** — three distinct error states:
+  - Graylog rejects credentials → "Login failed"
+  - Graylog offline + hash configured → orange warning with
+    instructions to use `localadmin` account
+  - Graylog offline + no hash → red error with config hint
+- **`glogarch hash-password`** CLI command — interactive prompt to
+  generate the SHA256 hash for `config.yaml`.
+- **Backward compatible** — the field defaults to empty string
+  (disabled). Existing installations without it configured behave
+  exactly as before.
+- Login logic: Graylog API is always tried first. Local fallback only
+  activates when Graylog is unreachable (connection error/timeout),
+  NOT when Graylog rejects the credentials (wrong password).
+
 ## [1.5.1] - 2026-04-12
 
 ### Fixed — Archive directory ownership auto-repair

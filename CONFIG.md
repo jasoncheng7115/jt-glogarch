@@ -1,70 +1,72 @@
-# jt-glogarch 設定參考 / Configuration Reference
+# jt-glogarch Configuration Reference
 
-設定檔位於 `/opt/jt-glogarch/config.yaml`，檔案擁有者必須是 `jt-glogarch`。
+**Language**: **English** | [繁體中文](CONFIG-zh_TW.md)
 
-大部分設定可在 Web UI 的「排程作業」和「通知設定」頁面完成，不需手動編輯。
-以下為完整欄位說明，供需要手動調整或自動化部署時參考。
+The config file lives at `/opt/jt-glogarch/config.yaml` and must be owned by `jt-glogarch`.
+
+Most settings can be configured from the Web UI ("Schedules" and "Notification Settings" pages).
+The reference below is for manual editing and automated deployments.
 
 ---
 
-## servers — Graylog 連線
+## servers — Graylog Connection
 
 ```yaml
 servers:
-  - name: log4                          # 自訂名稱（用於歸檔目錄分類）
+  - name: log4                          # Custom name (used for archive directory)
     url: "http://192.168.1.132:9000"    # Graylog REST API URL
-    auth_token: "your-api-token"        # API Token（建議）
-    # username: admin                   # 或帳號密碼（二擇一）
+    auth_token: "your-api-token"        # API Token (recommended)
+    # username: admin                   # Or username/password (pick one)
     # password: admin
-    verify_ssl: false                   # HTTPS 驗證
+    verify_ssl: false                   # HTTPS certificate verification
 
-default_server: log4                    # 預設使用的伺服器
+default_server: log4                    # Default server to use
 ```
 
-> API Token 取得：Graylog → System → Users → 你的帳號 → Edit Tokens → Create Token
+> Get an API Token: Graylog → System → Users → Your Account → Edit Tokens → Create Token
 
 ---
 
-## export — 匯出設定
+## export — Export Settings
 
 ```yaml
-export_mode: opensearch                 # api 或 opensearch
+export_mode: opensearch                 # api or opensearch
 
 export:
-  base_path: /data/graylog-archives     # 歸檔存放路徑
-  batch_size: 1000                      # API 模式每次查詢筆數
-  chunk_duration_minutes: 60            # 每個歸檔檔案涵蓋的時間長度（分鐘）
-  max_file_size_mb: 50                  # 單一檔案超過此大小自動分割
-  min_disk_space_mb: 500                # 磁碟空間低於此值停止匯出
-  delay_between_requests_ms: 5          # API 請求間隔（毫秒）
-  jvm_memory_threshold_pct: 85.0        # Graylog JVM heap 超過此 % 停止匯出
-  query: "*"                            # 查詢條件（預設全部）
-  streams: []                           # 限定串流（空 = 全部）
-  fields: []                            # 限定欄位（空 = 全部）
+  base_path: /data/graylog-archives     # Archive storage path
+  batch_size: 1000                      # API mode: messages per request
+  chunk_duration_minutes: 60            # Time span per archive file (minutes)
+  max_file_size_mb: 50                  # Auto-split if file exceeds this
+  min_disk_space_mb: 500                # Stop export if disk below this
+  delay_between_requests_ms: 5          # Delay between API requests (ms)
+  jvm_memory_threshold_pct: 85.0        # Stop if Graylog JVM heap exceeds this %
+  query: "*"                            # Search query (default: all)
+  streams: []                           # Limit to specific streams (empty = all)
+  fields: []                            # Limit to specific fields (empty = all)
 ```
 
 ---
 
-## import — 匯入設定
+## import — Import Settings
 
 ```yaml
 import:
-  gelf_host: localhost                  # GELF 目標主機
-  gelf_port: 32202                      # GELF 埠號
-  gelf_protocol: tcp                    # tcp（預設，有 backpressure）或 udp
-  batch_size: 500                       # 每批發送筆數
-  delay_between_batches_ms: 100         # 批次間隔（毫秒）
+  gelf_host: localhost                  # GELF target host
+  gelf_port: 32202                      # GELF port
+  gelf_protocol: tcp                    # tcp (default, has backpressure) or udp
+  batch_size: 500                       # Messages per batch
+  delay_between_batches_ms: 100         # Delay between batches (ms)
 ```
 
-> GELF 模式的主機、埠號、速率都可在 Web UI 匯入對話框中覆寫。
+> GELF host, port, and rate can be overridden in the Web UI import dialog.
 
 ---
 
-## opensearch — OpenSearch 直連
+## opensearch — OpenSearch Direct
 
 ```yaml
 opensearch:
-  hosts:                                # 可填多台，自動 failover
+  hosts:                                # Multiple hosts for failover
     - "http://192.168.1.132:9200"
     - "http://192.168.1.127:9200"
   username: admin
@@ -72,51 +74,51 @@ opensearch:
   verify_ssl: false
 ```
 
-> 不使用 OpenSearch 直連模式可整段不填。
+> Skip this section entirely if not using OpenSearch direct mode.
 
 ---
 
-## schedule — 排程
+## schedule — Scheduling
 
 ```yaml
 schedule:
-  export_cron: "0 3 * * *"             # 匯出排程（Cron 格式）
-  export_days: 180                      # 每次匯出涵蓋最近 N 天
-  cleanup_cron: "0 4 * * *"            # 清理排程
+  export_cron: "0 3 * * *"             # Export schedule (cron format)
+  export_days: 180                      # Export the last N days each run
+  cleanup_cron: "0 4 * * *"            # Cleanup schedule
 ```
 
-> 排程可在 Web UI「排程作業」頁面新增、編輯、立即執行。
-> 此處為初始預設值，Web UI 儲存後會覆寫。
+> Schedules can be managed from the Web UI "Schedules" page.
+> These are initial defaults; Web UI saves will overwrite them.
 
 ---
 
-## retention — 保留策略
+## retention — Retention Policy
 
 ```yaml
 retention:
   enabled: true
-  retention_days: 180                   # 超過此天數的歸檔自動刪除
+  retention_days: 180                   # Delete archives older than this
 ```
 
 ---
 
-## rate_limit — 速率限制
+## rate_limit — Rate Limiting
 
 ```yaml
 rate_limit:
-  requests_per_second: 2.0             # API 模式每秒請求數
-  adaptive: true                        # 依 CPU 使用率自動調整
-  max_cpu_percent: 80                   # CPU 超過此 % 自動降速
-  backoff_seconds: 10                   # 降速後等待秒數
+  requests_per_second: 2.0             # API mode requests per second
+  adaptive: true                        # Auto-adjust based on CPU usage
+  max_cpu_percent: 80                   # Slow down above this CPU %
+  backoff_seconds: 10                   # Wait time after slowdown
 ```
 
 ---
 
-## notify — 通知
+## notify — Notifications
 
 ```yaml
 notify:
-  language: zh-TW                       # en 或 zh-TW
+  language: zh-TW                       # en or zh-TW
   on_export_complete: true
   on_import_complete: true
   on_cleanup_complete: false
@@ -159,7 +161,7 @@ notify:
     subject_prefix: "[jt-glogarch]"
 ```
 
-> 所有通知管道都可在 Web UI「通知設定」頁面完成，不需手動編輯。
+> All notification channels can be configured from the Web UI "Notification Settings" page.
 
 ---
 
@@ -167,33 +169,48 @@ notify:
 
 ```yaml
 web:
-  host: 0.0.0.0                         # 監聽位址
-  port: 8990                            # 監聽埠號
+  host: 0.0.0.0                         # Listen address
+  port: 8990                            # Listen port
   ssl_certfile: /opt/jt-glogarch/certs/server.crt
   ssl_keyfile: /opt/jt-glogarch/certs/server.key
+  localadmin_password_hash: ""          # Emergency login (SHA256 hash)
 ```
+
+### Emergency Local Admin
+
+When Graylog is offline, the Web UI is inaccessible because login is delegated to the Graylog API. Set a local emergency password to enable fallback login:
+
+```bash
+# Generate the hash
+glogarch hash-password
+# Enter password twice, then paste the hash into config.yaml
+```
+
+**Login credentials:** Username: `localadmin`, Password: the emergency password you set.
+
+The login page will show an orange warning when Graylog is unreachable, instructing users to use the `localadmin` account. This only activates when Graylog is unreachable (connection error). It does NOT activate when Graylog rejects credentials (wrong password).
 
 ---
 
-## 其他
+## Other
 
 ```yaml
-database_path: /opt/jt-glogarch/jt-glogarch.db   # SQLite DB 路徑
+database_path: /opt/jt-glogarch/jt-glogarch.db   # SQLite DB path
 log_level: INFO                                    # DEBUG / INFO / WARNING / ERROR
 ```
 
 ---
 
-## Config 搜尋順序
+## Config Search Order
 
-1. CLI `--config` 參數指定的路徑
-2. `./config.yaml`（目前目錄）
+1. CLI `--config` parameter
+2. `./config.yaml` (current directory)
 3. `~/.jt-glogarch/config.yaml`
 4. `/etc/jt-glogarch/config.yaml`
 
-找到第一個存在的檔案就使用。
+First file found is used.
 
-## 注意事項
+## Important Notes
 
-- 從 Web UI 儲存設定會**覆寫整個 config.yaml**。手動編輯後若在 Web UI 按儲存，手動修改會被覆蓋。
-- 檔案擁有者必須是 `jt-glogarch`，否則 Web UI 無法寫入：`chown jt-glogarch:jt-glogarch /opt/jt-glogarch/config.yaml`
+- Saving settings from the Web UI **overwrites the entire config.yaml**. Manual edits made between page load and save will be lost.
+- File owner must be `jt-glogarch` for Web UI to save: `chown jt-glogarch:jt-glogarch /opt/jt-glogarch/config.yaml`

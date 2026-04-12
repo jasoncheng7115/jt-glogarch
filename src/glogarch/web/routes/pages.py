@@ -40,10 +40,12 @@ async def login_submit(request: Request):
     username = form.get("username", "")
     password = form.get("password", "")
 
-    # Authenticate against Graylog API
-    import httpx
     settings = request.app.state.settings
     server = settings.get_server()
+    graylog_ok = False
+
+    # 1. Try Graylog API authentication (primary)
+    import httpx
     try:
         async with httpx.AsyncClient(verify=server.verify_ssl, timeout=10.0) as client:
             resp = await client.get(
@@ -52,7 +54,6 @@ async def login_submit(request: Request):
                 headers={"Accept": "application/json"},
             )
             if resp.status_code == 200:
-                # If login was via API token, show "token-user" instead of raw token
                 display_name = username
                 if len(username) > 30:
                     display_name = "token-user"
@@ -60,12 +61,33 @@ async def login_submit(request: Request):
                 request.session["username"] = display_name
                 _audit(request, "login_success", f"User: {display_name}")
                 return RedirectResponse(url="/", status_code=303)
+            # Graylog responded but auth failed — don't fall through
+            graylog_ok = True
     except Exception:
+        # Graylog unreachable — allow fallback to local admin
         pass
+
+    # 2. Fallback: local emergency admin (only when Graylog is unreachable)
+    if not graylog_ok:
+        pw_hash = settings.web.localadmin_password_hash
+        if pw_hash and username == "localadmin":
+            import hashlib
+            if hashlib.sha256(password.encode()).hexdigest() == pw_hash:
+                request.session["authenticated"] = True
+                request.session["username"] = "localadmin"
+                request.session["emergency_mode"] = True
+                _audit(request, "login_success", "User: localadmin (emergency, Graylog offline)")
+                return RedirectResponse(url="/", status_code=303)
 
     _audit(request, "login_failed", f"User: {username}")
 
-    return RedirectResponse(url="/login?error=auth_failed", status_code=303)
+    if not graylog_ok:
+        # Graylog unreachable — tell user what's happening
+        has_local = bool(settings.web.localadmin_password_hash)
+        error = "graylog_offline_with_local" if has_local else "graylog_offline"
+    else:
+        error = "auth_failed"
+    return RedirectResponse(url=f"/login?error={error}", status_code=303)
 
 
 def _audit(request: Request, action: str, detail: str = ""):

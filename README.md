@@ -1,11 +1,11 @@
-# jt-glogarch v1.5.1
+# jt-glogarch v1.5.2
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)
 
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.5.1-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.5.2-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -80,10 +80,12 @@ and can restore them back into any Graylog instance via GELF (UDP / TCP).
 
 - **Streaming write** — never holds all messages in memory
 - Auto file splitting at configurable size (default 50MB)
-- SHA256 integrity verification with `.sha256` sidecar files
+- SHA256 integrity verification with `.sha256` sidecar files (`--workers N` for parallel)
 - Scheduled SHA256 re-verification
-- Retention-based auto-cleanup
-- Rescan archives from disk (detect orphans / missing files)
+- Retention-based auto-cleanup (with write-in-progress race guard)
+- Rescan archives from disk (detect orphan / missing files)
+- **DB backup** — `glogarch db-backup` online snapshot with auto-prune
+- **DB rebuild** — `glogarch db-rebuild` reconstruct metadata DB from archive files (disaster recovery)
 
 
 ### Import (Restore)
@@ -137,11 +139,16 @@ Bilingual messages (English / Traditional Chinese).
 
 ### Safety & Performance
 
+- **Emergency local login** — when Graylog is offline, login with `localadmin` account (SHA256 hashed password, generate with `glogarch hash-password`)
+- **Health check endpoint** — `GET /api/health` (no auth), returns DB/disk/scheduler status for Prometheus / Uptime Kuma
 - **JVM memory guard** — stops API export if Graylog heap > 85%
-- Concurrent export lock per server
+- **OpenSearch transient error retry** — auto backoff on 500/502/503/429
+- Concurrent export lock per server + concurrent import lock per archive
 - Adaptive rate limiting with CPU-based backoff
+- Secret sanitization — passwords/tokens auto-redacted from error messages
+- Archive directory ownership auto-repair (root-created dirs auto-chowned)
+- **`glogarch streams-cleanup`** — clean up bulk-import-created Streams / Index Sets
 - Thread-safe SQLite (WAL mode)
-- Partial file cleanup on error
 - Disk space monitoring
 
 

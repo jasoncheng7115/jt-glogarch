@@ -1,11 +1,11 @@
-# jt-glogarch v1.5.1
+# jt-glogarch v1.5.2
 
 **語言**: [English](README.md) | **繁體中文**
 
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.5.1-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.5.2-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -67,21 +67,23 @@ Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
 | 適用 | 串流篩選匯出、OpenSearch 鎖定的環境 | 大量歷史匯出、時間敏感任務 |
 
 
-### 智慧去重
+### 智慧重複資料刪除
 
-- **同模式去重** — 精確比對防止重複匯出相同時間範圍
-- **跨模式去重** — 切換 API/OpenSearch 模式不會重複匯出
+- **同模式重複資料刪除** — 精確比對防止重複匯出相同時間範圍
+- **跨模式重複資料刪除** — 切換 API/OpenSearch 模式不會重複匯出
 - **斷點續傳** — 已完成的區段絕不重做
 
 
 ### 歸檔管理
 
 - **串流寫入** — 不會將所有訊息載入記憶體
-- 自動分檔（預設 50MB)
-- SHA256 完整性驗證（含 `.sha256` 附檔）
+- 自動分檔（預設 50MB）
+- SHA256 完整性驗證（含 `.sha256` 附檔，支援 `--workers N` 平行驗證）
 - 排程定期 SHA256 重新檢查
-- 保留天數自動清理
+- 保留天數自動清理（含寫入中檔案保護，避免清理與匯出競態）
 - 從磁碟重新掃描歸檔（偵測殘留檔案 / 遺失檔案）
+- **DB 備份** — `glogarch db-backup` 線上快照，支援自動清理舊備份
+- **DB 重建** — `glogarch db-rebuild` 從歸檔檔案重建 metadata DB（災難復原用）
 
 
 ### 匯入(還原)
@@ -135,11 +137,16 @@ Telegram • Discord • Slack • Microsoft Teams • Nextcloud Talk • Email 
 
 ### 安全與效能
 
+- **緊急本機登入** — Graylog 離線時可用 `localadmin` 帳號登入 Web UI（SHA256 hash 密碼，需預先設定。`glogarch hash-password` 產生）
+- **健康檢查端點** — `GET /api/health`（免認證），回傳 DB/磁碟/排程器狀態，可供 Prometheus / Uptime Kuma 監控
 - **JVM 記憶體保護** — Graylog heap > 85% 時自動停止 API 匯出
-- 同伺服器並行匯出鎖定
+- **OpenSearch 暫態錯誤自動重試** — 500/502/503/429 自動 backoff retry
+- 同伺服器並行匯出鎖定 + 同歸檔並行匯入鎖定
 - 自動調節速率限制（依 CPU 使用率）
-- 執行緒安全 SQLite (WAL 模式）
-- 錯誤時自動清理暫存檔案
+- 密碼/Token 脫敏 — 錯誤訊息自動過濾敏感資訊
+- 歸檔目錄權限自動修復（root 建的目錄自動 chown）
+- **`glogarch streams-cleanup`** — 清理 bulk 匯入建立的殘留 Stream / Index Set
+- 執行緒安全 SQLite（WAL 模式）
 - 磁碟空間監控
 
 
@@ -209,8 +216,8 @@ Telegram • Discord • Slack • Microsoft Teams • Nextcloud Talk • Email 
 
 1. 把要求的時間範圍切成每小時的區段
 2. 對每個區段：
-   - 已歸檔則跳過（同模式去重）
-   - 已被 OpenSearch 歸檔覆蓋則跳過（跨模式去重）
+   - 已歸檔則跳過（同模式重複資料刪除）
+   - 已被 OpenSearch 歸檔覆蓋則跳過（跨模式重複資料刪除）
    - 用 Graylog Universal Search 查詢（含串流篩選與時間範圍）
    - 串流寫入 gzip 檔案（不全量緩衝）
    - 計算 SHA256、寫入 `.sha256` 附檔
@@ -299,7 +306,7 @@ OpenSearch 只保留最近的資料供搜尋。
 git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
 cd /opt/jt-glogarch
 
-# 2. 執行安裝腳本(建立使用者、目錄、SSL 憑證、systemd 服務)
+# 2. 執行安裝指令碼(建立使用者、目錄、SSL 憑證、systemd 服務)
 sudo bash deploy/install.sh
 
 # 3. 編輯設定檔填入 Graylog 資訊
@@ -406,7 +413,7 @@ database_path: /opt/jt-glogarch/jt-glogarch.db
 ```
 
 > 排程、通知、匯入、保留策略等設定都可在 Web UI 的「排程作業」和「通知設定」頁面完成。
-> 完整設定參考請見 [CONFIG.md](CONFIG.md) 或 [`deploy/config.yaml.example`](deploy/config.yaml.example)。
+> 完整設定參考請見 [CONFIG-zh_TW.md](CONFIG-zh_TW.md) 或 [`deploy/config.yaml.example`](deploy/config.yaml.example)。
 
 
 
@@ -416,7 +423,7 @@ database_path: /opt/jt-glogarch/jt-glogarch.db
 
 ## Web UI 使用說明
 
-Web UI 是**主要操作介面**，CLI 用於自動化和腳本。
+Web UI 是**主要操作介面**，CLI 用於自動化和指令碼。
 
 登入使用您的 Graylog 帳號密碼 — 沒有獨立的使用者資料庫，身份驗證委派給 Graylog REST API。
 
@@ -628,7 +635,7 @@ OpenSearch 模式可選擇**保留最近 N 份 index**。下方的「可用 indi
 | **OpenSearch Bulk** | ~30,000-100,000 筆/秒 | 直接 OpenSearch `_bulk` API | 還原已處理過的歷史資料，要最快速度 |
 
 **Bulk 模式取捨：**
-- ✅ **5-10 倍速度**（沒有 GELF framing、沒有 Graylog journal 寫盤、沒有 buffer 壓力）
+- ✅ **5-10 倍速度**（沒有 GELF framing、沒有 Graylog journal 寫入磁碟、沒有 buffer 壓力）
 - ✅ **每筆精確對帳**從 `_bulk` response（不依賴 Graylog 的 circular failure buffer)
 - ✅ **不會誤觸 alert**（訊息不經過 stream routing)
 - ❌ **跳過所有 Graylog 處理規則** — pipeline、extractors、stream routing、alerts。資料原樣從歸檔進到 OpenSearch。
@@ -646,10 +653,10 @@ OpenSearch 模式可選擇**保留最近 N 份 index**。下方的「可用 indi
   3. **自動建立 Graylog Index Set** 對應這個 prefix，還原資料立刻可在
      Graylog UI 上搜尋。不需手動到「System / Indices」設定。
 
-**去重機制：**
+**重複資料刪除機制：**
 - 歸檔保留的 `gl2_message_id` 會被 bulk 模式拿來當 OpenSearch 文件 `_id`。
   重複匯入同一份歸檔會 overwrite 既有文件，不會產生重複。
-- 也可以選 `不去重`（允許重複）或 `偵測到重複就中止` 兩種策略。
+- 也可以選 `不重複資料刪除`（允許重複）或 `偵測到重複就中止` 兩種策略。
 
 
 
@@ -674,10 +681,10 @@ Protocol:     TCP   ← 預設。可靠,有 backpressure
 
 > **⚠️ UDP vs TCP — 重要警告:**
 > - **TCP（建議，預設）：** 有內建 backpressure。當目標 Graylog input buffer 滿
->   時，TCP 寫入會自然阻塞，jt-glogarch 會跟著降速，**不會掉訊息**。吞吐量
+>   時，TCP 寫入會自然暫停傳送，jt-glogarch 會跟著降速，**不會掉訊息**。吞吐量
 >   約 1,000~3,000 筆/秒。
 > - **UDP（不建議用於大量匯入）：** 較快（~5,000~10,000 筆/秒）但 buffer 滿時
->   會**靜默丟掉封包**，jt-glogarch 完全收不到任何錯誤回報 — `messages_done`
+>   會**無聲地丟掉封包**，jt-glogarch 完全收不到任何錯誤回報 — `messages_done`
 >   會說「我送了 X 筆」，但目標 Graylog 可能只收到一部分。症狀：匯入後的時間
 >   軸會看到一段一段空白。**百萬筆等級的匯入若沒有流量控制，UDP 損失率常見
 >   20-30%。**
@@ -783,7 +790,7 @@ export:
 
 ## CLI 指令參考
 
-CLI 提供給自動化和腳本使用。Web UI 才是日常操作的主要介面。
+CLI 提供給自動化和指令碼使用。Web UI 才是日常操作的主要介面。
 
 ```bash
 glogarch --help
