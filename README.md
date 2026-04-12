@@ -383,64 +383,36 @@ curl -sk https://localhost:8990/login -o /dev/null -w '%{http_code}\n'
 
 ## Configuration
 
-The config file lives at `/opt/jt-glogarch/config.yaml` and **must be owned by the
-`jt-glogarch` user** for Web UI saves to work.
+The config file lives at `/opt/jt-glogarch/config.yaml` and **must be owned by `jt-glogarch`**.
 
-See [`deploy/config.yaml.example`](deploy/config.yaml.example) for the complete reference.
+After installation, just fill in the Graylog connection info. Everything else can be configured from the Web UI.
 
 ```yaml
+# === Required: Graylog connection ===
 servers:
   - name: log4
-    url: "http://192.168.1.132:9000"
+    url: "http://YOUR_GRAYLOG_IP:9000"
     auth_token: "YOUR_GRAYLOG_API_TOKEN"
-    verify_ssl: false
 
 default_server: log4
-export_mode: opensearch        # api or opensearch
 
+# === Required: archive storage path ===
 export:
   base_path: /data/graylog-archives
-  batch_size: 1000             # API mode batch
-  delay_between_requests_ms: 5
-  chunk_duration_minutes: 60
-  max_file_size_mb: 50
-  jvm_memory_threshold_pct: 85.0
 
-import:
-  gelf_host: localhost
-  gelf_port: 32202
-  gelf_protocol: tcp           # tcp (default, has backpressure) or udp
-
+# === Optional: OpenSearch direct mode (skip if not using) ===
 opensearch:
   hosts:
-    - "http://192.168.1.132:9200"
+    - "http://YOUR_OS_IP:9200"
   username: admin
   password: "YOUR_OS_PASSWORD"
 
-schedule:
-  export_cron: "0 3 * * *"
-  export_days: 180
-  cleanup_cron: "0 4 1 * *"
-
-retention:
-  enabled: true
-  retention_days: 60
-
-notify:
-  language: zh-TW              # en or zh-TW
-  on_export_complete: true
-  on_error: true
-  telegram:
-    enabled: true
-    bot_token: "BOT_TOKEN"
-    chat_id: "CHAT_ID"
-
-web:
-  host: 0.0.0.0
-  port: 8990
-  ssl_certfile: /opt/jt-glogarch/certs/server.crt
-  ssl_keyfile: /opt/jt-glogarch/certs/server.key
+# === Optional: DB path (default is fine) ===
+database_path: /opt/jt-glogarch/jt-glogarch.db
 ```
+
+> Schedules, notifications, import settings, and retention policies can all be configured in the Web UI under "Schedules" and "Notification Settings".
+> For the full config reference, see [CONFIG.md](CONFIG.md) or [`deploy/config.yaml.example`](deploy/config.yaml.example).
 
 
 

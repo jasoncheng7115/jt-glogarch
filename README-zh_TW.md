@@ -377,63 +377,36 @@ curl -sk https://localhost:8990/login -o /dev/null -w '%{http_code}\n'
 
 ## 設定
 
-設定檔在 `/opt/jt-glogarch/config.yaml`，**檔案擁有者必須是 `jt-glogarch`** 才能透過 Web UI 儲存。
+設定檔在 `/opt/jt-glogarch/config.yaml`，**檔案擁有者必須是 `jt-glogarch`**。
 
-完整參考請見 [`deploy/config.yaml.example`](deploy/config.yaml.example)。
+安裝後只需填寫 Graylog 連線資訊即可啟動，其餘設定都可在 Web UI 完成。
 
 ```yaml
+# === 必填：Graylog 連線 ===
 servers:
   - name: log4
-    url: "http://192.168.1.132:9000"
+    url: "http://你的GRAYLOG_IP:9000"
     auth_token: "你的_GRAYLOG_API_TOKEN"
-    verify_ssl: false
 
 default_server: log4
-export_mode: opensearch        # api 或 opensearch
 
+# === 必填：歸檔存放路徑 ===
 export:
   base_path: /data/graylog-archives
-  batch_size: 1000             # API 模式批次大小
-  delay_between_requests_ms: 5
-  chunk_duration_minutes: 60
-  max_file_size_mb: 50
-  jvm_memory_threshold_pct: 85.0
 
-import:
-  gelf_host: localhost
-  gelf_port: 32202
-  gelf_protocol: tcp           # tcp(預設,有 backpressure)或 udp
-
+# === 選填：OpenSearch 直連模式（不用可不填）===
 opensearch:
   hosts:
-    - "http://192.168.1.132:9200"
+    - "http://你的OS_IP:9200"
   username: admin
   password: "你的_OS_密碼"
 
-schedule:
-  export_cron: "0 3 * * *"
-  export_days: 180
-  cleanup_cron: "0 4 1 * *"
-
-retention:
-  enabled: true
-  retention_days: 60
-
-notify:
-  language: zh-TW              # en 或 zh-TW
-  on_export_complete: true
-  on_error: true
-  telegram:
-    enabled: true
-    bot_token: "BOT_TOKEN"
-    chat_id: "CHAT_ID"
-
-web:
-  host: 0.0.0.0
-  port: 8990
-  ssl_certfile: /opt/jt-glogarch/certs/server.crt
-  ssl_keyfile: /opt/jt-glogarch/certs/server.key
+# === 選填：DB 路徑（預設即可）===
+database_path: /opt/jt-glogarch/jt-glogarch.db
 ```
+
+> 排程、通知、匯入、保留策略等設定都可在 Web UI 的「排程作業」和「通知設定」頁面完成。
+> 完整設定參考請見 [CONFIG.md](CONFIG.md) 或 [`deploy/config.yaml.example`](deploy/config.yaml.example)。
 
 
 
