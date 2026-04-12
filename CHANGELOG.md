@@ -436,7 +436,7 @@ afterwards. Documented in CLAUDE.md.
 ### Changed — Taiwan terminology cleanup
 
 - `推薦` → `建議` (i18n bulk_dedup_id, README-zh_TW)
-- `孤兒檔案` → `孤立檔案` (README-zh_TW)
+- `殘留檔案` → `殘留檔案` (README-zh_TW)
 - Removed all "v1.1+ archives" / "v1.0 archives" version-history language
   from user-facing docs and code comments since v1.3.0 is the first
   public release.

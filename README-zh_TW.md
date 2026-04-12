@@ -81,7 +81,7 @@ Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
 - SHA256 完整性驗證（含 `.sha256` 附檔）
 - 排程定期 SHA256 重新檢查
 - 保留天數自動清理
-- 從磁碟重新掃描歸檔（偵測孤立檔案 / 遺失檔案）
+- 從磁碟重新掃描歸檔（偵測殘留檔案 / 遺失檔案）
 
 
 ### 匯入(還原)
@@ -137,7 +137,7 @@ Telegram • Discord • Slack • Microsoft Teams • Nextcloud Talk • Email 
 
 - **JVM 記憶體保護** — Graylog heap > 85% 時自動停止 API 匯出
 - 同伺服器並行匯出鎖定
-- 自適應速率限制（依 CPU 使用率）
+- 自動調節速率限制（依 CPU 使用率）
 - 執行緒安全 SQLite (WAL 模式）
 - 錯誤時自動清理暫存檔案
 - 磁碟空間監控
