@@ -140,9 +140,9 @@ echo "  $CONFIG_DIR  => $SERVICE_USER"
 # --- Install systemd service (optional) ---
 if [ -d /etc/systemd/system ]; then
     echo ""
-    read -p "Install systemd service? [y/N] " -n 1 -r
+    read -p "Install systemd service? [Y/n] " -n 1 -r
     echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         cp "$INSTALL_DIR/deploy/jt-glogarch.service" /etc/systemd/system/
         systemctl daemon-reload
         echo "Service installed."

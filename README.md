@@ -1,11 +1,11 @@
-# jt-glogarch v1.5.3
+# jt-glogarch v1.5.5
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)
 
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.5.3-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.5.5-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -18,7 +18,7 @@ toolkit, supporting **two export modes**:
 It exports logs to compressed archives (`.json.gz`) with SHA256 integrity verification,
 and can restore them back into any Graylog instance via GELF (UDP / TCP).
 
-> **Author:** Jason Cheng ([Jason Tools](https://jasontools.com))
+> **Author:** Jason Cheng ([Jason Tools](https://github.com/jasoncheng7115))
 > **License:** Apache 2.0
 
 
@@ -309,7 +309,7 @@ recent searches.
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
+sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
 cd /opt/jt-glogarch
 
 # 2. Run the install script (creates user, dirs, SSL cert, systemd service)
@@ -388,25 +388,13 @@ curl -sk https://localhost:8990/api/health
 
 ### Upgrading
 
-When a new version is available on GitHub:
+When a new version is available on GitHub, upgrade with one command:
 
 ```bash
-# 1. Backup DB (recommended)
-sudo -u jt-glogarch glogarch db-backup
-
-# 2. Pull latest version
-cd /opt/jt-glogarch
-sudo git pull
-
-# 3. Reinstall
-sudo pip install --no-build-isolation --no-cache-dir --force-reinstall --no-deps /opt/jt-glogarch
-
-# 4. Restart service
-sudo systemctl restart jt-glogarch
-
-# 5. Verify version
-curl -sk https://localhost:8990/api/health
+cd /opt/jt-glogarch && sudo bash deploy/upgrade.sh
 ```
+
+The upgrade script automatically: backs up DB → git pull → pip install → restart service → verify version.
 
 > - `config.yaml` and `jt-glogarch.db` are not tracked by git — they won't be overwritten
 > - New config fields added in newer versions use sensible defaults automatically
@@ -1055,7 +1043,7 @@ without OS-specific dependencies — a Dockerfile would be straightforward to ad
 
 **License:** [Apache License 2.0](LICENSE)
 
-**Author:** Jason Cheng — [Jason Tools](https://jasontools.com)
+**Author:** Jason Cheng — [Jason Tools](https://github.com/jasoncheng7115)
 
 **Repository:** https://github.com/jasoncheng7115/jt-glogarch
 

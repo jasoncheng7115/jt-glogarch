@@ -1256,7 +1256,12 @@ async function loadExportIndexSets() {
     const sel = document.getElementById('export-indexset');
     if (sel) sel.innerHTML = `<option>${t('loading')}...</option>`;
     try {
-        const data = await fetchJSON(`${API}/index-sets`);
+        const resp = await fetch(`${API}/index-sets`);
+        const data = await resp.json();
+        if (data.error) {
+            if (sel) sel.innerHTML = `<option>${esc(data.error)}</option>`;
+            return;
+        }
         if (sel && data.items) {
             const filtered = data.items.filter(s =>
                 !SYSTEM_INDEX_PREFIXES.some(p => s.index_prefix.startsWith(p))
@@ -1278,7 +1283,12 @@ async function loadSchedIndexSets() {
     if (!sel) return;
     sel.innerHTML = `<option>${t('loading')}...</option>`;
     try {
-        const data = await fetchJSON(`${API}/index-sets`);
+        const resp = await fetch(`${API}/index-sets`);
+        const data = await resp.json();
+        if (data.error) {
+            sel.innerHTML = `<option>${esc(data.error)}</option>`;
+            return;
+        }
         if (data.items) {
             const filtered = data.items.filter(s =>
                 !SYSTEM_INDEX_PREFIXES.some(p => s.index_prefix.startsWith(p))

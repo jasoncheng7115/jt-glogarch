@@ -2,6 +2,61 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.5.5] - 2026-04-13
+
+### Fixed — Test notification broken for Discord/Slack/Teams/Email
+
+The `/notify/test` endpoint called `_send_discord(client, cfg, full_msg)`
+with 3 arguments, but the function signature requires 5:
+`(client, cfg, title, message, ts)`. Same mismatch for Slack, Teams,
+and Email. The call crashed silently, and the frontend showed
+"No channels enabled" instead of the actual error.
+
+- Fixed all 4 function calls to pass correct arguments
+- Added `test_notify_test_endpoint.py` (7 tests) verifying every
+  send function's parameter count and every call site's argument list
+
+## [1.5.4] - 2026-04-13
+
+### Fixed — Graylog API 401 causes infinite "Loading..." in dropdowns
+
+`/api/index-sets` and `/api/streams` did not catch `HTTPStatusError`.
+When Graylog returned 401 (bad token), the frontend dropdown stayed on
+"Loading..." forever instead of showing an error.
+
+- Backend now catches 401 → returns `{"error": "...authentication failed...", "items": []}` with HTTP 401
+- Backend catches connection errors → returns `{"error": "Cannot reach Graylog: ...", "items": []}` with HTTP 502
+- Frontend reads `data.error` and displays the message in the dropdown instead of spinning
+
+### Added — One-command upgrade script (`deploy/upgrade.sh`)
+
+```bash
+cd /opt/jt-glogarch && sudo bash deploy/upgrade.sh
+```
+
+Automates: DB backup → git pull → pip install → restart → verify health.
+Displays before/after version. Exits non-zero if health check fails.
+README upgrade sections updated to reference the script.
+
+### Fixed — install.sh systemd default was No
+
+`[y/N]` → `[Y/n]`. Pressing Enter now installs the systemd service
+(was skipping it, breaking the "5-minute install" promise).
+
+### Fixed — `git clone /opt/` needs sudo
+
+README install instructions now include `sudo git clone`.
+
+### Fixed — Author email and URL
+
+- Email: `jason@jasontools.com` → `jason@jason.tools`
+- Jason Tools URL: `https://jasontools.com` → `https://github.com/jasoncheng7115`
+
+### Added — Tests for API error handling + upgrade process
+
+- `test_api_error_handling.py` (4 tests): 401/502/unreachable for index-sets and streams
+- `test_upgrade_script.py` (7 tests): script exists, 5 steps, root check, systemd default, README refs
+
 ## [1.5.3] - 2026-04-13
 
 ### Fixed — Customer install fails: pyproject.toml not found

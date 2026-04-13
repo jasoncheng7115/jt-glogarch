@@ -1,11 +1,11 @@
-# jt-glogarch v1.5.3
+# jt-glogarch v1.5.5
 
 **語言**: [English](README.md) | **繁體中文**
 
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.5.3-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.5.5-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -16,7 +16,7 @@ Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
 
 匯出的記錄會壓縮為 `.json.gz` 並有 SHA256 完整性驗證，可透過 GELF (UDP / TCP) 還原回任何 Graylog 實例。
 
-> **作者:** Jason Cheng ([Jason Tools](https://jasontools.com))
+> **作者:** Jason Cheng ([Jason Tools](https://github.com/jasoncheng7115))
 > **授權:** Apache 2.0
 
 
@@ -303,7 +303,7 @@ OpenSearch 只保留最近的資料供搜尋。
 
 ```bash
 # 1. clone 專案
-git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
+sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
 cd /opt/jt-glogarch
 
 # 2. 執行安裝指令碼(建立使用者、目錄、SSL 憑證、systemd 服務)
@@ -382,25 +382,13 @@ curl -sk https://localhost:8990/api/health
 
 ### 升級
 
-GitHub 上有新版本時：
+GitHub 上有新版本時，一行指令完成升級：
 
 ```bash
-# 1. 備份 DB（建議）
-sudo -u jt-glogarch glogarch db-backup
-
-# 2. 拉取最新版本
-cd /opt/jt-glogarch
-sudo git pull
-
-# 3. 重新安裝
-sudo pip install --no-build-isolation --no-cache-dir --force-reinstall --no-deps /opt/jt-glogarch
-
-# 4. 重啟服務
-sudo systemctl restart jt-glogarch
-
-# 5. 確認版本
-curl -sk https://localhost:8990/api/health
+cd /opt/jt-glogarch && sudo bash deploy/upgrade.sh
 ```
+
+升級指令碼會自動：備份 DB → git pull → pip install → 重啟服務 → 確認版本。
 
 > - `config.yaml` 和 `jt-glogarch.db` 不會被覆蓋（git 不追蹤）
 > - 新版若有新設定欄位會自動使用預設值，不需手動加
@@ -983,7 +971,7 @@ API 模式在 stream 上操作。OpenSearch Direct 模式在 index 上操作。
 
 **授權：** [Apache License 2.0](LICENSE)
 
-**作者：** Jason Cheng — [Jason Tools](https://jasontools.com)
+**作者：** Jason Cheng — [Jason Tools](https://github.com/jasoncheng7115)
 
 **專案網址：** https://github.com/jasoncheng7115/jt-glogarch
 

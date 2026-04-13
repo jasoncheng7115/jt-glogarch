@@ -1162,9 +1162,17 @@ async def list_streams(request: Request):
     server_config = settings.get_server()
     from glogarch.graylog.client import GraylogClient
     from glogarch.ratelimit.limiter import RateLimiter
+    import httpx as _httpx
     rl = RateLimiter(settings.rate_limit)
-    async with GraylogClient(server_config, rl) as client:
-        streams = await client.get_streams()
+    try:
+        async with GraylogClient(server_config, rl) as client:
+            streams = await client.get_streams()
+    except _httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            return JSONResponse({"error": "Graylog API authentication failed (401). Check API token.", "items": []}, status_code=401)
+        return JSONResponse({"error": f"Graylog API error: HTTP {e.response.status_code}", "items": []}, status_code=502)
+    except Exception as e:
+        return JSONResponse({"error": f"Cannot reach Graylog: {e}", "items": []}, status_code=502)
     return {"items": [{"id": s["id"], "title": s.get("title", ""), "index_set_id": s.get("index_set_id", "")} for s in streams]}
 
 
@@ -1174,9 +1182,17 @@ async def list_index_sets(request: Request):
     server_config = settings.get_server()
     from glogarch.graylog.client import GraylogClient
     from glogarch.ratelimit.limiter import RateLimiter
+    import httpx as _httpx
     rl = RateLimiter(settings.rate_limit)
-    async with GraylogClient(server_config, rl) as client:
-        index_sets = await client.get_index_sets()
+    try:
+        async with GraylogClient(server_config, rl) as client:
+            index_sets = await client.get_index_sets()
+    except _httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            return JSONResponse({"error": "Graylog API authentication failed (401). Check API token.", "items": []}, status_code=401)
+        return JSONResponse({"error": f"Graylog API error: HTTP {e.response.status_code}", "items": []}, status_code=502)
+    except Exception as e:
+        return JSONResponse({"error": f"Cannot reach Graylog: {e}", "items": []}, status_code=502)
     return {"items": [{"id": s["id"], "title": s.get("title", ""), "index_prefix": s.get("index_prefix", ""), "default": s.get("default", False)} for s in index_sets]}
 
 
@@ -1359,15 +1375,15 @@ async def test_notify(request: Request):
         if config.telegram.enabled:
             results.append(await _send_telegram(client, config.telegram, full_msg))
         if config.discord.enabled:
-            results.append(await _send_discord(client, config.discord, full_msg))
+            results.append(await _send_discord(client, config.discord, title, body, timestamp))
         if config.slack.enabled:
-            results.append(await _send_slack(client, config.slack, full_msg))
+            results.append(await _send_slack(client, config.slack, title, body, timestamp))
         if config.teams.enabled:
-            results.append(await _send_teams(client, config.teams, full_msg))
+            results.append(await _send_teams(client, config.teams, title, body, timestamp))
         if config.nextcloud_talk.enabled:
             results.append(await _send_nextcloud_talk(client, config.nextcloud_talk, full_msg))
     if config.email.enabled:
-        results.append(await _send_email(config.email, full_msg))
+        results.append(await _send_email(config.email, title, body, timestamp))
 
     return {"results": results}
 

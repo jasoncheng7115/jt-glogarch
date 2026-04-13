@@ -2,6 +2,59 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.5.5] - 2026-04-13
+
+### 修正 — Discord/Slack/Teams/Email 測試通知壞掉
+
+`/notify/test` endpoint 呼叫 `_send_discord(client, cfg, full_msg)` 傳了
+3 個參數，但函式簽名要 5 個：`(client, cfg, title, message, ts)`。
+Slack、Teams、Email 也有同樣的參數不符。呼叫直接 crash，前端顯示
+「尚未啟用任何管道」而非實際錯誤。
+
+- 修正 4 個函式呼叫傳入正確參數
+- 新增 `test_notify_test_endpoint.py`（7 筆測試）驗證每個 send 函式的
+  參數數量及每個呼叫端的參數清單
+
+## [1.5.4] - 2026-04-13
+
+### 修正 — Graylog API 401 造成下拉選單永遠「載入中...」
+
+`/api/index-sets` 和 `/api/streams` 沒有 catch `HTTPStatusError`。
+Graylog 回 401（token 錯誤）時前端下拉選單永遠停在「載入中...」。
+
+- 後端 catch 401 → 回傳 `{"error": "...authentication failed...", "items": []}`
+- 後端 catch 連線錯誤 → 回傳 `{"error": "Cannot reach Graylog: ...", "items": []}`
+- 前端讀取 `data.error` 顯示在下拉選單裡，不再無限轉圈
+
+### 新增 — 一行指令升級（`deploy/upgrade.sh`）
+
+```bash
+cd /opt/jt-glogarch && sudo bash deploy/upgrade.sh
+```
+
+自動：DB 備份 → git pull → pip install → 重啟 → 確認 health。
+顯示升級前後版本。health 失敗時回傳非零 exit code。
+README 升級段落已更新為使用此指令碼。
+
+### 修正 — install.sh systemd 預設是 No
+
+`[y/N]` → `[Y/n]`。按 Enter 現在會安裝 systemd 服務
+（之前會跳過，與「5 分鐘安裝」不符）。
+
+### 修正 — `git clone /opt/` 需要 sudo
+
+README 安裝指令加上 `sudo git clone`。
+
+### 修正 — 作者 email 和網站 URL
+
+- Email：`jason@jasontools.com` → `jason@jason.tools`
+- Jason Tools URL：`https://jasontools.com` → `https://github.com/jasoncheng7115`
+
+### 新增 — API 錯誤處理 + 升級流程測試
+
+- `test_api_error_handling.py`（4 筆）：index-sets 和 streams 的 401/502/連線失敗
+- `test_upgrade_script.py`（7 筆）：指令碼存在、5 步驟、root 檢查、systemd 預設、README 引用
+
 ## [1.5.3] - 2026-04-13
 
 ### 修正 — 客戶安裝失敗：找不到 pyproject.toml
