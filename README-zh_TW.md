@@ -1,11 +1,11 @@
-# jt-glogarch v1.5.2
+# jt-glogarch v1.5.3
 
 **語言**: [English](README.md) | **繁體中文**
 
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.5.2-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.5.3-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -372,9 +372,40 @@ systemctl status jt-glogarch
 # 即時日誌
 journalctl -u jt-glogarch -f
 
-# 測試 Web UI (應回傳 HTTP 200)
+# 測試 Web UI（應回傳 HTTP 200）
 curl -sk https://localhost:8990/login -o /dev/null -w '%{http_code}\n'
+
+# 健康檢查（應回傳版本號 + healthy）
+curl -sk https://localhost:8990/api/health
 ```
+
+
+### 升級
+
+GitHub 上有新版本時：
+
+```bash
+# 1. 備份 DB（建議）
+sudo -u jt-glogarch glogarch db-backup
+
+# 2. 拉取最新版本
+cd /opt/jt-glogarch
+sudo git pull
+
+# 3. 重新安裝
+sudo pip install --no-build-isolation --no-cache-dir --force-reinstall --no-deps /opt/jt-glogarch
+
+# 4. 重啟服務
+sudo systemctl restart jt-glogarch
+
+# 5. 確認版本
+curl -sk https://localhost:8990/api/health
+```
+
+> - `config.yaml` 和 `jt-glogarch.db` 不會被覆蓋（git 不追蹤）
+> - 新版若有新設定欄位會自動使用預設值，不需手動加
+> - DB schema 會在服務啟動時自動升級（`_migrate()`）
+> - 建議升級後檢查 [CHANGELOG](CHANGELOG-zh_TW.md) 確認是否有需要注意的變更
 
 
 

@@ -2,6 +2,31 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.5.3] - 2026-04-13
+
+### Fixed — Customer install fails: pyproject.toml not found
+
+`git clone` + `pip install /opt/jt-glogarch` failed because the GitHub
+repo had `pyproject.toml` and `glogarch/` inside a `src/` subdirectory.
+`pip` requires them at the repository root.
+
+- Moved `github/src/glogarch/` → `github/glogarch/`
+- Moved `github/src/pyproject.toml` → `github/pyproject.toml`
+- Removed `github/src/` directory entirely
+- Updated `check-version.sh` and `CLAUDE.md` references
+- Added `test_repo_structure.py` (7 tests) to prevent regression
+
+### Added — Upgrade instructions in README
+
+Both READMEs now include a step-by-step upgrade procedure:
+`db-backup` → `git pull` → `pip install --force-reinstall` →
+`systemctl restart` → verify `/api/health`.
+
+### Added — Upgrade simulation tests (`test_upgrade.py`)
+
+4 tests verifying: old DB auto-migration, old config backward
+compatibility, existing archives survive upgrade, DB backup validity.
+
 ## [1.5.2] - 2026-04-12
 
 ### Added — Emergency local admin login

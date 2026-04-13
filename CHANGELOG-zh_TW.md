@@ -2,6 +2,31 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.5.3] - 2026-04-13
+
+### 修正 — 客戶安裝失敗：找不到 pyproject.toml
+
+`git clone` + `pip install /opt/jt-glogarch` 會失敗，因為 GitHub repo
+把 `pyproject.toml` 和 `glogarch/` 放在 `src/` 子目錄裡。`pip` 要求它們
+在 repo 根目錄。
+
+- `github/src/glogarch/` → 搬到 `github/glogarch/`
+- `github/src/pyproject.toml` → 搬到 `github/pyproject.toml`
+- 刪除 `github/src/` 目錄
+- 更新 `check-version.sh` 和 `CLAUDE.md` 的參照路徑
+- 新增 `test_repo_structure.py`（7 筆測試）防止回歸
+
+### 新增 — README 加入升級說明
+
+兩份 README 都加入升級步驟：
+`db-backup` → `git pull` → `pip install --force-reinstall` →
+`systemctl restart` → 確認 `/api/health`。
+
+### 新增 — 升級模擬測試（`test_upgrade.py`）
+
+4 筆測試：舊 DB 自動升級、舊 config 向下相容、既有歸檔升級後完整保留、
+DB 備份有效性。
+
 ## [1.5.2] - 2026-04-12
 
 ### 新增 — 緊急本機管理員登入
