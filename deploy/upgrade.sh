@@ -31,6 +31,8 @@ usermod -aG systemd-journal jt-glogarch 2>/dev/null || true
 # 1. Backup DB
 echo ""
 echo "[1/5] Backing up database..."
+mkdir -p /var/backups/jt-glogarch
+chown jt-glogarch:jt-glogarch /var/backups/jt-glogarch
 sudo -u jt-glogarch python3 -m glogarch db-backup 2>/dev/null || echo "  (skip: db-backup not available in current version)"
 
 # 2. Pull latest
@@ -38,6 +40,33 @@ echo ""
 echo "[2/5] Pulling latest version..."
 cd "$INSTALL_DIR"
 git pull
+
+# 2.5. Ensure op_audit config exists (new in v1.7+)
+CONFIG_FILE="$INSTALL_DIR/config.yaml"
+if [ -f "$CONFIG_FILE" ]; then
+    if ! grep -q "op_audit:" "$CONFIG_FILE" 2>/dev/null; then
+        echo ""
+        echo "  Adding op_audit config (enabled by default)..."
+        cat >> "$CONFIG_FILE" << 'OPAUDIT'
+
+op_audit:
+  enabled: true
+  listen_port: 8991
+  retention_days: 180
+  max_body_size: 65536
+  alert_sensitive: true
+OPAUDIT
+        chown jt-glogarch:jt-glogarch "$CONFIG_FILE"
+    else
+        # op_audit exists — ensure retention_days is present within op_audit block
+        if ! sed -n '/^op_audit:/,/^[^ ]/p' "$CONFIG_FILE" | grep -q "retention_days"; then
+            echo "  Adding op_audit.retention_days: 180..."
+            sed -i '/^op_audit:/,/^[^ ]/{/listen_port/a\  retention_days: 180
+}' "$CONFIG_FILE"
+            chown jt-glogarch:jt-glogarch "$CONFIG_FILE"
+        fi
+    fi
+fi
 
 # 3. Install
 echo ""

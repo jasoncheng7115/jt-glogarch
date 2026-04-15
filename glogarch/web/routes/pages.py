@@ -28,9 +28,13 @@ def _is_logged_in(request: Request) -> bool:
     return request.session.get("authenticated", False)
 
 
+_VALID_LOGIN_ERRORS = {"auth_failed", "graylog_offline_with_local", "graylog_offline"}
+
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
     error = request.query_params.get("error", "")
+    if error not in _VALID_LOGIN_ERRORS:
+        error = ""
     return _render("login.html", request, {"error": error})
 
 
@@ -162,3 +166,10 @@ def logs_page(request: Request):
     if not _is_logged_in(request):
         return RedirectResponse(url="/login", status_code=303)
     return _render("index.html", request, {"page": "logs"})
+
+
+@router.get("/op-audit", response_class=HTMLResponse)
+def op_audit_page(request: Request):
+    if not _is_logged_in(request):
+        return RedirectResponse(url="/login", status_code=303)
+    return _render("index.html", request, {"page": "op-audit"})

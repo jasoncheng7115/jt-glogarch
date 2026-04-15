@@ -2,6 +2,97 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.7.0] - 2026-04-15
+
+### 新增 — 操作稽核（Graylog 合規稽核）
+
+記錄誰在 Graylog 上做了什麼操作，用於合規稽核。記錄完整 request body
+（可精確查看變更內容），且記錄獨立於 Graylog（管理員無法刪除稽核記錄）。
+
+**架構：**
+- 每台 Graylog 的 nginx 透過 UDP syslog 送出 access log
+- jt-glogarch 在 port 8991 接收、解析、分類、存入 SQLite
+- IP 白名單自動從 Graylog Cluster API 建立（零設定）
+- 白名單式篩選：僅記錄有意義的操作（60+ 種操作類型）
+- 背景輪詢、靜態資源、metrics 自動篩除
+
+**帳號解析：**
+- Basic Auth → 從 Authorization header 擷取帳號
+- Token 認證 → 透過 Graylog 逐使用者 token API 解析
+- Session 認證 → Session ID 透過 Graylog Sessions API 解析
+- Cookie Session（`$cookie_authentication`）→ 從 nginx log 擷取 session ID，透過 API 解析
+- 登入 POST body → 擷取帳號 → 以來源 IP 快取
+- 單一使用者環境 → 自動歸屬
+- 定期回填無帳號的記錄
+
+**項目名稱解析：**
+- Input/Stream/Index Set/Dashboard/Pipeline/Lookup Table ID → 人類可讀名稱
+- 從 Graylog API 快取，每 6 分鐘更新
+
+**心跳監控：**
+- 偵測稽核靜默失效（Graylog 正常但沒收到 syslog）
+- 超過 10 分鐘未收到資料時發送通知
+
+**Web UI「操作稽核」頁面：**
+- Dashboard 風格統計卡片 + sparkline 趨勢圖（24h）
+- 可篩選表格（時間範圍、帳號、方法、狀態碼、僅敏感操作）
+- 詳情 modal（JSON 語法高亮 + 複製按鈕）
+- nginx 前置設定說明（語法高亮設定範例）
+- 預設啟用；upgrade.sh 自動為舊版新增設定
+
+**通知：**
+- `on_sensitive_operation` — 偵測到敏感操作時通知
+- `on_audit_alert` — 稽核管道異常時通知
+- 各自獨立開關，可在通知設定頁面配置
+
+**安全強化：**
+- Session cookie `https_only=True`
+- 安全標頭：X-Frame-Options、X-Content-Type-Options、HSTS、Referrer-Policy
+- 通知設定密碼遮罩（API 回傳時脫敏）
+- 登入錯誤參數白名單驗證
+- UDP listener DoS 防護（佇列上限、封包大小限制）
+- SSH 指令注入防護（`shlex.quote`）
+
+**設定：**
+```yaml
+op_audit:
+  enabled: true          # 預設啟用
+  listen_port: 8991
+  max_body_size: 65536
+  alert_sensitive: true
+  retention_days: 180
+```
+
+**文件：**
+- `AUDIT-OPERATIONS.md` / `AUDIT-OPERATIONS-zh_TW.md` — 完整 60+ 種追蹤操作清單
+- `CONFIG.md` 新增 `op_audit` 區段
+- `README.md` — nginx 設定指南 + port 9000 防火牆說明
+
+**測試：** 新增 17 筆測試（parser、帳號解碼、session 認證、敏感分類、DB 操作、通知事件）。
+
+### 修正 — 操作稽核精進
+
+- **移除冗餘的 `search.execute` 記錄** — Graylog 搜尋會產生兩個 API 呼叫：建立/更新搜尋定義（包含查詢語句）+ 執行（僅含 `global_override`）。現在只記錄 `search.create`/`search.update`，後續的 `/execute` 呼叫自動篩除，避免重複。
+- **Token 認證帳號解析** — `GET /api/users` 不會回傳實際 token 值。新增 fallback 查詢各使用者的 `GET /api/users/{username}/tokens` 端點（會回傳真實 token 值）。同時新增非同步解析（`_resolve_token_via_api`）處理快取未命中的情況。
+- **Cookie Session 解析** — 瀏覽器 session 使用 cookie 而非 Authorization header。nginx log format 新增 `$cookie_authentication` 欄位擷取 Graylog session cookie，listener 從中擷取 session ID 並透過 Graylog Sessions API 解析帳號。無 cookie 時 fallback 至 IP 快取。
+- **外部帳號被排除** — `_get_human_users()` 錯誤地排除 LDAP/SSO 帳號（`external=true`），導致單一使用者預設歸屬到錯誤帳號。外部帳號現已納入。
+- **搜尋項目欄位顯示原始 URI** — `search.execute` 的 target_name 為空時，UI 會顯示完整的 API URI 路徑。透過移除冗餘的 execute pattern 修正（查詢語句已記錄在 `search.create`/`search.update`）。
+- **稽核表格缺少伺服器欄位** — 操作稽核表格新增「伺服器」欄位（位於帳號前面）。
+- **認證服務操作未追蹤** — `_KEEP_PATTERNS` 新增 `/api/system/authentication/services/backends`（建立/修改/刪除/啟用/停用）。同時標記為敏感操作。
+- **Content Pack 名稱未解析** — `_refresh_resource_cache` 新增從 Graylog API 快取 content pack。`_resolve_target_name` 新增含連字號的 UUID URI 比對。
+- **Dashboard 名稱無法透過 /api/dashboards 解析** — 統一 `_resolve_target_name`，讓 `/api/views/` 和 `/api/dashboards/` 路徑共用同一個 view 快取。
+- **Lookup adapter/cache 名稱未解析** — `_refresh_resource_cache` 原本只快取 lookup table。新增快取 data adapter（`/api/system/lookup/adapters`）和 cache（`/api/system/lookup/caches`）。
+- **稽核保留期限獨立於歸檔保留期限** — `op_audit.retention_days`（預設 180）現在獨立控制稽核記錄清理，與歸檔保留期限（預設 1095 天）分開。先前稽核清理使用歸檔保留設定，且在沒有歸檔時會提前返回。
+- **無歸檔可清理時稽核清理被跳過** — `Cleaner.cleanup()` 有一個提前返回，導致沒有歸檔檔案符合保留條件時，稽核記錄清理也不會執行。已重構為稽核清理一律執行。
+- **upgrade.sh 自動新增 `retention_days`** — 已有 `op_audit` 設定但缺少 `retention_days` 的舊版安裝，升級時自動補上。
+
+### 修正 — zh_TW 用語
+
+- 損壞 → 損毀（台灣用語）
+- 過濾 → 篩選/篩除
+- 對象 → 項目
+- README cleanup 範例保留天數：60 天 → 1095 天
+
 ## [1.6.2] - 2026-04-15
 
 ### 新增 — 排程支援多伺服器
@@ -38,7 +129,7 @@ ICONS map 加上 `pause` 和 `close` SVG。排程啟用/停用按鈕加 play/pau
 
 ### 修正 — TEST-RESULTS.md 有 ANSI 亂碼
 
-`run-tests.sh` 加上 `NO_COLOR=1 TERM=dumb` + sed 過濾。
+`run-tests.sh` 加上 `NO_COLOR=1 TERM=dumb` + sed 篩除。
 
 ## [1.6.1] - 2026-04-14
 
@@ -472,7 +563,7 @@ sleep — 只有 OpenSearch 回 429 時的 retry backoff。這條 slider
 
 - **取消檢查點** — `BulkImporter` 在 batch 之間檢查 cancel 旗標。在
   Web UI 中按取消可即時停止匯入，不會跑完整批。
-- **保留欄位過濾** — bulk body builder 會把 `_id`、`_index`、`_source`、
+- **保留欄位篩除** — bulk body builder 會把 `_id`、`_index`、`_source`、
   `_type`、`_routing`、`_parent`、`_version`、`_op_type` 從每筆文件
   剔除，避免歸檔中極少數含這類欄位的文件導致 bulk 整批被拒絕。
 
@@ -486,7 +577,7 @@ sleep — 只有 OpenSearch 回 429 時的 retry backoff。這條 slider
 
 ### 安全
 
-- **`jobs.error_message` 密碼/Token 過濾** — 新增
+- **`jobs.error_message` 密碼/Token 脫敏** — 新增
   `glogarch/utils/sanitize.py`，任何要寫入 `jobs.error_message`、
   `audit_log.detail` 或經由 `update_job` / `create_job` / `audit` 的字串
   都會先脫敏。涵蓋 `Authorization: Basic|Bearer …`、
@@ -545,7 +636,7 @@ sleep — 只有 OpenSearch 回 429 時的 retry backoff。這條 slider
 
 v1.3.0 bulk 模式端對端測試發現，匯入的訊息確實有寫進 OpenSearch 但
 **在 Graylog UI 上搜尋不到**。原因：Graylog 搜尋會以 `streams` → index sets
-做過濾，而我們的訊息 `streams` 欄位是來源 cluster 的舊 stream UUIDs，
+做篩選，而我們的訊息 `streams` 欄位是來源 cluster 的舊 stream UUIDs，
 目標 cluster 不認得。沒有目標 stream 綁到 bulk index set，Graylog 完全
 不會去 query `jt_restored_*` indices。
 

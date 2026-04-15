@@ -165,6 +165,36 @@ notify:
 
 ---
 
+## op_audit — 操作稽核（Graylog 操作追蹤）
+
+```yaml
+op_audit:
+  enabled: true                           # 啟用操作稽核（接收 nginx syslog）
+  listen_port: 8991                       # syslog UDP 監聽埠號
+  max_body_size: 65536                    # 每筆記錄最大 request body（bytes）
+  alert_sensitive: true                   # 偵測到敏感操作時發送通知（刪除使用者/stream/input 等）
+```
+
+> 稽核記錄會在排程清理（cleanup）執行時一併清除，使用與歸檔檔案相同的 `retention.retention_days` 保留天數，不需要單獨設定。
+
+### 運作方式
+
+每台 Graylog 前端的 nginx 反向代理將 access log 透過 syslog UDP 傳送至 jt-glogarch。
+jt-glogarch 解析 log、從 Authorization header 解碼 Graylog 帳號、分類操作類型，
+並儲存至 SQLite。敏感操作（刪除使用者/stream/input、登入登出等）會觸發通知。
+
+IP 白名單**完全自動**：從 `servers[].url` + Graylog Cluster API
+（`GET /api/system/cluster/nodes`）取得，每 5 分鐘自動更新，無需手動設定。
+
+Token 認證會自動解析為實際 Graylog 帳號（透過 Users API 快取，每 10 分鐘更新）。
+
+### nginx 設定
+
+請至 Web UI「API 稽核」頁面 →「設定說明」查看完整 nginx 設定範例，
+或使用 CLI：`glogarch audit-status`。
+
+---
+
 ## web — Web UI
 
 ```yaml

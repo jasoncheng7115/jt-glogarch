@@ -2188,6 +2188,8 @@ async function loadNotifySettings() {
             {key: 'on_cleanup_complete', label: t('evt_cleanup_complete'), ic: 'trash'},
             {key: 'on_error', label: t('evt_error'), ic: 'warning'},
             {key: 'on_verify_failed', label: t('evt_verify_failed'), ic: 'shield'},
+            {key: 'on_sensitive_operation', label: t('evt_sensitive_operation'), ic: 'lock'},
+            {key: 'on_audit_alert', label: t('evt_audit_alert'), ic: 'warning'},
         ];
         eventsEl.innerHTML = events.map(e =>
             `<label style="display:flex;align-items:center;gap:8px;margin:8px 0;cursor:pointer">
@@ -2598,11 +2600,287 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (path === '/schedules') { fetchJSON(`${API}/servers`).then(d => { if (d.items?.length) window._defaultServerName = d.items[0].name; }).catch(()=>{}).finally(() => { loadSchedules().then(() => setTimeout(initCustomSelects, 200)); }); startSchedPoll(); }
     else if (path === '/notify-settings') loadNotifySettings();
     else if (path === '/logs') { loadRealtimeLog(); loadTable('#audit-table', loadAuditLog); }
+    else if (path === '/op-audit') { loadAuditData(1); loadAuditStatus(); loadAuditNginxConfig(); }
 });
 
 // Re-translate dynamic JS-rendered content when language changes
 document.addEventListener('langchange', () => {
     const path = window.location.pathname;
     if (path === '/logs') { loadRealtimeLog(); loadTable('#audit-table', loadAuditLog); }
+    if (path === '/op-audit') { loadAuditData(1); }
 });
+
+// --- API Audit page ---
+
+let _auditPage = 1;
+
+async function loadAuditData(page) {
+    _auditPage = page || 1;
+    const fromVal = document.getElementById('audit-filter-from')?.value || '';
+    const toVal = document.getElementById('audit-filter-to')?.value || '';
+    const params = new URLSearchParams({page: _auditPage, page_size: 50});
+    const user = document.getElementById('audit-filter-user')?.value;
+    const method = document.getElementById('audit-filter-method')?.value;
+    const uri = document.getElementById('audit-filter-uri')?.value;
+    const sc = document.getElementById('audit-filter-status')?.value;
+    const sens = document.getElementById('audit-filter-sensitive')?.checked;
+    if (user) params.set('username', user);
+    if (method) params.set('method', method);
+    if (uri) params.set('uri', uri);
+    if (sc) params.set('status_code', sc);
+    if (sens) params.set('sensitive_only', 'true');
+    if (fromVal) params.set('time_from', new Date(fromVal).toISOString());
+    if (toVal) params.set('time_to', new Date(toVal).toISOString());
+    const tbody = document.querySelector('#audit-table tbody');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted)">${t('loading')}...</td></tr>`;
+
+    try {
+        const data = await fetchJSON(`${API}/audit?${params}`);
+        if (!data.items || data.items.length === 0) {
+            if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted)">${t('log_no_data')}</td></tr>`;
+        } else {
+            const methodColors = {GET:'#4caf50',POST:'#2196f3',PUT:'#ff9800',DELETE:'#f44336',PATCH:'#9c27b0'};
+            if (tbody) tbody.innerHTML = data.items.map(a => {
+                const mc = methodColors[a.method] || '#888';
+                const sc = a.status_code >= 400 ? 'color:var(--danger)' : '';
+                const sens = a.is_sensitive ? `<span style="color:var(--warning)" title="${esc(a.operation)}">⚠</span>` : '';
+                const target = a.target_name || '';
+                const sensIcon = a.is_sensitive ? `<span style="color:var(--danger)" title="${t('audit_sensitive_ops')}">${icon('warning',16)}</span>` : '';
+                return `<tr style="cursor:pointer" onclick="showAuditDetail(${a.id})">
+                    <td style="white-space:nowrap">${formatDT(a.timestamp)}</td>
+                    <td style="font-size:0.85em">${esc(a.server_name || '')}</td>
+                    <td>${esc(a.username || '-')}</td>
+                    <td style="font-size:0.85em">${esc(a.remote_addr || '')}</td>
+                    <td>${esc(a.operation || '')}</td>
+                    <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(a.uri)}">${esc(target || a.uri || '')}</td>
+                    <td style="text-align:center">${sensIcon}</td>
+                </tr>`;
+            }).join('');
+        }
+        // Pagination
+        const totalPages = Math.ceil((data.total || 0) / (data.page_size || 50));
+        const pag = document.getElementById('audit-pagination');
+        if (pag && totalPages > 1) {
+            let html = '';
+            if (_auditPage > 1) html += `<button class="btn-sm btn-secondary" onclick="loadAuditData(${_auditPage-1})">←</button>`;
+            html += `<span style="line-height:30px">${_auditPage} / ${totalPages} (${data.total})</span>`;
+            if (_auditPage < totalPages) html += `<button class="btn-sm btn-secondary" onclick="loadAuditData(${_auditPage+1})">→</button>`;
+            pag.innerHTML = html;
+        } else if (pag) {
+            pag.innerHTML = data.total ? `<span style="color:var(--text-muted)">${data.total} ${t('th_messages').toLowerCase()}</span>` : '';
+        }
+
+        // Stats
+        const stats = await fetchJSON(`${API}/audit/stats?hours=24`);
+        const s1 = document.getElementById('audit-stat-total');
+        const s2 = document.getElementById('audit-stat-users');
+        const s3 = document.getElementById('audit-stat-errors');
+        const s4 = document.getElementById('audit-stat-sensitive');
+        const sLF = document.getElementById('audit-stat-loginfail');
+        if (s1) s1.querySelector('.card-value').textContent = formatNumber(stats.total || 0);
+        if (s2) s2.querySelector('.card-value').textContent = stats.unique_users || 0;
+        if (sLF) sLF.querySelector('.card-value').textContent = stats.login_failures || 0;
+        if (s4) s4.querySelector('.card-value').textContent = stats.sensitive || 0;
+        // Sparklines
+        const sp = stats.sparkline || {};
+        if (s1 && sp.ops && !s1.querySelector('.sparkline-svg')) s1.insertAdjacentHTML('beforeend', buildSparkSVG(sp.ops, '#6c63ff', 'number'));
+        if (s2 && sp.ops && !s2.querySelector('.sparkline-svg')) s2.insertAdjacentHTML('beforeend', buildSparkSVG(sp.ops, '#4caf50', 'number'));
+        if (sLF && sp.login_failures && !sLF.querySelector('.sparkline-svg')) sLF.insertAdjacentHTML('beforeend', buildSparkSVG(sp.login_failures, '#ff9800', 'number'));
+        if (s4 && sp.sensitive && !s4.querySelector('.sparkline-svg')) s4.insertAdjacentHTML('beforeend', buildSparkSVG(sp.sensitive, '#f44336', 'number'));
+    } catch (e) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--danger)">${t('load_failed')}</td></tr>`;
+    }
+}
+
+async function loadAuditStatus() {
+    // Ensure filter labels match current language
+    const optM = document.getElementById('audit-opt-method');
+    const optS = document.getElementById('audit-opt-status');
+    if (optM) optM.textContent = t('audit_method');
+    if (optS) optS.textContent = t('audit_status');
+    try {
+        const st = await fetchJSON(`${API}/audit/status`);
+        const bar = document.getElementById('audit-listener-status');
+        const last = document.getElementById('audit-last-received');
+        const btn = document.getElementById('audit-toggle-btn');
+        if (btn) {
+            if (st.enabled) {
+                btn.className = 'btn-sm btn-danger';
+                btn.innerHTML = `${icon('pause',14)} ${t('btn_disable')}`;
+            } else {
+                btn.className = 'btn-sm btn-success';
+                btn.innerHTML = `${icon('play',14)} ${t('btn_enable')}`;
+            }
+        }
+        if (bar) {
+            if (st.enabled && st.listening) {
+                const ips = st.allowed_ips?.join(', ') || '-';
+                const rx = st.last_received_at
+                    ? `${t('audit_last_received')}: ${formatDT(st.last_received_at)} (${formatNumber(st.received)} ${t('audit_received_count')})`
+                    : `${t('audit_last_received')}: -`;
+                const hbAlert = st.heartbeat_alert
+                    ? `<span style="color:var(--danger);font-weight:600">${icon('warning',14)} ${t('audit_heartbeat_alert')}</span>`
+                    : '';
+                bar.innerHTML = `<span style="color:var(--success);font-weight:600">● ${t('audit_listening')}</span>`
+                    + `<span>UDP :${st.port}</span>`
+                    + `<span style="opacity:0.7">${rx}</span>`
+                    + hbAlert;
+            } else if (st.enabled) {
+                bar.innerHTML = `<span style="color:var(--warning);font-weight:600">● ${t('audit_starting')}...</span>`;
+            } else {
+                bar.innerHTML = '';
+            }
+        }
+        if (last) last.textContent = '';
+    } catch (e) {}
+}
+
+async function toggleAuditEnabled() {
+    const btn = document.getElementById('audit-toggle-btn');
+    if (btn) btn.disabled = true;
+    try {
+        await fetchJSON(`${API}/audit/toggle`, {method: 'POST'});
+        await loadAuditStatus();
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function showAuditDetail(id) {
+    try {
+        const entry = await fetchJSON(`${API}/audit/${id}`);
+        const el = document.getElementById('audit-detail-content');
+        if (!el) return;
+        let bodyHtml = '';
+        if (entry.request_body) {
+            let formatted = null;
+            try {
+                formatted = JSON.stringify(JSON.parse(entry.request_body), null, 2);
+            } catch {
+                // Truncated JSON — try to pretty-print what we have
+                try {
+                    // Simple heuristic: add enough closing braces/brackets
+                    let fix = entry.request_body.replace(/\.\.\.\[truncated\]$/, '');
+                    fix = fix.replace(/,[^,]*$/, '');  // remove incomplete last field
+                    const opens = (fix.match(/[{[]/g) || []).length;
+                    const closes = (fix.match(/[}\]]/g) || []).length;
+                    for (let i = 0; i < opens - closes; i++) fix += fix.includes('[') ? ']' : '}';
+                    formatted = JSON.stringify(JSON.parse(fix), null, 2) + '\n... (truncated)';
+                } catch { /* give up */ }
+            }
+            if (formatted) {
+                bodyHtml = `<pre class="log-output" style="overflow-x:auto">${_syntaxHL(formatted)}</pre>`;
+            } else {
+                bodyHtml = `<pre class="log-output" style="overflow-x:auto;white-space:pre-wrap;word-break:break-all">${esc(entry.request_body)}</pre>`;
+            }
+        }
+        const L = 'style="width:100px;font-weight:600;background:var(--hover-bg);padding:8px 10px;white-space:nowrap;border-bottom:1px solid var(--border);vertical-align:top"';
+        const V = 'style="padding:8px 10px;border-bottom:1px solid var(--border);word-break:break-all;max-width:0"';
+        const tgt = entry.target_name || '';
+        el.innerHTML = `
+            <table style="width:100%;font-size:0.9em;border-collapse:separate;border-spacing:0;border:1px solid var(--border);border-radius:6px;table-layout:fixed">
+                <tr><td ${L}>${t('th_time')}</td><td ${V}>${formatDT(entry.timestamp)}</td></tr>
+                <tr><td ${L}>${t('login_username')}</td><td ${V}>${esc(entry.username || '-')}</td></tr>
+                <tr><td ${L}>${t('audit_operation')}</td><td ${V}>${esc(entry.operation || '-')}</td></tr>
+                <tr><td ${L}>${t('audit_target')}</td><td ${V}>${esc(tgt || '-')}</td></tr>
+                <tr><td ${L}>${t('audit_sensitive_ops')}</td><td ${V}>${entry.is_sensitive ? `<span style="color:var(--danger)">${icon('warning',16)} ${t('audit_sensitive_yes')}</span>` : '-'}</td></tr>
+                <tr><td ${L}>${t('audit_method')}</td><td ${V}><strong>${esc(entry.method)}</strong> ${entry.status_code}</td></tr>
+                <tr><td ${L}>URI</td><td ${V}>${esc(entry.uri)}${entry.query_string ? '?' + esc(entry.query_string) : ''}</td></tr>
+                <tr><td ${L}>${t('audit_ip')}</td><td ${V}>${esc(entry.remote_addr)}</td></tr>
+                <tr><td ${L}>${t('audit_user_agent')}</td><td ${V} style="padding:8px 10px;font-size:0.82em">${esc(entry.user_agent || '-')}</td></tr>
+                <tr><td ${L}>${t('audit_response_time')}</td><td ${V}>${(entry.request_time_ms || 0).toFixed(1)} ms</td></tr>
+                <tr><td ${L}>${t('audit_server')}</td><td ${V}>${esc(entry.server_name || '-')}</td></tr>
+            </table>
+            ${bodyHtml ? `<div style="position:relative;margin-top:12px"><h4 style="margin:0 0 6px">${t('audit_request_body')}</h4><button onclick="navigator.clipboard.writeText(document.getElementById('audit-body-raw').textContent).then(()=>{this.innerHTML='✓';setTimeout(()=>{this.innerHTML='${t('btn_copy')}'},1500)})" style="position:absolute;top:38px;right:8px;z-index:1;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:#c5c8c6;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:0.78em;backdrop-filter:blur(4px)">${t('btn_copy')}</button><div id="audit-body-raw" style="display:none">${esc(entry.request_body)}</div>${bodyHtml}</div>` : ''}
+        `;
+        document.getElementById('audit-detail-modal').style.display = 'flex';
+    } catch (e) {}
+}
+
+async function loadAuditNginxConfig() {
+    try {
+        const cfg = await fetchJSON(`${API}/audit/nginx-config`);
+        const el = document.getElementById('audit-nginx-config');
+        const port = cfg.server_block?.match(/:(\d+),/)?.[1] || '8991';
+        if (el) el.innerHTML = _nginxHL(
+`# ======================================================
+# Step 1: /etc/nginx/nginx.conf
+# Add inside http { } block, BEFORE "include" lines
+# ======================================================
+#
+# http {
+#     ...existing settings...
+#
+${cfg.log_format}
+#
+#     include /etc/nginx/conf.d/*.conf;      <-- must be AFTER log_format
+#     include /etc/nginx/sites-enabled/*;    <-- must be AFTER log_format
+# }
+
+# ======================================================
+# Step 2: Graylog site config
+# e.g. /etc/nginx/sites-available/graylog.conf
+# Add inside server { } block
+# ======================================================
+#
+# server {
+#     ...existing settings...
+#
+${cfg.server_block}
+#
+# }
+
+# ======================================================
+# Step 3: Open UDP port ${port} on jt-glogarch server
+# ======================================================
+# sudo ufw allow ${port}/udp
+# or: sudo firewall-cmd --add-port=${port}/udp --permanent && sudo firewall-cmd --reload
+
+# ======================================================
+# Step 4: Test and reload nginx (on each Graylog server)
+# ======================================================
+# sudo nginx -t && sudo systemctl reload nginx`);
+    } catch (e) {}
+}
+
+function _nginxHL(text) {
+    // nginx config syntax highlighting
+    // Content is from our own API (safe), so we escape < > & only, not quotes
+    const e = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const C = '#6a9955', D = '#569cd6', S = '#ce9178', V = '#dcdcaa', T = '#4ec9b0', P = '#c586c0';
+    return text.split('\n').map(line => {
+        let s = e(line);
+        if (/^\s*#/.test(line)) return `<span style="color:${C}">${s.replace(/(Step \d)/g, `</span><span style="color:${P};font-weight:600">$1</span><span style="color:${C}">`)}</span>`;
+        s = s.replace(/\b(http|server|location|log_format|access_log|client_body_buffer_size|include|sudo|nginx|systemctl|ufw|firewall-cmd)\b/g, `<span style="color:${D};font-weight:600">$1</span>`);
+        s = s.replace(/('[^']*')/g, `<span style="color:${S}">$1</span>`);
+        s = s.replace(/(\$\w+)/g, `<span style="color:${V}">$1</span>`);
+        s = s.replace(/(escape=json|syslog:server=|facility=|tag=)/g, `<span style="color:${T}">$1</span>`);
+        return s;
+    }).join('\n');
+}
+
+function _syntaxHL(json) {
+    // JSON syntax highlighting — returns HTML with color spans
+    return esc(json).replace(
+        /("(?:\\.|[^"\\])*")\s*:/g,  // keys
+        '<span style="color:#82aaff">$1</span>:'
+    ).replace(
+        /:\s*("(?:\\.|[^"\\])*")/g,  // string values
+        ': <span style="color:#c3e88d">$1</span>'
+    ).replace(
+        /:\s*(\d+\.?\d*)/g,  // numbers
+        ': <span style="color:#f78c6c">$1</span>'
+    ).replace(
+        /:\s*(true|false)/g,  // booleans
+        ': <span style="color:#ff9cac">$1</span>'
+    ).replace(
+        /:\s*(null)/g,  // null
+        ': <span style="color:#888">$1</span>'
+    );
+}
+
+function copyAuditNginxConfig() {
+    const el = document.getElementById('audit-nginx-config');
+    if (el) navigator.clipboard.writeText(el.textContent).then(() => showAlert(t('msg_copied'))).catch(() => {});
+}
 

@@ -879,6 +879,12 @@ schedule:
   export_days: 180
   cleanup_cron: "0 3 * * *"
 
+op_audit:
+  enabled: false
+  listen_port: 8991
+  max_body_size: 65536
+  alert_sensitive: true
+
 web:
   host: "0.0.0.0"
   port: 8990
@@ -1032,6 +1038,63 @@ def db_rebuild(archive_root: str | None, dry_run: bool, yes: bool):
     console.print(table)
     if dry_run:
         console.print("[dim]Dry run — no changes written[/dim]")
+
+
+@cli.command("audit-status")
+def audit_status():
+    """Show API Audit status and recent statistics."""
+    db = _get_db()
+    settings = get_settings()
+    cfg = settings.op_audit
+
+    console.print("[bold]API Audit Status[/bold]")
+    console.print()
+
+    # Config
+    table = Table(title="Configuration")
+    table.add_column("Setting", style="cyan")
+    table.add_column("Value", justify="right")
+    table.add_row("Enabled", "[green]Yes[/green]" if cfg.enabled else "[red]No[/red]")
+    table.add_row("Listen Port", str(cfg.listen_port))
+    table.add_row("Retention", f"Follows cleanup ({settings.retention.retention_days} days)")
+    table.add_row("Max Body Size", f"{cfg.max_body_size:,} bytes")
+    table.add_row("Alert Sensitive", "[green]Yes[/green]" if cfg.alert_sensitive else "[red]No[/red]")
+    console.print(table)
+
+    # Statistics
+    console.print()
+    stats_24h = db.get_api_audit_stats(hours=24)
+    stats_7d = db.get_api_audit_stats(hours=168)
+
+    stats_table = Table(title="Statistics")
+    stats_table.add_column("Metric", style="cyan")
+    stats_table.add_column("24h", justify="right")
+    stats_table.add_column("7 days", justify="right")
+    stats_table.add_row("Total requests", f"{stats_24h.get('total', 0):,}", f"{stats_7d.get('total', 0):,}")
+    stats_table.add_row("Unique users", str(stats_24h.get("unique_users", 0)), str(stats_7d.get("unique_users", 0)))
+    stats_table.add_row("Error rate", f"{stats_24h.get('error_rate', 0)}%", f"{stats_7d.get('error_rate', 0)}%")
+    stats_table.add_row("Sensitive ops", str(stats_24h.get("sensitive", 0)), str(stats_7d.get("sensitive", 0)))
+    console.print(stats_table)
+
+    # Total DB records
+    total_all = db.get_api_audit_stats(hours=0)
+    console.print()
+    console.print(f"  Total records in DB: [bold]{total_all.get('total', 0):,}[/bold]")
+
+    # Allowed IPs (from config servers)
+    ips = set()
+    for srv in settings.servers:
+        from urllib.parse import urlparse
+        try:
+            parsed = urlparse(srv.url)
+            if parsed.hostname:
+                ips.add(parsed.hostname)
+        except Exception:
+            pass
+    if ips:
+        console.print(f"  Config server IPs: {', '.join(sorted(ips))}")
+
+    db.close()
 
 
 @cli.command("hash-password")

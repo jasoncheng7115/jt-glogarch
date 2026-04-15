@@ -165,6 +165,42 @@ notify:
 
 ---
 
+## op_audit — Operation Audit (Graylog Operation Tracking)
+
+```yaml
+op_audit:
+  enabled: true                           # Enable operation audit (receives nginx syslog)
+  listen_port: 8991                       # UDP syslog listen port
+  max_body_size: 65536                    # Max request body stored per entry (bytes)
+  alert_sensitive: true                   # Notify on sensitive operations (DELETE user/stream/input etc.)
+```
+
+> Audit records are cleaned automatically when the scheduled cleanup runs, using the same `retention.retention_days` as archive files. No separate retention setting needed.
+
+### How it works
+
+Each Graylog server's nginx reverse proxy sends access logs via syslog UDP to jt-glogarch.
+jt-glogarch parses the logs, decodes the Graylog username from the Authorization header,
+classifies operations, and stores them in SQLite. Sensitive operations (user/stream/input
+deletion, login/logout, etc.) trigger notifications.
+
+The IP allowlist is **auto-built** from `servers[].url` + Graylog Cluster API
+(`GET /api/system/cluster/nodes`), refreshed every 5 minutes. No manual IP configuration needed.
+
+Token-based authentication is automatically resolved to the actual Graylog username
+via the Users API cache (refreshed every 10 minutes).
+
+### Setup
+
+1. Open UDP port on jt-glogarch server firewall: `sudo ufw allow 8991/udp`
+2. Add `log_format` to `/etc/nginx/nginx.conf` `http {}` block (once per server)
+3. Add `access_log` + `client_body_buffer_size` to Graylog site config `server {}` block
+4. `sudo nginx -t && sudo systemctl reload nginx`
+
+See the Web UI "Operation Audit" page → "nginx Prerequisites" for the ready-to-copy config snippet.
+
+---
+
 ## web — Web UI
 
 ```yaml

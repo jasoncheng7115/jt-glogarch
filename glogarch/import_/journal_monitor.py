@@ -121,16 +121,18 @@ class JournalMonitor:
                 conn_kwargs["client_keys"] = [self.ssh_key_path]
 
             async with asyncssh.connect(**conn_kwargs) as conn:
+                import shlex
+                safe_path = shlex.quote(self.journal_path)
                 # Get journal directory size
                 result = await conn.run(
-                    f"du -sb {self.journal_path} 2>/dev/null | cut -f1",
+                    f"du -sb {safe_path} 2>/dev/null | cut -f1",
                     check=False,
                 )
                 size_bytes = int(result.stdout.strip() or "0")
 
                 # Get disk free space
                 result2 = await conn.run(
-                    f"df -B1 {self.journal_path} 2>/dev/null | tail -1 | awk '{{print $4}}'",
+                    f"df -B1 {safe_path} 2>/dev/null | tail -1 | awk '{{print $4}}'",
                     check=False,
                 )
                 disk_free = int(result2.stdout.strip() or "0")
@@ -154,10 +156,12 @@ class JournalMonitor:
             cmd_parts = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5"]
             if self.ssh_key_path:
                 cmd_parts.extend(["-i", self.ssh_key_path])
+            import shlex
+            safe_path = shlex.quote(self.journal_path)
             cmd_parts.extend([
                 "-p", str(self.ssh_port),
                 f"{self.ssh_user}@{self.ssh_host}",
-                f"du -sb {self.journal_path} 2>/dev/null | cut -f1; df -B1 {self.journal_path} 2>/dev/null | tail -1 | awk '{{print $4}}'",
+                f"du -sb {safe_path} 2>/dev/null | cut -f1; df -B1 {safe_path} 2>/dev/null | tail -1 | awk '{{print $4}}'",
             ])
 
             proc = await asyncio.create_subprocess_exec(

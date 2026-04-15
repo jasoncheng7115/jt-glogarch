@@ -1371,6 +1371,8 @@ def notify_status(request: Request):
         "on_cleanup_complete": n.on_cleanup_complete,
         "on_error": n.on_error,
         "on_verify_failed": n.on_verify_failed,
+        "on_sensitive_operation": n.on_sensitive_operation,
+        "on_audit_alert": n.on_audit_alert,
     }
 
 
@@ -1415,6 +1417,119 @@ async def test_notify(request: Request):
 
 # --- Logs ---
 
+# --- Operation Audit ---
+
+@router.get("/audit/stats")
+def get_audit_stats(request: Request, hours: int = 24):
+    db = _db(request)
+    return db.get_api_audit_stats(hours=hours)
+
+
+@router.get("/audit/status")
+def get_audit_status(request: Request):
+    listener = getattr(request.app.state, "audit_listener", None)
+    if not listener:
+        return {"enabled": False}
+    status = listener.get_status()
+    status["retention_days"] = _settings(request).retention.retention_days
+    return status
+
+
+@router.post("/audit/toggle")
+async def toggle_audit(request: Request):
+    """Toggle op_audit.enabled and save to config.yaml. Requires restart."""
+    import yaml
+    settings = _settings(request)
+    new_val = not settings.op_audit.enabled
+    settings.op_audit.enabled = new_val
+
+    # Save to config.yaml
+    config_path = _config_path(request)
+    if config_path.exists():
+        with open(config_path) as f:
+            cfg = yaml.safe_load(f) or {}
+        if "op_audit" not in cfg:
+            cfg["op_audit"] = {}
+        cfg["op_audit"]["enabled"] = new_val
+        # Remove old key if present
+        cfg.pop("api_audit", None)
+        with open(config_path, "w") as f:
+            yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+
+    _audit(request, "audit_toggle", f"op_audit.enabled={new_val}")
+
+    # Restart listener if toggling on (best effort — full restart recommended)
+    listener = getattr(request.app.state, "audit_listener", None)
+    if listener:
+        if new_val and not listener.transport:
+            listener.config.enabled = True
+            import asyncio
+            asyncio.ensure_future(listener.start())
+        elif not new_val and listener.transport:
+            listener.config.enabled = False
+            await listener.stop()
+
+    return {"enabled": new_val, "restart_required": False}
+
+
+@router.get("/audit/nginx-config")
+def get_audit_nginx_config(request: Request):
+    """Return the nginx config snippet for users to copy."""
+    settings = _settings(request)
+    port = settings.op_audit.listen_port
+    # nginx convention: 8-space indent
+    I = "        "  # 8 spaces (inside block)
+    II = "                "  # 16 spaces (continuation)
+    log_format = (
+        f"{I}log_format graylog_audit escape=json\n"
+        f"{II}'{{'\n"
+        f"{II}'\"time\":\"$time_iso8601\",'\n"
+        f"{II}'\"remote_addr\":\"$remote_addr\",'\n"
+        f"{II}'\"method\":\"$request_method\",'\n"
+        f"{II}'\"uri\":\"$uri\",'\n"
+        f"{II}'\"args\":\"$args\",'\n"
+        f"{II}'\"status\":$status,'\n"
+        f"{II}'\"body_bytes_sent\":$body_bytes_sent,'\n"
+        f"{II}'\"request_body\":\"$request_body\",'\n"
+        f"{II}'\"http_authorization\":\"$http_authorization\",'\n"
+        f"{II}'\"http_cookie\":\"$cookie_authentication\",'\n"
+        f"{II}'\"user_agent\":\"$http_user_agent\",'\n"
+        f"{II}'\"request_time\":$request_time,'\n"
+        f"{II}'\"server_name\":\"$server_name\"'\n"
+        f"{II}'}}';",
+    )
+    server_block = (
+        f"{I}access_log syslog:server=JT_GLOGARCH_IP:{port},facility=local7,tag=graylog_audit graylog_audit;\n"
+        f"{I}client_body_buffer_size 64k;"
+    )
+    return {"log_format": log_format, "server_block": server_block}
+
+
+@router.get("/audit")
+def list_audit(request: Request, page: int = 1, page_size: int = 50,
+               username: str = "", method: str = "", uri: str = "",
+               status_code: str = "", sensitive_only: bool = False,
+               time_from: str = "", time_to: str = ""):
+    db = _db(request)
+    offset = (page - 1) * page_size
+    items, total = db.list_api_audit(
+        limit=page_size, offset=offset,
+        username=username, method=method, uri=uri,
+        status_code=status_code, sensitive_only=sensitive_only,
+        time_from=time_from, time_to=time_to,
+    )
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/audit/{entry_id}")
+def get_audit_detail(request: Request, entry_id: int):
+    db = _db(request)
+    entry = db.get_api_audit_entry(entry_id)
+    if not entry:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return entry
+
+
 @router.get("/logs/realtime")
 def get_realtime_log(request: Request, lines: int = 100):
     """Get recent journalctl log lines."""
@@ -1447,6 +1562,13 @@ def get_audit_log(request: Request, limit: int = 200):
 
 # --- Notification Settings ---
 
+def _mask(val: str) -> str:
+    """Mask sensitive strings for API responses. Show first/last 3 chars."""
+    if not val or len(val) <= 6:
+        return "***" if val else ""
+    return val[:3] + "*" * (len(val) - 6) + val[-3:]
+
+
 @router.get("/notify/config")
 def get_notify_config(request: Request):
     """Get full notification config for the settings form."""
@@ -1459,14 +1581,18 @@ def get_notify_config(request: Request):
         "on_cleanup_complete": n.on_cleanup_complete,
         "on_error": n.on_error,
         "on_verify_failed": n.on_verify_failed,
-        "telegram": {"enabled": n.telegram.enabled, "bot_token": n.telegram.bot_token, "chat_id": n.telegram.chat_id},
-        "discord": {"enabled": n.discord.enabled, "webhook_url": n.discord.webhook_url},
-        "slack": {"enabled": n.slack.enabled, "webhook_url": n.slack.webhook_url},
-        "teams": {"enabled": n.teams.enabled, "webhook_url": n.teams.webhook_url},
+        "on_sensitive_operation": n.on_sensitive_operation,
+        "on_audit_alert": n.on_audit_alert,
+        "telegram": {"enabled": n.telegram.enabled, "bot_token": _mask(n.telegram.bot_token), "chat_id": n.telegram.chat_id},
+        "discord": {"enabled": n.discord.enabled, "webhook_url": _mask(n.discord.webhook_url)},
+        "slack": {"enabled": n.slack.enabled, "webhook_url": _mask(n.slack.webhook_url)},
+        "teams": {"enabled": n.teams.enabled, "webhook_url": _mask(n.teams.webhook_url)},
         "nextcloud_talk": {"enabled": n.nextcloud_talk.enabled, "server_url": n.nextcloud_talk.server_url,
-                           "token": n.nextcloud_talk.token, "username": n.nextcloud_talk.username, "password": n.nextcloud_talk.password},
+                           "token": _mask(n.nextcloud_talk.token), "username": n.nextcloud_talk.username,
+                           "password": _mask(n.nextcloud_talk.password)},
         "email": {"enabled": n.email.enabled, "smtp_host": n.email.smtp_host, "smtp_port": n.email.smtp_port,
-                  "smtp_tls": n.email.smtp_tls, "smtp_user": n.email.smtp_user, "smtp_password": n.email.smtp_password,
+                  "smtp_tls": n.email.smtp_tls, "smtp_user": n.email.smtp_user,
+                  "smtp_password": _mask(n.email.smtp_password),
                   "from_addr": n.email.from_addr, "to_addrs": n.email.to_addrs, "subject_prefix": n.email.subject_prefix},
     }
 
@@ -1480,7 +1606,7 @@ async def save_notify_config(request: Request):
 
     # Update in-memory
     n = settings.notify
-    for key in ("on_export_complete", "on_import_complete", "on_cleanup_complete", "on_error", "on_verify_failed"):
+    for key in ("on_export_complete", "on_import_complete", "on_cleanup_complete", "on_error", "on_verify_failed", "on_sensitive_operation", "on_audit_alert"):
         if key in body:
             setattr(n, key, body[key])
 
@@ -1488,11 +1614,16 @@ async def save_notify_config(request: Request):
         "telegram": n.telegram, "discord": n.discord, "slack": n.slack,
         "teams": n.teams, "nextcloud_talk": n.nextcloud_talk, "email": n.email,
     }
+    # Secret fields that are masked in GET responses — skip if unchanged
+    _SECRET_FIELDS = {"bot_token", "webhook_url", "token", "password", "smtp_password"}
     for ch_name, ch_obj in channel_map.items():
         if ch_name in body:
             ch_data = body[ch_name]
             for k, v in ch_data.items():
                 if hasattr(ch_obj, k):
+                    # Don't overwrite with masked value
+                    if k in _SECRET_FIELDS and isinstance(v, str) and "***" in v:
+                        continue
                     setattr(ch_obj, k, v)
 
     # Save to config.yaml
@@ -1563,7 +1694,10 @@ def _job_to_dict(j) -> dict:
         idx_name = last.get("index", "")
         chunk = last.get("chunk_index")
         total = last.get("total_chunks")
-        if idx_name:
+        detail_str = last.get("detail", "")
+        if detail_str:
+            d["current_detail"] = detail_str
+        elif idx_name:
             d["current_detail"] = f"{idx_name}"
         elif chunk and total:
             d["current_detail"] = f"chunk {chunk}/{total}"

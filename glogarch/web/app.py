@@ -24,6 +24,20 @@ TEMPLATES_DIR = WEB_DIR / "templates"
 STATIC_DIR = WEB_DIR / "static"
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+
 class APIAuthMiddleware(BaseHTTPMiddleware):
     """Protect /api/* endpoints — require session authentication.
 
@@ -65,12 +79,18 @@ def create_app() -> FastAPI:
 
     scheduler = ArchiveScheduler(settings)
 
+    # API Audit listener
+    from glogarch.audit.listener import AuditSyslogListener
+    audit_listener = AuditSyslogListener(settings.op_audit, db, settings)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # Clean up stale running jobs from previous crashes/restarts
         _cleanup_stale_jobs(db)
         scheduler.start()
+        await audit_listener.start()
         yield
+        await audit_listener.stop()
         scheduler.stop()
         db.close()
 
@@ -94,13 +114,15 @@ def create_app() -> FastAPI:
         except Exception:
             pass
 
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(APIAuthMiddleware)
     app.add_middleware(SessionMiddleware, secret_key=session_secret,
-                       same_site="lax", max_age=28800)
+                       same_site="lax", max_age=28800, https_only=True)
 
     app.state.db = db
     app.state.settings = settings
     app.state.scheduler = scheduler
+    app.state.audit_listener = audit_listener
 
     # Mount static files
     STATIC_DIR.mkdir(parents=True, exist_ok=True)

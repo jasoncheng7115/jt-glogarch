@@ -2,6 +2,98 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.7.0] - 2026-04-15
+
+### Added — Operation Audit (Graylog compliance auditing)
+
+Track who did what on Graylog — for compliance auditing. Records full
+request body (see exactly what was changed), stored independently
+from Graylog (admin cannot delete audit records).
+
+**Architecture:**
+- nginx on each Graylog server sends access logs via UDP syslog
+- jt-glogarch receives on port 8991, parses, classifies, stores in SQLite
+- IP allowlist auto-built from Graylog Cluster API (zero config)
+- Whitelist-based filtering: only records meaningful operations (60+ operation types)
+- Background polling, static assets, metrics automatically filtered out
+
+**Username resolution:**
+- Basic Auth → extract username from Authorization header
+- Token auth → resolved via per-user Graylog token API
+- Session auth → session ID resolved via Graylog Sessions API
+- Cookie session (`$cookie_authentication`) → session ID from nginx log, resolved via API
+- Login POST body → extract username → cache by client IP
+- Single-user environments → auto-attributed
+- Periodic backfill of records without username
+
+**Resource name resolution:**
+- Input/Stream/Index Set/Dashboard/Pipeline/Lookup Table IDs → human-readable names
+- Cached from Graylog API, refreshed every 6 minutes
+
+**Heartbeat monitoring:**
+- Detects silent audit failure (Graylog up but no syslog received)
+- Alerts via notification after 10 minutes of silence
+
+**Web UI — "Operation Audit" page:**
+- Dashboard-style stat cards with sparkline trends (24h)
+- Filterable table (time range, user, method, status, sensitive only)
+- Detail modal with JSON syntax-highlighted request body + copy button
+- nginx setup instructions with syntax-highlighted config snippet
+- Enabled by default; upgrade.sh auto-adds config for existing installs
+
+**Notifications:**
+- `on_sensitive_operation` — alert when sensitive operations detected
+- `on_audit_alert` — alert when audit pipeline fails (no syslog received)
+- Both independently configurable in notification settings
+
+**Security:**
+- Session cookie `https_only=True`
+- Security headers: X-Frame-Options, X-Content-Type-Options, HSTS, Referrer-Policy
+- Notification config secrets masked in API responses
+- Login error parameter whitelist validation
+- UDP listener DoS protection (batch queue limit, packet size limit)
+- SSH command injection prevention (`shlex.quote`)
+
+**Config:**
+```yaml
+op_audit:
+  enabled: true          # enabled by default
+  listen_port: 8991
+  max_body_size: 65536
+  alert_sensitive: true
+  retention_days: 180
+```
+
+**Documentation:**
+- `AUDIT-OPERATIONS.md` / `AUDIT-OPERATIONS-zh_TW.md` — full list of 60+ tracked operations
+- `CONFIG.md` updated with `op_audit` section
+- `README.md` — nginx setup guide with port 9000 firewall instructions
+
+**Tests:** 17 new tests (parser, username decoding, session auth, sensitive classification, DB operations, notify events).
+
+### Fixed — Operation Audit refinements
+
+- **Removed redundant `search.execute` records** — Graylog search creates two API calls: create/update (contains query) + execute (only `global_override`). Only `search.create`/`search.update` is now recorded. The subsequent `/execute` call is filtered out to avoid duplicate entries.
+- **Token auth username resolution** — `GET /api/users` doesn't return actual token values. Added fallback to query per-user `GET /api/users/{username}/tokens` endpoint which returns the real token values. Also added async resolution (`_resolve_token_via_api`) for cache misses.
+- **Cookie-based session resolution** — browser sessions use cookies, not Authorization header. Added `$cookie_authentication` to the nginx log format to capture the Graylog session cookie. The listener extracts the session ID from the cookie and resolves it via the Graylog Sessions API. Falls back to IP cache when cookie is not available.
+- **External users excluded from detection** — `_get_human_users()` incorrectly filtered LDAP/SSO users (`external=true`), causing single-user default attribution to the wrong account. External users are now included.
+- **Search target column showed raw URI** — `search.execute` target_name was empty, causing the UI to fall back to showing the full API URI path. Fixed by removing the redundant execute pattern (query is already captured in `search.create`/`search.update`).
+- **Audit table missing server column** — added "Server" column before "User" in the Operation Audit table.
+- **Auth service operations not tracked** — added `_KEEP_PATTERNS` for `/api/system/authentication/services/backends` (create/modify/delete/activate/deactivate). Also marked as sensitive operations.
+- **Content pack name not resolved** — added content pack caching in `_refresh_resource_cache` from Graylog API. Added UUID-with-dashes URI matching in `_resolve_target_name`.
+- **Dashboard name not resolved via /api/dashboards** — unified `_resolve_target_name` to match both `/api/views/` and `/api/dashboards/` paths using the same view cache.
+- **Lookup adapter/cache names not resolved** — `_refresh_resource_cache` only cached lookup tables. Added caching for data adapters (`/api/system/lookup/adapters`) and caches (`/api/system/lookup/caches`).
+- **Audit retention independent from archive retention** — `op_audit.retention_days` (default 180) now controls audit record cleanup separately from archive retention (default 1095 days). Previously, audit cleanup used the archive retention setting and early-returned when no archives existed.
+- **Audit cleanup skipped when no archives to clean** — `Cleaner.cleanup()` had an early return that prevented audit record cleanup when no archive files matched the retention criteria. Refactored so audit cleanup always runs.
+- **upgrade.sh auto-adds `retention_days`** — existing installs with `op_audit` config but missing `retention_days` get it added automatically during upgrade.
+
+### Fixed — zh_TW terminology
+
+- 損壞 → 損毀 (Taiwan usage)
+- 過濾 → 篩選/篩除
+- 對象 → 項目
+- README cleanup retention example: 60 天 → 1095 天
+
 ## [1.6.2] - 2026-04-15
 
 ### Added — Multi-server schedule support

@@ -1,11 +1,11 @@
-# jt-glogarch v1.6.2
+# jt-glogarch v1.7.0
 
 **語言**: [English](README.md) | **繁體中文**
 
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.6.2-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.7.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -31,6 +31,7 @@ Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
 - [架構與運作原理](#架構與運作原理)
 - [使用情境](#使用情境)
 - [快速開始](#快速開始)
+  - [設定行為稽核（nginx）](#設定行為稽核nginx)
 - [安裝詳細說明](#安裝詳細說明)
 - [設定](#設定)
 - [Web UI 使用說明](#web-ui-使用說明)
@@ -40,6 +41,7 @@ Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
   - [排程作業](#排程作業)
   - [通知設定](#通知設定)
   - [系統記錄](#系統記錄)
+  - [行為稽核](#行為稽核)
 - [匯入(還原)流程](#匯入還原流程)
 - [效能與調校](#效能與調校)
 - [CLI 指令參考](#cli-指令參考)
@@ -119,6 +121,7 @@ GELF 模式還有：
 - **排程作業** — Cron 編輯器、行內進度、立即執行
 - **通知設定** — 6 種管道含語言選擇
 - **系統記錄** — 即時記錄檢視器 + 稽核記錄
+- **行為稽核** — 追蹤 Graylog 上的所有操作（誰在什麼時候做了什麼），支援篩選、敏感操作通知（60+ 種操作類型）
 - 深色/淺色主題、English/繁體中文 雙語
 - 可收摺側邊欄、HTTPS、Session 認證
 
@@ -127,7 +130,7 @@ GELF 模式還有：
 
 Telegram • Discord • Slack • Microsoft Teams • Nextcloud Talk • Email (SMTP)
 
-觸發事件：匯出完成、匯入完成、清理完成、錯誤、驗證失敗。
+觸發事件：匯出完成、匯入完成、清理完成、錯誤、驗證失敗、敏感操作、稽核警報。
 雙語訊息（English / 繁體中文）。
 
 
@@ -148,7 +151,7 @@ Telegram • Discord • Slack • Microsoft Teams • Nextcloud Talk • Email 
 - **OpenSearch 暫態錯誤自動重試** — 500/502/503/429 自動 backoff retry
 - 同伺服器並行匯出鎖定 + 同歸檔並行匯入鎖定
 - 自動調節速率限制（依 CPU 使用率）
-- 密碼/Token 脫敏 — 錯誤訊息自動過濾敏感資訊
+- 密碼/Token 脫敏 — 錯誤訊息自動篩除敏感資訊
 - 歸檔目錄權限自動修復（root 建的目錄自動 chown）
 - **`glogarch streams-cleanup`** — 清理 bulk 匯入建立的殘留 Stream / Index Set
 - 執行緒安全 SQLite（WAL 模式）
@@ -327,6 +330,116 @@ echo "Open: https://$(hostname):8990"
 使用 Graylog 帳號登入。
 
 
+### 設定行為稽核（nginx）
+
+jt-glogarch 內建行為稽核功能，可追蹤誰在 Graylog 上做了什麼操作。原理是接收各 Graylog 伺服器上 nginx 反向代理的存取記錄。**預設已啟用** — 只需設定 nginx 即可。
+
+> 如果不需要行為稽核功能，可跳過此段。
+
+**在每一台 Graylog 伺服器上**，安裝並設定 nginx 作為反向代理：
+
+```bash
+# 1. 安裝 nginx（如已安裝可跳過）
+sudo apt install -y nginx
+
+# 2. 建立 SSL 憑證（如已有可跳過）
+sudo openssl req -x509 -newkey rsa:2048 -nodes \
+    -keyout /etc/ssl/private/graylog.key \
+    -out /etc/ssl/certs/graylog.crt \
+    -days 3650 -subj "/CN=$(hostname)"
+
+# 3. 在 /etc/nginx/nginx.conf 中加入稽核記錄格式
+#    放在 http { } 區塊內，所有 "include" 之前：
+```
+
+```nginx
+    log_format graylog_audit escape=json
+            '{'
+            '"time":"$time_iso8601",'
+            '"remote_addr":"$remote_addr",'
+            '"method":"$request_method",'
+            '"uri":"$uri",'
+            '"args":"$args",'
+            '"status":$status,'
+            '"body_bytes_sent":$body_bytes_sent,'
+            '"request_body":"$request_body",'
+            '"http_authorization":"$http_authorization",'
+            '"http_cookie":"$cookie_authentication",'
+            '"user_agent":"$http_user_agent",'
+            '"request_time":$request_time,'
+            '"server_name":"$server_name"'
+            '}';
+```
+
+```bash
+# 4. 建立 Graylog 站台設定檔：/etc/nginx/sites-available/graylog
+```
+
+```nginx
+server {
+        listen 443 ssl;
+        server_name graylog.example.com;
+
+        ssl_certificate /etc/ssl/certs/graylog.crt;
+        ssl_certificate_key /etc/ssl/private/graylog.key;
+
+        location / {
+                proxy_pass http://127.0.0.1:9000/;
+                proxy_http_version 1.1;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Graylog-Server-URL https://$host/;
+                proxy_pass_request_headers on;
+                proxy_buffering off;
+                client_max_body_size 8m;
+        }
+
+        # 行為稽核 — 將存取記錄傳送至 jt-glogarch
+        access_log syslog:server=JT_GLOGARCH_IP:8991,facility=local7,tag=graylog_audit graylog_audit;
+        client_body_buffer_size 64k;
+}
+
+# 選用：HTTP 自動轉導至 HTTPS
+server {
+        listen 80;
+        return 301 https://$host$request_uri;
+}
+```
+
+```bash
+# 5. 將上述設定中的 JT_GLOGARCH_IP 替換為 jt-glogarch 伺服器的實際 IP
+
+# 6. 啟用站台並測試
+sudo ln -sf /etc/nginx/sites-available/graylog /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# 7. 在 jt-glogarch 伺服器上開放 UDP 8991 連接埠
+#    （在 jt-glogarch 伺服器上執行，不是 Graylog 伺服器）
+sudo ufw allow 8991/udp
+
+# 8. 重要：封鎖外部直接存取 Graylog 的 9000 連接埠
+#    只允許 localhost（nginx）及其他 Graylog 叢集節點。
+#    這樣可強制所有使用者經由 nginx 存取，確保完整的稽核涵蓋率。
+#    將 CLUSTER_NODE_IP 替換為你叢集中每台 Graylog 節點的 IP。
+sudo ufw deny 9000
+sudo ufw allow from 127.0.0.1 to any port 9000
+sudo ufw allow from CLUSTER_NODE_IP to any port 9000
+# 對叢集中的每台 Graylog 節點重複上面這行
+```
+
+設定完成後，開啟 jt-glogarch Web UI → **行為稽核** 頁面，確認資料正常流入。
+
+> **重要事項：**
+> - `log_format` 區塊必須放在 `nginx.conf` 中 `include` 行**之前**
+> - 將 `JT_GLOGARCH_IP` 替換為 jt-glogarch 伺服器的實際 IP
+> - 將 `CLUSTER_NODE_IP` 替換為每台 Graylog 叢集節點的 IP
+> - **必須封鎖 9000 連接埠的外部存取** — 如果使用者可以繞過 nginx，其操作將不會被稽核
+> - 若為 Graylog 叢集，需在**每一台** Graylog 節點上重複步驟 3-8
+> - 封鎖 9000 連接埠後，請改用 `https://<hostname>`（443 連接埠）存取 Graylog
+> - 完整的操作追蹤清單請參閱 [AUDIT-OPERATIONS.md](AUDIT-OPERATIONS.md)
+
+
 
 ---
 
@@ -390,7 +503,7 @@ curl -sk https://localhost:8990/api/health
 GitHub 上有新版本時，一行指令完成升級：
 
 ```bash
-cd /opt/jt-glogarch && sudo bash deploy/upgrade.sh
+sudo bash /opt/jt-glogarch/deploy/upgrade.sh
 ```
 
 升級指令碼會自動：備份 DB → git pull → pip install → 重啟服務 → 確認版本。
@@ -555,7 +668,7 @@ OpenSearch 模式可選擇**保留最近 N 份 index**。下方的「可用 indi
 名稱:     auto-cleanup
 類型:     Cleanup
 頻率:     每月 1 號 04:00
-保留天數:  60 天
+保留天數:  1095 天
 ```
 
 刪除超過保留天數的歸檔檔案並更新 DB。
@@ -568,7 +681,7 @@ OpenSearch 模式可選擇**保留最近 N 份 index**。下方的「可用 indi
 頻率:     每月第一個週六 03:00
 ```
 
-重新驗證所有歸檔的 SHA256 校驗碼。校驗失敗的會在 DB 標記為**損壞**，在歸檔清單以紅色警告 icon 顯示。
+重新驗證所有歸檔的 SHA256 校驗碼。校驗失敗的會在 DB 標記為**損毀**，在歸檔清單以紅色警告 icon 顯示。
 
 **立即執行按鈕** — 所有排程類型都支援手動立即執行。
 匯出工作的行內進度會直接顯示在排程列上。
@@ -588,6 +701,8 @@ OpenSearch 模式可選擇**保留最近 N 份 index**。下方的「可用 indi
 - 清理完成
 - 錯誤
 - 驗證失敗
+- 敏感操作（行為稽核 — 刪除使用者、認證服務變更等）
+- 稽核警報（行為稽核 — 超過 10 分鐘未收到 syslog）
 
 **通知管道** — 設定每個管道。**取消勾選「啟用」**會自動收摺該管道的設定欄位，讓頁面更整潔。
 
@@ -613,6 +728,74 @@ OpenSearch 模式可選擇**保留最近 N 份 index**。下方的「可用 indi
 ![系統記錄](images/syslog_zhtw.png)
 
 即時 tail `journalctl -u jt-glogarch` 加上稽核記錄（登入、匯出開始、設定儲存等）。
+
+
+### 行為稽核
+
+![行為稽核](images/op_audit_zhtw.png)
+
+追蹤 Graylog 上的所有操作 — 獨立於 Graylog 的合規等級稽核。
+
+**主要特點：**
+- 記錄完整 request body — 可以看到改了什麼設定、搜尋了什麼 query、建帳號的完整內容
+- 稽核記錄獨立存放 — 管理員無法刪除自己的操作記錄
+
+**運作原理：**
+- 每台 Graylog 上的 nginx 透過 UDP syslog 送出 JSON 存取記錄到 jt-glogarch（port 8991）
+- jt-glogarch 接收、解析、分類為 60+ 種操作類型、解析使用者名稱、存入 SQLite
+- IP 允許清單自動從 Graylog Cluster API 取得 — 零設定
+- 只記錄有意義的操作；背景輪詢、靜態資源、指標數據自動過濾
+
+**頁面佈局：**
+
+1. **狀態列** — Listener 狀態（運行中/停用）、UDP 埠號、最後收到時間、記錄筆數、保留天數、心跳警報
+2. **統計卡片**（最近 24h）— 總操作數、不重複使用者、登入失敗數、敏感操作數，附迷你趨勢圖
+3. **篩選列** — 時間範圍、使用者、HTTP 方法、URI 模式、狀態碼、僅顯示敏感操作
+4. **結果表格** — 時間、伺服器、使用者、方法（色碼標記）、URI、狀態碼（色碼）、操作分類、項目名稱（人類可讀的資源名稱）、敏感標記
+5. **明細 Modal** — 點擊任一列可查看完整明細，包含格式化的 JSON request body（語法上色）及複製按鈕
+6. **設定區** — nginx 設定範本（含複製按鈕）、listener 開關
+
+![行為稽核明細](images/op_audit_detail_zhtw.png)
+
+**帳號解析：**
+
+| 方式 | 說明 |
+|------|------|
+| Basic Auth | 從 `Authorization` header 取出使用者名稱 |
+| Token Auth | 透過 Graylog 使用者 Token API 解析，以前綴快取 |
+| Session Auth | 從 `Authorization` header 取出 session ID，透過 Graylog Sessions API 解析 |
+| Cookie Session | 從 nginx log 中的 `$cookie_authentication` cookie 取出 session ID |
+| IP 快取 | 以用戶端 IP 對應最後已知使用者 |
+| 單一使用者 | 僅有一個人類帳號時自動歸屬 |
+
+**項目名稱解析：**
+
+URI 中的資源 ID 自動透過 Graylog API 快取解析為人類可讀名稱（每 6 分鐘重新整理）：
+inputs、streams、index sets、dashboards/views、pipelines、pipeline rules、event definitions、event notifications、lookup tables/adapters/caches、content packs、authentication services、outputs、users、roles。
+
+**敏感操作警報：**
+
+啟用 `op_audit.alert_sensitive` 時，敏感操作（刪除使用者、刪除 stream、認證服務變更、系統關機等）會透過所有已設定的通知管道發送警報。
+
+**心跳監控：**
+
+若 listener 正在運行且 Graylog 可達，但超過 10 分鐘未收到 syslog，將觸發警報 — 表示稽核管線出現靜默故障（如 nginx 設定錯誤、網路問題）。
+
+**設定：**
+```yaml
+op_audit:
+  enabled: true          # 預設啟用
+  listen_port: 8991      # UDP syslog 埠號
+  retention_days: 180    # 獨立於歸檔保留期限（預設 180 天）
+  max_body_size: 65536   # 最大存入的 request body 大小（64KB）
+  alert_sensitive: true  # 敏感操作發送警報
+```
+
+**保留策略：** 稽核記錄由排程清理作業自動清除。`op_audit.retention_days`（預設 180 天）與歸檔保留策略（預設 1095 天）獨立。預估儲存空間：每筆約 2 KB，每日 1000 筆操作每年約 360 MB。
+
+> 完整的 60+ 種操作類型清單請參考 [AUDIT-OPERATIONS-zh_TW.md](AUDIT-OPERATIONS-zh_TW.md)。
+>
+> nginx 設定說明請參考[快速開始 — 設定行為稽核](#設定行為稽核nginx)。
 
 
 
@@ -944,9 +1127,9 @@ export:
 大量匯入時，啟用 journal 監控讓它自動限速。
 
 
-### 驗證回報歸檔為「損壞」
+### 驗證回報歸檔為「損毀」
 
-可能是檔案被歸檔後被修改（罕見），或儲存有 bit-rot。損壞的歸檔仍可手動檢視，但無法通過完整性檢查。重新匯出受影響的時間範圍即可替換。
+可能是檔案被歸檔後被修改（罕見），或儲存有 bit-rot。損毀的歸檔仍可手動檢視，但無法通過完整性檢查。重新匯出受影響的時間範圍即可替換。
 
 
 ### 可以對同一個 Graylog 跑兩個 jt-glogarch 實例嗎?

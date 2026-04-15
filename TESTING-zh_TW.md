@@ -10,37 +10,41 @@
 
 ---
 
-## 自動化測試（103 筆）
+## 自動化測試（156 筆）
 
 ### 單元測試
 
 | # | 測試檔 | 筆數 | 覆蓋範圍 |
 |---|---|---|---|
-| 1 | `test_sanitize.py` | 10 | 密碼/Token/URL/JSON/Basic Auth/Bearer 脫敏、截斷、無誤殺 |
-| 2 | `test_local_admin.py` | 9 | SHA256 hash、帳號必須 `localadmin`、Graylog 拒絕不 fallback、Graylog 離線有/無 hash、向下相容 |
-| 3 | `test_bulk_import.py` | 7 | 保留欄位剝除、deflector alias、stream 改寫、marker 欄位、dedup id/none |
-| 4 | `test_notify_format.py` | 7 | 狀態 emoji（✅/⚠️/❌）、每行一項、URL 縮短、en/zh-TW key 一致 |
-| 5 | `test_repo_structure.py` | 7 | pyproject.toml 在根目錄、無 src/ 目錄、deploy 檔案、README/CHANGELOG/CONFIG 存在、版號同步 |
-| 6 | `test_upgrade_script.py` | 7 | upgrade.sh 存在 + 5 步驟、root 檢查、版本顯示、README 引用、systemd 預設=Yes、git clone sudo |
-| 7 | `test_field_schema.py` | 6 | 純 JSON 通過、zlib 壓縮 round-trip、None/損壞處理、DB 儲存+讀取 |
-| 8 | `test_database_datetime.py` | 5 | naive/UTC/+08:00 round-trip、None 通過、offset 字串解析 |
-| 9 | `test_import_lock.py` | 5 | 取得/衝突/釋放/錯誤 owner/重複取得 |
-| 10 | `test_db_rebuild.py` | 5 | dry-run、實際重建、跳過已存在、備份、清理舊備份 |
-| 11 | `test_preflight_conflicts.py` | 4 | intra-archive conflict、cross-conflict 實際 mapping、string-only 不 pin、混合場景 |
-| 12 | `test_config.py` | 4 | 預設值、搜尋路徑 `/etc/jt-glogarch/`、檔案載入、WebConfig localadmin |
-| 13 | `test_upgrade.py` | 4 | 舊 DB 自動升級、舊 config 向下相容、歸檔升級後保留、DB 備份有效性 |
-| 14 | `test_api_error_handling.py` | 4 | Graylog API 401/502/連線失敗的錯誤處理（/api/index-sets 與 /api/streams） |
-| 15 | `test_cli_commands.py` | 3 | 16 個指令全註冊、hash-password help、root 警告邏輯 |
-| 16 | `test_cleanup_race.py` | 3 | 寬限常數 = 600 秒、新檔跳過、舊檔不跳過 |
-| 17 | `test_storage_ownership.py` | 3 | root chown 修復、非 root 報錯、限定 base_path 以下 |
-| 18 | `test_health_endpoint.py` | 2 | 回應結構（status/version/checks/issues）、公開路徑（免認證） |
-| 19 | `test_opensearch_client.py` | 1 | `_doc` 排序 tiebreaker（非 `_id` — circuit breaker 修正） |
+| 1 | `test_audit.py` | 27 | 稽核解析器（帳號解碼、分類、敏感判定、噪音過濾、syslog/JSON 解析、process_raw_entry）、設定預設/自訂/YAML/缺欄位/無區段、DB 寫入/列表/統計、token 解析、獨立稽核保留期限清理、清理 fallback、通知事件 |
+| 2 | `test_sanitize.py` | 10 | 密碼/Token/URL/JSON/Basic Auth/Bearer 脫敏、截斷、無誤殺 |
+| 3 | `test_local_admin.py` | 9 | SHA256 hash、帳號必須 `localadmin`、Graylog 拒絕不 fallback、Graylog 離線有/無 hash、向下相容 |
+| 4 | `test_upgrade_script.py` | 9 | upgrade.sh 存在 + 5 步驟、root 檢查、版本顯示、README 引用、systemd 預設=Yes、git clone sudo、retention_days 遷移、op_audit retention_days 預設值 |
+| 5 | `test_repo_structure.py` | 8 | pyproject.toml 在根目錄、無 src/ 目錄、deploy 檔案、README/CHANGELOG/CONFIG 存在、版號同步、github/glogarch 與 source 一致 |
+| 6 | `test_bulk_import.py` | 7 | 保留欄位剝除、deflector alias、stream 改寫、marker 欄位、dedup id/none |
+| 7 | `test_notify_format.py` | 7 | 狀態 emoji（✅/⚠️/❌）、每行一項、URL 縮短、en/zh-TW key 一致 |
+| 8 | `test_notify_test_endpoint.py` | 7 | Discord/Slack/Teams/Telegram/Nextcloud Talk/Email 送出函式參數、測試端點簽名匹配 |
+| 9 | `test_field_schema.py` | 6 | 純 JSON 通過、zlib 壓縮 round-trip、None/損毀處理、DB 儲存+讀取 |
+| 10 | `test_multi_server.py` | 6 | 多伺服器設定、依名稱取得伺服器、排程器讀取伺服器、UI 伺服器選擇器、JS 儲存/載入伺服器 |
+| 11 | `test_database_datetime.py` | 5 | naive/UTC/+08:00 round-trip、None 通過、offset 字串解析 |
+| 12 | `test_import_lock.py` | 5 | 取得/衝突/釋放/錯誤 owner/重複取得 |
+| 13 | `test_db_rebuild.py` | 5 | dry-run、實際重建、跳過已存在、備份、清理舊備份 |
+| 14 | `test_preflight_conflicts.py` | 4 | intra-archive conflict、cross-conflict 實際 mapping、string-only 不 pin、混合場景 |
+| 15 | `test_config.py` | 4 | 預設值、搜尋路徑 `/etc/jt-glogarch/`、檔案載入、WebConfig localadmin |
+| 16 | `test_upgrade.py` | 4 | 舊 DB 自動升級、舊 config 向下相容、歸檔升級後保留、DB 備份有效性 |
+| 17 | `test_api_error_handling.py` | 4 | Graylog API 401/502/連線失敗的錯誤處理（/api/index-sets 與 /api/streams） |
+| 18 | `test_cli_commands.py` | 3 | 16 個指令全註冊、hash-password help、root 警告邏輯 |
+| 19 | `test_cleanup_race.py` | 3 | 寬限常數 = 600 秒、新檔跳過、舊檔不跳過 |
+| 20 | `test_storage_ownership.py` | 3 | root chown 修復、非 root 報錯、限定 base_path 以下 |
+| 21 | `test_health_endpoint.py` | 2 | 回應結構（status/version/checks/issues）、公開路徑（免認證） |
+| 22 | `test_recent_fixes.py` | 11 | 通知時間戳本地時區、測試端點時區、保留預設 3 年、Data Node 偵測/警告 i18n/匯入 modal/匯出模式、排程 OpenSearch 顯示、設定範例保留天數、Discord/測試端點正確參數 |
+| 23 | `test_opensearch_client.py` | 1 | `_doc` 排序 tiebreaker（非 `_id` — circuit breaker 修正） |
 
 ### 整合測試
 
 | # | 測試檔 | 筆數 | 覆蓋範圍 |
 |---|---|---|---|
-| 20 | `test_integration.py` | 6 | 真實 OpenSearch cross-conflict 偵測、zlib schema 完整 preflight 流程、timezone dedup/retention/coverage-ratio 正確性、歸檔寫入→SHA256→讀回完整性 |
+| 24 | `test_integration.py` | 6 | 真實 OpenSearch cross-conflict 偵測、zlib schema 完整 preflight 流程、timezone dedup/retention/coverage-ratio 正確性、歸檔寫入→SHA256→讀回完整性 |
 
 ---
 
@@ -68,6 +72,7 @@
 
 - [ ] 新功能已寫入 README（EN + zh_TW 兩份）
 - [ ] CONFIG.md / CONFIG-zh_TW.md 已更新（若有新增設定欄位）
+- [ ] AUDIT-OPERATIONS.md / AUDIT-OPERATIONS-zh_TW.md 已更新（若有新增操作類型）
 - [ ] zh_TW 無半形逗號（CJK 語境內）
 - [ ] zh_TW 無半形冒號/分號（CJK 語境內）
 - [ ] zh_TW 使用台灣繁體中文用語
@@ -81,6 +86,24 @@
 - [ ] 登入頁面顯示正確版號
 - [ ] `/openapi.json` 顯示正確版號
 - [ ] 部署到 .36 staging — health 回傳新版號
+
+### 行為稽核
+
+- [ ] `op_audit.enabled: true` — listener 在 port 8991 啟動，稽核頁面顯示「監聽中」
+- [ ] `op_audit.enabled: false` — listener 不啟動，稽核頁面顯示停用
+- [ ] config 沒有 `op_audit` 區段 — 使用所有預設值（啟用、port 8991、保留 180 天）
+- [ ] config 有 `op_audit` 但缺 `retention_days` — fallback 到預設 180 天
+- [ ] `op_audit.retention_days` 獨立控制稽核記錄清理，與歸檔保留期限分開
+- [ ] 即使無歸檔可清理，cleanup 仍執行稽核記錄清理
+- [ ] `upgrade.sh` 在 config.yaml 缺少 `op_audit` 時自動加入完整區塊
+- [ ] `upgrade.sh` 在已有 `op_audit` 但缺 `retention_days` 時自動補上
+- [ ] nginx syslog 收到 → 稽核記錄出現在 Web UI
+- [ ] 來自非允許 IP 的 syslog → 拒絕並產生 warning log
+- [ ] 帳號正確解析（Basic Auth、Token、Session、Cookie）
+- [ ] 項目名稱顯示人類可讀的資源名稱（非原始 ID）
+- [ ] 敏感操作觸發通知警報
+- [ ] Graylog 正常運作但超過 10 分鐘未收到 syslog → 心跳警報
+- [ ] 篩選下拉選單顯示正確語言標籤（Method/Status 對 方法/狀態碼）
 
 ### 客戶安裝 / 升級模擬
 

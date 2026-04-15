@@ -21,6 +21,7 @@
             <li><a href="/schedules" class="{% if page == 'schedules' %}active{% endif %}" data-i18n="nav_schedules" data-icon="clock"><span>Schedules</span></a></li>
             <li><a href="/notify-settings" class="{% if page == 'notify-settings' %}active{% endif %}" data-i18n="nav_notify_settings" data-icon="bell"><span>Notify</span></a></li>
             <li><a href="/logs" class="{% if page == 'logs' %}active{% endif %}" data-i18n="nav_logs" data-icon="log"><span>Sys Logs</span></a></li>
+            <li><a href="/op-audit" class="{% if page == 'op-audit' %}active{% endif %}" data-i18n="nav_op_audit" data-icon="shield"><span>Operation Audit</span></a></li>
         </ul>
         <div id="sidebar-job-status" class="sidebar-job-status" style="display:none">
             <span class="spinner-text" id="sidebar-job-text"></span>
@@ -620,6 +621,86 @@
             </table>
         </div>
 
+
+        {% elif page == 'op-audit' %}
+        <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+            <h1 data-i18n="page_op_audit" data-icon="shield" style="margin-bottom:8px">Operation Audit</h1>
+            <span style="color:var(--text-muted);font-size:0.82em" data-i18n="audit_subtitle">Track who did what on Graylog</span>
+        </div>
+
+        <!-- Stats cards (dashboard style) -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+            <div class="card stat-card" id="audit-stat-total" style="padding:14px 16px;cursor:default" data-i18n-title="audit_tip_ops">
+                <h3 style="font-size:0.8em;margin:0" data-i18n="audit_total_requests" data-icon="shield">24h Ops</h3>
+                <div class="card-value" style="font-size:1.5em;margin-top:4px;color:var(--accent)">-</div>
+            </div>
+            <div class="card stat-card" id="audit-stat-users" style="padding:14px 16px;cursor:default" data-i18n-title="audit_tip_users">
+                <h3 style="font-size:0.8em;margin:0" data-i18n="audit_unique_users" data-icon="user">Users</h3>
+                <div class="card-value" style="font-size:1.5em;margin-top:4px;color:var(--success)">-</div>
+            </div>
+            <div class="card stat-card" id="audit-stat-loginfail" style="padding:14px 16px;cursor:default" data-i18n-title="audit_tip_login_fail">
+                <h3 style="font-size:0.8em;margin:0" data-i18n="audit_login_failures" data-icon="lock">Login Fail</h3>
+                <div class="card-value" style="font-size:1.5em;margin-top:4px;color:var(--warning)">-</div>
+            </div>
+            <div class="card stat-card" id="audit-stat-sensitive" style="padding:14px 16px;cursor:default" data-i18n-title="audit_tip_sensitive">
+                <h3 style="font-size:0.8em;margin:0" data-i18n="audit_sensitive_ops" data-icon="lock">Sensitive</h3>
+                <div class="card-value" style="font-size:1.5em;margin-top:4px;color:var(--danger)">-</div>
+            </div>
+        </div>
+        <div id="audit-status-bar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:0.85em;color:var(--text-muted);margin-bottom:10px"></div>
+        <button id="audit-toggle-btn" class="btn-sm" onclick="toggleAuditEnabled()" style="display:none"></button>
+        <span id="audit-last-received" style="display:none"></span>
+
+        <!-- Filters -->
+        <div class="audit-filters" style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+            <input type="datetime-local" id="audit-filter-from" title="From">
+            <span style="color:var(--text-muted)">~</span>
+            <input type="datetime-local" id="audit-filter-to" title="To">
+            <input type="text" id="audit-filter-user" placeholder="User">
+            <select id="audit-filter-method"><option value="" id="audit-opt-method">Method</option><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select>
+            <select id="audit-filter-status"><option value="" id="audit-opt-status">Status</option><option value="2xx">2xx</option><option value="4xx">4xx</option><option value="5xx">5xx</option></select>
+            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:0.85em;white-space:nowrap">
+                <input type="checkbox" id="audit-filter-sensitive"> <span data-i18n="audit_sensitive_only">Sensitive only</span>
+            </label>
+            <button class="btn-primary btn-sm" onclick="loadAuditData(1)" data-i18n="btn_filter" data-icon="filter">Filter</button>
+        </div>
+
+        <!-- Results table -->
+        <table id="audit-table">
+            <thead><tr>
+                <th data-i18n="th_time">Time</th>
+                <th data-i18n="th_server">Server</th>
+                <th data-i18n="login_username">User</th>
+                <th data-i18n="audit_ip">IP</th>
+                <th data-i18n="audit_operation">Operation</th>
+                <th data-i18n="audit_target">Target</th>
+                <th style="width:40px;text-align:center" title="Sensitive">!</th>
+            </tr></thead>
+            <tbody></tbody>
+        </table>
+        <div id="audit-pagination" style="display:flex;gap:8px;justify-content:center;margin-top:12px"></div>
+
+        <!-- Detail modal -->
+        <div id="audit-detail-modal" class="modal-overlay" style="display:none">
+            <div class="modal-card" style="width:700px;max-width:90vw;max-height:90vh;overflow-y:auto;position:relative">
+                <button onclick="document.getElementById('audit-detail-modal').style.display='none'" style="position:absolute;top:12px;right:12px;background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:1.3em;padding:4px 8px" title="Close">&times;</button>
+                <h3 data-i18n="audit_detail">Request Detail</h3>
+                <div id="audit-detail-content"></div>
+                <div style="margin-top:15px">
+                    <button class="btn-secondary" onclick="document.getElementById('audit-detail-modal').style.display='none'" data-i18n="btn_close" data-icon="close">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Setup hint (collapsible) -->
+        <details style="margin-top:20px">
+            <summary style="cursor:pointer;font-weight:600" data-i18n="audit_setup_title">nginx Setup</summary>
+            <div style="margin-top:8px;padding:12px;background:var(--input-bg);border-radius:6px;font-size:0.85em">
+                <p data-i18n="audit_setup_desc">Add these lines to your Graylog nginx config:</p>
+                <pre id="audit-nginx-config" class="log-output" style="margin:8px 0"></pre>
+                <button class="btn-sm btn-secondary" onclick="copyAuditNginxConfig()" data-i18n="btn_copy">Copy</button>
+            </div>
+        </details>
 
         {% endif %}
     </main>

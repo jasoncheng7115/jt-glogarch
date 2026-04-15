@@ -22,6 +22,8 @@ class NotifyEvent(str, Enum):
     CLEANUP_COMPLETE = "cleanup_complete"
     VERIFY_FAILED = "verify_failed"
     ERROR = "error"
+    SENSITIVE_API_OPERATION = "sensitive_api_operation"
+    AUDIT_ALERT = "audit_alert"
 
 
 def _should_send(config: NotifyConfig, event: NotifyEvent) -> bool:
@@ -31,6 +33,8 @@ def _should_send(config: NotifyConfig, event: NotifyEvent) -> bool:
         NotifyEvent.CLEANUP_COMPLETE: config.on_cleanup_complete,
         NotifyEvent.VERIFY_FAILED: config.on_verify_failed,
         NotifyEvent.ERROR: config.on_error,
+        NotifyEvent.SENSITIVE_API_OPERATION: config.on_sensitive_operation,
+        NotifyEvent.AUDIT_ALERT: config.on_audit_alert,
     }
     return mapping.get(event, False)
 
@@ -273,6 +277,12 @@ _MSG = {
         "missing": "Missing: {n}",
         "error_title": "❌ {op} Error",
         "errors": "Errors: {n}",
+        "sensitive_title": "⚠️ {n} Sensitive Operation(s) Detected",
+        "audit_alert_title": "⚠️ Operation Audit Alert",
+        "audit_alert_body": ("No audit syslog received for {minutes} minutes.\n"
+                             "Graylog is reachable but nginx may have stopped forwarding.\n"
+                             "Last received: {last}\n"
+                             "Check nginx config and syslog on all Graylog nodes."),
     },
     "zh-TW": {
         "export_ok": "✅ 匯出成功",
@@ -297,10 +307,16 @@ _MSG = {
         "verify_body": ("通過: {valid}\n"
                         "總檢查: {total}"),
         "verify_fail": "❌ 驗證失敗",
-        "corrupted": "損壞: {n}",
+        "corrupted": "損毀: {n}",
         "missing": "遺失: {n}",
         "error_title": "❌ {op} 失敗",
         "errors": "錯誤: {n}",
+        "sensitive_title": "⚠️ 偵測到 {n} 個敏感行為",
+        "audit_alert_title": "⚠️ 行為稽核警告",
+        "audit_alert_body": ("已超過 {minutes} 分鐘未收到稽核 syslog。\n"
+                             "Graylog 可連線但 nginx 可能已停止轉送。\n"
+                             "最後收到: {last}\n"
+                             "請檢查所有 Graylog 節點的 nginx 設定與 syslog 狀態。"),
     },
 }
 

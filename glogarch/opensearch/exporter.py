@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta
 from typing import Callable
@@ -114,7 +115,8 @@ class OpenSearchExporter:
                     log.info("Found indices", prefix=prefix, count=total_indices)
 
                     # Filter: exclude active, empty, get time ranges
-                    candidates = []  # [(index_name, idx_from, idx_to, docs_count)]
+                    # First pass: filter out active/empty indices quickly
+                    scan_list = []
                     for idx_info in indices:
                         index_name = idx_info["index"]
                         if index_name == active_index:
@@ -122,16 +124,54 @@ class OpenSearchExporter:
                             continue
                         if idx_info["docs_count"] == 0:
                             continue
-                        min_ts, max_ts = await os_client.get_index_time_range(index_name)
-                        if not min_ts or not max_ts:
-                            log.warning("Cannot determine time range", index=index_name)
-                            continue
-                        idx_from = self._parse_ts(min_ts)
-                        idx_to = self._parse_ts(max_ts)
-                        if not idx_from or not idx_to:
-                            log.warning("Cannot parse timestamps", index=index_name, min_ts=min_ts, max_ts=max_ts)
-                            continue
-                        candidates.append((index_name, idx_from, idx_to, idx_info["docs_count"]))
+                        scan_list.append(idx_info)
+
+                    # Report scanning phase to UI
+                    if progress_callback:
+                        progress_callback({
+                            "phase": "scanning",
+                            "pct": 0,
+                            "detail": f"Scanning {len(scan_list)} indices...",
+                        })
+
+                    # Parallel time range queries (batch of 10 to avoid overwhelming OS)
+                    async def _get_range(idx_info):
+                        min_ts, max_ts = await os_client.get_index_time_range(idx_info["index"])
+                        return idx_info, min_ts, max_ts
+
+                    candidates = []  # [(index_name, idx_from, idx_to, docs_count)]
+                    batch_size = 10
+                    for i in range(0, len(scan_list), batch_size):
+                        if self._cancelled:
+                            break
+                        batch = scan_list[i:i + batch_size]
+                        results = await asyncio.gather(
+                            *[_get_range(info) for info in batch],
+                            return_exceptions=True,
+                        )
+                        for res in results:
+                            if isinstance(res, Exception):
+                                continue
+                            idx_info, min_ts, max_ts = res
+                            index_name = idx_info["index"]
+                            if not min_ts or not max_ts:
+                                log.warning("Cannot determine time range", index=index_name)
+                                continue
+                            idx_from = self._parse_ts(min_ts)
+                            idx_to = self._parse_ts(max_ts)
+                            if not idx_from or not idx_to:
+                                log.warning("Cannot parse timestamps", index=index_name,
+                                            min_ts=min_ts, max_ts=max_ts)
+                                continue
+                            candidates.append((index_name, idx_from, idx_to, idx_info["docs_count"]))
+                        # Report scan progress
+                        if progress_callback:
+                            scanned = min(i + batch_size, len(scan_list))
+                            progress_callback({
+                                "phase": "scanning",
+                                "pct": 0,
+                                "detail": f"Scanned {scanned}/{len(scan_list)} indices...",
+                            })
 
                     # Apply keep_indices limit (keep most recent N indices)
                     if keep_indices and keep_indices > 0:

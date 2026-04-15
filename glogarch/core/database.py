@@ -89,6 +89,29 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp
     ON audit_log (timestamp);
+
+CREATE TABLE IF NOT EXISTS api_audit (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    server_name     TEXT NOT NULL DEFAULT '',
+    timestamp       TEXT NOT NULL,
+    remote_addr     TEXT NOT NULL DEFAULT '',
+    username        TEXT NOT NULL DEFAULT '',
+    method          TEXT NOT NULL DEFAULT '',
+    uri             TEXT NOT NULL DEFAULT '',
+    query_string    TEXT NOT NULL DEFAULT '',
+    status_code     INTEGER NOT NULL DEFAULT 0,
+    request_body    TEXT,
+    user_agent      TEXT NOT NULL DEFAULT '',
+    request_time_ms REAL NOT NULL DEFAULT 0.0,
+    operation       TEXT NOT NULL DEFAULT '',
+    is_sensitive    INTEGER NOT NULL DEFAULT 0,
+    target_name     TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_audit_ts ON api_audit (timestamp);
+CREATE INDEX IF NOT EXISTS idx_api_audit_user ON api_audit (username);
+CREATE INDEX IF NOT EXISTS idx_api_audit_uri ON api_audit (method, uri);
 """
 
 
@@ -171,6 +194,13 @@ class ArchiveDB:
             conn.execute("ALTER TABLE archives ADD COLUMN original_size_bytes INTEGER NOT NULL DEFAULT 0")
         if "field_schema" not in existing_arc:
             conn.execute("ALTER TABLE archives ADD COLUMN field_schema TEXT")
+        # api_audit: target_name column (v1.7.1+)
+        try:
+            existing_audit = {row[1] for row in conn.execute("PRAGMA table_info(api_audit)").fetchall()}
+            if existing_audit and "target_name" not in existing_audit:
+                conn.execute("ALTER TABLE api_audit ADD COLUMN target_name TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -574,6 +604,151 @@ class ArchiveDB:
             "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # --- API Audit ---
+
+    def insert_api_audit_batch(self, entries: list[dict]) -> int:
+        """Batch insert parsed API audit entries."""
+        if not entries:
+            return 0
+        with self._lock:
+            self.conn.executemany(
+                """INSERT INTO api_audit
+                   (server_name, timestamp, remote_addr, username, method, uri,
+                    query_string, status_code, request_body, user_agent,
+                    request_time_ms, operation, is_sensitive, target_name, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                [
+                    (
+                        e.get("server_name", ""),
+                        e.get("timestamp", ""),
+                        e.get("remote_addr", ""),
+                        e.get("username", ""),
+                        e.get("method", ""),
+                        e.get("uri", ""),
+                        e.get("query_string", ""),
+                        e.get("status_code", 0),
+                        e.get("request_body"),
+                        e.get("user_agent", ""),
+                        e.get("request_time_ms", 0.0),
+                        e.get("operation", ""),
+                        1 if e.get("is_sensitive") else 0,
+                        e.get("target_name", ""),
+                        _dt_to_str(datetime.utcnow()),
+                    )
+                    for e in entries
+                ],
+            )
+            self.conn.commit()
+            return len(entries)
+
+    def list_api_audit(
+        self, limit: int = 100, offset: int = 0,
+        username: str = "", method: str = "", uri: str = "",
+        status_code: str = "", sensitive_only: bool = False,
+        time_from: str = "", time_to: str = "",
+    ) -> tuple[list[dict], int]:
+        """Paginated API audit listing with filters. Returns (items, total)."""
+        where = ["1=1"]
+        params: list = []
+        if username:
+            where.append("username LIKE ?")
+            params.append(f"%{username}%")
+        if method:
+            where.append("method = ?")
+            params.append(method)
+        if uri:
+            where.append("uri LIKE ?")
+            params.append(f"%{uri}%")
+        if status_code:
+            if status_code.endswith("xx"):
+                base = int(status_code[0]) * 100
+                where.append("status_code >= ? AND status_code < ?")
+                params.extend([base, base + 100])
+            else:
+                where.append("status_code = ?")
+                params.append(int(status_code))
+        if sensitive_only:
+            where.append("is_sensitive = 1")
+        if time_from:
+            where.append("timestamp >= ?")
+            params.append(time_from)
+        if time_to:
+            where.append("timestamp <= ?")
+            params.append(time_to)
+
+        w = " AND ".join(where)
+        total = self.conn.execute(f"SELECT COUNT(*) FROM api_audit WHERE {w}", params).fetchone()[0]
+        rows = self.conn.execute(
+            f"SELECT * FROM api_audit WHERE {w} ORDER BY id DESC LIMIT ? OFFSET ?",
+            params + [limit, offset],
+        ).fetchall()
+        return [dict(r) for r in rows], total
+
+    def get_api_audit_entry(self, entry_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM api_audit WHERE id = ?", (entry_id,)).fetchone()
+        return dict(row) if row else None
+
+    def get_api_audit_stats(self, hours: int = 24) -> dict:
+        if hours > 0:
+            cutoff = _dt_to_str(datetime.utcnow() - timedelta(hours=hours))
+            where, params = "WHERE timestamp >= ?", (cutoff,)
+        else:
+            where, params = "", ()
+        total = self.conn.execute(
+            f"SELECT COUNT(*) FROM api_audit {where}", params
+        ).fetchone()[0]
+        users = self.conn.execute(
+            f"SELECT COUNT(DISTINCT username) FROM api_audit {where}", params
+        ).fetchone()[0]
+        login_failures = self.conn.execute(
+            f"SELECT COUNT(*) FROM api_audit {where + (' AND' if where else 'WHERE')} operation = 'auth.login' AND status_code >= 400", params
+        ).fetchone()[0]
+        sensitive = self.conn.execute(
+            f"SELECT COUNT(*) FROM api_audit {where + (' AND' if where else 'WHERE')} is_sensitive = 1", params
+        ).fetchone()[0]
+        # Hourly sparkline data (last 24 hours)
+        sparkline = {"ops": [], "login_failures": [], "sensitive": []}
+        try:
+            now = datetime.utcnow()
+            for i in range(23, -1, -1):
+                h_start = _dt_to_str(now - timedelta(hours=i + 1))
+                h_end = _dt_to_str(now - timedelta(hours=i))
+                hour_label = (now - timedelta(hours=i)).strftime("%H:00")
+                ops = self.conn.execute(
+                    "SELECT COUNT(*) FROM api_audit WHERE timestamp >= ? AND timestamp < ?",
+                    (h_start, h_end)
+                ).fetchone()[0]
+                errs = self.conn.execute(
+                    "SELECT COUNT(*) FROM api_audit WHERE timestamp >= ? AND timestamp < ? AND operation = 'auth.login' AND status_code >= 400",
+                    (h_start, h_end)
+                ).fetchone()[0]
+                sens = self.conn.execute(
+                    "SELECT COUNT(*) FROM api_audit WHERE timestamp >= ? AND timestamp < ? AND is_sensitive = 1",
+                    (h_start, h_end)
+                ).fetchone()[0]
+                sparkline["ops"].append({"day": hour_label, "count": ops})
+                sparkline["login_failures"].append({"day": hour_label, "count": errs})
+                sparkline["sensitive"].append({"day": hour_label, "count": sens})
+        except Exception:
+            pass
+
+        return {
+            "total": total,
+            "unique_users": users,
+            "login_failures": login_failures,
+            "sensitive": sensitive,
+            "sparkline": sparkline,
+        }
+
+    def cleanup_api_audit(self, retention_days: int) -> int:
+        cutoff = _dt_to_str(datetime.utcnow() - timedelta(days=retention_days))
+        with self._lock:
+            count = self.conn.execute(
+                "DELETE FROM api_audit WHERE timestamp < ?", (cutoff,)
+            ).rowcount
+            self.conn.commit()
+            return count
 
     # --- Helpers ---
 

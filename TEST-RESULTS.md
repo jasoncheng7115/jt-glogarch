@@ -3,22 +3,39 @@
 | Item | Value |
 |---|---|
 | **Status** | ✅ ALL PASSED |
-| **Version** | v1.6.2 |
-| **Date** | 2026-04-14 16:07:11 UTC |
+| **Version** | v1.7.0 |
+| **Date** | 2026-04-15 11:32:42 UTC |
 | **Platform** | Python 3.10.12 / Linux 5.15.0-171-generic x86_64 |
-| **Results** | 126 passed  / 1 skipped in 3.76s |
+| **Results** | 143 passed  / 1 skipped in 4.46s |
 | **Version Check** | ✅ OK |
 
 ## Test Output
 
 ```
 ============================= test session starts ==============================
-collecting ... collected 127 items
+collecting ... collected 144 items
 
 tests/test_api_error_handling.py::test_index_sets_catches_401 PASSED
 tests/test_api_error_handling.py::test_streams_catches_401 PASSED
 tests/test_api_error_handling.py::test_index_sets_catches_connection_error PASSED
 tests/test_api_error_handling.py::test_streams_catches_connection_error PASSED
+tests/test_audit.py::test_decode_username_basic PASSED
+tests/test_audit.py::test_decode_username_token PASSED
+tests/test_audit.py::test_decode_username_session PASSED
+tests/test_audit.py::test_decode_username_empty PASSED
+tests/test_audit.py::test_classify_sensitive PASSED
+tests/test_audit.py::test_classify_not_sensitive PASSED
+tests/test_audit.py::test_classify_operation PASSED
+tests/test_audit.py::test_parse_syslog_payload PASSED
+tests/test_audit.py::test_parse_nginx_json PASSED
+tests/test_audit.py::test_process_raw_entry PASSED
+tests/test_audit.py::test_process_raw_entry_no_auth PASSED
+tests/test_audit.py::test_db_api_audit_insert_and_list PASSED
+tests/test_audit.py::test_api_audit_config_default PASSED
+tests/test_audit.py::test_settings_has_op_audit PASSED
+tests/test_audit.py::test_db_api_audit_stats_all_time PASSED
+tests/test_audit.py::test_token_resolve PASSED
+tests/test_audit.py::test_notify_event_sensitive PASSED
 tests/test_bulk_import.py::test_reserved_fields_stripped PASSED
 tests/test_bulk_import.py::test_index_name_is_deflector PASSED
 tests/test_bulk_import.py::test_index_name_no_timestamp PASSED
@@ -41,7 +58,7 @@ tests/test_database_datetime.py::test_utc_aware_roundtrip PASSED
 tests/test_database_datetime.py::test_non_utc_aware_roundtrip PASSED
 tests/test_database_datetime.py::test_none_passthrough PASSED
 tests/test_database_datetime.py::test_str_to_dt_with_offset PASSED
-tests/test_db_rebuild.py::test_rebuild_dry_run 2026-04-14T16:07:13.268423Z [info     ] Would insert                   path=/tmp/tmpdw6wblp9/archives/server1/2026/01/test.json.gz server=test time_from=2026-01-01T00:00:00Z
+tests/test_db_rebuild.py::test_rebuild_dry_run 2026-04-15T11:32:44.951352Z [info     ] Would insert                   path=/tmp/tmp9eve0p1t/archives/server1/2026/01/test.json.gz server=test time_from=2026-01-01T00:00:00Z
 PASSED
 tests/test_db_rebuild.py::test_rebuild_actual PASSED
 tests/test_db_rebuild.py::test_rebuild_skip_existing PASSED
@@ -64,7 +81,7 @@ tests/test_integration.py::test_cross_conflict_actual_os_mapping PASSED
 tests/test_integration.py::test_field_schema_zlib_in_preflight PASSED
 tests/test_integration.py::test_timezone_dedup_correctness PASSED
 tests/test_integration.py::test_timezone_retention_correctness PASSED
-tests/test_integration.py::test_archive_write_read_integrity 2026-04-14T16:07:14.943620Z [info     ] Archive written                messages=50 path=/tmp/tmpah1jzy5t/test/stream1/2026/01/01/test_stream1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.00
+tests/test_integration.py::test_archive_write_read_integrity 2026-04-15T11:32:46.888591Z [info     ] Archive written                messages=50 path=/tmp/tmpqj2kqxe5/test/stream1/2026/01/01/test_stream1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.00
 PASSED
 tests/test_integration.py::test_coverage_ratio_timezone PASSED
 tests/test_local_admin.py::test_default_hash_is_empty PASSED
@@ -130,7 +147,7 @@ tests/test_sanitize.py::test_url_with_credentials PASSED
 tests/test_sanitize.py::test_truncation PASSED
 tests/test_sanitize.py::test_no_false_positive PASSED
 tests/test_sanitize.py::test_mixed_secrets PASSED
-tests/test_storage_ownership.py::test_fix_dir_ownership_as_root 2026-04-14T16:07:15.178244Z [warning  ] Fixing directory ownership     new_owner=jt-glogarch path=/tmp/tmp_zy09suc/archives/log4
+tests/test_storage_ownership.py::test_fix_dir_ownership_as_root 2026-04-15T11:32:47.231619Z [warning  ] Fixing directory ownership     new_owner=jt-glogarch path=/tmp/tmpqec5z4ub/archives/log4
 PASSED
 tests/test_storage_ownership.py::test_fix_dir_ownership_not_root SKIPPED
 tests/test_storage_ownership.py::test_fix_only_under_base_path PASSED
@@ -146,12 +163,12 @@ tests/test_upgrade_script.py::test_readme_mentions_upgrade_script PASSED
 tests/test_upgrade_script.py::test_install_script_systemd_default_yes PASSED
 tests/test_upgrade_script.py::test_readme_git_clone_has_sudo PASSED
 
-======================== 126 passed, 1 skipped in 3.76s ========================
+======================== 143 passed, 1 skipped in 4.46s ========================
 ```
 
 ## Version Check
 
 ```
-Canonical version: 1.6.2
-OK: version '1.6.2' has exactly one source of truth.
+Canonical version: 1.7.0
+OK: version '1.7.0' has exactly one source of truth.
 ```

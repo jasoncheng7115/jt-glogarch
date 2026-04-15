@@ -1,11 +1,11 @@
-# jt-glogarch v1.6.2
+# jt-glogarch v1.7.0
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)
 
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.6.2-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.7.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -42,6 +42,7 @@ and can restore them back into any Graylog instance via GELF (UDP / TCP).
   - [Schedules](#schedules)
   - [Notification Settings](#notification-settings)
   - [System Logs](#system-logs)
+  - [Operation Audit](#operation-audit)
 - [Import (Restore) Workflow](#import-restore-workflow)
 - [Performance & Tuning](#performance--tuning)
 - [CLI Reference](#cli-reference)
@@ -121,6 +122,7 @@ GELF mode also has:
 - **Schedule Management** — Cron editor, inline progress, "Run Now"
 - **Notification Settings** — 6 channels with language selection
 - **System Logs** — Real-time log viewer + audit log
+- **Operation Audit** — Track who did what on Graylog (60+ operation types, filterable, sensitive operation alerts)
 - Dark/Light theme, English/Traditional Chinese
 - Collapsible sidebar, HTTPS, session authentication
 
@@ -129,7 +131,7 @@ GELF mode also has:
 
 Telegram • Discord • Slack • Microsoft Teams • Nextcloud Talk • Email (SMTP)
 
-Triggers: export complete, import complete, cleanup complete, errors, verification failed.
+Triggers: export complete, import complete, cleanup complete, errors, verification failed, sensitive operations, audit alerts.
 Bilingual messages (English / Traditional Chinese).
 
 
@@ -332,6 +334,115 @@ echo "Open: https://$(hostname):8990"
 
 Login with your Graylog credentials.
 
+### Setup Operation Audit (nginx)
+
+jt-glogarch includes a built-in Operation Audit feature that tracks who did what on Graylog. It works by receiving access logs from nginx reverse proxies on your Graylog servers. **Enabled by default** — just configure nginx.
+
+> Skip this section if you don't need operation auditing.
+
+**On each Graylog server**, install and configure nginx as a reverse proxy:
+
+```bash
+# 1. Install nginx (skip if already installed)
+sudo apt install -y nginx
+
+# 2. Create SSL certificate (skip if you already have one)
+sudo openssl req -x509 -newkey rsa:2048 -nodes \
+    -keyout /etc/ssl/private/graylog.key \
+    -out /etc/ssl/certs/graylog.crt \
+    -days 3650 -subj "/CN=$(hostname)"
+
+# 3. Add audit log format to /etc/nginx/nginx.conf
+#    Add INSIDE the http { } block, BEFORE any "include" lines:
+```
+
+```nginx
+    log_format graylog_audit escape=json
+            '{'
+            '"time":"$time_iso8601",'
+            '"remote_addr":"$remote_addr",'
+            '"method":"$request_method",'
+            '"uri":"$uri",'
+            '"args":"$args",'
+            '"status":$status,'
+            '"body_bytes_sent":$body_bytes_sent,'
+            '"request_body":"$request_body",'
+            '"http_authorization":"$http_authorization",'
+            '"http_cookie":"$cookie_authentication",'
+            '"user_agent":"$http_user_agent",'
+            '"request_time":$request_time,'
+            '"server_name":"$server_name"'
+            '}';
+```
+
+```bash
+# 4. Create Graylog site config: /etc/nginx/sites-available/graylog
+```
+
+```nginx
+server {
+        listen 443 ssl;
+        server_name graylog.example.com;
+
+        ssl_certificate /etc/ssl/certs/graylog.crt;
+        ssl_certificate_key /etc/ssl/private/graylog.key;
+
+        location / {
+                proxy_pass http://127.0.0.1:9000/;
+                proxy_http_version 1.1;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Graylog-Server-URL https://$host/;
+                proxy_pass_request_headers on;
+                proxy_buffering off;
+                client_max_body_size 8m;
+        }
+
+        # Operation Audit — send access logs to jt-glogarch
+        access_log syslog:server=JT_GLOGARCH_IP:8991,facility=local7,tag=graylog_audit graylog_audit;
+        client_body_buffer_size 64k;
+}
+
+# Optional: redirect HTTP to HTTPS
+server {
+        listen 80;
+        return 301 https://$host$request_uri;
+}
+```
+
+```bash
+# 5. Replace JT_GLOGARCH_IP with your jt-glogarch server IP in the config above
+
+# 6. Enable the site and test
+sudo ln -sf /etc/nginx/sites-available/graylog /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# 7. Open UDP port 8991 on the jt-glogarch server firewall
+#    (run this on the jt-glogarch server, not the Graylog server)
+sudo ufw allow 8991/udp
+
+# 8. IMPORTANT: Block direct access to Graylog port 9000
+#    Only allow localhost (nginx) and other Graylog cluster nodes.
+#    This forces all users through nginx, ensuring complete audit coverage.
+#    Replace CLUSTER_NODE_IP with each Graylog node IP in your cluster.
+sudo ufw deny 9000
+sudo ufw allow from 127.0.0.1 to any port 9000
+sudo ufw allow from CLUSTER_NODE_IP to any port 9000
+# Repeat the above line for each Graylog cluster node
+```
+
+After setup, open the jt-glogarch Web UI → **Operation Audit** page to verify data is flowing in.
+
+> **Important:**
+> - The `log_format` block must be placed **before** `include` lines in `nginx.conf`
+> - Replace `JT_GLOGARCH_IP` with the actual IP of your jt-glogarch server
+> - Replace `CLUSTER_NODE_IP` with each Graylog cluster node IP
+> - **Port 9000 must be blocked** from external access — if users can bypass nginx, their operations will not be audited
+> - For Graylog clusters, repeat steps 3-8 on **every** Graylog node
+> - After blocking port 9000, access Graylog via `https://<hostname>` (port 443) instead
+> - See [AUDIT-OPERATIONS.md](AUDIT-OPERATIONS.md) for the full list of tracked operations
+
 
 
 ---
@@ -396,7 +507,7 @@ curl -sk https://localhost:8990/api/health
 When a new version is available on GitHub, upgrade with one command:
 
 ```bash
-cd /opt/jt-glogarch && sudo bash deploy/upgrade.sh
+sudo bash /opt/jt-glogarch/deploy/upgrade.sh
 ```
 
 The upgrade script automatically: backs up DB → git pull → pip install → restart service → verify version.
@@ -563,7 +674,7 @@ is the active write index, which is always excluded).
 名稱:     auto-cleanup
 類型:     Cleanup
 頻率:     Monthly day 1 04:00
-保留天數:  60 天
+保留天數:  1095 天
 ```
 
 Removes archive files older than the retention period and updates the DB.
@@ -598,6 +709,8 @@ Configure where notifications are sent.
 - Cleanup complete
 - Error
 - Verify failed
+- Sensitive operation (Operation Audit — user deletion, auth changes, etc.)
+- Audit alert (Operation Audit — no syslog received for 10+ minutes)
 
 **Channels** — Configure each channel. **Unchecking "Enabled"** automatically
 collapses the channel's settings to keep the page tidy.
@@ -627,6 +740,74 @@ are sent in the configured language.
 
 Real-time tail of `journalctl -u jt-glogarch` plus an audit log of user actions
 (login, export started, settings saved, etc.).
+
+
+### Operation Audit
+
+![Operation Audit](images/op_audit.png)
+
+Track who did what on Graylog — compliance-grade auditing independent from Graylog itself.
+
+**Key advantages:**
+- Records full request body — you can see exactly what was changed, what query was searched, what account was created
+- Audit records stored independently from Graylog — administrators cannot delete their own audit trail
+
+**How it works:**
+- nginx on each Graylog node sends JSON access logs via UDP syslog to jt-glogarch (port 8991)
+- jt-glogarch receives, parses, classifies into 60+ operation types, resolves usernames, and stores in SQLite
+- IP allowlist auto-built from Graylog Cluster API — zero configuration needed
+- Only meaningful operations are recorded; background polling, static assets, metrics are automatically filtered
+
+**Page layout:**
+
+1. **Status bar** — Listener status (running/disabled), UDP port, last received timestamp, record count, retention days, heartbeat alert
+2. **Stat cards** (last 24h) — Total operations, unique users, login failures, sensitive operations, with sparkline trends
+3. **Filter bar** — Time range, username, HTTP method, URI pattern, status code, sensitive only toggle
+4. **Results table** — Time, server, username, method (color-coded badge), URI, status (color-coded), operation type, target name (human-readable resource name), sensitive marker
+5. **Detail modal** — Click any row to see full detail including formatted JSON request body with syntax highlighting and copy button
+6. **Settings section** — nginx configuration snippet with copy button, listener toggle
+
+![Operation Audit Detail](images/op_audit_detail.png)
+
+**Username resolution chain:**
+
+| Method | Description |
+|--------|-------------|
+| Basic Auth | Username extracted from `Authorization` header |
+| Token Auth | Resolved via per-user Graylog token API, cached by prefix |
+| Session Auth | Session ID from `Authorization` header, resolved via Graylog Sessions API |
+| Cookie Session | Session ID from `$cookie_authentication` cookie in nginx log |
+| IP Cache | Falls back to client IP → last known user mapping |
+| Single User | When only one human account exists, auto-attributed |
+
+**Target name resolution:**
+
+Resource IDs in URIs are automatically resolved to human-readable names via the Graylog API cache (refreshed every 6 minutes):
+inputs, streams, index sets, dashboards/views, pipelines, pipeline rules, event definitions, event notifications, lookup tables/adapters/caches, content packs, authentication services, outputs, users, roles.
+
+**Sensitive operation alerts:**
+
+When `op_audit.alert_sensitive` is enabled, sensitive operations (user deletion, stream deletion, authentication changes, system shutdown, etc.) trigger notifications via all configured channels.
+
+**Heartbeat monitoring:**
+
+If the listener is running and Graylog is reachable but no syslog has been received for 10+ minutes, an alert is triggered — indicating a silent failure in the audit pipeline (e.g., nginx misconfiguration, network issue).
+
+**Config:**
+```yaml
+op_audit:
+  enabled: true          # enabled by default
+  listen_port: 8991      # UDP syslog port
+  retention_days: 180    # independent from archive retention (default 180 days)
+  max_body_size: 65536   # max request body size to store (64KB)
+  alert_sensitive: true  # send alerts on sensitive operations
+```
+
+**Retention:** Audit records are automatically cleaned up by the scheduled cleanup job. The `op_audit.retention_days` setting (default 180 days) is independent from the archive retention policy (default 1095 days). Estimated storage: ~2 KB per record, ~360 MB per year at 1000 operations/day.
+
+> For the complete list of 60+ tracked operation types, see [AUDIT-OPERATIONS.md](AUDIT-OPERATIONS.md).
+>
+> For nginx setup instructions, see [Quick Start — Setup Operation Audit](#setup-operation-audit-nginx).
 
 
 

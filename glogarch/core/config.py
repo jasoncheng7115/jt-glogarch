@@ -113,12 +113,21 @@ class NotifyConfig(BaseModel):
     on_cleanup_complete: bool = False
     on_error: bool = True
     on_verify_failed: bool = True
+    on_sensitive_operation: bool = True
+    on_audit_alert: bool = True
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     discord: DiscordConfig = Field(default_factory=DiscordConfig)
     slack: SlackConfig = Field(default_factory=SlackConfig)
     teams: TeamsConfig = Field(default_factory=TeamsConfig)
     nextcloud_talk: NextcloudTalkConfig = Field(default_factory=NextcloudTalkConfig)
     email: EmailConfig = Field(default_factory=EmailConfig)
+
+
+class ApiAuditConfig(BaseModel):
+    enabled: bool = True
+    listen_port: int = 8991
+    max_body_size: int = 65536
+    alert_sensitive: bool = True
 
 
 class WebConfig(BaseModel):
@@ -143,6 +152,7 @@ class Settings(BaseModel):
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
+    op_audit: ApiAuditConfig = Field(default_factory=ApiAuditConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     database_path: str = "glogarch.db"
     log_level: str = "INFO"
@@ -187,6 +197,11 @@ def load_settings(config_path: str | Path | None = None) -> Settings:
         if p.is_file():
             with open(p) as f:
                 data: dict[str, Any] = yaml.safe_load(f) or {}
+            # Backward compat: api_audit → op_audit
+            if "api_audit" in data and "op_audit" not in data:
+                data["op_audit"] = data.pop("api_audit")
+            elif "api_audit" in data:
+                data.pop("api_audit")
             _settings = Settings(**data)
             _settings._config_path = str(p.resolve())
             return _settings

@@ -109,6 +109,15 @@ class Cleaner:
         if not dry_run:
             self._clean_empty_dirs()
 
+        # Clean old operation audit records (same retention as archives)
+        if not dry_run:
+            try:
+                audit_deleted = self.db.cleanup_api_audit(days)
+                if audit_deleted:
+                    log.info("Cleaned audit records", deleted=audit_deleted, retention_days=days)
+            except Exception as e:
+                log.warning("Audit cleanup failed", error=str(e))
+
         log.info("Cleanup completed", files_deleted=result.files_deleted,
                  bytes_freed=result.bytes_freed)
 
