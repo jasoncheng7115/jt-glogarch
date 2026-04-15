@@ -165,11 +165,11 @@ notify:
 
 ---
 
-## op_audit — 操作稽核（Graylog 操作追蹤）
+## op_audit — 行為稽核（Graylog 操作追蹤）
 
 ```yaml
 op_audit:
-  enabled: true                           # 啟用操作稽核（接收 nginx syslog）
+  enabled: true                           # 啟用行為稽核（接收 nginx syslog）
   listen_port: 8991                       # syslog UDP 監聽埠號
   max_body_size: 65536                    # 每筆記錄最大 request body（bytes）
   alert_sensitive: true                   # 偵測到敏感操作時發送通知（刪除使用者/stream/input 等）
