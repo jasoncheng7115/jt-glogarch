@@ -66,7 +66,7 @@ async def send_notification(
         return []
 
     results = []
-    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     full_msg = f"[jt-glogarch] {title}\n{message}\n{timestamp}"
 
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:

@@ -141,8 +141,8 @@ function statusBadge(status, errorMessage) {
         missing: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ff9800" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>',
     };
     const labels = {
-        corrupted: 'SHA256 損壞',
-        missing: '檔案遺失',
+        corrupted: t('status_corrupted'),
+        missing: t('status_missing'),
         completed_with_failures: t('status_completed_with_failures'),
     };
     // A "completed" job with a non-empty error_message that mentions
@@ -212,13 +212,19 @@ async function loadDashboard() {
 
     try {
         const servers = await fetchJSON(`${API}/servers`);
+        // Detect Data Node — set global flag for export/import mode warnings
+        window._hasDataNode = (servers.items || []).some(s => s.has_datanode);
+        // Store default server name for schedule table display
+        if (servers.items && servers.items.length > 0) {
+            window._defaultServerName = servers.items[0].name;
+        }
         const tbody = document.querySelector('#servers-table tbody');
         tbody.innerHTML = servers.items.map(s => `
             <tr>
                 <td>${esc(s.name)}</td>
                 <td>${esc(s.url)}</td>
                 <td>${s.connected ? statusBadge('completed') : statusBadge('failed')}</td>
-                <td>${s.version || '-'}</td>
+                <td>${s.version || '-'}${s.has_datanode ? ' <span style="color:var(--warning);font-size:0.8em">(Data Node)</span>' : ''}</td>
             </tr>
         `).join('');
     } catch (e) {
@@ -351,7 +357,7 @@ async function testOpenSearch() {
             body: '{}',
         });
         if (data.connected) {
-            resultEl.innerHTML = `<span class="status-completed">Connected!</span> ${data.cluster_name || ''} — ${data.version || ''} — Status: ${data.status || ''} — Nodes: ${data.nodes || ''}`;
+            resultEl.innerHTML = `<span class="status-completed">Connected!</span> ${esc(data.cluster_name || '')} — ${esc(data.version || '')} — Status: ${esc(data.status || '')} — Nodes: ${esc(String(data.nodes || ''))}`;
         } else {
             resultEl.innerHTML = `<span class="status-failed">Failed:</span> ${data.error || 'Unknown error'}`;
         }
@@ -1020,6 +1026,19 @@ function onImportModeChange(mode) {
     if (gelfFields) gelfFields.style.display = mode === 'gelf' ? 'block' : 'none';
     if (bulkFields) bulkFields.style.display = mode === 'bulk' ? 'block' : 'none';
     if (bulkWarning) bulkWarning.style.display = mode === 'bulk' ? 'block' : 'none';
+    // Show Data Node warning when bulk mode selected
+    let dnWarn = document.getElementById('datanode-bulk-warning');
+    if (!dnWarn && mode === 'bulk' && window._hasDataNode) {
+        const parent = bulkWarning?.parentElement || bulkFields?.parentElement;
+        if (parent) {
+            dnWarn = document.createElement('div');
+            dnWarn.id = 'datanode-bulk-warning';
+            dnWarn.style.cssText = 'background:rgba(244,67,54,0.1);border:1px solid var(--danger);border-radius:6px;padding:10px 12px;margin:8px 0;font-size:0.9em;color:var(--danger)';
+            dnWarn.textContent = t('datanode_warning');
+            parent.insertBefore(dnWarn, bulkFields || parent.firstChild);
+        }
+    }
+    if (dnWarn) dnWarn.style.display = (mode === 'bulk' && window._hasDataNode) ? 'block' : 'none';
     // Update visual selection on radio cards
     document.querySelectorAll('.mode-option').forEach(opt => {
         const radio = opt.querySelector('input[type="radio"]');
@@ -1088,7 +1107,7 @@ async function doImportSingle() {
         // bulk mode
         body.target_index_pattern = document.getElementById('modal-bulk-index-pattern')?.value?.trim() || 'jt_restored';
         body.dedup_strategy = document.getElementById('modal-bulk-dedup')?.value || 'id';
-        body.batch_docs = parseInt(document.getElementById('modal-bulk-batch-docs')?.value || '5000');
+        body.batch_docs = parseInt(document.getElementById('modal-bulk-batch-docs')?.value || '10000');
         const autoDetect = document.getElementById('modal-bulk-os-autodetect')?.checked;
         if (!autoDetect) {
             body.target_os_url = document.getElementById('modal-bulk-os-url')?.value?.trim() || '';
@@ -1320,7 +1339,12 @@ function onExportModeChange() {
     const customGroup = document.getElementById('export-custom-group');
     if (streamGroup) streamGroup.style.display = mode === 'api' ? 'block' : 'none';
     if (hint) {
-        hint.textContent = mode === 'api' ? t('export_mode_api_hint') : t('export_mode_os_hint');
+        let hintText = mode === 'api' ? t('export_mode_api_hint') : t('export_mode_os_hint');
+        // Show Data Node warning for OpenSearch mode
+        if (mode === 'opensearch' && window._hasDataNode) {
+            hintText += '\n\n' + t('datanode_warning');
+        }
+        hint.textContent = hintText;
         hint.style.color = mode === 'opensearch' ? 'var(--warning)' : '';
     }
     // OpenSearch: hide time range selector, show index picker in coverage
@@ -1644,9 +1668,15 @@ async function loadSchedules() {
         let configHtml = '';
         if (s.job_type === 'export') {
             const mode = c.mode === 'opensearch' ? 'OpenSearch' : 'API';
-            modeHtml = `<span class="host-label" style="font-size:0.75em">${mode}</span>`;
-            if (c.mode === 'opensearch' && c.keep_indices) {
-                configHtml = `${c.keep_indices} ${t('sched_indices_unit')}`;
+            const serverName = c.server || window._defaultServerName || '';
+            const serverLabel = serverName ? `<span class="host-label" style="font-size:0.7em;margin-right:4px">${esc(serverName)}</span>` : '';
+            modeHtml = `${serverLabel}<span class="host-label" style="font-size:0.75em">${mode}</span>`;
+            if (c.mode === 'opensearch') {
+                if (c.keep_indices) {
+                    configHtml = `${c.keep_indices} ${t('sched_indices_unit')}`;
+                } else {
+                    configHtml = `${c.days || '?'} ${t('export_days')} (${t('sched_all_indices')})`;
+                }
             } else {
                 configHtml = `${c.days || '?'} ${t('export_days')}`;
             }
@@ -1681,7 +1711,7 @@ async function loadSchedules() {
             <td><div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
                 <button class="btn-sm btn-primary" onclick="editSchedule('${esc(s.name)}')">${icon('shield')} ${t('btn_edit')}</button>
                 ${(s.job_type === 'export' || s.job_type === 'cleanup' || s.job_type === 'verify') && !runningJob ? `<button class="btn-sm btn-success" onclick="runScheduleNow('${esc(s.name)}')" title="${t('btn_run_now')}">${icon('play')} ${t('btn_run_now')}</button>` : ''}
-                <button class="btn-sm ${s.enabled ? 'btn-secondary' : 'btn-primary'}" onclick="toggleSchedule('${esc(s.name)}',${!s.enabled})">${s.enabled ? t('btn_disable') : t('btn_enable')}</button>
+                <button class="btn-sm ${s.enabled ? 'btn-secondary' : 'btn-primary'}" onclick="toggleSchedule('${esc(s.name)}',${!s.enabled})">${s.enabled ? icon('pause') + ' ' + t('btn_disable') : icon('play') + ' ' + t('btn_enable')}</button>
                 ${s.name.startsWith('auto-') ? '' : `<button class="btn-sm btn-danger" onclick="deleteSchedule('${esc(s.name)}')">${icon('trash')}</button>`}
             </div></td>
         </tr>`;
@@ -1713,11 +1743,25 @@ function openSchedModal() {
     document.getElementById('sched-modal').style.display = 'flex';
     loadSchedIndexSets();
     loadSchedStreams();
+    loadSchedServers();
     onSchedModeChange();
     onSchedTypeChange();
     onSchedFreqChange();
     setTimeout(initCustomSelects, 100);
     applyI18n();
+}
+
+async function loadSchedServers() {
+    const sel = document.getElementById('sched-server');
+    if (!sel) return;
+    try {
+        const data = await fetchJSON(`${API}/servers`);
+        sel.innerHTML = `<option value="">${t('sched_server_default')}</option>` +
+            (data.items || []).map(s =>
+                `<option value="${esc(s.name)}">${esc(s.name)} (${esc(s.url)})</option>`
+            ).join('');
+    } catch (e) {}
+    initCustomSelects();
 }
 
 function closeSchedModal() {
@@ -1734,7 +1778,11 @@ function onSchedModeChange() {
     const daysGroup = document.getElementById('sched-days-group');
     const coverage = document.getElementById('sched-mode-coverage');
     if (hint) {
-        hint.textContent = mode === 'api' ? t('export_mode_api_hint') : t('export_mode_os_hint');
+        let hintText = mode === 'api' ? t('export_mode_api_hint') : t('export_mode_os_hint');
+        if (mode === 'opensearch' && window._hasDataNode) {
+            hintText += '\n\n' + t('datanode_warning');
+        }
+        hint.textContent = hintText;
         hint.style.color = mode === 'opensearch' ? 'var(--warning)' : '';
     }
     if (streamGroup) streamGroup.style.display = mode === 'api' ? 'block' : 'none';
@@ -1795,8 +1843,9 @@ async function addSchedule() {
     await withButton(btn, async () => {
         const body = { name, job_type: type, cron_expr: cron };
         if (type === 'export') {
+            body.server = document.getElementById('sched-server')?.value || '';
             body.mode = document.getElementById('sched-mode')?.value || 'api';
-            body.days = parseInt(document.getElementById('sched-days')?.value) || 180;
+            body.days = parseInt(document.getElementById('sched-days')?.value) || 1095;
             body.index_set = document.getElementById('sched-indexset')?.value || '';
             body.streams = Array.from(document.querySelectorAll('.sched-stream-check:checked')).map(c => c.value);
             // OpenSearch: save keep_indices from the OS coverage widget
@@ -1805,7 +1854,7 @@ async function addSchedule() {
                 if (keepN) body.keep_indices = parseInt(keepN);
             }
         } else if (type === 'cleanup') {
-            body.retention_days = parseInt(document.getElementById('sched-retention-days')?.value) || 180;
+            body.retention_days = parseInt(document.getElementById('sched-retention-days')?.value) || 1095;
         }
         await fetchJSON(`${API}/schedules`, {
             method: 'POST',
@@ -1858,14 +1907,17 @@ async function editSchedule(name) {
     // Set type-specific options
     if (sched.job_type === 'cleanup') {
         const retDays = document.getElementById('sched-retention-days');
-        if (retDays) retDays.value = c.retention_days || 180;
+        if (retDays) retDays.value = c.retention_days || 1095;
     }
     if (sched.job_type === 'export') {
+        await loadSchedServers();
+        const serverSel = document.getElementById('sched-server');
+        if (serverSel && c.server) serverSel.value = c.server;
         const modeSel = document.getElementById('sched-mode');
         if (modeSel) modeSel.value = c.mode || 'api';
         onSchedModeChange();
         const daysSel = document.getElementById('sched-days');
-        if (daysSel) daysSel.value = c.days || 180;
+        if (daysSel) daysSel.value = c.days || 1095;
         await loadSchedIndexSets();
         const isetSel = document.getElementById('sched-indexset');
         if (isetSel && c.index_set) isetSel.value = c.index_set;
@@ -2063,13 +2115,28 @@ function watchJob(jobId, type, onComplete) {
 }
 
 // ---- System Logs ----
+function _colorizeLogLine(raw) {
+    const e = esc(raw);
+    // Determine line color by log level
+    if (/\bERROR\b/i.test(raw)) return `<span style="color:#f44336">${e}</span>`;
+    if (/\bWARN/i.test(raw)) return `<span style="color:#ff9800">${e}</span>`;
+    if (/\berror\b/.test(raw)) return `<span style="color:#e06c75">${e}</span>`;
+    if (/\[info\s*\]/.test(raw)) return `<span style="color:#98c379">${e}</span>`;
+    if (/\bINFO\b/.test(raw)) return `<span style="color:#c5c8c6">${e}</span>`;
+    if (/\bDEBUG\b/i.test(raw)) return `<span style="color:#666">${e}</span>`;
+    if (/Started|Completed|startup complete/i.test(raw)) return `<span style="color:#98c379">${e}</span>`;
+    if (/systemd\[/.test(raw)) return `<span style="color:#6a9fb5">${e}</span>`;
+    return `<span style="color:#aaa">${e}</span>`;
+}
+
 async function loadRealtimeLog() {
     const lines = document.getElementById('log-lines')?.value || 100;
     const el = document.getElementById('log-output');
     el.textContent = t('loading') + '...';
     try {
         const data = await fetchJSON(`${API}/logs/realtime?lines=${lines}`);
-        el.textContent = data.lines || t('log_no_data');
+        const raw = data.lines || t('log_no_data');
+        el.innerHTML = raw.split('\n').map(_colorizeLogLine).join('\n');
         el.scrollTop = el.scrollHeight;
     } catch (e) {
         el.textContent = t('load_failed');
@@ -2340,7 +2407,7 @@ function showConfirm(title, message, onConfirm) {
         modal = document.createElement('div');
         modal.id = 'global-confirm-modal';
         modal.className = 'confirm-modal-overlay';
-        modal.onclick = (e) => { if (e.target === modal) closeConfirm(); };
+        // Do NOT close on backdrop click — only close via buttons
         modal.innerHTML = `<div class="confirm-modal-card">
             <h3 id="confirm-title"></h3>
             <p id="confirm-message"></p>
@@ -2528,7 +2595,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (path === '/export') { loadExportPage().then(() => setTimeout(initCustomSelects, 200)); }
     else if (path === '/import') { window.location.href = '/archives'; return; }
     else if (path === '/jobs') loadTable('#jobs-table', loadJobs);
-    else if (path === '/schedules') { loadSchedules().then(() => setTimeout(initCustomSelects, 200)); startSchedPoll(); }
+    else if (path === '/schedules') { fetchJSON(`${API}/servers`).then(d => { if (d.items?.length) window._defaultServerName = d.items[0].name; }).catch(()=>{}).finally(() => { loadSchedules().then(() => setTimeout(initCustomSelects, 200)); }); startSchedPoll(); }
     else if (path === '/notify-settings') loadNotifySettings();
     else if (path === '/logs') { loadRealtimeLog(); loadTable('#audit-table', loadAuditLog); }
 });

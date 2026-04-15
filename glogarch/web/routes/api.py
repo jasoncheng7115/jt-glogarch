@@ -180,11 +180,12 @@ async def trigger_export(request: Request, background_tasks: BackgroundTasks):
     else:
         return JSONResponse({"error": "Must specify time_from or days"}, status_code=400)
 
-    # Clean up old progress entries (keep last 50)
+    # Clean up old progress entries + cancel flags (keep last 50)
     if len(_job_progress) > 50:
         oldest_keys = sorted(_job_progress.keys())[:len(_job_progress) - 50]
         for k in oldest_keys:
             _job_progress.pop(k, None)
+            _cancel_flags.pop(k, None)
 
     job_id = str(uuid.uuid4())
     _job_progress[job_id] = []
@@ -391,6 +392,13 @@ async def trigger_import(request: Request, background_tasks: BackgroundTasks):
 
     job_id = str(uuid.uuid4())
     _job_progress[job_id] = []
+
+    # Clean up old progress entries + cancel flags (keep last 50)
+    if len(_job_progress) > 50:
+        oldest_keys = sorted(_job_progress.keys())[:len(_job_progress) - 50]
+        for k in oldest_keys:
+            _job_progress.pop(k, None)
+            _cancel_flags.pop(k, None)
 
     # Create flow control with user-specified rate
     fc = ImportFlowControl()
@@ -753,6 +761,9 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
         from glogarch.cleanup.cleaner import Cleaner
         cleaner = Cleaner(settings.retention, settings.export, db)
         result = cleaner.cleanup()
+        db.conn.execute("UPDATE schedules SET last_run_at = ? WHERE name = ?",
+                        (datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), name))
+        db.conn.commit()
         _audit(request, "schedule_run_now", f"{name} cleanup deleted={result.files_deleted}")
         return {"status": "completed", "files_deleted": result.files_deleted, "bytes_freed": result.bytes_freed}
 
@@ -761,6 +772,9 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
         from glogarch.verify.verifier import Verifier
         verifier = Verifier(settings.export, db)
         result = verifier.verify_all()
+        db.conn.execute("UPDATE schedules SET last_run_at = ? WHERE name = ?",
+                        (datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), name))
+        db.conn.commit()
         _audit(request, "schedule_run_now", f"{name} verify total={result.total_checked} corrupted={len(result.corrupted)}")
         return {"status": "completed", "total_checked": result.total_checked, "valid": result.valid,
                 "corrupted": len(result.corrupted), "missing": len(result.missing_files)}
@@ -980,17 +994,28 @@ def _get_sparkline_data(db: ArchiveDB) -> dict:
 
 @router.get("/servers")
 async def list_servers(request: Request):
-    """List servers with connectivity status."""
+    """List servers with connectivity status, including Data Node detection."""
     settings = _settings(request)
     results = []
     for srv in settings.servers:
         from glogarch.graylog.client import GraylogClient
         from glogarch.ratelimit.limiter import RateLimiter
+        import httpx as _httpx
         rl = RateLimiter(settings.rate_limit)
         async with GraylogClient(srv, rl) as client:
             info = await client.check_connectivity()
             info["name"] = srv.name
             info["url"] = srv.url
+            # Detect Data Node — if present, OS Direct/Bulk modes are unavailable
+            try:
+                datanodes = await client.get("/api/datanodes")
+                if isinstance(datanodes, list) and len(datanodes) > 0:
+                    info["has_datanode"] = True
+                    info["datanode_count"] = len(datanodes)
+                else:
+                    info["has_datanode"] = False
+            except Exception:
+                info["has_datanode"] = False
             results.append(info)
     return {"items": results}
 
@@ -1337,6 +1362,8 @@ def notify_status(request: Request):
         channels.append({"name": "teams", "enabled": True})
     if n.nextcloud_talk.enabled:
         channels.append({"name": "nextcloud_talk", "enabled": True})
+    if n.email.enabled:
+        channels.append({"name": "email", "enabled": True})
     return {
         "channels": channels,
         "on_export_complete": n.on_export_complete,
@@ -1359,9 +1386,7 @@ async def test_notify(request: Request):
         return {"results": [], "message": "No notification channels enabled"}
 
     results = []
-    from datetime import timezone, timedelta as _td
-    local_tz = timezone(_td(hours=8))  # Asia/Taipei
-    timestamp = datetime.now(local_tz).strftime("%Y-%m-%d %H:%M:%S %z")
+    timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     # Use notification language from config
     if config.language == "zh-TW":
         title = "測試通知"

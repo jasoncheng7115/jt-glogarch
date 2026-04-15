@@ -97,7 +97,7 @@ schedule:
 ```yaml
 retention:
   enabled: true
-  retention_days: 180                   # 超過此天數的歸檔自動刪除
+  retention_days: 1095                   # 超過此天數的歸檔自動刪除（預設：3 年）
 ```
 
 ---

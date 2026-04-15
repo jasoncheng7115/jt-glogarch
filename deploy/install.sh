@@ -47,6 +47,8 @@ else
     useradd --system --no-create-home --home-dir "$INSTALL_DIR" --shell /usr/sbin/nologin "$SERVICE_USER"
     echo "User '$SERVICE_USER' created"
 fi
+# Allow reading journalctl logs (for Web UI System Logs page)
+usermod -aG systemd-journal "$SERVICE_USER" 2>/dev/null || true
 
 # Ensure setuptools is new enough to read pyproject.toml metadata
 echo ""

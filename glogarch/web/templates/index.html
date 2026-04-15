@@ -130,7 +130,7 @@
                 </div>
                 <div style="display:flex;gap:8px;align-items:center">
                     <button class="btn-primary btn-sm" onclick="saveArchivePath()" data-i18n="btn_save" data-icon="shield">Save</button>
-                    <button class="btn-secondary btn-sm" onclick="togglePathSettings()" data-i18n="btn_cancel">Cancel</button>
+                    <button class="btn-secondary btn-sm" onclick="togglePathSettings()" data-i18n="btn_cancel" data-icon="close">Cancel</button>
                 </div>
                 <div id="path-save-result" style="margin-top:8px"></div>
             </div>
@@ -203,7 +203,7 @@
         <div class="pagination" id="archives-pagination"></div>
 
         <!-- Import Modal -->
-        <div id="import-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeImportModal()">
+        <div id="import-modal" class="modal-overlay" style="display:none">
             <div class="modal-card">
                 <h3 data-i18n="page_import" data-icon="download">Import</h3>
                 <div id="import-modal-form">
@@ -349,7 +349,7 @@
 
                     <div style="display:flex;gap:10px;margin-top:15px">
                         <button class="btn-primary" id="modal-import-btn" onclick="doImportSingle()" data-i18n="btn_start_import" data-icon="play">Start Import</button>
-                        <button class="btn-secondary" onclick="closeImportModal()" data-i18n="btn_cancel">Cancel</button>
+                        <button class="btn-secondary" onclick="closeImportModal()" data-i18n="btn_cancel" data-icon="close">Cancel</button>
                     </div>
                 </div>
                 <div id="import-modal-progress" style="display:none;margin-top:12px">
@@ -367,7 +367,7 @@
                             </label>
                         </span>
                         <!-- Cancel button — works for both modes. -->
-                        <button class="btn-sm btn-danger" id="import-cancel-btn" onclick="cancelActiveImport()" data-i18n="btn_cancel">Cancel</button>
+                        <button class="btn-sm btn-danger" id="import-cancel-btn" onclick="cancelActiveImport()" data-i18n="btn_cancel" data-icon="close">Cancel</button>
                         <span id="import-journal-badge" style="font-size:0.8em;display:none"></span>
                     </div>
                 </div>
@@ -462,7 +462,7 @@
         <button class="btn-primary" onclick="openSchedModal()" id="btn-show-sched-form" data-i18n="add_schedule" data-icon="plus" style="margin-bottom:15px">Add Schedule</button>
 
         <!-- Schedule Edit Modal -->
-        <div id="sched-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeSchedModal()">
+        <div id="sched-modal" class="modal-overlay" style="display:none">
         <div class="modal-card" style="width:700px;max-width:90vw;max-height:90vh;overflow-y:auto">
             <h3 id="sched-modal-title" data-i18n="add_schedule" data-icon="plus">Add Schedule</h3>
             <div class="form-group">
@@ -497,6 +497,12 @@
                 <small class="form-hint" data-i18n="cron_help">Format: minute hour day month weekday (e.g. 0 */6 * * * = every 6 hours)</small>
             </div>
             <div id="sched-export-options">
+                <div class="form-group">
+                    <label data-i18n="sched_server" data-icon="server">Graylog Server</label>
+                    <select id="sched-server">
+                        <option value="" data-i18n-opt="sched_server_default">Default Server</option>
+                    </select>
+                </div>
                 <div class="form-group">
                     <label data-i18n="sched_mode" data-icon="shield">Export Mode</label>
                     <select id="sched-mode" onchange="onSchedModeChange()">
@@ -536,7 +542,7 @@
             </div>
             <div style="display:flex;gap:10px;margin-top:10px">
                 <button class="btn-primary" onclick="addSchedule()" id="sched-submit-btn" data-i18n="btn_save" data-icon="shield">Save</button>
-                <button class="btn-secondary" onclick="closeSchedModal()" data-i18n="btn_cancel">Cancel</button>
+                <button class="btn-secondary" onclick="closeSchedModal()" data-i18n="btn_cancel" data-icon="close">Cancel</button>
             </div>
         </div>
         </div>

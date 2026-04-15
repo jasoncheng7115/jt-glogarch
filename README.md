@@ -1,11 +1,11 @@
-# jt-glogarch v1.5.5
+# jt-glogarch v1.6.2
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)
 
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.5.5-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.6.2-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -67,6 +67,11 @@ and can restore them back into any Graylog instance via GELF (UDP / TCP).
 | Requires | Graylog API token | OpenSearch credentials |
 | Memory guard | JVM heap monitoring (auto-stop @ 85%) | N/A |
 | Best for | Stream-specific exports, clusters where OpenSearch is locked down | Bulk historical exports, time-sensitive jobs |
+| Graylog 7 Data Node | ✅ Supported | ❌ Not supported (see note below) |
+
+> **Graylog 7 Data Node users:** Data Node environments use Graylog-managed TLS certificate authentication for OpenSearch. No credentials are exposed externally, so external tools cannot access OpenSearch directly. **OpenSearch Direct export** and **OpenSearch Bulk import** are not available in Data Node environments. Use **Graylog API export** and **GELF import** instead. Standalone OpenSearch deployments are unaffected.
+>
+> **Recommendation: Do not use Data Node.** When installing Graylog, configure it to connect directly to a standalone OpenSearch deployment instead of using Data Node. This enables OpenSearch Direct high-speed export (~5× faster) and OpenSearch Bulk high-speed import (~5-10× faster). Data Node simplifies initial setup but locks down external OpenSearch access, severely limiting archive and restore performance.
 
 
 ### Smart Deduplication

@@ -3,22 +3,17 @@
 | Item | Value |
 |---|---|
 | **Status** | ✅ ALL PASSED |
-| **Version** | v1.5.5 |
-| **Date** | 2026-04-13 13:23:41 UTC |
+| **Version** | v1.6.2 |
+| **Date** | 2026-04-14 16:07:11 UTC |
 | **Platform** | Python 3.10.12 / Linux 5.15.0-171-generic x86_64 |
-| **Results** | 109 passed  / 1 skipped in 3.36s |
+| **Results** | 126 passed  / 1 skipped in 3.76s |
 | **Version Check** | ✅ OK |
 
 ## Test Output
 
 ```
 ============================= test session starts ==============================
-platform linux -- Python 3.10.12, pytest-9.0.3, pluggy-1.6.0 -- /usr/bin/python3
-cachedir: .pytest_cache
-rootdir: /opt/jt-glogarch
-configfile: pyproject.toml
-plugins: anyio-4.13.0
-collecting ... collected 110 items
+collecting ... collected 127 items
 
 tests/test_api_error_handling.py::test_index_sets_catches_401 PASSED
 tests/test_api_error_handling.py::test_streams_catches_401 PASSED
@@ -46,7 +41,7 @@ tests/test_database_datetime.py::test_utc_aware_roundtrip PASSED
 tests/test_database_datetime.py::test_non_utc_aware_roundtrip PASSED
 tests/test_database_datetime.py::test_none_passthrough PASSED
 tests/test_database_datetime.py::test_str_to_dt_with_offset PASSED
-tests/test_db_rebuild.py::test_rebuild_dry_run [2m2026-04-13T13:23:43.462272Z[0m [[32m[1minfo     [0m] [1mWould insert                  [0m [36mpath[0m=[35m/tmp/tmp_43tu09q/archives/server1/2026/01/test.json.gz[0m [36mserver[0m=[35mtest[0m [36mtime_from[0m=[35m2026-01-01T00:00:00Z[0m
+tests/test_db_rebuild.py::test_rebuild_dry_run 2026-04-14T16:07:13.268423Z [info     ] Would insert                   path=/tmp/tmpdw6wblp9/archives/server1/2026/01/test.json.gz server=test time_from=2026-01-01T00:00:00Z
 PASSED
 tests/test_db_rebuild.py::test_rebuild_actual PASSED
 tests/test_db_rebuild.py::test_rebuild_skip_existing PASSED
@@ -69,7 +64,7 @@ tests/test_integration.py::test_cross_conflict_actual_os_mapping PASSED
 tests/test_integration.py::test_field_schema_zlib_in_preflight PASSED
 tests/test_integration.py::test_timezone_dedup_correctness PASSED
 tests/test_integration.py::test_timezone_retention_correctness PASSED
-tests/test_integration.py::test_archive_write_read_integrity [2m2026-04-13T13:23:45.044821Z[0m [[32m[1minfo     [0m] [1mArchive written               [0m [36mmessages[0m=[35m50[0m [36mpath[0m=[35m/tmp/tmp158pzokj/test/stream1/2026/01/01/test_stream1_20260101T000000Z_20260101T010000Z_001.json.gz[0m [36msize_mb[0m=[35m0.00[0m
+tests/test_integration.py::test_archive_write_read_integrity 2026-04-14T16:07:14.943620Z [info     ] Archive written                messages=50 path=/tmp/tmpah1jzy5t/test/stream1/2026/01/01/test_stream1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.00
 PASSED
 tests/test_integration.py::test_coverage_ratio_timezone PASSED
 tests/test_local_admin.py::test_default_hash_is_empty PASSED
@@ -81,6 +76,12 @@ tests/test_local_admin.py::test_login_logic_graylog_rejects_no_fallback PASSED
 tests/test_local_admin.py::test_login_logic_graylog_down_with_hash PASSED
 tests/test_local_admin.py::test_login_wrong_username_rejected PASSED
 tests/test_local_admin.py::test_login_logic_graylog_down_no_hash PASSED
+tests/test_multi_server.py::test_config_supports_multiple_servers PASSED
+tests/test_multi_server.py::test_get_server_by_name PASSED
+tests/test_multi_server.py::test_scheduler_reads_server_from_config PASSED
+tests/test_multi_server.py::test_schedule_ui_has_server_selector PASSED
+tests/test_multi_server.py::test_schedule_js_saves_server PASSED
+tests/test_multi_server.py::test_schedule_js_loads_server_on_edit PASSED
 tests/test_notify_format.py::test_export_ok_has_emoji PASSED
 tests/test_notify_format.py::test_export_err_has_warning_emoji PASSED
 tests/test_notify_format.py::test_verify_fail_has_x_emoji PASSED
@@ -100,6 +101,17 @@ tests/test_preflight_conflicts.py::test_intra_archive_conflict PASSED
 tests/test_preflight_conflicts.py::test_cross_conflict_actual_mapping PASSED
 tests/test_preflight_conflicts.py::test_string_only_no_target_mapping_not_pinned PASSED
 tests/test_preflight_conflicts.py::test_mixed_scenario PASSED
+tests/test_recent_fixes.py::test_notification_timestamp_uses_local_tz PASSED
+tests/test_recent_fixes.py::test_notification_test_endpoint_uses_local_tz PASSED
+tests/test_recent_fixes.py::test_retention_default_is_3_years PASSED
+tests/test_recent_fixes.py::test_datanode_detection_in_servers_endpoint PASSED
+tests/test_recent_fixes.py::test_datanode_warning_i18n_in_files PASSED
+tests/test_recent_fixes.py::test_schedule_opensearch_mode_display PASSED
+tests/test_recent_fixes.py::test_import_modal_datanode_warning PASSED
+tests/test_recent_fixes.py::test_export_mode_datanode_warning PASSED
+tests/test_recent_fixes.py::test_config_example_retention_1095 PASSED
+tests/test_recent_fixes.py::test_notify_discord_correct_args PASSED
+tests/test_recent_fixes.py::test_notify_test_endpoint_correct_args PASSED
 tests/test_repo_structure.py::test_pyproject_at_root PASSED
 tests/test_repo_structure.py::test_glogarch_package_at_root PASSED
 tests/test_repo_structure.py::test_deploy_files_exist PASSED
@@ -118,7 +130,7 @@ tests/test_sanitize.py::test_url_with_credentials PASSED
 tests/test_sanitize.py::test_truncation PASSED
 tests/test_sanitize.py::test_no_false_positive PASSED
 tests/test_sanitize.py::test_mixed_secrets PASSED
-tests/test_storage_ownership.py::test_fix_dir_ownership_as_root [2m2026-04-13T13:23:45.227424Z[0m [[33m[1mwarning  [0m] [1mFixing directory ownership    [0m [36mnew_owner[0m=[35mjt-glogarch[0m [36mpath[0m=[35m/tmp/tmpaaxbgal9/archives/log4[0m
+tests/test_storage_ownership.py::test_fix_dir_ownership_as_root 2026-04-14T16:07:15.178244Z [warning  ] Fixing directory ownership     new_owner=jt-glogarch path=/tmp/tmp_zy09suc/archives/log4
 PASSED
 tests/test_storage_ownership.py::test_fix_dir_ownership_not_root SKIPPED
 tests/test_storage_ownership.py::test_fix_only_under_base_path PASSED
@@ -134,12 +146,12 @@ tests/test_upgrade_script.py::test_readme_mentions_upgrade_script PASSED
 tests/test_upgrade_script.py::test_install_script_systemd_default_yes PASSED
 tests/test_upgrade_script.py::test_readme_git_clone_has_sudo PASSED
 
-======================== 109 passed, 1 skipped in 3.36s ========================
+======================== 126 passed, 1 skipped in 3.76s ========================
 ```
 
 ## Version Check
 
 ```
-Canonical version: 1.5.5
-OK: version '1.5.5' has exactly one source of truth.
+Canonical version: 1.6.2
+OK: version '1.6.2' has exactly one source of truth.
 ```

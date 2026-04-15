@@ -2,6 +2,148 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.6.2] - 2026-04-15
+
+### Added — Multi-server schedule support
+
+Export schedules can now target a specific Graylog server. Schedule
+form has a new "Graylog Server" dropdown. Schedule table shows the
+server name badge in the "Server / Mode" column.
+
+### Added — Terminal-style system log viewer
+
+System Logs "Real-time Log" section now has a dark terminal background
+with color-coded lines by log level (ERROR=red, WARN=orange,
+info=green, INFO=white, DEBUG=gray, systemd=blue).
+
+### Fixed — System log showed "no data" on some hosts
+
+`jt-glogarch` user lacked `systemd-journal` group membership, so
+`journalctl` returned empty. Fixed in `install.sh` and `upgrade.sh`.
+
+### Fixed — OpenSearch mode hint missing Data Node warning
+
+The export mode hint text now always mentions that Data Node
+environments do not support OpenSearch direct access.
+
+### Fixed — Modal closes on drag outside
+
+All modals now only close via Save/Cancel buttons, not backdrop click
+or mousedown-drag-outside.
+
+### Fixed — Missing pause/close icons
+
+Added `pause` and `close` SVG icons to the ICONS map. Schedule table
+enable/disable buttons now show play/pause icons. Cancel buttons show
+close icon.
+
+### Fixed — Cleanup/verify run-now didn't update last_run_at
+
+Manually triggered cleanup and verify schedules now update the
+`last_run_at` field in the database.
+
+### Fixed — TEST-RESULTS.md had ANSI color codes
+
+`run-tests.sh` now strips all ANSI escape sequences with
+`NO_COLOR=1 TERM=dumb` + sed filter.
+
+## [1.6.1] - 2026-04-14
+
+### Added — Multi-server schedule support
+
+Export schedules can now target a specific Graylog server instead of
+always using the default. The schedule form has a new "Graylog Server"
+dropdown that lists all configured servers. The schedule table shows
+the server name as a badge next to the export mode.
+
+This enables archiving multiple Graylog clusters from a single
+jt-glogarch instance — create one schedule per server.
+
+### Fixed — Modal closes on drag outside
+
+All modals (import, schedule edit, confirm) no longer close when the
+user mousedowns inside the modal and drags outside. Modals can only be
+closed via Save/Cancel buttons.
+
+### Fixed — Missing icons on enable/disable buttons
+
+Schedule table enable/disable buttons now show play/pause icons.
+
+## [1.6.0] - 2026-04-14
+
+### Fixed — Code review findings
+
+- **Security: XSS in OpenSearch test** — `testOpenSearch()` inserted OS
+  cluster_name/version/status into innerHTML without `esc()`. Fixed.
+- **Bug: Email channel missing from notify status** — `GET /api/notify/status`
+  did not include the email channel. Dashboard showed "no channels"
+  when only email was enabled.
+- **Consistency: `batch_docs` default mismatch** — CLI help said 5000
+  but code used 10000. Fixed help text + JS fallback + CLAUDE.md.
+- **i18n: Hardcoded Chinese in statusBadge** — `corrupted` and `missing`
+  labels were hardcoded in Chinese. Now uses `t('status_corrupted')` /
+  `t('status_missing')`.
+- **Memory: `_cancel_flags` never pruned** — Added cleanup alongside
+  `_job_progress` pruning (keep last 50) in both export and import paths.
+
+### Added — 11 regression tests (`test_recent_fixes.py`)
+
+Covers: notification timezone, Data Node detection, retention default,
+batch_docs consistency, Discord args, schedule display, i18n keys.
+
+## [1.5.9] - 2026-04-14
+
+### Fixed — Schedule table showed "days" for OpenSearch mode without index count
+
+When an OpenSearch-mode export schedule had no `keep_indices` set (e.g.
+auto-export), the settings column showed "180 天" which was misleading.
+Now shows "180 天 (all indices)" to clarify that it exports all indices
+within the time range, not a specific count.
+
+## [1.5.8] - 2026-04-14
+
+### Changed — Default retention from 180 days to 3 years (1095 days)
+
+180 days was too short for most compliance scenarios. Changed default
+`retention_days` from 180 to 1095 (3 years) in config, CLI example,
+JS fallbacks, CONFIG docs, and config.yaml.example.
+
+## [1.5.7] - 2026-04-14
+
+### Fixed — Notification timestamp showed UTC instead of local timezone
+
+Notifications (Telegram, Discord, etc.) displayed timestamps in UTC
+(`2026-04-13 19:23:35 UTC`). Changed to use the system's local timezone
+(`2026-04-14 03:23:35 CST`). Applies to both scheduled job notifications
+and test notifications.
+
+### Changed — Data Node warning text toned down
+
+Import/export dialog Data Node warning changed from "do not use Data
+Node" to a neutral factual statement: "Data Node does not support
+OpenSearch direct access. Use API/GELF mode instead."
+
+## [1.5.6] - 2026-04-14
+
+### Added — Graylog 7 Data Node compatibility documentation
+
+Tested jt-glogarch against Graylog 7.0.6 with Data Node 7.0.6
+(managed OpenSearch 2.19.3). Key findings:
+
+- **OpenSearch Direct export: NOT supported** in Data Node environments.
+  Data Node uses Graylog-managed TLS certificate authentication — no
+  credentials are exposed, external tools cannot access OS port 9200.
+- **OpenSearch Bulk import: NOT supported** for the same reason.
+- **Graylog API export: works normally** (uses Graylog REST API).
+- **GELF import: works normally** (sends to Graylog GELF input).
+- Graylog API proxy (`/api/system/indexer/*`) only supports limited
+  read-only endpoints (health, indices info) — no `_search` or `_bulk`
+  passthrough.
+- Both READMEs updated with Data Node compatibility row in the export
+  mode comparison table + user-facing warning note.
+- `GET /api/servers` now includes `has_datanode` flag for UI to detect
+  and warn users.
+
 ## [1.5.5] - 2026-04-13
 
 ### Fixed — Test notification broken for Discord/Slack/Teams/Email

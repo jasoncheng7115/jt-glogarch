@@ -97,7 +97,7 @@ schedule:
 ```yaml
 retention:
   enabled: true
-  retention_days: 180                   # Delete archives older than this
+  retention_days: 1095                   # Delete archives older than this (default: 3 years)
 ```
 
 ---

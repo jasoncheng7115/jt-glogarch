@@ -376,7 +376,7 @@ def streams(server: str | None):
               help="[bulk mode] How to handle duplicate gl2_message_id: "
                    "'id' (use as _id, overwrite on re-import), 'none' (always create new), 'fail' (abort on duplicate)")
 @click.option("--batch-docs", type=int, default=10000,
-              help="[bulk mode] Documents per _bulk request (default 5000)")
+              help="[bulk mode] Documents per _bulk request (default 10000)")
 @click.option("--no-preflight", is_flag=True, default=False,
               help="DANGEROUS: skip preflight check (no compliance guarantees, no zero-loss promise)")
 def import_cmd(archive_id: tuple[int, ...], time_from: str | None, time_to: str | None,
@@ -866,7 +866,7 @@ import:
 
 retention:
   enabled: true
-  retention_days: 180
+  retention_days: 1095
 
 rate_limit:
   requests_per_second: 5.0

@@ -2,6 +2,126 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.6.2] - 2026-04-15
+
+### 新增 — 排程支援多伺服器
+
+匯出排程可指定歸檔來源的 Graylog 伺服器。排程表單新增「Graylog 伺服器」
+下拉選單。排程表格在「伺服器 / 模式」欄顯示伺服器名稱。
+
+### 新增 — 終端機風格系統記錄
+
+系統記錄「即時記錄」改為深色終端機背景，依 log level 著色
+（ERROR=紅、WARN=橘、info=綠、INFO=白灰、DEBUG=灰、systemd=藍）。
+
+### 修正 — 系統記錄在部分主機顯示「無記錄資料」
+
+`jt-glogarch` 使用者缺少 `systemd-journal` 群組，`journalctl` 回傳空白。
+已在 `install.sh` 和 `upgrade.sh` 修正。
+
+### 修正 — OpenSearch 模式說明缺少 Data Node 警告
+
+匯出模式說明文字加上 Data Node 環境不支援此模式的提示。
+
+### 修正 — Modal 拖曳到外面會關閉
+
+所有 modal 只能透過儲存/取消按鈕關閉。
+
+### 修正 — 缺少 pause/close 圖示
+
+ICONS map 加上 `pause` 和 `close` SVG。排程啟用/停用按鈕加 play/pause
+圖示。取消按鈕加 close 圖示。
+
+### 修正 — Cleanup/verify 手動執行沒更新「上次執行」
+
+手動觸發的 cleanup 和 verify 排程現在會更新 `last_run_at`。
+
+### 修正 — TEST-RESULTS.md 有 ANSI 亂碼
+
+`run-tests.sh` 加上 `NO_COLOR=1 TERM=dumb` + sed 過濾。
+
+## [1.6.1] - 2026-04-14
+
+### 新增 — 排程支援多伺服器
+
+匯出排程現在可以指定歸檔來源的 Graylog 伺服器，不再只用預設伺服器。
+排程表單新增「Graylog 伺服器」下拉選單，列出所有已設定的伺服器。
+排程表格在匯出模式旁顯示伺服器名稱。
+
+這讓一台 jt-glogarch 可以歸檔多個 Graylog 叢集 — 每個伺服器建一個排程即可。
+
+### 修正 — Modal 拖曳到外面會關閉
+
+所有 modal（匯入、排程編輯、確認）不再因為滑鼠從 modal 內拖到外面而關閉。
+只能透過儲存/取消按鈕關閉。
+
+### 修正 — 啟用/停用按鈕缺少圖示
+
+排程表格的啟用/停用按鈕加上 play/pause 圖示。
+
+## [1.6.0] - 2026-04-14
+
+### 修正 — Code review 發現的問題
+
+- **安全：OpenSearch 測試的 XSS** — `testOpenSearch()` 把 OS 叢集名稱/版本/狀態直接插入 innerHTML 沒有用 `esc()`。已修正。
+- **Bug：通知狀態漏掉 Email 管道** — `GET /api/notify/status` 沒有包含 email 管道。只啟用 email 時儀表板顯示「未啟用任何管道」。
+- **一致性：`batch_docs` 預設值不一致** — CLI help 寫 5000 但程式用 10000。修正 help 文字 + JS fallback + CLAUDE.md。
+- **i18n：statusBadge 硬寫中文** — `corrupted` 和 `missing` 標籤硬寫中文。改用 `t('status_corrupted')` / `t('status_missing')`。
+- **記憶體：`_cancel_flags` 沒有清理** — 在 export 和 import 路徑都加上跟 `_job_progress` 一起的清理邏輯（保留最近 50 筆）。
+
+### 新增 — 11 筆回歸測試（`test_recent_fixes.py`）
+
+涵蓋：通知時區、Data Node 偵測、retention 預設值、batch_docs 一致性、Discord 參數、排程顯示、i18n key。
+
+## [1.5.9] - 2026-04-14
+
+### 修正 — 排程表格 OpenSearch 模式沒設 Index 份數時顯示不清
+
+OpenSearch 模式匯出排程若沒設 `keep_indices`（如 auto-export），
+設定欄顯示「180 天」容易誤解。改為顯示「180 天（所有 Index）」
+以表明匯出該時間範圍內的所有 Index。
+
+## [1.5.8] - 2026-04-14
+
+### 變更 — 預設保留天數從 180 天改為 3 年（1095 天）
+
+180 天對大多數合規場景太短。`retention_days` 預設值從 180 改為
+1095（3 年）。變更範圍：config 預設、CLI 範例、JS fallback、
+CONFIG 文件、config.yaml.example。
+
+## [1.5.7] - 2026-04-14
+
+### 修正 — 通知時間戳顯示 UTC 而非本地時區
+
+通知（Telegram、Discord 等）的時間戳顯示 UTC
+（`2026-04-13 19:23:35 UTC`）。改為使用系統本地時區
+（`2026-04-14 03:23:35 CST`）。排程任務通知與測試通知都適用。
+
+### 變更 — Data Node 警告文字調整
+
+匯入/匯出對話框的 Data Node 警告從「不建議使用 Data Node」改為
+中性的事實描述：「Data Node 不支援 OpenSearch 直連，請改用
+API/GELF 模式」。
+
+## [1.5.6] - 2026-04-14
+
+### 新增 — Graylog 7 Data Node 相容性文件
+
+在 Graylog 7.0.6 + Data Node 7.0.6（管理的 OpenSearch 2.19.3）上
+測試 jt-glogarch。主要發現：
+
+- **OpenSearch Direct 匯出：Data Node 環境不支援。** Data Node 使用
+  Graylog 自動管理的 TLS 憑證認證，不對外暴露帳密，外部工具無法
+  存取 OS port 9200。
+- **OpenSearch Bulk 匯入：同樣不支援。**
+- **Graylog API 匯出：正常運作。**
+- **GELF 匯入：正常運作。**
+- Graylog API proxy 只支援有限的唯讀端點（health、indices info），
+  不支援 `_search` 或 `_bulk` passthrough。
+- 兩份 README 都更新了匯出模式比較表的 Data Node 相容性欄位 +
+  使用者注意事項。
+- `GET /api/servers` 新增 `has_datanode` 旗標供 UI 偵測並警告使用者。
+
 ## [1.5.5] - 2026-04-13
 
 ### 修正 — Discord/Slack/Teams/Email 測試通知壞掉

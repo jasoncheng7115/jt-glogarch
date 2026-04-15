@@ -55,7 +55,7 @@ schedule:
 # --- Retention ---
 retention:
   enabled: true
-  retention_days: 180           # Delete archives older than this
+  retention_days: 1095           # Delete archives older than this
 
 # --- Rate Limiting ---
 rate_limit:

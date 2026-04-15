@@ -1,11 +1,11 @@
-# jt-glogarch v1.5.5
+# jt-glogarch v1.6.2
 
 **語言**: [English](README.md) | **繁體中文**
 
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.5.5-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.6.2-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -65,6 +65,11 @@ Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
 | 需要 | Graylog API Token | OpenSearch 帳密 |
 | 記憶體保護 | JVM heap 監控（85% 自動停止） | 不需要 |
 | 適用 | 串流篩選匯出、OpenSearch 鎖定的環境 | 大量歷史匯出、時間敏感任務 |
+| Graylog 7 Data Node | ✅ 支援 | ❌ 不支援（見下方說明） |
+
+> **Graylog 7 Data Node 使用者注意：** Data Node 環境的 OpenSearch 使用 Graylog 自動管理的 TLS 憑證認證，不對外暴露帳密，外部工具無法直接存取。因此 **OpenSearch Direct 匯出**與 **OpenSearch Bulk 匯入**在 Data Node 環境下不可用。請改用 **Graylog API 匯出**與 **GELF 匯入**。獨立安裝的 OpenSearch 不受此限制。
+>
+> **建議不要使用 Data Node：** 安裝 Graylog 時建議直接設定連線到獨立部署的 OpenSearch，不要使用 Data Node。這樣才能使用 OpenSearch Direct 高速匯出（約 5 倍速）和 OpenSearch Bulk 高速匯入（約 5-10 倍速）。Data Node 雖然簡化了初始安裝，但會鎖死 OpenSearch 的外部存取，嚴重限制歸檔與還原的效能。
 
 
 ### 智慧重複資料刪除

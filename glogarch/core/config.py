@@ -42,7 +42,7 @@ class ImportConfig(BaseModel):
 
 class RetentionConfig(BaseModel):
     enabled: bool = True
-    retention_days: int = 180
+    retention_days: int = 1095
 
 
 class RateLimitConfig(BaseModel):
