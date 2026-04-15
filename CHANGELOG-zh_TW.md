@@ -4,7 +4,7 @@ jt-glogarch 所有重要變更皆記錄於此檔案。
 
 ## [1.7.0] - 2026-04-15
 
-### 新增 — 操作稽核（Graylog 合規稽核）
+### 新增 — 行為稽核（Graylog 合規稽核）
 
 記錄誰在 Graylog 上做了什麼操作，用於合規稽核。記錄完整 request body
 （可精確查看變更內容），且記錄獨立於 Graylog（管理員無法刪除稽核記錄）。
@@ -33,7 +33,7 @@ jt-glogarch 所有重要變更皆記錄於此檔案。
 - 偵測稽核靜默失效（Graylog 正常但沒收到 syslog）
 - 超過 10 分鐘未收到資料時發送通知
 
-**Web UI「操作稽核」頁面：**
+**Web UI「行為稽核」頁面：**
 - Dashboard 風格統計卡片 + sparkline 趨勢圖（24h）
 - 可篩選表格（時間範圍、帳號、方法、狀態碼、僅敏感操作）
 - 詳情 modal（JSON 語法高亮 + 複製按鈕）
@@ -70,14 +70,14 @@ op_audit:
 
 **測試：** 新增 17 筆測試（parser、帳號解碼、session 認證、敏感分類、DB 操作、通知事件）。
 
-### 修正 — 操作稽核精進
+### 修正 — 行為稽核精進
 
 - **移除冗餘的 `search.execute` 記錄** — Graylog 搜尋會產生兩個 API 呼叫：建立/更新搜尋定義（包含查詢語句）+ 執行（僅含 `global_override`）。現在只記錄 `search.create`/`search.update`，後續的 `/execute` 呼叫自動篩除，避免重複。
 - **Token 認證帳號解析** — `GET /api/users` 不會回傳實際 token 值。新增 fallback 查詢各使用者的 `GET /api/users/{username}/tokens` 端點（會回傳真實 token 值）。同時新增非同步解析（`_resolve_token_via_api`）處理快取未命中的情況。
 - **Cookie Session 解析** — 瀏覽器 session 使用 cookie 而非 Authorization header。nginx log format 新增 `$cookie_authentication` 欄位擷取 Graylog session cookie，listener 從中擷取 session ID 並透過 Graylog Sessions API 解析帳號。無 cookie 時 fallback 至 IP 快取。
 - **外部帳號被排除** — `_get_human_users()` 錯誤地排除 LDAP/SSO 帳號（`external=true`），導致單一使用者預設歸屬到錯誤帳號。外部帳號現已納入。
 - **搜尋項目欄位顯示原始 URI** — `search.execute` 的 target_name 為空時，UI 會顯示完整的 API URI 路徑。透過移除冗餘的 execute pattern 修正（查詢語句已記錄在 `search.create`/`search.update`）。
-- **稽核表格缺少伺服器欄位** — 操作稽核表格新增「伺服器」欄位（位於帳號前面）。
+- **稽核表格缺少伺服器欄位** — 行為稽核表格新增「伺服器」欄位（位於帳號前面）。
 - **認證服務操作未追蹤** — `_KEEP_PATTERNS` 新增 `/api/system/authentication/services/backends`（建立/修改/刪除/啟用/停用）。同時標記為敏感操作。
 - **Content Pack 名稱未解析** — `_refresh_resource_cache` 新增從 Graylog API 快取 content pack。`_resolve_target_name` 新增含連字號的 UUID URI 比對。
 - **Dashboard 名稱無法透過 /api/dashboards 解析** — 統一 `_resolve_target_name`，讓 `/api/views/` 和 `/api/dashboards/` 路徑共用同一個 view 快取。
