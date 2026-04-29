@@ -115,12 +115,12 @@ class Exporter:
                                "Concurrent exports are blocked to protect Graylog from OOM.")
         _export_lock[server_key] = True
 
-        # Create job record
-        job = JobRecord(id=job_id, job_type=JobType.EXPORT, status=JobStatus.RUNNING,
-                        source=source, started_at=datetime.utcnow())
-        self.db.create_job(job)
-
         try:
+            # Create job record
+            job = JobRecord(id=job_id, job_type=JobType.EXPORT, status=JobStatus.RUNNING,
+                            source=source, started_at=datetime.utcnow())
+            self.db.create_job(job)
+
             # Check disk space
             has_space, avail_mb = self.storage.check_disk_space()
             if not has_space:
@@ -189,7 +189,12 @@ class Exporter:
                                     "messages_done": result.messages_total,
                                     "messages_total": total_records,
                                     "pct": min(pct, 99),
+                                    "detail": f"skipped {result.chunks_skipped}/{total_chunks} (archived)",
                                 })
+                            # Update DB periodically during skip phase (every 50 chunks)
+                            if result.chunks_skipped % 50 == 0:
+                                pct = ((chunk_idx + 1) / total_chunks) * 100 if total_chunks else 0
+                                self.db.update_job(job_id, progress_pct=min(pct, 99))
                             continue
 
                         # Export this chunk
@@ -227,20 +232,51 @@ class Exporter:
                             mem_pct = await monitor.get_memory_percent()
                             threshold = self.export_config.jvm_memory_threshold_pct
                             if mem_pct > threshold:
-                                log.error("Graylog JVM heap too high, stopping export",
-                                          mem_pct=f"{mem_pct:.1f}%", threshold=f"{threshold:.0f}%")
-                                try:
-                                    from glogarch.notify.sender import notify_error
-                                    await notify_error("Export",
-                                        f"Graylog JVM heap {mem_pct:.0f}% (threshold {threshold:.0f}%). "
-                                        f"Export stopped. Please increase Xmx/Xms or reduce batch_size.")
-                                except Exception:
-                                    pass
-                                raise RuntimeError(
-                                    f"Graylog JVM heap {mem_pct:.0f}% exceeds {threshold:.0f}% threshold. "
-                                    f"Export stopped to prevent OOM. Adjust Xmx/Xms or batch_size.")
+                                # Pause and wait for GC instead of stopping immediately
+                                jvm_waited = 0
+                                jvm_max_wait = 300  # max 5 minutes
+                                jvm_pause = 30      # check every 30 seconds
+                                log.warning("Graylog JVM heap high, pausing export",
+                                            mem_pct=f"{mem_pct:.1f}%", threshold=f"{threshold:.0f}%")
+                                if progress_callback:
+                                    progress_callback({
+                                        "phase": "jvm_wait",
+                                        "chunk_index": chunk_idx + 1,
+                                        "total_chunks": total_chunks,
+                                        "messages_done": result.messages_total,
+                                        "messages_total": total_records,
+                                        "pct": ((chunk_idx + 1) / total_chunks) * 100,
+                                        "detail": f"JVM heap {mem_pct:.0f}%, paused (waiting for GC)...",
+                                    })
+                                while jvm_waited < jvm_max_wait:
+                                    await asyncio.sleep(jvm_pause)
+                                    jvm_waited += jvm_pause
+                                    mem_pct = await monitor.get_memory_percent()
+                                    log.info("JVM heap check", mem_pct=f"{mem_pct:.1f}%",
+                                             waited=f"{jvm_waited}s")
+                                    if mem_pct <= threshold:
+                                        log.info("JVM heap recovered, resuming export",
+                                                 mem_pct=f"{mem_pct:.1f}%")
+                                        break
+                                else:
+                                    # 5 minutes and still high — stop
+                                    log.error("Graylog JVM heap still high after waiting, stopping",
+                                              mem_pct=f"{mem_pct:.1f}%", waited=f"{jvm_max_wait}s")
+                                    try:
+                                        from glogarch.notify.sender import notify_error
+                                        await notify_error("Export",
+                                            f"Graylog JVM heap {mem_pct:.0f}% after waiting {jvm_max_wait}s. "
+                                            f"Export stopped. Consider increasing Xmx or using OpenSearch mode.")
+                                    except Exception:
+                                        pass
+                                    raise RuntimeError(
+                                        f"Graylog JVM heap {mem_pct:.0f}% after waiting {jvm_max_wait//60} min. "
+                                        f"Export stopped. Consider increasing Xmx or using OpenSearch mode.")
 
-            # Update job status
+            # Update job status with skip info
+            note = ""
+            if result.chunks_skipped > 0:
+                note = f"Skipped {result.chunks_skipped}/{result.chunks_skipped + result.chunks_exported} chunks (already archived)"
             self.db.update_job(
                 job_id,
                 status=JobStatus.COMPLETED,
@@ -248,6 +284,7 @@ class Exporter:
                 messages_done=result.messages_total,
                 messages_total=result.messages_total,
                 completed_at=datetime.utcnow(),
+                error_message=note,
             )
             log.info("Export completed", job_id=job_id,
                      chunks_exported=result.chunks_exported,

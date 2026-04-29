@@ -28,7 +28,10 @@ SENSITIVE_PATTERNS: list[tuple[str, str, str]] = [
     (r"PUT|DELETE", r"/api/system/pipelines/", "pipeline.modify"),
     (r"PUT|DELETE", r"/api/plugins/org\.graylog\.plugins\.pipelineprocessor/", "pipeline.modify"),
     (r"DELETE", r"/api/dashboards/", "dashboard.delete"),
+    (r"PUT", r"/api/events/definitions/.+/schedule$", "alert.enable"),
+    (r"PUT", r"/api/events/definitions/.+/unschedule$", "alert.disable"),
     (r"PUT|DELETE", r"/api/events/definitions/", "alert.modify"),
+    (r"PUT|POST|DELETE", r"/api/system/authentication/services/backends", "auth_service.modify"),
     (r".*", r"/shutdown", "system.shutdown"),
 ]
 
@@ -74,6 +77,32 @@ def parse_syslog_payload(data: bytes) -> str | None:
         return text[idx:]
     except Exception:
         return None
+
+
+# Syslog RFC3164 envelope: ``<PRI>MMM DD HH:MM:SS HOSTNAME TAG[...]:``
+# The hostname sits between the timestamp and the tag.
+_SYSLOG_HOSTNAME_RE = re.compile(
+    r"^<\d+>[A-Za-z]{3}\s+\d+\s+\d+:\d+:\d+\s+(\S+)\s+\S+:"
+)
+
+
+def parse_syslog_hostname(data: bytes) -> str:
+    """Extract the sender hostname from a syslog UDP packet envelope.
+
+    Used as a fallback for ``server_name`` when the nginx JSON log format
+    produces an empty ``$server_name`` (e.g. when the nginx ``server {}``
+    block has no ``server_name`` directive). Returns empty string if the
+    envelope does not match the expected format.
+    """
+    try:
+        # Only need the first ~128 bytes for the envelope
+        text = data[:128].decode("utf-8", errors="replace")
+        m = _SYSLOG_HOSTNAME_RE.match(text)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return ""
 
 
 def parse_nginx_json(json_str: str) -> dict | None:
@@ -263,6 +292,12 @@ _KEEP_PATTERNS: list[tuple[str, re.Pattern, str]] = [
     ("PUT", re.compile(r"/api/system/processing/pause"), "processing.pause"),
     ("PUT", re.compile(r"/api/system/processing/resume"), "processing.resume"),
     ("PUT", re.compile(r"/api/system/messageprocessors/config"), "processing.config"),
+    # Authentication services (LDAP, SSO, etc.)
+    ("POST", re.compile(r"/api/system/authentication/services/backends$"), "auth_service.create"),
+    ("PUT", re.compile(r"/api/system/authentication/services/backends/"), "auth_service.modify"),
+    ("DELETE", re.compile(r"/api/system/authentication/services/backends/"), "auth_service.delete"),
+    ("POST", re.compile(r"/api/system/authentication/services/backends/.+/activate$"), "auth_service.activate"),
+    ("POST", re.compile(r"/api/system/authentication/services/backends/.+/deactivate$"), "auth_service.deactivate"),
     # Sharing
     ("POST", re.compile(r"/api/authz/shares/entities/grn[^/]+$"), "share.modify"),  # exclude /prepare
     # Sidecar

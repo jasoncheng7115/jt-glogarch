@@ -2,6 +2,105 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.7.6] - 2026-04-29
+
+### Fixed — Scheduled verify and cleanup did not appear in Job History
+
+- `_run_verify` and `_run_cleanup` in `glogarch/scheduler/scheduler.py` never wrote a row to the `jobs` table. Only export was tracked, so users running auto-verify or auto-cleanup saw the schedule's `last_run_at` update but found nothing in `/jobs` (作業歷程).
+- `_run_export`'s rare failure-path also tried to call `db.create_job(job_id, "export", source="scheduled")` — that signature has not existed since `create_job()` was changed to accept a `JobRecord`. The call was wrapped in `try/except`, so it silently swallowed every error and never recorded the failed export.
+- Fix: added `_create_run_job()` / `_finish_run_job()` helpers on `ArchiveScheduler` and routed all three scheduled handlers through them. Each scheduled run now creates a `RUNNING` job at start, then transitions to `COMPLETED` (with summary in the notes column) or `FAILED` (with sanitized error) at the end. Verify with corrupted/missing files is recorded as `FAILED` so it stands out in the UI.
+
+## [1.7.5] - 2026-04-29
+
+### Fixed — Email notification: non-secret fields rendered as masked password inputs
+
+- On the Notification Settings page, **SMTP host**, **SMTP user**, and **From address** were rendered with `_secret()` (`<input type="password">`), so the values were dotted-out and got an unhelpful eye-toggle button. Only the SMTP password should be masked.
+- Fix: `web/static/js/app.js` — switched the three fields to plain `<input type="text">` (still XSS-safe via `esc()`); SMTP password remains masked.
+
+## [1.7.4] - 2026-04-27
+
+### Fixed — Schedule changes via Web UI required service restart (critical)
+
+- **Newly-created `auto-verify` (or any custom schedule) never fired**, and edits to existing schedules' cron expressions were ignored, until the service was restarted. `POST /api/schedules`, `POST /api/schedules/{name}/toggle`, and `DELETE /api/schedules/{name}` only wrote to the SQLite `schedules` table — they never told the running APScheduler about the change.
+- The "Next run" column in the Web UI is computed live from the cron expression every time the page loads (`api.py::_schedule_to_dict`), so the UI looked correct even though APScheduler had no job registered. This masked the bug.
+- `ArchiveScheduler.setup()` only ran once at startup (called from `start()` in the FastAPI lifespan), so the only way to register a new DB schedule with APScheduler was to restart `jt-glogarch.service`.
+- Fix: added `ArchiveScheduler.apply_schedule(sched)` and `remove_schedule(name)`. The three schedule API endpoints now call them after the DB write, so changes take effect immediately. `setup()` was also simplified to delegate to `apply_schedule()` for every DB record (DRY) and to bootstrap missing `auto-export` / `auto-cleanup` records from `config.yaml` only on first run.
+
+### Fixed — Custom-named schedules updated wrong `last_run_at` row
+
+- `_run_export`, `_run_cleanup`, `_run_verify` had the schedule name hardcoded (`"auto-export"` / `"auto-cleanup"` / `"auto-verify"`), so a user-named schedule (e.g. `daily-stream-A`) would either skip the timestamp write or stomp the wrong row. `_run_export_once` also loaded its config from the hardcoded `"auto-export"` row, so a custom export schedule silently inherited `auto-export`'s mode/days/streams instead of its own.
+- Fix: each handler now takes a `schedule_name` argument; `apply_schedule()` passes the schedule's actual name via APScheduler `args=[sched.name]` so the right row is read for config and updated for `last_run_at`.
+
+## [1.7.3] - 2026-04-19
+
+### Fixed — Export lock leak on early failure (critical)
+
+- **Scheduled exports could get permanently stuck** after a transient failure. If `create_job()` or any operation between `_export_lock[key] = True` and the `try:` block raised an exception (e.g. "database is locked" from SQLite contention), the lock was set but never released. All subsequent retry attempts — and the next day's scheduled run — failed with "Export already running".
+- Observed pattern in logs: attempt 1 fails with "database is locked", attempts 2-3 and subsequent scheduled runs fail with "Export already running for 'X'".
+- Affected both `glogarch.export.exporter` (API mode) and `glogarch.opensearch.exporter` (OpenSearch mode).
+- Fix: moved job creation inside the `try:` block so the existing `finally: _export_lock.pop(...)` always runs, regardless of where the exception originates.
+
+### Improved — Audit server_name fallback to syslog hostname
+
+- When nginx `server {}` block has no `server_name` directive, `$server_name` is empty and all audit records show blank server. jt-glogarch now falls back to the hostname parsed from the syslog envelope (e.g. `log3` from `<190>Apr 19 00:07:15 log3 graylog_audit: {...}`).
+- No action required if nginx already has `server_name`; fallback only applies when the JSON field is empty.
+
+## [1.7.2] - 2026-04-17
+
+### Improved — JVM memory guard: pause & resume instead of stop
+
+- API export now **pauses** when Graylog JVM heap exceeds the threshold (default 85%), checks every 30 seconds, and **resumes automatically** when GC recovers. Only stops after 5 minutes of sustained high heap. Previously, export stopped immediately on first threshold breach.
+- Progress display shows "JVM heap 87%, paused (waiting for GC)..." during wait.
+
+### Improved — Heartbeat: active probe instead of passive timeout
+
+- Heartbeat no longer alerts simply because no syslog was received for 10 minutes (false positive when nobody is using Graylog). Now sends an active probe through nginx (HTTPS :443) every 5 minutes. Only alerts when the HTTP probe succeeds but no corresponding syslog arrives — indicating nginx forwarding was disabled.
+- nginx URL auto-derived from `servers[].url` (same host, HTTPS port 443).
+
+### Improved — Export job UX: accurate totals and skip info
+
+- OpenSearch export now uses `_count` API for accurate document counts instead of `_cat/indices` (which includes deleted/merged docs and overstates the total).
+- Completed export jobs show skip info in the notes column: "Skipped 75 indices (already archived)" or "Skipped 4200/4320 chunks (already archived)".
+- Interrupted jobs show context: "Interrupted by service restart (502,202 / 1,397,360 processed, partial files cleaned up)".
+- Progress detail visible in schedule page (separate line) and sidebar widget.
+
+### Fixed — Schedule "Run Now" export not updating last_run_at
+
+### Fixed — Upgrade script: git safe.directory
+
+- `upgrade.sh` now runs `git config --global --add safe.directory` before `git pull` to prevent "dubious ownership" error when `/opt/jt-glogarch` is owned by `jt-glogarch` user.
+
+## [1.7.1] - 2026-04-16
+
+### Improved — Export progress UX
+
+- **Scanning/dedup phase shows detail text** — OpenSearch export now shows "Scanning 45/88 indices...", "skipped 75/88 indices (archived)", and "querying graylog_515 (4,651,029 docs)..." instead of a blank 0% progress bar. API export shows "skipped 43/4320 (archived)" during dedup skip phase.
+- **Polling fallback shows detail** — when SSE is unavailable, the polling-based progress display shows `current_detail` instead of "0/?" during phases with no records yet.
+
+### Improved — Sensitive operation notification dedup
+
+- **Duplicate entries merged** — identical operations in the same batch (same user, operation, target, status) are now merged with a "×N" suffix instead of sending N separate notification lines. Example: 12 identical logout-401 entries become one line with "×12".
+
+### Fixed — Schedule "Run Now" for export not updating last_run_at
+
+- "Run Now" on export schedules now updates the "Last Run" timestamp on completion. Previously only cleanup and verify schedules updated this field.
+
+### Fixed — Scheduled export retry on transient errors
+
+- Scheduled export now retries up to 3 times (30s delay) on transient errors like "database is locked". On final failure, a failed job record is created so it appears in Job History (previously silent failure — only visible in system logs).
+
+### Fixed — Audit cleanup skipped when no archives exist
+
+- `Cleaner.cleanup()` had an early return that prevented audit record cleanup when no archive files matched retention. Refactored so audit cleanup always runs.
+
+### Fixed — Audit retention independent from archive retention
+
+- `op_audit.retention_days` (default 180) now controls audit record cleanup separately from archive retention (default 1095). `upgrade.sh` auto-adds the field for existing installs.
+
+### Fixed — alert.enable / alert.disable classification
+
+- Event definition schedule/unschedule now classified as `alert.enable` / `alert.disable` instead of generic `alert.modify`, so users can distinguish enable vs disable in audit records and notifications.
+
 ## [1.7.0] - 2026-04-15
 
 ### Added — Operation Audit (Graylog compliance auditing)

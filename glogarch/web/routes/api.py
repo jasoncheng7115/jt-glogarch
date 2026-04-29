@@ -39,6 +39,19 @@ def _audit(request: Request, action: str, detail: str = ""):
     except Exception:
         pass
 
+
+def _apply_to_runtime(request: Request, sched) -> None:
+    """Push a saved/toggled schedule into the running APScheduler so it takes
+    effect without a service restart."""
+    arch_sched = getattr(request.app.state, "scheduler", None)
+    if arch_sched is None:
+        return
+    try:
+        arch_sched.apply_schedule(sched)
+    except Exception as e:
+        log.warning("Failed to apply schedule to runtime",
+                    name=sched.name, error=str(e))
+
 # In-memory progress store for SSE
 _job_progress: dict[str, list[dict]] = {}
 
@@ -505,7 +518,7 @@ async def get_import_status(request: Request, job_id: str):
 def trigger_cleanup(request: Request, days: int | None = None, dry_run: bool = False):
     settings = _settings(request)
     db = _db(request)
-    cleaner = Cleaner(settings.retention, settings.export, db)
+    cleaner = Cleaner(settings.retention, settings.export, db, settings.op_audit)
     result = cleaner.cleanup(retention_days=days, dry_run=dry_run)
     return {
         "files_deleted": result.files_deleted,
@@ -694,6 +707,7 @@ async def save_schedule(request: Request):
         enabled=body.get("enabled", True),
     )
     db.save_schedule(sched)
+    _apply_to_runtime(request, sched)
     _audit(request, "schedule_saved", f"name={sched.name} cron={sched.cron_expr}")
     return {"status": "saved", "name": sched.name}
 
@@ -711,6 +725,7 @@ async def toggle_schedule(request: Request, name: str):
     s = found[0]
     s.enabled = enabled
     db.save_schedule(s)
+    _apply_to_runtime(request, s)
 
     # For auto-* schedules, also update config.yaml
     if name.startswith("auto-"):
@@ -759,7 +774,7 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
         except Exception:
             cfg = {}
         from glogarch.cleanup.cleaner import Cleaner
-        cleaner = Cleaner(settings.retention, settings.export, db)
+        cleaner = Cleaner(settings.retention, settings.export, db, settings.op_audit)
         result = cleaner.cleanup()
         db.conn.execute("UPDATE schedules SET last_run_at = ? WHERE name = ?",
                         (datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), name))
@@ -832,6 +847,13 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
                 _job_progress.setdefault(job_id, []).append(
                     {"phase": "error", "error": str(e), "pct": 100}
                 )
+            finally:
+                try:
+                    db.conn.execute("UPDATE schedules SET last_run_at = ? WHERE name = ?",
+                                   (datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), name))
+                    db.conn.commit()
+                except Exception:
+                    pass
     else:
         exporter = Exporter(server_config, settings.export, settings.rate_limit, db)
         first_stream = stream_ids[0] if stream_ids else None
@@ -855,6 +877,13 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
                 _job_progress.setdefault(job_id, []).append(
                     {"phase": "error", "error": str(e), "pct": 100}
                 )
+            finally:
+                try:
+                    db.conn.execute("UPDATE schedules SET last_run_at = ? WHERE name = ?",
+                                   (datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), name))
+                    db.conn.commit()
+                except Exception:
+                    pass
 
     asyncio.get_event_loop().run_in_executor(None, _run_in_thread)
     _audit(request, "schedule_run_now", f"{name} mode={export_mode} job={job_id}")
@@ -865,6 +894,13 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
 def delete_schedule(request: Request, name: str):
     db = _db(request)
     db.delete_schedule(name)
+    arch_sched = getattr(request.app.state, "scheduler", None)
+    if arch_sched is not None:
+        try:
+            arch_sched.remove_schedule(name)
+        except Exception as e:
+            log.warning("Failed to remove schedule from runtime",
+                        name=name, error=str(e))
     return {"status": "deleted", "name": name}
 
 
@@ -1431,7 +1467,7 @@ def get_audit_status(request: Request):
     if not listener:
         return {"enabled": False}
     status = listener.get_status()
-    status["retention_days"] = _settings(request).retention.retention_days
+    status["retention_days"] = _settings(request).op_audit.retention_days
     return status
 
 
@@ -1689,12 +1725,18 @@ def _job_to_dict(j) -> dict:
     }
     # Enrich with live progress info from in-memory store
     if j.id in _job_progress and _job_progress[j.id]:
-        last = _job_progress[j.id][-1]
+        events = _job_progress[j.id]
+        last = events[-1]
         d["phase"] = last.get("phase", "")
         idx_name = last.get("index", "")
         chunk = last.get("chunk_index")
         total = last.get("total_chunks")
-        detail_str = last.get("detail", "")
+        # Find detail from the most recent event that has it
+        detail_str = ""
+        for evt in reversed(events[-10:]):
+            if evt.get("detail"):
+                detail_str = evt["detail"]
+                break
         if detail_str:
             d["current_detail"] = detail_str
         elif idx_name:
@@ -1720,6 +1762,21 @@ def _schedule_to_dict(s) -> dict:
             config = _json.loads(s.config_json)
         except Exception:
             pass
+    # Compute next fire time from cron expression if enabled
+    next_run = None
+    if s.enabled and s.cron_expr:
+        try:
+            from apscheduler.triggers.cron import CronTrigger
+            from apscheduler.schedulers.asyncio import AsyncIOScheduler
+            from datetime import datetime
+            # Use the scheduler's local timezone for display
+            tz = AsyncIOScheduler().timezone
+            trigger = CronTrigger.from_crontab(s.cron_expr, timezone=tz)
+            next_fire = trigger.get_next_fire_time(None, datetime.now(tz))
+            if next_fire:
+                next_run = next_fire.isoformat()
+        except Exception:
+            pass
     return {
         "id": s.id,
         "name": s.name,
@@ -1728,5 +1785,5 @@ def _schedule_to_dict(s) -> dict:
         "enabled": s.enabled,
         "config": config,
         "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
-        "next_run_at": s.next_run_at.isoformat() if s.next_run_at else None,
+        "next_run_at": next_run,
     }

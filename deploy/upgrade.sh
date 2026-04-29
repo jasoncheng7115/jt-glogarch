@@ -25,8 +25,11 @@ fi
 CURRENT=$(python3 -c "import glogarch; print(glogarch.__version__)" 2>/dev/null || echo "unknown")
 echo "Current version: $CURRENT"
 
-# 0. Fix permissions (for upgrades from older versions)
+# 0. Fix permissions and environment (for upgrades from older versions)
 usermod -aG systemd-journal jt-glogarch 2>/dev/null || true
+
+# Ensure git trusts the install directory (owned by jt-glogarch, not root)
+git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
 
 # 1. Backup DB
 echo ""

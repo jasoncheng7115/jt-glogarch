@@ -14,7 +14,7 @@ from typing import Callable
 RECENT_FILE_GRACE_SECONDS = 600  # 10 minutes
 
 from glogarch.archive.storage import ArchiveStorage
-from glogarch.core.config import ExportConfig, RetentionConfig
+from glogarch.core.config import ApiAuditConfig, ExportConfig, RetentionConfig
 from glogarch.core.database import ArchiveDB
 from glogarch.core.models import ArchiveStatus
 from glogarch.utils.logging import get_logger
@@ -37,10 +37,12 @@ class Cleaner:
         retention_config: RetentionConfig,
         export_config: ExportConfig,
         db: ArchiveDB,
+        audit_config: ApiAuditConfig | None = None,
     ):
         self.retention = retention_config
         self.storage = ArchiveStorage(export_config)
         self.db = db
+        self.audit_config = audit_config
 
     def cleanup(
         self,
@@ -61,10 +63,46 @@ class Cleaner:
         old_archives = self.db.get_archives_older_than(days)
         if not old_archives:
             log.info("No archives to clean up", retention_days=days)
-            return result
+        else:
+            self._delete_archives(old_archives, dry_run, progress_callback, result)
 
+        # Clean empty directories
+        if not dry_run:
+            self._clean_empty_dirs()
+
+        # Clean old operation audit records (uses op_audit.retention_days, default 180)
+        if not dry_run:
+            try:
+                audit_days = self.audit_config.retention_days if self.audit_config else 180
+                audit_deleted = self.db.cleanup_api_audit(audit_days)
+                if audit_deleted:
+                    log.info("Cleaned audit records", deleted=audit_deleted, retention_days=audit_days)
+            except Exception as e:
+                log.warning("Audit cleanup failed", error=str(e))
+
+        log.info("Cleanup completed", files_deleted=result.files_deleted,
+                 bytes_freed=result.bytes_freed)
+
+        if result.files_deleted > 0 and not dry_run:
+            try:
+                import asyncio
+                from glogarch.notify.sender import notify_cleanup_complete
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+                if loop and loop.is_running():
+                    loop.create_task(notify_cleanup_complete(result.files_deleted, result.bytes_freed))
+                else:
+                    asyncio.run(notify_cleanup_complete(result.files_deleted, result.bytes_freed))
+            except Exception as e:
+                log.warning("Cleanup notification failed", error=str(e))
+
+        return result
+
+    def _delete_archives(self, old_archives, dry_run, progress_callback, result):
         total = len(old_archives)
-        log.info("Cleanup started", archives_to_delete=total, retention_days=days, dry_run=dry_run)
+        log.info("Cleanup started", archives_to_delete=total, dry_run=dry_run)
 
         for idx, archive in enumerate(old_archives):
             if progress_callback:
@@ -104,36 +142,6 @@ class Cleaner:
                 err = f"Failed to delete {archive.file_path}: {e}"
                 log.error(err)
                 result.errors.append(err)
-
-        # Clean empty directories
-        if not dry_run:
-            self._clean_empty_dirs()
-
-        # Clean old operation audit records (same retention as archives)
-        if not dry_run:
-            try:
-                audit_deleted = self.db.cleanup_api_audit(days)
-                if audit_deleted:
-                    log.info("Cleaned audit records", deleted=audit_deleted, retention_days=days)
-            except Exception as e:
-                log.warning("Audit cleanup failed", error=str(e))
-
-        log.info("Cleanup completed", files_deleted=result.files_deleted,
-                 bytes_freed=result.bytes_freed)
-
-        if result.files_deleted > 0 and not dry_run:
-            try:
-                import asyncio
-                from glogarch.notify.sender import notify_cleanup_complete
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(notify_cleanup_complete(result.files_deleted, result.bytes_freed))
-                except RuntimeError:
-                    asyncio.run(notify_cleanup_complete(result.files_deleted, result.bytes_freed))
-            except Exception:
-                pass
-
-        return result
 
     def _clean_empty_dirs(self) -> None:
         """Remove empty directories under the archive base path."""

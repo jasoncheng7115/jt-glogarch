@@ -1,11 +1,11 @@
-# jt-glogarch v1.7.0
+# jt-glogarch v1.7.6
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)
 
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.7.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.7.3-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -148,7 +148,7 @@ Bilingual messages (English / Traditional Chinese).
 
 - **Emergency local login** — when Graylog is offline, login with `localadmin` account (SHA256 hashed password, generate with `glogarch hash-password`)
 - **Health check endpoint** — `GET /api/health` (no auth), returns DB/disk/scheduler status for Prometheus / Uptime Kuma
-- **JVM memory guard** — stops API export if Graylog heap > 85%
+- **JVM memory guard** — auto-pauses API export when Graylog heap > 85%, resumes after GC recovery (stops after 5 min if unrecoverable)
 - **OpenSearch transient error retry** — auto backoff on 500/502/503/429
 - Concurrent export lock per server + concurrent import lock per archive
 - Adaptive rate limiting with CPU-based backoff
@@ -229,7 +229,7 @@ Bilingual messages (English / Traditional Chinese).
    - Stream messages directly to gzip file (no full buffering)
    - Compute SHA256, write `.sha256` sidecar
    - Record in SQLite DB
-3. Periodically check Graylog JVM heap; auto-stop if >85%
+3. Periodically check Graylog JVM heap; auto-pause if >85%, resume after GC
 4. Send notification with results
 
 
@@ -1170,15 +1170,31 @@ OpenSearch mode now relies on per-chunk dedup instead of resume points to avoid 
 Make sure you're on v1.0.0+.
 
 
-### Graylog OOM after enabling jt-glogarch
+### API export pauses or stops due to JVM heap pressure
 
-Lower the `batch_size` and increase `delay_between_requests_ms` in `config.yaml`:
+When using API mode, jt-glogarch monitors Graylog's JVM heap usage. If heap exceeds the threshold (default 85%), the export **pauses automatically** and waits up to 5 minutes for GC to recover. If heap drops below the threshold, the export resumes. If it stays high for 5 minutes, the export stops.
+
+**Option 1 — Reduce query pressure** (no Graylog restart needed):
 ```yaml
 export:
-  batch_size: 300
-  delay_between_requests_ms: 200
-  jvm_memory_threshold_pct: 75.0
+  batch_size: 300                        # default 1000 — lower = less heap per query
+  delay_between_requests_ms: 100         # default 5 — higher = more time for GC
 ```
+
+**Option 2 — Increase Graylog heap** (recommended if server has ≥16 GB RAM):
+```bash
+# Edit /etc/default/graylog-server (or graylog-server.conf)
+GRAYLOG_SERVER_JAVA_OPTS="-Xms8g -Xmx8g"
+sudo systemctl restart graylog-server
+```
+
+At 8 GB heap, the 85% threshold leaves ~1.2 GB headroom — enough for export + normal operations.
+
+**Option 3 — Use OpenSearch Direct mode** (best for large exports):
+
+OpenSearch mode bypasses Graylog entirely — zero JVM impact, 5× faster. Use this when your OpenSearch is directly accessible (not behind Graylog Data Node).
+
+> **Note:** Graylog 7 Data Node users cannot use OpenSearch Direct mode. Use Option 1 or 2 instead.
 
 
 ### Archive timeline shows red marks (gaps)

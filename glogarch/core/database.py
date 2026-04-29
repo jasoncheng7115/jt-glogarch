@@ -168,6 +168,20 @@ class ArchiveDB:
         self._conn.execute("PRAGMA busy_timeout=30000")
         self._conn.executescript(SCHEMA_SQL)
         self._migrate(self._conn)
+
+    def _rollback_safely(self) -> None:
+        """Rollback any dangling transaction. Safe to call unconditionally.
+
+        Python sqlite3 opens an implicit transaction on the first execute().
+        If a write fails (e.g. 'database is locked'), the transaction is left
+        dangling on the shared connection. Subsequent writes then immediately
+        fail with 'database is locked' even though the underlying contention
+        cleared. This helper restores the connection to a clean state.
+        """
+        try:
+            self._conn.rollback()
+        except Exception:
+            pass
         # Crash recovery: an archive flips to IMPORTING while being read by an
         # in-flight import job. The importer's finally block flips it back to
         # COMPLETED, but if the process is killed (-9 / OOM / crash), the row
@@ -239,32 +253,36 @@ class ArchiveDB:
 
     def record_archive(self, record: ArchiveRecord) -> int:
         with self._lock:
-            cur = self.conn.execute(
-                """INSERT OR REPLACE INTO archives
-                   (server_name, stream_id, stream_name, time_from, time_to,
-                    file_path, file_size_bytes, original_size_bytes, message_count, part_number, total_parts,
-                    checksum_sha256, status, created_at, field_schema)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    record.server_name,
-                    record.stream_id,
-                    record.stream_name,
-                    _dt_to_str(record.time_from),
-                    _dt_to_str(record.time_to),
-                    record.file_path,
-                    record.file_size_bytes,
-                    record.original_size_bytes,
-                    record.message_count,
-                    record.part_number,
-                    record.total_parts,
-                    record.checksum_sha256,
-                    record.status.value,
-                    _dt_to_str(record.created_at),
-                    self._maybe_compress_schema(record.field_schema),
-                ),
-            )
-            self.conn.commit()
-            return cur.lastrowid  # type: ignore[return-value]
+            try:
+                cur = self.conn.execute(
+                    """INSERT OR REPLACE INTO archives
+                       (server_name, stream_id, stream_name, time_from, time_to,
+                        file_path, file_size_bytes, original_size_bytes, message_count, part_number, total_parts,
+                        checksum_sha256, status, created_at, field_schema)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        record.server_name,
+                        record.stream_id,
+                        record.stream_name,
+                        _dt_to_str(record.time_from),
+                        _dt_to_str(record.time_to),
+                        record.file_path,
+                        record.file_size_bytes,
+                        record.original_size_bytes,
+                        record.message_count,
+                        record.part_number,
+                        record.total_parts,
+                        record.checksum_sha256,
+                        record.status.value,
+                        _dt_to_str(record.created_at),
+                        self._maybe_compress_schema(record.field_schema),
+                    ),
+                )
+                self.conn.commit()
+                return cur.lastrowid  # type: ignore[return-value]
+            except Exception:
+                self._rollback_safely()
+                raise
 
     def get_archive_field_schemas(self, archive_ids: list[int]) -> dict[int, str | None]:
         """Return {archive_id: field_schema_json or None} for the given ids.
@@ -298,8 +316,12 @@ class ArchiveDB:
             vals.append(_dt_to_str(datetime.utcnow()))
         vals.append(archive_id)
         with self._lock:
-            self.conn.execute(f"UPDATE archives SET {', '.join(sets)} WHERE id = ?", vals)
-            self.conn.commit()
+            try:
+                self.conn.execute(f"UPDATE archives SET {', '.join(sets)} WHERE id = ?", vals)
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
 
     def find_archive(
         self,
@@ -475,26 +497,30 @@ class ArchiveDB:
     def create_job(self, job: JobRecord) -> None:
         from glogarch.utils.sanitize import sanitize
         with self._lock:
-            self.conn.execute(
-                """INSERT INTO jobs (id, job_type, status, progress_pct, messages_done,
-                   messages_total, config_json, error_message, started_at, completed_at, created_at, source)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    job.id,
-                    job.job_type.value,
-                    job.status.value,
-                    job.progress_pct,
-                    job.messages_done,
-                    job.messages_total,
-                    job.config_json,
-                    sanitize(job.error_message),
-                    _dt_to_str(job.started_at),
-                    _dt_to_str(job.completed_at),
-                    _dt_to_str(job.created_at),
-                    job.source,
-                ),
-            )
-            self.conn.commit()
+            try:
+                self.conn.execute(
+                    """INSERT INTO jobs (id, job_type, status, progress_pct, messages_done,
+                       messages_total, config_json, error_message, started_at, completed_at, created_at, source)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        job.id,
+                        job.job_type.value,
+                        job.status.value,
+                        job.progress_pct,
+                        job.messages_done,
+                        job.messages_total,
+                        job.config_json,
+                        sanitize(job.error_message),
+                        _dt_to_str(job.started_at),
+                        _dt_to_str(job.completed_at),
+                        _dt_to_str(job.created_at),
+                        job.source,
+                    ),
+                )
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
 
     def update_job(self, job_id: str, **kwargs) -> None:
         from glogarch.utils.sanitize import sanitize
@@ -518,8 +544,12 @@ class ArchiveDB:
             return
         vals.append(job_id)
         with self._lock:
-            self.conn.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE id = ?", vals)
-            self.conn.commit()
+            try:
+                self.conn.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE id = ?", vals)
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
 
     def get_job(self, job_id: str) -> JobRecord | None:
         row = self.conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
@@ -535,28 +565,32 @@ class ArchiveDB:
 
     def save_schedule(self, sched: ScheduleRecord) -> int:
         with self._lock:
-            # Check if exists — if so, preserve last_run_at
-            existing = self.conn.execute(
-                "SELECT last_run_at FROM schedules WHERE name = ?", (sched.name,)
-            ).fetchone()
-            if existing and sched.last_run_at is None:
-                sched.last_run_at = _str_to_dt(existing["last_run_at"])
+            try:
+                # Check if exists — if so, preserve last_run_at
+                existing = self.conn.execute(
+                    "SELECT last_run_at FROM schedules WHERE name = ?", (sched.name,)
+                ).fetchone()
+                if existing and sched.last_run_at is None:
+                    sched.last_run_at = _str_to_dt(existing["last_run_at"])
 
-            cur = self.conn.execute(
-                """INSERT OR REPLACE INTO schedules
-                   (name, job_type, cron_expr, config_json, enabled, last_run_at, next_run_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    sched.name,
-                    sched.job_type,
-                    sched.cron_expr,
-                    sched.config_json,
-                    1 if sched.enabled else 0,
-                    _dt_to_str(sched.last_run_at),
-                    _dt_to_str(sched.next_run_at),
-                ),
-            )
-            self.conn.commit()
+                cur = self.conn.execute(
+                    """INSERT OR REPLACE INTO schedules
+                       (name, job_type, cron_expr, config_json, enabled, last_run_at, next_run_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        sched.name,
+                        sched.job_type,
+                        sched.cron_expr,
+                        sched.config_json,
+                        1 if sched.enabled else 0,
+                        _dt_to_str(sched.last_run_at),
+                        _dt_to_str(sched.next_run_at),
+                    ),
+                )
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
             return cur.lastrowid  # type: ignore[return-value]
 
     def list_schedules(self) -> list[ScheduleRecord]:
@@ -565,26 +599,34 @@ class ArchiveDB:
 
     def delete_schedule(self, name: str) -> None:
         with self._lock:
-            self.conn.execute("DELETE FROM schedules WHERE name = ?", (name,))
-            self.conn.commit()
+            try:
+                self.conn.execute("DELETE FROM schedules WHERE name = ?", (name,))
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
 
     # --- Import History ---
 
     def record_import(self, record: ImportHistoryRecord) -> int:
         with self._lock:
-            cur = self.conn.execute(
-                """INSERT INTO import_history (archive_id, target_server, messages_sent, imported_at, job_id)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (
-                    record.archive_id,
-                    record.target_server,
-                    record.messages_sent,
-                    _dt_to_str(record.imported_at),
-                    record.job_id,
-                ),
-            )
-            self.conn.commit()
-            return cur.lastrowid  # type: ignore[return-value]
+            try:
+                cur = self.conn.execute(
+                    """INSERT INTO import_history (archive_id, target_server, messages_sent, imported_at, job_id)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (
+                        record.archive_id,
+                        record.target_server,
+                        record.messages_sent,
+                        _dt_to_str(record.imported_at),
+                        record.job_id,
+                    ),
+                )
+                self.conn.commit()
+                return cur.lastrowid  # type: ignore[return-value]
+            except Exception:
+                self._rollback_safely()
+                raise
 
     # --- Audit Log ---
 
@@ -592,11 +634,15 @@ class ArchiveDB:
         """Record an audit log entry."""
         from glogarch.utils.sanitize import sanitize
         with self._lock:
-            self.conn.execute(
-                "INSERT INTO audit_log (timestamp, username, action, detail, ip_address) VALUES (?, ?, ?, ?, ?)",
-                (_dt_to_str(datetime.utcnow()), username, action, (sanitize(detail) or "")[:500], ip_address),
-            )
-            self.conn.commit()
+            try:
+                self.conn.execute(
+                    "INSERT INTO audit_log (timestamp, username, action, detail, ip_address) VALUES (?, ?, ?, ?, ?)",
+                    (_dt_to_str(datetime.utcnow()), username, action, (sanitize(detail) or "")[:500], ip_address),
+                )
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
 
     def list_audit(self, limit: int = 200) -> list[dict]:
         """Get recent audit log entries."""
@@ -612,35 +658,39 @@ class ArchiveDB:
         if not entries:
             return 0
         with self._lock:
-            self.conn.executemany(
-                """INSERT INTO api_audit
-                   (server_name, timestamp, remote_addr, username, method, uri,
-                    query_string, status_code, request_body, user_agent,
-                    request_time_ms, operation, is_sensitive, target_name, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                [
-                    (
-                        e.get("server_name", ""),
-                        e.get("timestamp", ""),
-                        e.get("remote_addr", ""),
-                        e.get("username", ""),
-                        e.get("method", ""),
-                        e.get("uri", ""),
-                        e.get("query_string", ""),
-                        e.get("status_code", 0),
-                        e.get("request_body"),
-                        e.get("user_agent", ""),
-                        e.get("request_time_ms", 0.0),
-                        e.get("operation", ""),
-                        1 if e.get("is_sensitive") else 0,
-                        e.get("target_name", ""),
-                        _dt_to_str(datetime.utcnow()),
-                    )
-                    for e in entries
-                ],
-            )
-            self.conn.commit()
-            return len(entries)
+            try:
+                self.conn.executemany(
+                    """INSERT INTO api_audit
+                       (server_name, timestamp, remote_addr, username, method, uri,
+                        query_string, status_code, request_body, user_agent,
+                        request_time_ms, operation, is_sensitive, target_name, created_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    [
+                        (
+                            e.get("server_name", ""),
+                            e.get("timestamp", ""),
+                            e.get("remote_addr", ""),
+                            e.get("username", ""),
+                            e.get("method", ""),
+                            e.get("uri", ""),
+                            e.get("query_string", ""),
+                            e.get("status_code", 0),
+                            e.get("request_body"),
+                            e.get("user_agent", ""),
+                            e.get("request_time_ms", 0.0),
+                            e.get("operation", ""),
+                            1 if e.get("is_sensitive") else 0,
+                            e.get("target_name", ""),
+                            _dt_to_str(datetime.utcnow()),
+                        )
+                        for e in entries
+                    ],
+                )
+                self.conn.commit()
+                return len(entries)
+            except Exception:
+                self._rollback_safely()
+                raise
 
     def list_api_audit(
         self, limit: int = 100, offset: int = 0,
@@ -744,11 +794,15 @@ class ArchiveDB:
     def cleanup_api_audit(self, retention_days: int) -> int:
         cutoff = _dt_to_str(datetime.utcnow() - timedelta(days=retention_days))
         with self._lock:
-            count = self.conn.execute(
-                "DELETE FROM api_audit WHERE timestamp < ?", (cutoff,)
-            ).rowcount
-            self.conn.commit()
-            return count
+            try:
+                count = self.conn.execute(
+                    "DELETE FROM api_audit WHERE timestamp < ?", (cutoff,)
+                ).rowcount
+                self.conn.commit()
+                return count
+            except Exception:
+                self._rollback_safely()
+                raise
 
     # --- Helpers ---
 

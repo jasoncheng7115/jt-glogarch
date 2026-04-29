@@ -126,6 +126,7 @@ class NotifyConfig(BaseModel):
 class ApiAuditConfig(BaseModel):
     enabled: bool = True
     listen_port: int = 8991
+    retention_days: int = 180
     max_body_size: int = 65536
     alert_sensitive: bool = True
 

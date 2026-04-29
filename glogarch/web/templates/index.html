@@ -556,6 +556,7 @@
                 <th data-i18n="notify_config">Config</th>
                 <th data-i18n="th_enabled">Enabled</th>
                 <th data-i18n="th_last_run">Last Run</th>
+                <th data-i18n="th_next_run">Next Run</th>
                 <th data-i18n="th_actions">Actions</th>
             </tr></thead>
             <tbody></tbody>
@@ -657,8 +658,8 @@
             <span style="color:var(--text-muted)">~</span>
             <input type="datetime-local" id="audit-filter-to" title="To">
             <input type="text" id="audit-filter-user" placeholder="User">
-            <select id="audit-filter-method"><option value="" id="audit-opt-method">Method</option><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select>
-            <select id="audit-filter-status"><option value="" id="audit-opt-status">Status</option><option value="2xx">2xx</option><option value="4xx">4xx</option><option value="5xx">5xx</option></select>
+            <select id="audit-filter-method"><option value="" data-i18n-opt="audit_method">Method</option><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select>
+            <select id="audit-filter-status"><option value="" data-i18n-opt="audit_status">Status</option><option value="2xx">2xx</option><option value="4xx">4xx</option><option value="5xx">5xx</option></select>
             <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:0.85em;white-space:nowrap">
                 <input type="checkbox" id="audit-filter-sensitive"> <span data-i18n="audit_sensitive_only">Sensitive only</span>
             </label>

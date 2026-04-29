@@ -81,17 +81,17 @@ class OpenSearchExporter:
             raise RuntimeError(f"OpenSearch export already running for '{self.server_config.name}'.")
         _os_export_lock[server_key] = True
 
-        import time as _time
-        _start_time = _time.time()
-        result = ExportResult()
-        job_id = job_id or str(uuid.uuid4())
-        result.job_id = job_id
-
-        job = JobRecord(id=job_id, job_type=JobType.EXPORT, status=JobStatus.RUNNING,
-                        source=source, started_at=datetime.utcnow())
-        self.db.create_job(job)
-
         try:
+            import time as _time
+            _start_time = _time.time()
+            result = ExportResult()
+            job_id = job_id or str(uuid.uuid4())
+            result.job_id = job_id
+
+            job = JobRecord(id=job_id, job_type=JobType.EXPORT, status=JobStatus.RUNNING,
+                            source=source, started_at=datetime.utcnow())
+            self.db.create_job(job)
+
             has_space, avail_mb = self.storage.check_disk_space()
             if not has_space:
                 raise RuntimeError(f"Insufficient disk space: {avail_mb:.0f} MB available")
@@ -192,7 +192,8 @@ class OpenSearchExporter:
 
                     # Dedup check
                     export_list = []
-                    for index_name, idx_from, idx_to, docs_count in selected:
+                    total_selected = len(selected)
+                    for check_idx, (index_name, idx_from, idx_to, docs_count) in enumerate(selected):
                         log.info("Index time range",
                                  index=index_name, idx_from=str(idx_from), idx_to=str(idx_to),
                                  docs=docs_count)
@@ -202,16 +203,38 @@ class OpenSearchExporter:
                         if existing and existing.status == ArchiveStatus.COMPLETED:
                             result.chunks_skipped += 1
                             log.info("Index already exported, skipping", index=index_name)
+                            if progress_callback:
+                                progress_callback({
+                                    "phase": "dedup",
+                                    "pct": 0,
+                                    "detail": f"skipped {result.chunks_skipped}/{total_selected} indices (archived)",
+                                })
                             continue
                         coverage = self.db.get_coverage_ratio(self.server_config.name, idx_from, idx_to)
                         if coverage >= 0.95:
                             result.chunks_skipped += 1
                             log.info("Index already covered by other archives, skipping",
                                      coverage_pct=f"{coverage * 100:.0f}%", index=index_name)
+                            if progress_callback:
+                                progress_callback({
+                                    "phase": "dedup",
+                                    "pct": 0,
+                                    "detail": f"skipped {result.chunks_skipped}/{total_selected} indices (archived)",
+                                })
                             continue
                         export_list.append((index_name, idx_from, idx_to, docs_count))
 
                     total_to_export = len(export_list)
+                    # Get accurate doc counts via _count API (not _cat which includes deleted docs)
+                    accurate_list = []
+                    for idx_name, idx_from, idx_to, cat_count in export_list:
+                        try:
+                            resp = await os_client.post(f"/{idx_name}/_count", json={"query": {"match_all": {}}})
+                            real_count = resp.get("count", cat_count)
+                        except Exception:
+                            real_count = cat_count
+                        accurate_list.append((idx_name, idx_from, idx_to, real_count))
+                    export_list = accurate_list
                     total_docs = sum(e[3] for e in export_list)
                     log.info("Indices to export", count=total_to_export, total_docs=total_docs)
                     self.db.update_job(job_id, messages_total=total_docs)
@@ -220,6 +243,17 @@ class OpenSearchExporter:
                     for idx_num, (index_name, idx_from, idx_to, docs_count) in enumerate(export_list):
                         if self._cancelled:
                             break
+
+                        # Report start of index export
+                        if progress_callback:
+                            progress_callback({
+                                "phase": "exporting",
+                                "pct": (idx_num / max(total_to_export, 1)) * 100,
+                                "index": index_name,
+                                "messages_done": result.messages_total,
+                                "messages_total": total_docs,
+                                "detail": f"querying {index_name} ({docs_count:,} docs)...",
+                            })
 
                         # Export this index
                         try:
@@ -243,10 +277,15 @@ class OpenSearchExporter:
                             if not has_space:
                                 raise RuntimeError("Disk space exhausted during export")
 
+            # Build completion note with skip info
+            note = ""
+            if result.chunks_skipped > 0:
+                note = f"Skipped {result.chunks_skipped} indices (already archived)"
             self.db.update_job(
                 job_id, status=JobStatus.COMPLETED, progress_pct=100.0,
                 messages_done=result.messages_total, messages_total=result.messages_total,
                 completed_at=datetime.utcnow(),
+                error_message=note,
             )
             log.info("OpenSearch export completed", job_id=job_id,
                      exported=result.chunks_exported, skipped=result.chunks_skipped,
@@ -464,7 +503,7 @@ class OpenSearchExporter:
                 current_done = result.messages_total + total_msgs_this_index + (writer.message_count if writer else 0)
                 current_pct = (current_done / max(total_docs, 1)) * 100 if total_docs else 0
                 if progress_callback:
-                    progress_callback({
+                    cb_info = {
                         "phase": "exporting",
                         "chunk_index": idx_num + 1,
                         "total_chunks": total_indices,
@@ -472,7 +511,11 @@ class OpenSearchExporter:
                         "messages_total": total_docs,
                         "pct": current_pct,
                         "index": index_name,
-                    })
+                    }
+                    # Keep detail visible while first batch is still loading
+                    if not current_done:
+                        cb_info["detail"] = f"querying {index_name} ({total_docs:,} docs)..."
+                    progress_callback(cb_info)
                 self.db.update_job(job_id, progress_pct=min(current_pct, 99), messages_done=current_done)
 
                 # Periodic disk check

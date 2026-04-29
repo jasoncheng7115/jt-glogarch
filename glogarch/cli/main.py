@@ -651,7 +651,7 @@ def cleanup(days: int | None, dry_run: bool):
 
     settings = get_settings()
     db = _get_db()
-    cleaner = Cleaner(settings.retention, settings.export, db)
+    cleaner = Cleaner(settings.retention, settings.export, db, settings.op_audit)
 
     with Progress(
         SpinnerColumn(),

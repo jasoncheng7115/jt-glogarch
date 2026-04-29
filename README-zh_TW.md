@@ -1,11 +1,11 @@
-# jt-glogarch v1.7.0
+# jt-glogarch v1.7.6
 
 **語言**: [English](README.md) | **繁體中文**
 
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.7.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.7.3-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -147,7 +147,7 @@ Telegram • Discord • Slack • Microsoft Teams • Nextcloud Talk • Email 
 
 - **緊急本機登入** — Graylog 離線時可用 `localadmin` 帳號登入 Web UI（SHA256 hash 密碼，需預先設定。`glogarch hash-password` 產生）
 - **健康檢查端點** — `GET /api/health`（免認證），回傳 DB/磁碟/排程器狀態，可供 Prometheus / Uptime Kuma 監控
-- **JVM 記憶體保護** — Graylog heap > 85% 時自動停止 API 匯出
+- **JVM 記憶體保護** — Graylog heap > 85% 時自動暫停 API 匯出，GC 回收後自動繼續（5 分鐘未恢復才停止）
 - **OpenSearch 暫態錯誤自動重試** — 500/502/503/429 自動 backoff retry
 - 同伺服器並行匯出鎖定 + 同歸檔並行匯入鎖定
 - 自動調節速率限制（依 CPU 使用率）
@@ -230,7 +230,7 @@ Telegram • Discord • Slack • Microsoft Teams • Nextcloud Talk • Email 
    - 串流寫入 gzip 檔案（不全量緩衝）
    - 計算 SHA256、寫入 `.sha256` 附檔
    - 寫入 SQLite DB
-3. 定期檢查 Graylog JVM heap;>85% 自動停止
+3. 定期檢查 Graylog JVM heap；>85% 自動暫停，GC 回收後繼續
 4. 發送結果通知
 
 
@@ -762,7 +762,7 @@ OpenSearch 模式可選擇**保留最近 N 份 index**。下方的「可用 indi
 | 方式 | 說明 |
 |------|------|
 | Basic Auth | 從 `Authorization` header 取出使用者名稱 |
-| Token Auth | 透過 Graylog 使用者 Token API 解析，以前綴快取 |
+| Token Auth | 透過 Graylog 使用者 Token API 解析，以 token 開頭字元快取 |
 | Session Auth | 從 `Authorization` header 取出 session ID，透過 Graylog Sessions API 解析 |
 | Cookie Session | 從 nginx log 中的 `$cookie_authentication` cookie 取出 session ID |
 | IP 快取 | 以用戶端 IP 對應最後已知使用者 |
@@ -779,7 +779,7 @@ inputs、streams、index sets、dashboards/views、pipelines、pipeline rules、
 
 **心跳監控：**
 
-若 listener 正在運行且 Graylog 可達，但超過 10 分鐘未收到 syslog，將觸發警報 — 表示稽核管線出現靜默故障（如 nginx 設定錯誤、網路問題）。
+若 listener 正在運行且 Graylog 可達，但超過 10 分鐘未收到 syslog，將觸發警報 — 表示稽核流程出現無聲故障（如 nginx 設定錯誤、網路問題）。
 
 **設定：**
 ```yaml
@@ -1105,15 +1105,31 @@ print("next fire:", t.get_next_fire_time(None, datetime.now(s.timezone)))
 最有可能是 resume point 跳過了你的 indices。這已在 v1.0.0 修復 — OpenSearch 模式現在依靠 per-chunk dedup 而非 resume point 來避免缺口。確認你的版本 ≥ 1.0.0。
 
 
-### 啟用 jt-glogarch 後 Graylog OOM
+### API 匯出因 JVM heap 壓力暫停或停止
 
-降低 `config.yaml` 裡的 `batch_size` 並提高 `delay_between_requests_ms`:
+使用 API 模式時，jt-glogarch 會監控 Graylog 的 JVM heap 使用率。heap 超過閾值（預設 85%）時，匯出會**自動暫停**，最多等待 5 分鐘讓 GC 回收。heap 降回閾值以下就自動繼續。等了 5 分鐘仍未降低才會停止。
+
+**方案 1 — 降低查詢壓力**（不需重啟 Graylog）：
 ```yaml
 export:
-  batch_size: 300
-  delay_between_requests_ms: 200
-  jvm_memory_threshold_pct: 75.0
+  batch_size: 300                        # 預設 1000 — 降低 = 每次查詢佔用更少 heap
+  delay_between_requests_ms: 100         # 預設 5 — 加大 = 給 GC 更多時間回收
 ```
+
+**方案 2 — 加大 Graylog heap**（伺服器有 ≥16 GB RAM 時建議）：
+```bash
+# 編輯 /etc/default/graylog-server（或 graylog-server.conf）
+GRAYLOG_SERVER_JAVA_OPTS="-Xms8g -Xmx8g"
+sudo systemctl restart graylog-server
+```
+
+8 GB heap 在 85% 閾值下有 ~1.2 GB 餘裕，足夠匯出 + 正常運作。
+
+**方案 3 — 使用 OpenSearch Direct 模式**（大量匯出首選）：
+
+OpenSearch 模式完全不經過 Graylog — JVM 零影響，速度快 5 倍。適合 OpenSearch 可直接存取的環境。
+
+> **注意：** Graylog 7 Data Node 環境無法使用 OpenSearch Direct 模式，請使用方案 1 或 2。
 
 
 ### 歸檔時間軸有紅色標記(缺口)

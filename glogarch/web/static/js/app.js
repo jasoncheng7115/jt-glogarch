@@ -1632,7 +1632,7 @@ async function loadJobs() {
             <td>${formatDT(j.started_at)}</td>
             <td>${formatDT(j.completed_at)}</td>
             <td>${formatElapsed(j.started_at, j.completed_at)}</td>
-            <td style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : 'var(--text-muted)'};font-size:0.85em;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${esc(j.error_message || '')}</td>
+            <td style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : (j.error_message || '').indexOf('Skipped') !== -1 ? 'var(--text-muted)' : 'var(--text-muted)'};font-size:0.85em;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${esc(j.error_message || '')}</td>
             <td>${cancelBtn}</td>
         </tr>`;
     }).join('');
@@ -1693,11 +1693,14 @@ async function loadSchedules() {
             const pct = runningJob.progress_pct?.toFixed(0) || 0;
             const msgs = formatNumber(runningJob.messages_done || 0);
             const elapsed = formatElapsed(runningJob.started_at);
+            const detail = runningJob.current_detail || '';
+            const statsLine = runningJob.messages_done ? `${pct}% ${msgs} ${elapsed}` : `${pct}% ${elapsed}`;
             runningHtml = `<div style="margin-top:6px">
                 <div class="progress-bar" style="height:12px;width:180px;display:inline-block;vertical-align:middle">
                     <div class="progress-fill" style="width:${pct}%"></div>
                 </div>
-                <span style="font-size:0.8em;color:var(--warning);margin-left:6px">${pct}% ${msgs} ${elapsed}</span>
+                <span style="font-size:0.8em;color:var(--warning);margin-left:6px">${esc(statsLine)}</span>
+                ${detail ? `<div style="font-size:0.75em;color:var(--text-muted);margin-top:2px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(detail)}">${esc(detail)}</div>` : ''}
             </div>`;
         }
         return `<tr>
@@ -1708,6 +1711,7 @@ async function loadSchedules() {
             <td>${configHtml}</td>
             <td>${s.enabled ? '<span class="status-completed">' + t('yes') + '</span>' : '<span class="status-failed">' + t('no') + '</span>'}</td>
             <td>${formatDT(s.last_run_at)}${runningHtml}</td>
+            <td>${s.enabled ? formatDT(s.next_run_at) : '<span style="color:var(--text-muted)">-</span>'}</td>
             <td><div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
                 <button class="btn-sm btn-primary" onclick="editSchedule('${esc(s.name)}')">${icon('shield')} ${t('btn_edit')}</button>
                 ${(s.job_type === 'export' || s.job_type === 'cleanup' || s.job_type === 'verify') && !runningJob ? `<button class="btn-sm btn-success" onclick="runScheduleNow('${esc(s.name)}')" title="${t('btn_run_now')}">${icon('play')} ${t('btn_run_now')}</button>` : ''}
@@ -2045,11 +2049,15 @@ function watchJob(jobId, type, onComplete) {
         const data = JSON.parse(e.data);
         if (bar) bar.style.width = (data.pct || 0) + '%';
         if (text) {
-            const msgs = formatNumber(data.messages_done || 0);
-            const total = data.messages_total ? formatNumber(data.messages_total) : '?';
-            const phaseKey = data.phase ? `import_phase_${data.phase}` : '';
-            const phase = phaseKey ? (t(phaseKey) || data.phase) : '';
-            text.textContent = `${phase} ${data.index || ''} — ${msgs}/${total} — ${(data.pct || 0).toFixed(1)}%`;
+            // Show detail string for scanning/dedup/skipping phases (no records yet)
+            if (data.detail && (!data.messages_done || data.phase === 'scanning' || data.phase === 'dedup' || data.phase === 'skipping')) {
+                text.textContent = data.detail;
+            } else {
+                const msgs = formatNumber(data.messages_done || 0);
+                const total = data.messages_total ? formatNumber(data.messages_total) : '?';
+                const idx = data.index ? ` ${data.index}` : '';
+                text.textContent = `${msgs}/${total}${idx} — ${(data.pct || 0).toFixed(1)}%`;
+            }
         }
     });
     es.addEventListener('done', async (e) => {
@@ -2100,7 +2108,13 @@ function watchJob(jobId, type, onComplete) {
                 showResult(job);
             } else if (!sseOk) {
                 if (bar) bar.style.width = (job.progress_pct || 0) + '%';
-                if (text) text.textContent = `${formatNumber(job.messages_done || 0)}/${job.messages_total ? formatNumber(job.messages_total) : '?'} — ${(job.progress_pct || 0).toFixed(0)}%`;
+                if (text) {
+                    if (job.current_detail && !job.messages_done) {
+                        text.textContent = job.current_detail;
+                    } else {
+                        text.textContent = `${formatNumber(job.messages_done || 0)}/${job.messages_total ? formatNumber(job.messages_total) : '?'} — ${(job.progress_pct || 0).toFixed(0)}%`;
+                    }
+                }
             }
         } catch (e) {
             // Network error — stop after 30 attempts (1 min)
@@ -2270,12 +2284,12 @@ async function loadNotifySettings() {
             <h4>${chLogos.email} Email (SMTP)</h4>
             ${_chk('nf-email-enabled', data.email.enabled)}
             <div class="channel-fields" ${_vis(data.email.enabled)}>
-                <div class="form-group"><label>${t('notify_smtp_host')}</label>${_secret('nf-email-host', data.email.smtp_host || '')}</div>
+                <div class="form-group"><label>${t('notify_smtp_host')}</label><input type="text" id="nf-email-host" value="${esc(data.email.smtp_host || '')}"></div>
                 <div class="form-group"><label>${t('notify_smtp_port')}</label><input type="number" id="nf-email-port" value="${data.email.smtp_port || 587}"></div>
                 <div class="form-group"><label style="cursor:pointer"><input type="checkbox" id="nf-email-tls" ${data.email.smtp_tls ? 'checked' : ''}> ${t('notify_smtp_tls')}</label></div>
-                <div class="form-group"><label>${t('notify_smtp_user')}</label>${_secret('nf-email-user', data.email.smtp_user || '')}</div>
+                <div class="form-group"><label>${t('notify_smtp_user')}</label><input type="text" id="nf-email-user" value="${esc(data.email.smtp_user || '')}" autocomplete="off"></div>
                 <div class="form-group"><label>${t('notify_smtp_password')}</label>${_secret('nf-email-pass', data.email.smtp_password || '')}</div>
-                <div class="form-group"><label>${t('notify_from')}</label>${_secret('nf-email-from', data.email.from_addr || '')}</div>
+                <div class="form-group"><label>${t('notify_from')}</label><input type="text" id="nf-email-from" value="${esc(data.email.from_addr || '')}"></div>
                 <div class="form-group"><label>${t('notify_to')}</label><textarea id="nf-email-to" rows="3" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text)">${esc((data.email.to_addrs || []).join('\n'))}</textarea></div>
                 <div class="form-group"><label>${t('notify_subject_prefix')}</label><input type="text" id="nf-email-prefix" value="${esc(data.email.subject_prefix || '[jt-glogarch]')}"></div>
             </div>
@@ -2551,12 +2565,12 @@ async function checkRunningJobs() {
                 const total = j.messages_total ? formatNumber(j.messages_total) : '?';
                 const elapsed = formatElapsed(j.started_at);
                 const detail = j.current_detail || j.phase || '';
+                const statusLine = detail && !j.messages_done ? esc(detail) : `${msgs} / ${total}`;
                 text.innerHTML = `
                     <div class="job-detail-full" style="display:flex;flex-direction:column;gap:2px;line-height:1.3">
                         <span>${j.job_type} <strong>${pct}%</strong> · ${elapsed}</span>
                         <div class="progress-bar" style="height:6px"><div class="progress-fill" style="width:${pct}%"></div></div>
-                        <span style="font-size:0.9em;opacity:0.85">${msgs} / ${total}</span>
-                        ${detail ? `<span style="font-size:0.85em;opacity:0.7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(detail)}</span>` : ''}
+                        <span style="font-size:0.9em;opacity:0.85">${statusLine}</span>
                     </div>
                     <div class="job-detail-mini" style="display:none;flex-direction:column;align-items:center;gap:3px;font-size:1.1em" title="${j.job_type} ${pct}% ${msgs} ${elapsed}">
                         <strong>${pct}%</strong>
@@ -2693,11 +2707,6 @@ async function loadAuditData(page) {
 }
 
 async function loadAuditStatus() {
-    // Ensure filter labels match current language
-    const optM = document.getElementById('audit-opt-method');
-    const optS = document.getElementById('audit-opt-status');
-    if (optM) optM.textContent = t('audit_method');
-    if (optS) optS.textContent = t('audit_status');
     try {
         const st = await fetchJSON(`${API}/audit/status`);
         const bar = document.getElementById('audit-listener-status');
@@ -2721,9 +2730,11 @@ async function loadAuditStatus() {
                 const hbAlert = st.heartbeat_alert
                     ? `<span style="color:var(--danger);font-weight:600">${icon('warning',14)} ${t('audit_heartbeat_alert')}</span>`
                     : '';
+                const ret = st.retention_days ? `<span style="opacity:0.7">${t('audit_retention')}: ${st.retention_days} ${t('audit_retention_days')}</span>` : '';
                 bar.innerHTML = `<span style="color:var(--success);font-weight:600">● ${t('audit_listening')}</span>`
                     + `<span>UDP :${st.port}</span>`
                     + `<span style="opacity:0.7">${rx}</span>`
+                    + ret
                     + hbAlert;
             } else if (st.enabled) {
                 bar.innerHTML = `<span style="color:var(--warning);font-weight:600">● ${t('audit_starting')}...</span>`;

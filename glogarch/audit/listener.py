@@ -8,7 +8,10 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
 
-from glogarch.audit.parser import parse_syslog_payload, parse_nginx_json, process_raw_entry, is_noise
+from glogarch.audit.parser import (
+    parse_syslog_payload, parse_syslog_hostname,
+    parse_nginx_json, process_raw_entry, is_noise,
+)
 from glogarch.core.config import ApiAuditConfig, Settings
 from glogarch.core.database import ArchiveDB
 from glogarch.utils.logging import get_logger
@@ -138,13 +141,20 @@ class AuditSyslogListener:
             except Exception:
                 pass
 
-    _HEARTBEAT_INTERVAL = 300   # check every 5 minutes
-    _HEARTBEAT_THRESHOLD = 600  # alert if no data for 10 minutes
+    _HEARTBEAT_INTERVAL = 300   # probe every 5 minutes
+    _HEARTBEAT_WAIT = 30        # wait 30s after probe for syslog to arrive
     _heartbeat_alerted = False
+    _last_probe_time: str = ""  # ISO timestamp of last successful probe
 
     async def _periodic_heartbeat(self) -> None:
-        """Detect silent audit failure: Graylog is up but no syslog received."""
-        await asyncio.sleep(self._HEARTBEAT_THRESHOLD)  # initial grace period
+        """Active probe: send request through nginx and verify syslog arrives.
+
+        Instead of passively waiting for syslog (which causes false alerts when
+        nobody is using Graylog), we actively probe Graylog through nginx.
+        If the HTTP response comes back but no syslog arrives, nginx forwarding
+        is broken (possibly disabled maliciously).
+        """
+        await asyncio.sleep(60)  # initial grace period
         while True:
             await asyncio.sleep(self._HEARTBEAT_INTERVAL)
             try:
@@ -152,62 +162,105 @@ class AuditSyslogListener:
                 if not self.last_received_at:
                     continue
 
-                # Check how long since last syslog
-                from datetime import datetime, timezone
-                last = datetime.fromisoformat(self.last_received_at.replace("Z", "+00:00"))
-                age_seconds = (datetime.now(timezone.utc) - last).total_seconds()
+                # Record syslog timestamp before probe
+                ts_before = self.last_received_at
 
-                if age_seconds < self._HEARTBEAT_THRESHOLD:
-                    # All good — reset alert flag
-                    if self._heartbeat_alerted:
-                        self._heartbeat_alerted = False
-                        log.info("Audit syslog resumed")
+                # Send probe through nginx (HTTPS port 443)
+                probe_result = await self._probe_through_nginx()
+
+                if probe_result == "nginx_unreachable":
+                    # nginx is down — alert
+                    if not self._heartbeat_alerted:
+                        self._heartbeat_alerted = True
+                        log.warning("Audit heartbeat: nginx unreachable on all servers")
+                        await self._send_heartbeat_alert(
+                            "nginx unreachable on all Graylog servers (HTTPS port 443)")
                     continue
 
-                # Stale — check if Graylog is actually up
-                graylog_up = await self._check_graylog_health()
-                if not graylog_up:
-                    continue  # Graylog is down, not an audit failure
+                if probe_result == "no_nginx_url":
+                    continue  # Can't derive nginx URL, skip
 
-                # Graylog is up but no syslog → audit pipeline broken
+                if probe_result != "ok":
+                    continue
+
+                # Probe succeeded (HTTP response received through nginx).
+                # Wait for syslog to arrive.
+                await asyncio.sleep(self._HEARTBEAT_WAIT)
+
+                # Check if new syslog arrived after our probe
+                if self.last_received_at != ts_before:
+                    # Syslog arrived — all good
+                    if self._heartbeat_alerted:
+                        self._heartbeat_alerted = False
+                        log.info("Audit syslog forwarding restored")
+                    continue
+
+                # HTTP succeeded but no syslog → nginx forwarding broken
                 if not self._heartbeat_alerted:
                     self._heartbeat_alerted = True
-                    age_min = int(age_seconds // 60)
-                    log.warning("Audit heartbeat alert: no syslog received",
-                                last_received=self.last_received_at,
-                                age_minutes=age_min)
-                    try:
-                        from glogarch.notify.sender import send_notification, NotifyEvent
-                        from glogarch.notify.sender import _t
-                        await send_notification(
-                            NotifyEvent.AUDIT_ALERT,
-                            _t("audit_alert_title"),
-                            _t("audit_alert_body", minutes=age_min, last=self.last_received_at),
-                        )
-                    except Exception:
-                        pass
+                    log.warning("Audit heartbeat: nginx responding but syslog not forwarding")
+                    await self._send_heartbeat_alert(
+                        "nginx is responding but syslog forwarding appears disabled.\n"
+                        "HTTP probe to Graylog through nginx succeeded, "
+                        "but no syslog was received.")
+
             except Exception as e:
                 log.debug("Heartbeat check failed", error=str(e))
 
-    async def _check_graylog_health(self) -> bool:
-        """Quick check if Graylog API is reachable."""
+    async def _probe_through_nginx(self) -> str:
+        """Send a GET /api/system through nginx (HTTPS :443) to generate a syslog entry.
+
+        Returns: "ok", "nginx_unreachable", or "no_nginx_url".
+        """
         import httpx
+        from urllib.parse import urlparse
+
+        probed = False
         for srv in self.settings.servers:
             try:
+                parsed = urlparse(srv.url)
+                host = parsed.hostname
+                if not host:
+                    continue
+
+                # Derive nginx URL: same host, HTTPS port 443
+                nginx_url = f"https://{host}"
+
                 auth = None
                 if srv.auth_token:
                     auth = (srv.auth_token, "token")
                 elif srv.username:
                     auth = (srv.username, srv.password or "")
+
                 async with httpx.AsyncClient(
-                    verify=srv.verify_ssl, timeout=5, auth=auth,
+                    verify=False, timeout=10, auth=auth,
                     headers={"Accept": "application/json"},
                 ) as client:
-                    r = await client.get(f"{srv.url.rstrip('/')}/api/system")
-                    return r.status_code == 200
-            except Exception:
-                pass
-        return False
+                    r = await client.get(f"{nginx_url}/api/system")
+                    if r.status_code in (200, 401, 403):
+                        # Any response means nginx is alive and forwarded
+                        probed = True
+                        log.debug("Heartbeat probe OK", nginx_url=nginx_url,
+                                  status=r.status_code)
+            except Exception as e:
+                log.debug("Heartbeat probe failed", host=host, error=str(e))
+
+        if not probed:
+            return "nginx_unreachable"
+        return "ok"
+
+    async def _send_heartbeat_alert(self, detail: str) -> None:
+        """Send heartbeat alert notification."""
+        try:
+            from glogarch.notify.sender import send_notification, NotifyEvent, _t
+            body = (
+                f"{detail}\n"
+                f"Last syslog: {self.last_received_at or 'never'}\n"
+                "Please check nginx syslog configuration on all Graylog nodes."
+            )
+            await send_notification(NotifyEvent.AUDIT_ALERT, _t("audit_alert_title"), body)
+        except Exception:
+            pass
 
     async def _periodic_refresh(self) -> None:
         """Refresh allowed IPs every 5 minutes."""
@@ -468,7 +521,7 @@ class AuditSyslogListener:
         if m:
             rid = m.group(1)
             return self._resource_cache.get(f"event:{rid}", f"event:{rid[:8]}...")
-        m = re.search(r"/api/views/([a-f0-9]{24})", uri)
+        m = re.search(r"/api/(?:views|dashboards)/([a-f0-9]{24})", uri)
         if m:
             rid = m.group(1)
             return self._resource_cache.get(f"view:{rid}", f"view:{rid[:8]}...")
@@ -489,6 +542,16 @@ class AuditSyslogListener:
         if m:
             rid = m.group(1)
             return self._resource_cache.get(f"output:{rid}", f"output:{rid[:8]}...")
+        # Authentication service backends
+        m = re.search(r"/api/system/authentication/services/backends/([a-f0-9]{24})", uri)
+        if m:
+            rid = m.group(1)
+            return self._resource_cache.get(f"auth_backend:{rid}", f"backend:{rid[:8]}...")
+        # Content packs (UUID with dashes)
+        m = re.search(r"/api/system/content_packs/([a-f0-9\-]{36})", uri)
+        if m:
+            cpid = m.group(1)
+            return self._resource_cache.get(f"content_pack:{cpid}", cpid)
         # Deflector cycle contains index set ID
         m = re.search(r"/api/(?:system|cluster)/deflector/([a-f0-9]{24})/cycle", uri)
         if m:
@@ -545,11 +608,19 @@ class AuditSyslogListener:
                     if r.status_code == 200:
                         for v in r.json().get("views", r.json().get("elements", [])):
                             self._resource_cache[f"view:{v['id']}"] = v.get("title", v["id"])
-                    # Lookup tables
+                    # Lookup tables, adapters, caches
                     r = await client.get(f"{srv.url.rstrip('/')}/api/system/lookup/tables?per_page=100")
                     if r.status_code == 200:
                         for t in r.json().get("lookup_tables", []):
                             self._resource_cache[f"lookup:{t['id']}"] = t.get("title", t["id"])
+                    r = await client.get(f"{srv.url.rstrip('/')}/api/system/lookup/adapters?per_page=100")
+                    if r.status_code == 200:
+                        for a in r.json().get("data_adapters", []):
+                            self._resource_cache[f"lookup:{a['id']}"] = a.get("title", a["id"])
+                    r = await client.get(f"{srv.url.rstrip('/')}/api/system/lookup/caches?per_page=100")
+                    if r.status_code == 200:
+                        for c in r.json().get("caches", []):
+                            self._resource_cache[f"lookup:{c['id']}"] = c.get("title", c["id"])
                     # Pipelines
                     r = await client.get(f"{srv.url.rstrip('/')}/api/system/pipelines/pipeline")
                     if r.status_code == 200:
@@ -575,6 +646,20 @@ class AuditSyslogListener:
                     if r.status_code == 200:
                         for o in r.json().get("outputs", []):
                             self._resource_cache[f"output:{o['id']}"] = o.get("title", o["id"])
+                    # Authentication service backends
+                    r = await client.get(f"{srv.url.rstrip('/')}/api/system/authentication/services/backends")
+                    if r.status_code == 200:
+                        for b in r.json().get("backends", []):
+                            bid = b.get("id", "")
+                            if bid:
+                                self._resource_cache[f"auth_backend:{bid}"] = b.get("title", bid)
+                    # Content packs (UUID with dashes)
+                    r = await client.get(f"{srv.url.rstrip('/')}/api/system/content_packs?per_page=100")
+                    if r.status_code == 200:
+                        for cp in r.json().get("content_packs", []):
+                            cpid = cp.get("id", "")
+                            if cpid:
+                                self._resource_cache[f"content_pack:{cpid}"] = cp.get("name", cpid)
                     # Users (ID → username, for share grantee resolution)
                     r = await client.get(f"{srv.url.rstrip('/')}/api/users")
                     if r.status_code == 200:
@@ -670,16 +755,22 @@ class AuditSyslogListener:
         """Send notification for sensitive API operations."""
         try:
             from glogarch.notify.sender import send_notification, NotifyEvent
+            # Deduplicate: group by (username, operation, target_name, status_code)
+            groups: dict[tuple, int] = {}
+            for e in entries:
+                key = (e.get("username", "?"), e.get("operation", "?"),
+                       e.get("target_name", ""), e.get("status_code", 0))
+                groups[key] = groups.get(key, 0) + 1
+
             lines = []
-            for e in entries[:5]:
-                lines.append(
-                    f"{e.get('username', '?')} — {e.get('method')} {e.get('uri')} "
-                    f"({e.get('operation', '?')}) → {e.get('status_code')}"
-                )
-            if len(entries) > 5:
-                lines.append(f"... +{len(entries) - 5} more")
+            for (user, op, target, status), count in list(groups.items())[:5]:
+                target_part = f" [{target}]" if target else ""
+                count_part = f" ×{count}" if count > 1 else ""
+                lines.append(f"{user} — {op}{target_part} → {status}{count_part}")
+            if len(groups) > 5:
+                lines.append(f"... +{len(groups) - 5} more")
             from glogarch.notify.sender import _t
-            title = _t("sensitive_title", n=len(entries))
+            title = _t("sensitive_title", n=len(groups))
             body = "\n".join(lines)
             await send_notification(NotifyEvent.SENSITIVE_API_OPERATION, title, body)
         except Exception as e:
@@ -716,6 +807,13 @@ class AuditSyslogListener:
         raw = parse_nginx_json(payload)
         if not raw:
             return
+
+        # Fallback: if nginx JSON server_name is empty (no server_name directive
+        # in nginx server block), use the hostname from the syslog envelope.
+        if not raw.get("server_name"):
+            hostname = parse_syslog_hostname(data)
+            if hostname:
+                raw["server_name"] = hostname
 
         # Skip background polling noise
         method = raw.get("method", "")
