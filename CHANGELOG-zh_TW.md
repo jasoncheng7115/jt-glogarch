@@ -2,6 +2,31 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.7.8] - 2026-04-30
+
+### 修正 — 排程頁面把同一筆執行進度顯示在所有匯出排程列
+
+- 只要任一匯出排程正在執行，排程頁所有匯出類型的列都會顯示同一個進度條 / 百分比 / 記錄數。客戶回報情境：一個 `api-export` 排程（mode=API、手動觸發）和一個 `auto-export` 排程（mode=OpenSearch、cron 觸發），啟動其中一個時兩列同時跑同樣的進度。
+- 根因：`web/static/js/app.js` 的 `loadSchedules()` 用 `(jobsData.items || []).find(j => j.status === 'running' && j.job_type === 'export' ...)` 找「正在跑的匯出 job」，然後把進度條套到**每一個** `job_type === 'export'` 的列。原因是 `source` 欄位只記到 `"manual:api"` / `"scheduled:opensearch"` 兩段，沒有排程名稱可比對。
+- 修法：將 `source` 欄位擴充為三段格式 `"{manual|scheduled}:{api|opensearch}:{schedule_name}"`。
+  - `scheduler.py::_run_export_once` 與 `web/routes/api.py::run_schedule_now` 現在都會寫入第三段。
+  - `/api/export`（從「立即匯出」頁面執行，不屬於任何排程）保留兩段格式，因此不會把進度沾染到任何排程列。
+- 前端：`loadSchedules()` 改為以第三段建立 `runningBySchedule[name]` 字典，只在排程名稱對得上的列顯示進度條。原本另外兩處解析 source 的地方（作業歷程頁的徽章、儀表板最近作業徽章）只看前兩段，第三段被自動忽略，沿用不變。
+- 「立即執行」按鈕的可見性維持原本精神：只要有任何匯出在跑，所有列都隱藏（伺服器層級匯出鎖本來就會拒絕並行執行）。
+
+### 修正 — 手動「立即執行」的 verify / cleanup 不會出現在作業歷程
+
+- 在排程頁按 `auto-verify` 或 `auto-cleanup` 的「立即執行」按鈕後，只會寫入 `audit_log` 並更新 `schedules.last_run_at`，完全沒有寫入 `jobs` 表。所以該次執行在作業歷程、儀表板最近作業、以及 `/api/jobs` API 都看不到。
+- 修法：`web/routes/api.py::run_schedule_now` 在呼叫 `Cleaner`/`Verifier` 之前先建立 `RUNNING` 狀態的 `JobRecord`，呼叫完成後再依結果轉為 `COMPLETED`（備註欄帶摘要）或 `FAILED`（帶清理過的錯誤訊息）。Source 採用 v1.7.8 統一格式：`manual:cleanup:<name>` / `manual:verify:<name>`。順帶把 cron 觸發的 scheduler.py 的 verify/cleanup source 也升級為 `scheduled:verify:<name>` / `scheduled:cleanup:<name>`，與 export 一致。
+
+## [1.7.7] - 2026-04-30
+
+### 修正 — 切換語言時動態內容未即時更新
+
+- `web/static/js/app.js` 的 `langchange` 事件監聽只重新渲染 `/logs` 與 `/op-audit` 兩個頁面。其他頁面（`/`、`/archives`、`/jobs`、`/schedules`、`/notify-settings`）由 JS 動態 innerHTML 渲染的狀態徽章、表格欄位、Modal 標籤、通知測試結果等都會卡在切換前的語言，使用者必須手動重新整理瀏覽器才會全部更新。
+- 修法：擴充監聽器，所有頁面在切換語言時都重新呼叫對應的載入函式，並保留分頁狀態（例如 `archivePage`、`_auditPage`）。
+- 同時把四處先前硬寫英文的片段補上 i18n：OpenSearch 連線測試結果（`Connected!` / `Failed:` / `Error:` / `Unknown error` / `Status:` / `Nodes:`）、通知管道測試結果（`OK` / `Failed`）、GELF Port 欄位標籤、排程類型下拉選項（`Export` / `Cleanup` / `Verify`）、以及純資訊提示視窗的 OK 按鈕。新增 i18n key：`btn_ok`、`test_connected`、`test_failed`、`test_error`、`unknown_error`、`result_ok`、`result_failed`、`os_status`、`os_nodes`、`import_gelf_port`、`sched_type_export/cleanup/verify`。
+
 ## [1.7.6] - 2026-04-29
 
 ### 修正 — 排程的 verify 與 cleanup 不會出現在作業歷程

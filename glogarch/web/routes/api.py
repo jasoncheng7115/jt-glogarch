@@ -774,8 +774,39 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
         except Exception:
             cfg = {}
         from glogarch.cleanup.cleaner import Cleaner
+        from glogarch.core.models import JobRecord, JobStatus, JobType
+        from glogarch.utils.sanitize import sanitize as _sanitize
+        job_id = str(uuid.uuid4())
+        try:
+            db.create_job(JobRecord(id=job_id, job_type=JobType.CLEANUP,
+                                     status=JobStatus.RUNNING,
+                                     source=f"manual:cleanup:{name}",
+                                     started_at=datetime.utcnow()))
+        except Exception:
+            job_id = ""
         cleaner = Cleaner(settings.retention, settings.export, db, settings.op_audit)
-        result = cleaner.cleanup()
+        try:
+            result = cleaner.cleanup()
+            mb = result.bytes_freed / (1024 * 1024)
+            if job_id:
+                try:
+                    db.update_job(job_id, status=JobStatus.COMPLETED,
+                                  messages_done=result.files_deleted,
+                                  messages_total=result.files_deleted,
+                                  progress_pct=100.0,
+                                  completed_at=datetime.utcnow(),
+                                  error_message=f"Deleted {result.files_deleted} files ({mb:.1f} MB)")
+                except Exception:
+                    pass
+        except Exception as e:
+            if job_id:
+                try:
+                    db.update_job(job_id, status=JobStatus.FAILED,
+                                  error_message=_sanitize(str(e)),
+                                  completed_at=datetime.utcnow())
+                except Exception:
+                    pass
+            raise
         db.conn.execute("UPDATE schedules SET last_run_at = ? WHERE name = ?",
                         (datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), name))
         db.conn.commit()
@@ -785,8 +816,43 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
     # Verify: run synchronously
     if sched.job_type == "verify":
         from glogarch.verify.verifier import Verifier
+        from glogarch.core.models import JobRecord, JobStatus, JobType
+        from glogarch.utils.sanitize import sanitize as _sanitize
+        job_id = str(uuid.uuid4())
+        try:
+            db.create_job(JobRecord(id=job_id, job_type=JobType.VERIFY,
+                                     status=JobStatus.RUNNING,
+                                     source=f"manual:verify:{name}",
+                                     started_at=datetime.utcnow()))
+        except Exception:
+            job_id = ""
         verifier = Verifier(settings.export, db)
-        result = verifier.verify_all()
+        try:
+            result = verifier.verify_all()
+            note = (f"{result.valid} valid, {len(result.corrupted)} corrupted, "
+                    f"{len(result.missing_files)} missing of {result.total_checked} total")
+            status = (JobStatus.FAILED
+                      if result.corrupted or result.missing_files
+                      else JobStatus.COMPLETED)
+            if job_id:
+                try:
+                    db.update_job(job_id, status=status,
+                                  messages_done=result.total_checked,
+                                  messages_total=result.total_checked,
+                                  progress_pct=100.0,
+                                  completed_at=datetime.utcnow(),
+                                  error_message=note)
+                except Exception:
+                    pass
+        except Exception as e:
+            if job_id:
+                try:
+                    db.update_job(job_id, status=JobStatus.FAILED,
+                                  error_message=_sanitize(str(e)),
+                                  completed_at=datetime.utcnow())
+                except Exception:
+                    pass
+            raise
         db.conn.execute("UPDATE schedules SET last_run_at = ? WHERE name = ?",
                         (datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), name))
         db.conn.commit()
@@ -837,7 +903,7 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
                 result = asyncio.run(os_exporter.export(
                     time_from=time_from, time_to=time_to,
                     index_set_ids=[index_set] if index_set else None,
-                    progress_callback=_cb, source="manual:opensearch",
+                    progress_callback=_cb, source=f"manual:opensearch:{name}",
                     job_id=job_id, keep_indices=int(keep_indices) if keep_indices else None,
                 ))
                 _job_progress.setdefault(job_id, []).append(
@@ -867,7 +933,7 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
             try:
                 result = asyncio.run(exporter.export(
                     time_from=time_from, time_to=time_to,
-                    streams=stream_ids, progress_callback=_cb, source="manual:api",
+                    streams=stream_ids, progress_callback=_cb, source=f"manual:api:{name}",
                     job_id=job_id,
                 ))
                 _job_progress.setdefault(job_id, []).append(

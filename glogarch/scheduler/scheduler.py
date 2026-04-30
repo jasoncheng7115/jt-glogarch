@@ -145,7 +145,7 @@ class ArchiveScheduler:
             # OpenSearch: no resume point — rely on per-chunk dedup to avoid gaps
             log.info("OpenSearch mode: using full range with per-chunk dedup")
             log.info("Scheduled export starting (OpenSearch)", time_from=str(time_from), time_to=str(time_to), keep_indices=keep_indices)
-            result = await exporter.export(time_from=time_from, time_to=time_to, index_set_ids=index_set_ids, source="scheduled:opensearch", keep_indices=int(keep_indices) if keep_indices else None)
+            result = await exporter.export(time_from=time_from, time_to=time_to, index_set_ids=index_set_ids, source=f"scheduled:opensearch:{schedule_name}", keep_indices=int(keep_indices) if keep_indices else None)
         else:
             exporter = Exporter(
                 server_config, self.settings.export,
@@ -168,7 +168,7 @@ class ArchiveScheduler:
             else:
                 log.info("No resume point found (API), using full range", stream=first_stream)
             log.info("Scheduled export starting (API)", time_from=str(time_from), time_to=str(time_to), streams=stream_ids)
-            result = await exporter.export(time_from=time_from, time_to=time_to, streams=stream_ids, source="scheduled:api")
+            result = await exporter.export(time_from=time_from, time_to=time_to, streams=stream_ids, source=f"scheduled:api:{schedule_name}")
         log.info("Scheduled export completed",
                  chunks=result.chunks_exported,
                  skipped=result.chunks_skipped,
@@ -181,7 +181,7 @@ class ArchiveScheduler:
             return
 
         self._running_jobs["cleanup"] = True
-        job_id = self._create_run_job(JobType.CLEANUP, "scheduled")
+        job_id = self._create_run_job(JobType.CLEANUP, f"scheduled:cleanup:{schedule_name}")
         try:
             cleaner = Cleaner(self.settings.retention, self.settings.export, self.db, self.settings.op_audit)
             result = cleaner.cleanup()
@@ -212,7 +212,7 @@ class ArchiveScheduler:
             return
 
         self._running_jobs["verify"] = True
-        job_id = self._create_run_job(JobType.VERIFY, "scheduled")
+        job_id = self._create_run_job(JobType.VERIFY, f"scheduled:verify:{schedule_name}")
         try:
             from glogarch.verify.verifier import Verifier
             verifier = Verifier(self.settings.export, self.db)

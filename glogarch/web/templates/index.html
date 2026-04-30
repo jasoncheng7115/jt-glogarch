@@ -249,7 +249,7 @@
                     </div>
                     <div style="display:flex;gap:10px">
                         <div class="form-group" style="flex:1">
-                            <label>GELF Port</label>
+                            <label data-i18n="import_gelf_port">GELF Port</label>
                             <input type="number" id="modal-gelf-port" value="32202" min="1" max="65535" data-user-edited="false" oninput="this.dataset.userEdited='true'">
                         </div>
                         <div class="form-group" style="flex:1">
@@ -473,9 +473,9 @@
             <div class="form-group">
                 <label data-i18n="sched_type">Type</label>
                 <select id="sched-type" onchange="onSchedTypeChange()">
-                    <option value="export">Export</option>
-                    <option value="cleanup">Cleanup</option>
-                    <option value="verify">Verify</option>
+                    <option value="export" data-i18n-opt="sched_type_export">Export</option>
+                    <option value="cleanup" data-i18n-opt="sched_type_cleanup">Cleanup</option>
+                    <option value="verify" data-i18n-opt="sched_type_verify">Verify</option>
                 </select>
             </div>
             <div class="form-group">

@@ -2,6 +2,31 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.7.8] - 2026-04-30
+
+### Fixed — Schedule page mirrored running progress to every export schedule
+
+- When one export schedule was running, every other export-type row on the schedules page showed the same progress bar / percentage / message count. The customer report case: an `api-export` schedule (mode=API, manually triggered) and an `auto-export` schedule (mode=OpenSearch, cron-fired) — running either one decorated both rows with identical progress.
+- Root cause: `loadSchedules()` in `web/static/js/app.js` did `(jobsData.items || []).find(j => j.status === 'running' && j.job_type === 'export' ...)` to locate "the" running export job, then attached its progress bar to **every** row whose `job_type === 'export'`. There was no way to tell which schedule had triggered the job because the `source` column was only `"manual:api"` / `"scheduled:opensearch"` etc. — no schedule name.
+- Fix: extended the `source` field format to a third segment carrying the schedule name. New format: `"{manual|scheduled}:{api|opensearch}:{schedule_name}"`.
+  - `scheduler.py::_run_export_once` and `web/routes/api.py::run_schedule_now` now write the third segment.
+  - `/api/export` (manual export from the /export page, not bound to any schedule) keeps the two-segment form so it does NOT decorate any schedule row.
+- Frontend: `loadSchedules()` now builds `runningBySchedule[name]` from the third segment and only attaches progress to the row whose `name` matches. The two existing `srcType`/`srcMode` consumers (jobs page badges, dashboard recent-jobs badges) ignore unknown extra segments, so they keep working unchanged.
+- "Run Now" button visibility is unchanged in spirit: still hidden on every row while any export is running (server-level export lock would reject a concurrent run anyway).
+
+### Fixed — Manual "Run Now" of verify / cleanup did not appear in Job History
+
+- Triggering an `auto-verify` or `auto-cleanup` run via the "立即執行" button only wrote an `audit_log` entry and updated `schedules.last_run_at` — it never touched the `jobs` table. As a result the run was invisible from Job History, Dashboard recent jobs, and the `/api/jobs` API.
+- Fix: `web/routes/api.py::run_schedule_now` now creates a `RUNNING` `JobRecord` before invoking `Cleaner`/`Verifier`, transitions it to `COMPLETED` (with a summary in the notes column) or `FAILED` (with a sanitized error) when the call returns. Source format follows the v1.7.8 convention: `manual:cleanup:<name>` / `manual:verify:<name>`. Scheduled cron firings of verify/cleanup also got their source upgraded to `scheduled:verify:<name>` / `scheduled:cleanup:<name>` for consistency with export.
+
+## [1.7.7] - 2026-04-30
+
+### Fixed — Language switch did not fully refresh dynamic content
+
+- The `langchange` listener in `web/static/js/app.js` only re-rendered the `/logs` and `/op-audit` pages. Every other page (`/`, `/archives`, `/jobs`, `/schedules`, `/notify-settings`) had JS-rendered innerHTML (status badges, table cells, modal labels, channel results) that stayed in the previous language until the user manually refreshed the browser.
+- Fix: extended the listener to re-fire each page's loader on language change, preserving pagination state (e.g. `archivePage`, `_auditPage`).
+- Also i18n'd four hardcoded English fragments: OpenSearch test result (`Connected!` / `Failed:` / `Error:` / `Unknown error` / `Status:` / `Nodes:`), notify channel test outcome (`OK` / `Failed`), GELF Port label, schedule type select options (`Export` / `Cleanup` / `Verify`), and the OK button on info-only confirm dialogs. New i18n keys: `btn_ok`, `test_connected`, `test_failed`, `test_error`, `unknown_error`, `result_ok`, `result_failed`, `os_status`, `os_nodes`, `import_gelf_port`, `sched_type_export/cleanup/verify`.
+
 ## [1.7.6] - 2026-04-29
 
 ### Fixed — Scheduled verify and cleanup did not appear in Job History

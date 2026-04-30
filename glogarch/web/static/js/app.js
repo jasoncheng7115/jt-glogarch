@@ -357,12 +357,12 @@ async function testOpenSearch() {
             body: '{}',
         });
         if (data.connected) {
-            resultEl.innerHTML = `<span class="status-completed">Connected!</span> ${esc(data.cluster_name || '')} — ${esc(data.version || '')} — Status: ${esc(data.status || '')} — Nodes: ${esc(String(data.nodes || ''))}`;
+            resultEl.innerHTML = `<span class="status-completed">${t('test_connected')}</span> ${esc(data.cluster_name || '')} — ${esc(data.version || '')} — ${t('os_status')}: ${esc(data.status || '')} — ${t('os_nodes')}: ${esc(String(data.nodes || ''))}`;
         } else {
-            resultEl.innerHTML = `<span class="status-failed">Failed:</span> ${data.error || 'Unknown error'}`;
+            resultEl.innerHTML = `<span class="status-failed">${t('test_failed')}</span> ${esc(data.error || t('unknown_error'))}`;
         }
     } catch (e) {
-        resultEl.innerHTML = `<span class="status-failed">Error:</span> ${e.message}`;
+        resultEl.innerHTML = `<span class="status-failed">${t('test_error')}</span> ${esc(e.message)}`;
     }
 }
 
@@ -1659,8 +1659,20 @@ async function loadSchedules() {
     ]);
     const tbody = document.querySelector('#schedules-table tbody');
     if (!tbody) return;
-    // Find running export job
-    const runningJob = (jobsData.items || []).find(j => j.status === 'running' && j.job_type === 'export' && j.progress_pct < 100);
+    // Build a map of running export jobs keyed by schedule name. The job's
+    // `source` field is "{manual|scheduled}:{api|opensearch}:{schedule_name}".
+    // Two-part values ("manual:api" / "scheduled:api" without a schedule
+    // name) belong to /export-page runs and are not attached to any
+    // schedule row.
+    const runningBySchedule = {};
+    let anyRunningExport = false;
+    (jobsData.items || []).forEach(j => {
+        if (j.status === 'running' && j.job_type === 'export' && j.progress_pct < 100) {
+            anyRunningExport = true;
+            const schedName = (j.source || '').split(':')[2];
+            if (schedName) runningBySchedule[schedName] = j;
+        }
+    });
 
     tbody.innerHTML = data.items.map(s => {
         const c = s.config || {};
@@ -1687,8 +1699,9 @@ async function loadSchedules() {
             modeHtml = '-';
             configHtml = 'SHA256';
         }
-        // Show running status for export schedules
+        // Show running status only on the schedule that actually triggered the job.
         let runningHtml = '';
+        const runningJob = runningBySchedule[s.name];
         if (s.job_type === 'export' && runningJob) {
             const pct = runningJob.progress_pct?.toFixed(0) || 0;
             const msgs = formatNumber(runningJob.messages_done || 0);
@@ -1714,7 +1727,7 @@ async function loadSchedules() {
             <td>${s.enabled ? formatDT(s.next_run_at) : '<span style="color:var(--text-muted)">-</span>'}</td>
             <td><div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
                 <button class="btn-sm btn-primary" onclick="editSchedule('${esc(s.name)}')">${icon('shield')} ${t('btn_edit')}</button>
-                ${(s.job_type === 'export' || s.job_type === 'cleanup' || s.job_type === 'verify') && !runningJob ? `<button class="btn-sm btn-success" onclick="runScheduleNow('${esc(s.name)}')" title="${t('btn_run_now')}">${icon('play')} ${t('btn_run_now')}</button>` : ''}
+                ${(s.job_type === 'export' || s.job_type === 'cleanup' || s.job_type === 'verify') && !anyRunningExport ? `<button class="btn-sm btn-success" onclick="runScheduleNow('${esc(s.name)}')" title="${t('btn_run_now')}">${icon('play')} ${t('btn_run_now')}</button>` : ''}
                 <button class="btn-sm ${s.enabled ? 'btn-secondary' : 'btn-primary'}" onclick="toggleSchedule('${esc(s.name)}',${!s.enabled})">${s.enabled ? icon('pause') + ' ' + t('btn_disable') : icon('play') + ' ' + t('btn_enable')}</button>
                 ${s.name.startsWith('auto-') ? '' : `<button class="btn-sm btn-danger" onclick="deleteSchedule('${esc(s.name)}')">${icon('trash')}</button>`}
             </div></td>
@@ -2341,7 +2354,7 @@ async function testNotifyFromSettings() {
     el.innerHTML = `<span style="color:var(--text-muted)">${t('loading')}...</span>`;
     const data = await fetchJSON(`${API}/notify/test`, {method: 'POST'});
     if (data.results && data.results.length > 0) {
-        el.innerHTML = data.results.map(r => `${r.channel}: ${r.success ? '<span class="status-completed">OK</span>' : '<span class="status-failed">' + (r.error || 'Failed') + '</span>'}`).join('<br>');
+        el.innerHTML = data.results.map(r => `${esc(r.channel)}: ${r.success ? `<span class="status-completed">${t('result_ok')}</span>` : `<span class="status-failed">${esc(r.error || t('result_failed'))}</span>`}`).join('<br>');
     } else {
         el.innerHTML = `<span style="color:var(--warning)">${t('notify_no_channels')}</span>`;
     }
@@ -2438,7 +2451,7 @@ function showConfirm(title, message, onConfirm) {
         btnRow.innerHTML = `<button class="btn-danger" onclick="doConfirm()">${icon('shield')} ${t('btn_confirm')}</button>
             <button class="btn-secondary" onclick="closeConfirm()">${t('btn_cancel')}</button>`;
     } else {
-        btnRow.innerHTML = `<button class="btn-primary" onclick="closeConfirm()">OK</button>`;
+        btnRow.innerHTML = `<button class="btn-primary" onclick="closeConfirm()">${t('btn_ok')}</button>`;
     }
     modal.style.display = 'flex';
 }
@@ -2617,11 +2630,28 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (path === '/op-audit') { loadAuditData(1); loadAuditStatus(); loadAuditNginxConfig(); }
 });
 
-// Re-translate dynamic JS-rendered content when language changes
+// Re-translate dynamic JS-rendered content when language changes.
+// applyI18n() handles static data-i18n elements; this re-fires each page's
+// loader so JS-built innerHTML (badges, modal labels, table cells, etc.) is
+// rebuilt under the new language without forcing a browser refresh.
 document.addEventListener('langchange', () => {
     const path = window.location.pathname;
-    if (path === '/logs') { loadRealtimeLog(); loadTable('#audit-table', loadAuditLog); }
-    if (path === '/op-audit') { loadAuditData(1); }
+    if (path === '/' || path === '') {
+        loadDashboard(); loadOpenSearchStatus(); loadNotifyStatus();
+    } else if (path === '/archives') {
+        loadArchives(typeof archivePage !== 'undefined' ? archivePage : 1);
+        loadArchivePath();
+    } else if (path === '/jobs') {
+        loadJobs();
+    } else if (path === '/schedules') {
+        loadSchedules();
+    } else if (path === '/notify-settings') {
+        loadNotifySettings();
+    } else if (path === '/logs') {
+        loadRealtimeLog(); loadTable('#audit-table', loadAuditLog);
+    } else if (path === '/op-audit') {
+        loadAuditData(_auditPage || 1); loadAuditStatus(); loadAuditNginxConfig();
+    }
 });
 
 // --- API Audit page ---
