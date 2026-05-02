@@ -98,7 +98,7 @@ Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
 兩種匯入模式（對話框中選擇）：
 
 - **GELF (Graylog Pipeline)** — 預設。每筆訊息透過 GELF TCP/UDP 經過完整的
-  Graylog input → process → indexer 處理鏈。相容 pipeline 規則、extractors、
+  Graylog input → process → indexer 處理流程。相容 pipeline 規則、extractors、
   stream routing 與 alerts。
 - **OpenSearch Bulk** — 直接透過 `_bulk` API 寫入 OpenSearch。速度快 5-10×，
   完全跳過 Graylog 處理流程。適合「原樣還原」場景。

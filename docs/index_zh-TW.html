@@ -95,7 +95,7 @@ sudo systemctl enable --now jt-glogarch</code></pre>
 
 <section id="flow">
   <h2>兩種匯出、兩種匯入。</h2>
-  <p class="subhead">出去走 API 或 OpenSearch Direct，回來走 GELF 或 OpenSearch Bulk。跨模式重複資料刪除確保資料一致。</p>
+  <p class="subhead">依需求自由搭配：匯出可選 API（相容性高）或 OpenSearch Direct（約 5 倍速），匯入可選 GELF（走完整 Graylog pipeline）或 OpenSearch Bulk（約 5～10 倍速）。跨模式重複資料刪除確保切換時資料一致。</p>
   <div class="modes">
     <div class="mode">
       <div class="icon">
@@ -122,7 +122,7 @@ sudo systemctl enable --now jt-glogarch</code></pre>
         </svg>
       </div>
       <h3>GELF 匯入</h3>
-      <p>預設還原方式。每筆訊息透過 GELF 重播完整 Graylog input → process → indexer 處理鏈。Pipeline 規則、Extractor、Stream routing、告警全部沿用。</p>
+      <p>預設還原方式。每筆訊息透過 GELF 重播完整 Graylog input → process → indexer 處理流程。Pipeline 規則、Extractor、Stream routing、告警全部沿用。</p>
     </div>
     <div class="mode">
       <div class="icon">
