@@ -44,8 +44,6 @@
   <div class="promise-chips">
     <span class="chip chip-cyan">Graylog Open 6.x / 7.x</span>
     <span class="chip chip-mint">Self-hosted</span>
-    <span class="chip chip-purple">Streaming · no OOM</span>
-    <span class="chip chip-amber">SHA256 verified</span>
     <span class="chip chip-coral">Independent audit</span>
     <span class="chip chip-amber">Apache 2.0</span>
   </div>
@@ -146,27 +144,27 @@ sudo systemctl enable --now jt-glogarch</code></pre>
   <p class="subhead">The same archive serves multiple needs — once the data lives in compressed <code class="kbd">.json.gz</code> files with checksums, you can pull from any of these angles.</p>
   <div class="features">
     <div class="feature">
-      <h4>Compliance retention</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 7.7-8 9-4.6-1.3-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>Compliance retention</h4>
       <p>Keep 1 year of authentication logs while Graylog's hot index retention stays at 90 days. Schedule a daily stream-filtered export and let cheap storage take everything past 90 days.</p>
     </div>
     <div class="feature">
-      <h4>Forensic restore</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg>Forensic restore</h4>
       <p>An incident from 6 months ago needs investigation but those logs rotated out of OpenSearch. Find the archive, click Import, point at a Graylog instance with GELF — back online and searchable.</p>
     </div>
     <div class="feature">
-      <h4>Cluster migration</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="6" height="16" rx="1.5"/><rect x="15" y="4" width="6" height="16" rx="1.5"/><path d="M9 12h6m-2-3l2 3-2 3"/></svg>Cluster migration</h4>
       <p>Move from old Graylog to new Graylog. OpenSearch Direct exports the whole cluster fast, GELF or Bulk imports it into the new one. No vendor lock-in, no cloud middleman.</p>
     </div>
     <div class="feature">
-      <h4>Disaster recovery</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 1 1 .5-9 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 18 18z"/><path d="M12 15v-5m-2 2l2-2 2 2"/></svg>Disaster recovery</h4>
       <p>Mount remote storage at <code class="kbd">/data/graylog-archives</code> and schedule daily exports. Even if your live Graylog cluster dies, you keep searchable archives at another site.</p>
     </div>
     <div class="feature">
-      <h4>Cost reduction</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="13" r="6"/><path d="M9 10v6m-2-1.5h2.5a1.5 1.5 0 0 0 0-3h-1a1.5 1.5 0 0 1 0-3H11"/><path d="M16 5l3 3 3-3"/></svg>Cost reduction</h4>
       <p>OpenSearch hot tier is expensive. Archive older indices to compressed storage (~10× compression), let the active cluster carry only recent searches. Old data still recoverable in minutes.</p>
     </div>
     <div class="feature">
-      <h4>Independent audit</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 13l2 2 4-4"/></svg>Independent audit</h4>
       <p>Graylog's built-in audit log is admin-deletable. <strong>jt-glogarch</strong>'s independent operation audit captures what really happened on the cluster, in a database Graylog admins don't own.</p>
     </div>
   </div>
@@ -176,15 +174,15 @@ sudo systemctl enable --now jt-glogarch</code></pre>
   <h2>Engineered for the long haul.</h2>
   <p class="subhead">Built to run quietly for years against a busy Graylog cluster.</p>
   <div class="features">
-    <div class="feature"><h4>Streaming write</h4><p>Never holds messages in memory. <code class="kbd">.json.gz</code> chunks roll over at 50 MB by default. OOM-proof on multi-GB indices.</p></div>
-    <div class="feature"><h4>Smart deduplication</h4><p>Same-mode exact match prevents re-export. Cross-mode coverage check prevents duplicates when switching between API and OpenSearch.</p></div>
-    <div class="feature"><h4>Resume from interruption</h4><p>Service crash mid-export? Restart and continue from the last completed chunk. Nothing lost, nothing duplicated.</p></div>
-    <div class="feature"><h4>SHA256 integrity</h4><p>Every archive ships with a <code class="kbd">.sha256</code> sidecar. Scheduled re-verification runs in parallel workers; corrupted files are flagged on the dashboard.</p></div>
-    <div class="feature"><h4>Cron-based schedules</h4><p>Export, cleanup, verify — POSIX cron with the day-of-week numbering you actually expect. Live edits via Web UI take effect immediately, no service restart.</p></div>
-    <div class="feature"><h4>JVM heap guard</h4><p>API exports auto-pause when Graylog heap exceeds 85%. Resume after GC recovers; stop after 5 minutes if it doesn't. Your Graylog stays alive.</p></div>
-    <div class="feature"><h4>Pre-flight compliance</h4><p>Before any GELF or Bulk send, jt-glogarch checks target capacity, fixes mapping conflicts, and reconciles indexer failures after import. Zero indexer failures = compliance pass.</p></div>
-    <div class="feature"><h4>Notifications</h4><p>Telegram · Discord · Slack · Microsoft Teams · Nextcloud Talk · Email. Bilingual (EN / 繁體中文). Independent triggers per event type.</p></div>
-    <div class="feature"><h4>Web UI + CLI</h4><p>Full Web UI (light/dark, EN/zh-TW) plus a <code class="kbd">glogarch</code> CLI for scripting. Same operations, same database, your choice.</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8c2 0 2-2 4-2s2 2 4 2 2-2 4-2 2 2 4 2"/><path d="M3 13c2 0 2-2 4-2s2 2 4 2 2-2 4-2 2 2 4 2"/><path d="M3 18c2 0 2-2 4-2s2 2 4 2 2-2 4-2 2 2 4 2"/></svg>Streaming write</h4><p>Never holds messages in memory. <code class="kbd">.json.gz</code> chunks roll over at 50 MB by default. OOM-proof on multi-GB indices.</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="11" height="11" rx="2"/><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 15l3 3M18 15l-3 3"/></svg>Smart deduplication</h4><p>Same-mode exact match prevents re-export. Cross-mode coverage check prevents duplicates when switching between API and OpenSearch.</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>Resume from interruption</h4><p>Service crash mid-export? Restart and continue from the last completed chunk. Nothing lost, nothing duplicated.</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/><path d="M10 4l-2 16M16 4l-2 16"/></svg>SHA256 integrity</h4><p>Every archive ships with a <code class="kbd">.sha256</code> sidecar. Scheduled re-verification runs in parallel workers; corrupted files are flagged on the dashboard.</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Cron-based schedules</h4><p>Export, cleanup, verify — POSIX cron with the day-of-week numbering you actually expect. Live edits via Web UI take effect immediately, no service restart.</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 7.7-8 9-4.6-1.3-8-4.5-8-9V6z"/><path d="M11 8l-2 5h2.5l-1 4 4-6h-2.5l1-3z"/></svg>JVM heap guard</h4><p>API exports auto-pause when Graylog heap exceeds 85%. Resume after GC recovers; stop after 5 minutes if it doesn't. Your Graylog stays alive.</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8l1 1 2-2M9 14l1 1 2-2M14.5 8H17M14.5 14H17"/></svg>Pre-flight compliance</h4><p>Before any GELF or Bulk send, jt-glogarch checks target capacity, fixes mapping conflicts, and reconciles indexer failures after import. Zero indexer failures = compliance pass.</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2H4.5z"/><path d="M10 21h4"/></svg>Notifications</h4><p>Telegram · Discord · Slack · Microsoft Teams · Nextcloud Talk · Email. Bilingual (EN / 繁體中文). Independent triggers per event type.</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 9l3 2-3 2M12 13h5"/></svg>Web UI + CLI</h4><p>Full Web UI (light/dark, EN/zh-TW) plus a <code class="kbd">glogarch</code> CLI for scripting. Same operations, same database, your choice.</p></div>
   </div>
 </section>
 
@@ -198,30 +196,30 @@ sudo systemctl enable --now jt-glogarch</code></pre>
   </p>
   <div class="mapping-grid">
     <div class="mapping-card">
-      <h4>nginx access log → syslog</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="6" height="6" rx="1.5"/><rect x="15" y="14" width="6" height="6" rx="1.5"/><path d="M9 7h3a3 3 0 0 1 3 3v7"/></svg>nginx access log → syslog</h4>
       <p>nginx in front of Graylog forwards every API call to <strong>jt-glogarch</strong>'s syslog listener over UDP. Independent path, independent storage.</p>
       <p class="muted-line">Graylog admins can delete <em>their own</em> audit log. They cannot delete <em>this</em> one.</p>
     </div>
     <div class="mapping-card">
-      <h4>60+ operation types</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg>60+ operation types</h4>
       <p>Stream / pipeline / user / search / dashboard / content pack / lookup table / extractor — every meaningful create / modify / delete is captured and classified.</p>
       <p class="muted-line">Filterable in Web UI by user, method, URI, status, time range, sensitive-only.</p>
     </div>
     <div class="mapping-card">
-      <h4>Resolved usernames</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="3"/><path d="M3 19a6 6 0 0 1 12 0"/><path d="M17 14h5M19.5 11.5v5"/></svg>Resolved usernames</h4>
       <p>Basic Auth, API tokens, browser sessions, cookie auth — all resolve to the actual Graylog username. Token prefix cache, per-user lookups, IP fallback.</p>
       <p class="muted-line">Even when 5 admins share an IP, cookie-based session resolution distinguishes them.</p>
     </div>
     <div class="mapping-card">
-      <h4>Sensitive-operation alerts</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2H4.5z"/><path d="M10 21h4"/><path d="M12 8v3M12 13.5v.1" stroke-width="2"/></svg>Sensitive-operation alerts</h4>
       <p>Configurable patterns trigger real-time notifications via your channels. User deletions, admin grants, content pack installs — pings as they happen, not in next morning's report.</p>
     </div>
     <div class="mapping-card">
-      <h4>Active heartbeat</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>Active heartbeat</h4>
       <p>Every 5 minutes jt-glogarch probes through nginx and watches for the syslog echo. Quiet pipeline → instant alert. Catches "someone disabled the forwarding" without false positives.</p>
     </div>
     <div class="mapping-card">
-      <h4>Independent retention</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="13" height="14" rx="2"/><path d="M3 9h13M8 3v4M12 3v4"/><circle cx="19" cy="16" r="3"/><path d="M19 14v-1.5a1.5 1.5 0 0 0-1.5-1.5"/></svg>Independent retention</h4>
       <p>Audit retention is separate from archive retention (default 180 days, tunable). Even if log archives are pruned, the operation history stays as long as you need.</p>
     </div>
   </div>

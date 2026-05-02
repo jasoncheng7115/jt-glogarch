@@ -42,8 +42,6 @@
   <div class="promise-chips">
     <span class="chip chip-cyan">Graylog Open 6.x / 7.x</span>
     <span class="chip chip-mint">自架</span>
-    <span class="chip chip-purple">串流 · 不爆記憶體</span>
-    <span class="chip chip-amber">SHA256 驗證</span>
     <span class="chip chip-coral">獨立稽核</span>
     <span class="chip chip-amber">Apache 2.0</span>
   </div>
@@ -143,27 +141,27 @@ sudo systemctl enable --now jt-glogarch</code></pre>
   <p class="subhead">資料一旦壓縮成附帶 SHA256 校驗的 <code class="kbd">.json.gz</code>，從以下任一角度都能取用。</p>
   <div class="features">
     <div class="feature">
-      <h4>法規遵循記錄保留</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 7.7-8 9-4.6-1.3-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>法規遵循記錄保留</h4>
       <p>資安要求認證記錄保留 1 年，但 Graylog 熱索引保留期維持 90 天。排程每日匯出篩選的串流，讓便宜的儲存吃下 90 天以上的歸檔。</p>
     </div>
     <div class="feature">
-      <h4>鑑識調查還原</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg>鑑識調查還原</h4>
       <p>6 個月前的資安事件需要調查，但記錄已從 OpenSearch 滾掉。歸檔清單上找到、按匯入、指向 Graylog 與 GELF — 重新上線、可搜尋。</p>
     </div>
     <div class="feature">
-      <h4>叢集遷移</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="6" height="16" rx="1.5"/><rect x="15" y="4" width="6" height="16" rx="1.5"/><path d="M9 12h6m-2-3l2 3-2 3"/></svg>叢集遷移</h4>
       <p>從舊 Graylog 搬到新 Graylog。OpenSearch Direct 把整個叢集快速匯出，GELF 或 Bulk 把它匯入新叢集。沒有廠商鎖定、沒有雲端中間人。</p>
     </div>
     <div class="feature">
-      <h4>異地備援</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 1 1 .5-9 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 18 18z"/><path d="M12 15v-5m-2 2l2-2 2 2"/></svg>異地備援</h4>
       <p>把遠端儲存掛在 <code class="kbd">/data/graylog-archives</code>，排程每日匯出。即使主 Graylog 叢集掛了，異地仍保有可搜尋的歸檔。</p>
     </div>
     <div class="feature">
-      <h4>降低儲存成本</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="13" r="6"/><path d="M9 10v6m-2-1.5h2.5a1.5 1.5 0 0 0 0-3h-1a1.5 1.5 0 0 1 0-3H11"/><path d="M16 5l3 3 3-3"/></svg>降低儲存成本</h4>
       <p>OpenSearch hot tier 很貴。把舊 indices 歸檔到壓縮儲存（約 10 倍壓縮），讓現役叢集只負責近期搜尋。舊資料幾分鐘內仍可恢復。</p>
     </div>
     <div class="feature">
-      <h4>獨立合規稽核</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 13l2 2 4-4"/></svg>獨立合規稽核</h4>
       <p>Graylog 內建 audit log 是 admin 可刪改的。<strong>jt-glogarch</strong> 的獨立行為稽核記下叢集真實的操作軌跡，存在 Graylog admin 沒權限的資料庫裡。</p>
     </div>
   </div>
@@ -173,50 +171,50 @@ sudo systemctl enable --now jt-glogarch</code></pre>
   <h2>為長期穩定運作設計。</h2>
   <p class="subhead">設計目標就是在繁忙的 Graylog 叢集旁邊安靜跑好幾年。</p>
   <div class="features">
-    <div class="feature"><h4>串流寫入</h4><p>從不把訊息全載入記憶體。<code class="kbd">.json.gz</code> 預設每 50 MB 切檔。GB 級 index 也不會 OOM。</p></div>
-    <div class="feature"><h4>智慧重複資料刪除</h4><p>同模式精確比對防止重匯出。跨模式覆蓋率檢查讓 API/OpenSearch 切換時不會重複。</p></div>
-    <div class="feature"><h4>斷點續傳</h4><p>服務匯出途中當掉？重啟後從上次完成的區段續跑。資料不漏、不重複。</p></div>
-    <div class="feature"><h4>SHA256 完整性</h4><p>每份歸檔附 <code class="kbd">.sha256</code>。排程的並行驗證會定期重算雜湊，壞檔在儀表板上會被標記。</p></div>
-    <div class="feature"><h4>Cron 排程</h4><p>匯出、清理、驗證 — POSIX cron 慣例（0=週日）。Web UI 上的編輯立即生效，不必重啟服務。</p></div>
-    <div class="feature"><h4>JVM heap 防護</h4><p>API 匯出在 Graylog heap 超過 85% 時自動暫停；GC 回收後自動繼續；5 分鐘未恢復才停止。Graylog 不會被你的歸檔工作拖垮。</p></div>
-    <div class="feature"><h4>合規 Pre-flight</h4><p>GELF 或 Bulk 送出前，先檢查目標容量、修復 mapping 衝突；送完還會核對 indexer 失敗數。零 indexer 失敗 = 合規通過。</p></div>
-    <div class="feature"><h4>多通道通知</h4><p>Telegram · Discord · Slack · Microsoft Teams · Nextcloud Talk · Email。雙語（EN / 繁體中文）。每個事件可獨立啟停。</p></div>
-    <div class="feature"><h4>Web UI + CLI</h4><p>完整 Web UI（明/暗主題、英/繁中）外加 <code class="kbd">glogarch</code> CLI。同操作、同資料庫，看你愛哪個。</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8c2 0 2-2 4-2s2 2 4 2 2-2 4-2 2 2 4 2"/><path d="M3 13c2 0 2-2 4-2s2 2 4 2 2-2 4-2 2 2 4 2"/><path d="M3 18c2 0 2-2 4-2s2 2 4 2 2-2 4-2 2 2 4 2"/></svg>串流寫入</h4><p>從不把訊息全載入記憶體。<code class="kbd">.json.gz</code> 預設每 50 MB 切檔。GB 級 index 也不會 OOM。</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="11" height="11" rx="2"/><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 15l3 3M18 15l-3 3"/></svg>智慧重複資料刪除</h4><p>同模式精確比對防止重匯出。跨模式覆蓋率檢查讓 API/OpenSearch 切換時不會重複。</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>斷點續傳</h4><p>服務匯出途中當掉？重啟後從上次完成的區段續跑。資料不漏、不重複。</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/><path d="M10 4l-2 16M16 4l-2 16"/></svg>SHA256 完整性</h4><p>每份歸檔附 <code class="kbd">.sha256</code>。排程的並行驗證會定期重算雜湊，壞檔在儀表板上會被標記。</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Cron 排程</h4><p>匯出、清理、驗證 — POSIX cron 慣例（0=週日）。Web UI 上的編輯立即生效，不必重啟服務。</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 7.7-8 9-4.6-1.3-8-4.5-8-9V6z"/><path d="M11 8l-2 5h2.5l-1 4 4-6h-2.5l1-3z"/></svg>JVM heap 防護</h4><p>API 匯出在 Graylog heap 超過 85% 時自動暫停；GC 回收後自動繼續；5 分鐘未恢復才停止。Graylog 不會被你的歸檔工作拖垮。</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8l1 1 2-2M9 14l1 1 2-2M14.5 8H17M14.5 14H17"/></svg>合規 Pre-flight</h4><p>GELF 或 Bulk 送出前，先檢查目標容量、修復 mapping 衝突；送完還會核對 indexer 失敗數。零 indexer 失敗 = 合規通過。</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2H4.5z"/><path d="M10 21h4"/></svg>多通道通知</h4><p>Telegram · Discord · Slack · Microsoft Teams · Nextcloud Talk · Email。雙語（EN / 繁體中文）。每個事件可獨立啟停。</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 9l3 2-3 2M12 13h5"/></svg>Web UI + CLI</h4><p>完整 Web UI（明/暗主題、英/繁中）外加 <code class="kbd">glogarch</code> CLI。同操作、同資料庫，看你愛哪個。</p></div>
   </div>
 </section>
 
 <section id="audit">
-  <h2>連 admin 都改不掉的稽核。</h2>
+  <h2>獨立於 Graylog 的合規稽核軌跡。</h2>
   <p class="subhead">
     法規（ISO 27001、PCI-DSS、個資法等）要求保留管理者操作軌跡。Graylog 內建 audit log 由
     Graylog 自身管理 — 任何具有 admin 權限者都能修改或刪除。從稽核角度:不可信。
   </p>
   <div class="mapping-grid">
     <div class="mapping-card">
-      <h4>nginx access log → syslog</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="6" height="6" rx="1.5"/><rect x="15" y="14" width="6" height="6" rx="1.5"/><path d="M9 7h3a3 3 0 0 1 3 3v7"/></svg>nginx access log → syslog</h4>
       <p>nginx 擋在 Graylog 前面，把每筆 API 呼叫透過 UDP syslog 旁路給 <strong>jt-glogarch</strong> 的 listener。獨立路徑、獨立儲存。</p>
       <p class="muted-line">Graylog admin 可以刪 <em>他們自己的</em> audit log。但刪不到 <em>這份</em>。</p>
     </div>
     <div class="mapping-card">
-      <h4>60+ 種操作分類</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg>60+ 種操作分類</h4>
       <p>Stream / pipeline / user / search / dashboard / content pack / lookup table / extractor — 所有有意義的建立 / 修改 / 刪除都被攔截分類。</p>
       <p class="muted-line">Web UI 可依使用者、method、URI、狀態碼、時間區間、是否敏感操作篩選。</p>
     </div>
     <div class="mapping-card">
-      <h4>使用者名稱解析</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="3"/><path d="M3 19a6 6 0 0 1 12 0"/><path d="M17 14h5M19.5 11.5v5"/></svg>使用者名稱解析</h4>
       <p>Basic Auth、API token、瀏覽器 session、Cookie 認證 — 全部解析回真實的 Graylog 使用者名稱。Token 前綴快取、逐使用者查詢、IP fallback。</p>
       <p class="muted-line">即使 5 個 admin 共用一個 IP,也能透過 Cookie session 解析區分。</p>
     </div>
     <div class="mapping-card">
-      <h4>敏感行為即時告警</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2H4.5z"/><path d="M10 21h4"/><path d="M12 8v3M12 13.5v.1" stroke-width="2"/></svg>敏感行為即時告警</h4>
       <p>可設定的 pattern 觸發即時通知。刪除使用者、授予 admin、安裝 content pack — 即時推播，不必等隔天的報表。</p>
     </div>
     <div class="mapping-card">
-      <h4>主動心跳</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>主動心跳</h4>
       <p>每 5 分鐘 jt-glogarch 主動透過 nginx 探測一筆，等 syslog 回來。沒回來 → 立即告警，捕捉「有人關掉轉送」這種微妙故障，不會誤報。</p>
     </div>
     <div class="mapping-card">
-      <h4>獨立保留期</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="13" height="14" rx="2"/><path d="M3 9h13M8 3v4M12 3v4"/><circle cx="19" cy="16" r="3"/><path d="M19 14v-1.5a1.5 1.5 0 0 0-1.5-1.5"/></svg>獨立保留期</h4>
       <p>稽核保留期跟歸檔保留期分開設（預設 180 天可調）。即使歸檔已被清理，操作軌跡仍保留所需期間。</p>
     </div>
   </div>
@@ -227,7 +225,7 @@ sudo systemctl enable --now jt-glogarch</code></pre>
 
 <section id="screenshots">
   <h2>畫面</h2>
-  <p class="subhead">Web UI 雙語（英文 / 繁體中文）、明暗主題切換。</p>
+  <p class="subhead">Web UI 雙語（英文 / 繁體中文）、深淺主題切換。</p>
   <div class="shots">
     <button class="shot" type="button" data-lightbox="screenshots/1_dashboard_zhtw.png">
       <img class="ss-img" src="screenshots/1_dashboard_zhtw.png" alt="儀表板" loading="lazy">

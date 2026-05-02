@@ -177,7 +177,7 @@ code, pre { font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, 
   margin-bottom: 32px;
 }
 .hero .promise strong { color: var(--text); }
-.hero .ctas { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 22px; }
+.hero .ctas { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
 
 .btn {
   display: inline-flex; align-items: center; gap: 8px;
@@ -516,14 +516,24 @@ section .subhead {
 .feature h4 {
   font-size: 15px;
   margin-bottom: 6px;
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 10px;
 }
-.feature h4::before {
+/* Fallback dot when an h4 has no inline svg.icon (kept for forward compat). */
+.feature h4:not(:has(svg.icon))::before {
   content: "";
   width: 6px; height: 6px;
   background: var(--accent);
   border-radius: 50%;
   flex-shrink: 0;
+}
+.feature h4 svg.icon,
+.mapping-card h4 svg.icon {
+  width: 20px; height: 20px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.mapping-card h4 {
+  display: flex; align-items: center; gap: 10px;
 }
 .feature p { color: var(--text-dim); font-size: 13.5px; }
 
@@ -760,7 +770,7 @@ footer .row { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap
   flex-wrap: wrap;
   gap: 8px;
   justify-content: center;
-  margin: 24px 0 8px;
+  margin: 28px 0 28px;
 }
 .promise-chips .chip {
   display: inline-flex;
