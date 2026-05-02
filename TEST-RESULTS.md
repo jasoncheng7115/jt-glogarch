@@ -4,9 +4,9 @@
 |---|---|
 | **Status** | ✅ ALL PASSED |
 | **Version** | v1.7.9 |
-| **Date** | 2026-05-02 00:59:02 UTC |
+| **Date** | 2026-05-02 04:34:16 UTC |
 | **Platform** | Python 3.10.12 / Linux 5.15.0-171-generic x86_64 |
-| **Results** | 172 passed / 1 failed / 1 skipped in 14.78s |
+| **Results** | 173 passed  / 1 skipped in 7.97s |
 | **Version Check** | ✅ OK |
 
 ## Test Output
@@ -45,15 +45,15 @@ tests/test_audit.py::test_is_noise_prepare_preview PASSED
 tests/test_audit.py::test_is_noise_non_api PASSED
 tests/test_audit.py::test_is_noise_whitelisted PASSED
 tests/test_audit.py::test_is_noise_unlisted PASSED
-tests/test_audit.py::test_cleanup_uses_audit_retention 2026-05-02 08:59:04 [info     ] No archives to clean up        retention_days=1095
-2026-05-02 08:59:04 [info     ] Cleaned audit records          deleted=1 retention_days=180
-2026-05-02 08:59:04 [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
-2026-05-02 08:59:04 [info     ] No archives to clean up        retention_days=1095
-2026-05-02 08:59:04 [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
+tests/test_audit.py::test_cleanup_uses_audit_retention 2026-05-02 12:34:20 [info     ] No archives to clean up        retention_days=1095
+2026-05-02 12:34:20 [info     ] Cleaned audit records          deleted=1 retention_days=180
+2026-05-02 12:34:20 [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
+2026-05-02 12:34:20 [info     ] No archives to clean up        retention_days=1095
+2026-05-02 12:34:20 [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
 PASSED
-tests/test_audit.py::test_cleanup_audit_no_config 2026-05-02 08:59:04 [info     ] No archives to clean up        retention_days=1095
-2026-05-02 08:59:04 [info     ] Cleaned audit records          deleted=1 retention_days=180
-2026-05-02 08:59:04 [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
+tests/test_audit.py::test_cleanup_audit_no_config 2026-05-02 12:34:20 [info     ] No archives to clean up        retention_days=1095
+2026-05-02 12:34:20 [info     ] Cleaned audit records          deleted=1 retention_days=180
+2026-05-02 12:34:20 [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
 PASSED
 tests/test_bulk_import.py::test_reserved_fields_stripped PASSED
 tests/test_bulk_import.py::test_index_name_is_deflector PASSED
@@ -77,7 +77,7 @@ tests/test_database_datetime.py::test_utc_aware_roundtrip PASSED
 tests/test_database_datetime.py::test_non_utc_aware_roundtrip PASSED
 tests/test_database_datetime.py::test_none_passthrough PASSED
 tests/test_database_datetime.py::test_str_to_dt_with_offset PASSED
-tests/test_db_rebuild.py::test_rebuild_dry_run 2026-05-02T00:59:05.172022Z [info     ] Would insert                   path=/tmp/tmptsekl126/archives/server1/2026/01/test.json.gz server=test time_from=2026-01-01T00:00:00Z
+tests/test_db_rebuild.py::test_rebuild_dry_run 2026-05-02T04:34:21.200834Z [info     ] Would insert                   path=/tmp/tmp86v0n2mm/archives/server1/2026/01/test.json.gz server=test time_from=2026-01-01T00:00:00Z
 PASSED
 tests/test_db_rebuild.py::test_rebuild_actual PASSED
 tests/test_db_rebuild.py::test_rebuild_skip_existing PASSED
@@ -96,11 +96,11 @@ tests/test_import_lock.py::test_claim_conflict PASSED
 tests/test_import_lock.py::test_release PASSED
 tests/test_import_lock.py::test_release_wrong_owner PASSED
 tests/test_import_lock.py::test_same_job_reclaim PASSED
-tests/test_integration.py::test_cross_conflict_actual_os_mapping FAILED
+tests/test_integration.py::test_cross_conflict_actual_os_mapping PASSED
 tests/test_integration.py::test_field_schema_zlib_in_preflight PASSED
 tests/test_integration.py::test_timezone_dedup_correctness PASSED
 tests/test_integration.py::test_timezone_retention_correctness PASSED
-tests/test_integration.py::test_archive_write_read_integrity 2026-05-02T00:59:16.787047Z [info     ] Archive written                messages=50 path=/tmp/tmpd_d5g6n2/test/stream1/2026/01/01/test_stream1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.00
+tests/test_integration.py::test_archive_write_read_integrity 2026-05-02T04:34:24.181406Z [info     ] Archive written                messages=50 path=/tmp/tmpkib82ryn/test/stream1/2026/01/01/test_stream1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.00
 PASSED
 tests/test_integration.py::test_coverage_ratio_timezone PASSED
 tests/test_local_admin.py::test_default_hash_is_empty PASSED
@@ -183,7 +183,7 @@ tests/test_sanitize.py::test_url_with_credentials PASSED
 tests/test_sanitize.py::test_truncation PASSED
 tests/test_sanitize.py::test_no_false_positive PASSED
 tests/test_sanitize.py::test_mixed_secrets PASSED
-tests/test_storage_ownership.py::test_fix_dir_ownership_as_root 2026-05-02T00:59:17.068396Z [warning  ] Fixing directory ownership     new_owner=jt-glogarch path=/tmp/tmpvxvwkpsc/archives/log4
+tests/test_storage_ownership.py::test_fix_dir_ownership_as_root 2026-05-02T04:34:24.687570Z [warning  ] Fixing directory ownership     new_owner=jt-glogarch path=/tmp/tmpmwn2devx/archives/log4
 PASSED
 tests/test_storage_ownership.py::test_fix_dir_ownership_not_root SKIPPED
 tests/test_storage_ownership.py::test_fix_only_under_base_path PASSED
@@ -201,61 +201,7 @@ tests/test_upgrade_script.py::test_upgrade_script_adds_retention_days PASSED
 tests/test_upgrade_script.py::test_upgrade_script_op_audit_has_retention_days PASSED
 tests/test_upgrade_script.py::test_readme_git_clone_has_sudo PASSED
 
-=================================== FAILURES ===================================
-____________________ test_cross_conflict_actual_os_mapping _____________________
-/usr/local/lib/python3.10/dist-packages/httpx/_transports/default.py:101: in map_httpcore_exceptions
-    yield
-/usr/local/lib/python3.10/dist-packages/httpx/_transports/default.py:250: in handle_request
-    resp = self._pool.handle_request(req)
-/usr/local/lib/python3.10/dist-packages/httpcore/_sync/connection_pool.py:256: in handle_request
-    raise exc from None
-/usr/local/lib/python3.10/dist-packages/httpcore/_sync/connection_pool.py:236: in handle_request
-    response = connection.handle_request(
-/usr/local/lib/python3.10/dist-packages/httpcore/_sync/connection.py:103: in handle_request
-    return self._connection.handle_request(request)
-/usr/local/lib/python3.10/dist-packages/httpcore/_sync/http11.py:136: in handle_request
-    raise exc
-/usr/local/lib/python3.10/dist-packages/httpcore/_sync/http11.py:106: in handle_request
-    ) = self._receive_response_headers(**kwargs)
-/usr/local/lib/python3.10/dist-packages/httpcore/_sync/http11.py:177: in _receive_response_headers
-    event = self._receive_event(timeout=timeout)
-/usr/local/lib/python3.10/dist-packages/httpcore/_sync/http11.py:217: in _receive_event
-    data = self._network_stream.read(
-/usr/local/lib/python3.10/dist-packages/httpcore/_backends/sync.py:126: in read
-    with map_exceptions(exc_map):
-/usr/lib/python3.10/contextlib.py:153: in __exit__
-    self.gen.throw(typ, value, traceback)
-/usr/local/lib/python3.10/dist-packages/httpcore/_exceptions.py:14: in map_exceptions
-    raise to_exc(exc) from exc
-E   httpcore.ReadTimeout: timed out
-
-The above exception was the direct cause of the following exception:
-tests/test_integration.py:103: in test_cross_conflict_actual_os_mapping
-    httpx.delete(f"{os_host}/{test_index}", auth=auth, verify=False, timeout=10)
-/usr/local/lib/python3.10/dist-packages/httpx/_api.py:426: in delete
-    return request(
-/usr/local/lib/python3.10/dist-packages/httpx/_api.py:109: in request
-    return client.request(
-/usr/local/lib/python3.10/dist-packages/httpx/_client.py:825: in request
-    return self.send(request, auth=auth, follow_redirects=follow_redirects)
-/usr/local/lib/python3.10/dist-packages/httpx/_client.py:914: in send
-    response = self._send_handling_auth(
-/usr/local/lib/python3.10/dist-packages/httpx/_client.py:942: in _send_handling_auth
-    response = self._send_handling_redirects(
-/usr/local/lib/python3.10/dist-packages/httpx/_client.py:979: in _send_handling_redirects
-    response = self._send_single_request(request)
-/usr/local/lib/python3.10/dist-packages/httpx/_client.py:1014: in _send_single_request
-    response = transport.handle_request(request)
-/usr/local/lib/python3.10/dist-packages/httpx/_transports/default.py:249: in handle_request
-    with map_httpcore_exceptions():
-/usr/lib/python3.10/contextlib.py:153: in __exit__
-    self.gen.throw(typ, value, traceback)
-/usr/local/lib/python3.10/dist-packages/httpx/_transports/default.py:118: in map_httpcore_exceptions
-    raise mapped_exc(message) from exc
-E   httpx.ReadTimeout: timed out
-=========================== short test summary info ============================
-FAILED tests/test_integration.py::test_cross_conflict_actual_os_mapping - htt...
-================== 1 failed, 172 passed, 1 skipped in 14.78s ===================
+======================== 173 passed, 1 skipped in 7.97s ========================
 ```
 
 ## Version Check

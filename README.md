@@ -673,11 +673,11 @@ Manage automated jobs. Three types are supported:
 #### Export Schedule
 
 ```
-名稱:     auto-export
-類型:     Export
-頻率:     Daily 03:00
-模式:     OpenSearch Direct
-保留:     最近 60 份 Index   ← Or "Days" for API mode
+Name:       auto-export
+Type:       Export
+Frequency:  Daily 03:00
+Mode:       OpenSearch Direct
+Retention:  Last 60 indices    ← Or "N days" for API mode
 ```
 
 For OpenSearch mode, you choose **how many recent indices** to export. The
@@ -687,10 +687,10 @@ is the active write index, which is always excluded).
 #### Cleanup Schedule
 
 ```
-名稱:     auto-cleanup
-類型:     Cleanup
-頻率:     Monthly day 1 04:00
-保留天數:  1095 天
+Name:       auto-cleanup
+Type:       Cleanup
+Frequency:  Monthly day 1 04:00
+Retention:  1095 days
 ```
 
 Removes archive files older than the retention period and updates the DB.
@@ -698,9 +698,9 @@ Removes archive files older than the retention period and updates the DB.
 #### Verify Schedule
 
 ```
-名稱:     auto-verify
-類型:     Verify
-頻率:     Monthly first Saturday 03:00
+Name:       auto-verify
+Type:       Verify
+Frequency:  Monthly first Saturday 03:00
 ```
 
 Re-verifies SHA256 checksum of all archives. Failed checksums are marked as
