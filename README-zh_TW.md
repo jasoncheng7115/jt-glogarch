@@ -291,6 +291,19 @@ OpenSearch 只保留最近的資料供搜尋。
 > 設定：OpenSearch 模式 → 匯出「保留最近 30 份 index」 → 清理保留 90 天
 
 
+### 6. 行為稽核 — 獨立追蹤 Graylog 上的所有操作
+
+法規（ISO 27001、PCI-DSS、個資法等）要求保留管理者操作軌跡，但 Graylog 內建的
+audit log 由 Graylog 本身管理，**具有 admin 權限者可以自行刪除或竄改**，從稽核
+角度不可信。jt-glogarch 透過 nginx access log → syslog 旁路，獨立側錄所有經過
+nginx 進入 Graylog 的 API 操作（建立/修改/刪除 stream、pipeline、user、search、
+content pack、lookup table…等 60 種以上），存進 SQLite，**Graylog 端 admin
+無權限存取此資料庫**。也支援敏感行為即時通知（多通道）與心跳偵測（nginx 轉送
+中斷立即告警）。
+
+> 設定：行為稽核頁 → 取得 nginx 設定範本 → 套用至各 Graylog 節點 → 啟用通知
+
+
 
 ---
 

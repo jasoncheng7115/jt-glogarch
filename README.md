@@ -296,6 +296,22 @@ recent searches.
 > Setup: OpenSearch mode → Export "keep recent 30 indices" → Cleanup with retention 90 days
 
 
+### 6. Operation Audit — Independent Tracking of Graylog Admin Actions
+
+Compliance frameworks (ISO 27001, PCI-DSS, GDPR, etc.) require an audit trail
+of administrator actions, but Graylog's built-in audit log is managed by
+Graylog itself — **any user with admin rights can delete or tamper with it**,
+which makes it untrustworthy from an auditor's perspective. `jt-glogarch`
+side-channels every API call that passes through nginx into a SQLite database
+that **Graylog admins cannot access**. It captures 60+ operation types
+(create / modify / delete of streams, pipelines, users, searches, content
+packs, lookup tables, etc.), supports real-time notifications for sensitive
+operations (multi-channel), and a heartbeat detector that alerts immediately
+if nginx forwarding is disabled.
+
+> Setup: Operation Audit page → Get nginx config template → Apply on each Graylog node → Enable notifications
+
+
 
 ---
 
