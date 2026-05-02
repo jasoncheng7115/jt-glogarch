@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jt-glogarch — Graylog Open 長期記錄歸檔工具</title>
+  <meta name="description" content="自架的 Graylog Open 6.x / 7.x 長期記錄歸檔與還原工具。串流匯出、SHA256 完整性、排程、獨立行為稽核。Apache 2.0。">
+  <meta property="og:title" content="jt-glogarch">
+  <meta property="og:description" content="補上 Graylog Open 缺少的 Archive 功能 — 自架、串流、含獨立合規稽核。">
+  <meta property="og:type" content="website">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="style.css?v=1.7.9">
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <a href="#top" class="brand">
+    <span class="logo-dot"></span>
+    <span>jt-glogarch</span>
+  </a>
+  <button class="nav-toggle" aria-label="選單" aria-expanded="false" aria-controls="nav-links">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="links" id="nav-links">
+    <a href="#install">安裝</a>
+    <a href="#flow">運作方式</a>
+    <a href="#use-cases">使用情境</a>
+    <a href="#features">功能</a>
+    <a href="#audit">行為稽核</a>
+    <a href="#screenshots">畫面</a>
+    <a href="https://github.com/jasoncheng7115/jt-glogarch" target="_blank" rel="noopener">GitHub</a>
+    <a href="index.html" class="lang">English</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <h1>記錄活得比叢集還久。</h1>
+  <p class="tagline">
+    Graylog Open 長期記錄歸檔與還原工具 — 補上 Enterprise 版才有的 Archive 功能。
+    串流匯出、SHA256 完整性驗證、時間點還原、Graylog 管理員無權刪除的獨立合規稽核。
+  </p>
+  <div class="promise-chips">
+    <span class="chip chip-cyan">Graylog Open 6.x / 7.x</span>
+    <span class="chip chip-mint">自架</span>
+    <span class="chip chip-purple">串流 · 不爆記憶體</span>
+    <span class="chip chip-amber">SHA256 驗證</span>
+    <span class="chip chip-coral">獨立稽核</span>
+    <span class="chip chip-amber">Apache 2.0</span>
+  </div>
+  <div class="ctas">
+    <a class="btn btn-primary" href="#install">三步驟安裝 →</a>
+    <a class="btn btn-ghost" href="https://github.com/jasoncheng7115/jt-glogarch" target="_blank" rel="noopener">GitHub 看原始碼</a>
+  </div>
+</header>
+
+<section id="install">
+  <div class="install">
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-target="tab-quick" type="button">快速安裝</button>
+      <button class="tab" data-target="tab-manual" type="button">手動</button>
+    </div>
+    <p class="prereq-note">
+      <strong>前置條件。</strong>
+      Linux 主機需有 <code class="kbd">python3 ≥ 3.10</code>、<code class="kbd">pip</code>、<code class="kbd">git</code>。
+      安裝指令稿會自行建立系統使用者、設好 systemd、產生自簽 SSL 憑證，並啟動 HTTPS Web UI 於
+      <code class="kbd">8990</code> port。
+    </p>
+    <div class="code-block">
+      <button class="copy-btn" data-copy="quick">複製</button>
+      <pre id="tab-quick"><code id="cmd-quick">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
+sudo bash /opt/jt-glogarch/deploy/install.sh</code></pre>
+    </div>
+    <div class="code-block" hidden id="tab-manual-wrap">
+      <button class="copy-btn" data-copy="manual">複製</button>
+      <pre id="tab-manual"><code id="cmd-manual">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
+cd /opt/jt-glogarch
+sudo pip install --no-build-isolation .
+sudo cp deploy/jt-glogarch.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now jt-glogarch</code></pre>
+    </div>
+    <dl class="post-note">
+      <dt>Web UI</dt>
+      <dd><code class="kbd">https://&lt;伺服器 IP&gt;:8990</code> <span class="muted">（用您的 Graylog 帳密登入）</span></dd>
+      <dt>設定檔</dt>
+      <dd><code class="kbd">/opt/jt-glogarch/config.yaml</code></dd>
+      <dt>記錄檢視</dt>
+      <dd><code class="kbd">journalctl -u jt-glogarch -f</code></dd>
+    </dl>
+    <p class="install-followup">
+      <strong>接著指向 Graylog。</strong>
+      編輯 <code class="kbd">config.yaml</code> 填入 Graylog API URL 與 token
+      （Graylog → System → Users → Edit tokens 產生）。可選：加上 OpenSearch 主機以啟用約 5 倍速的 Direct 模式。完整設定 → <a href="https://github.com/jasoncheng7115/jt-glogarch/blob/main/README-zh_TW.md#%E8%A8%AD%E5%AE%9A" target="_blank" rel="noopener">README · 設定</a>
+    </p>
+  </div>
+</section>
+
+<section id="flow">
+  <h2>兩條進、兩條出。</h2>
+  <p class="subhead">出去走 API 或 OpenSearch Direct，回來走 GELF 或 OpenSearch Bulk。跨模式重複資料刪除確保資料一致。</p>
+  <div class="modes">
+    <div class="mode">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14M13 5l7 7-7 7"/>
+        </svg>
+      </div>
+      <h3>Graylog API 匯出</h3>
+      <p>標準 REST API 路徑，相容任何 Graylog Open 安裝。支援串流篩選、突破 10K offset 限制的時間視窗分頁、JVM heap 監控（Graylog 過載時自動暫停）。</p>
+    </div>
+    <div class="mode">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12l4 4 14-14M3 18l4 4 14-14"/>
+        </svg>
+      </div>
+      <h3>OpenSearch Direct 匯出</h3>
+      <p>繞過 Graylog 直接查 OpenSearch，<strong>速度約 5 倍</strong>。逐 index 匯出、<code class="kbd">search_after</code> 分頁無 10K 限制、多主機 failover、500/502/503/429 自動重試。</p>
+    </div>
+    <div class="mode">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12H7M13 5l-7 7 7 7"/>
+        </svg>
+      </div>
+      <h3>GELF 匯入</h3>
+      <p>預設還原方式。每筆訊息透過 GELF 重播完整 Graylog input → process → indexer 處理鏈。Pipeline 規則、Extractor、Stream routing、告警全部沿用。</p>
+    </div>
+    <div class="mode">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 18l-4-4-14 14M21 12l-4-4-14 14"/>
+        </svg>
+      </div>
+      <h3>OpenSearch Bulk 匯入</h3>
+      <p><strong>速度 5～10 倍</strong>，透過 <code class="kbd">_bulk</code> 直接寫入 OpenSearch，完全跳過 Graylog 處理流程。適合「原樣還原」場景：災難復原、遷移、時間點調查。</p>
+    </div>
+  </div>
+</section>
+
+<section id="use-cases">
+  <h2>六種用法，一份歸檔。</h2>
+  <p class="subhead">資料一旦壓縮成附帶 SHA256 校驗的 <code class="kbd">.json.gz</code>，從以下任一角度都能取用。</p>
+  <div class="features">
+    <div class="feature">
+      <h4>法規遵循記錄保留</h4>
+      <p>資安要求認證記錄保留 1 年，但 Graylog 熱索引保留期維持 90 天。排程每日匯出篩選的串流，讓便宜的儲存吃下 90 天以上的歸檔。</p>
+    </div>
+    <div class="feature">
+      <h4>鑑識調查還原</h4>
+      <p>6 個月前的資安事件需要調查，但記錄已從 OpenSearch 滾掉。歸檔清單上找到、按匯入、指向 Graylog 與 GELF — 重新上線、可搜尋。</p>
+    </div>
+    <div class="feature">
+      <h4>叢集遷移</h4>
+      <p>從舊 Graylog 搬到新 Graylog。OpenSearch Direct 把整個叢集快速匯出，GELF 或 Bulk 把它匯入新叢集。沒有廠商鎖定、沒有雲端中間人。</p>
+    </div>
+    <div class="feature">
+      <h4>異地備援</h4>
+      <p>把遠端儲存掛在 <code class="kbd">/data/graylog-archives</code>，排程每日匯出。即使主 Graylog 叢集掛了，異地仍保有可搜尋的歸檔。</p>
+    </div>
+    <div class="feature">
+      <h4>降低儲存成本</h4>
+      <p>OpenSearch hot tier 很貴。把舊 indices 歸檔到壓縮儲存（約 10 倍壓縮），讓現役叢集只負責近期搜尋。舊資料幾分鐘內仍可恢復。</p>
+    </div>
+    <div class="feature">
+      <h4>獨立合規稽核</h4>
+      <p>Graylog 內建 audit log 是 admin 可刪改的。<strong>jt-glogarch</strong> 的獨立行為稽核記下叢集真實的操作軌跡，存在 Graylog admin 沒權限的資料庫裡。</p>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <h2>為長期穩定運作設計。</h2>
+  <p class="subhead">設計目標就是在繁忙的 Graylog 叢集旁邊安靜跑好幾年。</p>
+  <div class="features">
+    <div class="feature"><h4>串流寫入</h4><p>從不把訊息全載入記憶體。<code class="kbd">.json.gz</code> 預設每 50 MB 切檔。GB 級 index 也不會 OOM。</p></div>
+    <div class="feature"><h4>智慧重複資料刪除</h4><p>同模式精確比對防止重匯出。跨模式覆蓋率檢查讓 API/OpenSearch 切換時不會重複。</p></div>
+    <div class="feature"><h4>斷點續傳</h4><p>服務匯出途中當掉？重啟後從上次完成的區段續跑。資料不漏、不重複。</p></div>
+    <div class="feature"><h4>SHA256 完整性</h4><p>每份歸檔附 <code class="kbd">.sha256</code>。排程的並行驗證會定期重算雜湊，壞檔在儀表板上會被標記。</p></div>
+    <div class="feature"><h4>Cron 排程</h4><p>匯出、清理、驗證 — POSIX cron 慣例（0=週日）。Web UI 上的編輯立即生效，不必重啟服務。</p></div>
+    <div class="feature"><h4>JVM heap 防護</h4><p>API 匯出在 Graylog heap 超過 85% 時自動暫停；GC 回收後自動繼續；5 分鐘未恢復才停止。Graylog 不會被你的歸檔工作拖垮。</p></div>
+    <div class="feature"><h4>合規 Pre-flight</h4><p>GELF 或 Bulk 送出前，先檢查目標容量、修復 mapping 衝突；送完還會核對 indexer 失敗數。零 indexer 失敗 = 合規通過。</p></div>
+    <div class="feature"><h4>多通道通知</h4><p>Telegram · Discord · Slack · Microsoft Teams · Nextcloud Talk · Email。雙語（EN / 繁體中文）。每個事件可獨立啟停。</p></div>
+    <div class="feature"><h4>Web UI + CLI</h4><p>完整 Web UI（明/暗主題、英/繁中）外加 <code class="kbd">glogarch</code> CLI。同操作、同資料庫，看你愛哪個。</p></div>
+  </div>
+</section>
+
+<section id="audit">
+  <h2>連 admin 都改不掉的稽核。</h2>
+  <p class="subhead">
+    法規（ISO 27001、PCI-DSS、個資法等）要求保留管理者操作軌跡。Graylog 內建 audit log 由
+    Graylog 自身管理 — 任何具有 admin 權限者都能修改或刪除。從稽核角度:不可信。
+  </p>
+  <div class="mapping-grid">
+    <div class="mapping-card">
+      <h4>nginx access log → syslog</h4>
+      <p>nginx 擋在 Graylog 前面，把每筆 API 呼叫透過 UDP syslog 旁路給 <strong>jt-glogarch</strong> 的 listener。獨立路徑、獨立儲存。</p>
+      <p class="muted-line">Graylog admin 可以刪 <em>他們自己的</em> audit log。但刪不到 <em>這份</em>。</p>
+    </div>
+    <div class="mapping-card">
+      <h4>60+ 種操作分類</h4>
+      <p>Stream / pipeline / user / search / dashboard / content pack / lookup table / extractor — 所有有意義的建立 / 修改 / 刪除都被攔截分類。</p>
+      <p class="muted-line">Web UI 可依使用者、method、URI、狀態碼、時間區間、是否敏感操作篩選。</p>
+    </div>
+    <div class="mapping-card">
+      <h4>使用者名稱解析</h4>
+      <p>Basic Auth、API token、瀏覽器 session、Cookie 認證 — 全部解析回真實的 Graylog 使用者名稱。Token 前綴快取、逐使用者查詢、IP fallback。</p>
+      <p class="muted-line">即使 5 個 admin 共用一個 IP,也能透過 Cookie session 解析區分。</p>
+    </div>
+    <div class="mapping-card">
+      <h4>敏感行為即時告警</h4>
+      <p>可設定的 pattern 觸發即時通知。刪除使用者、授予 admin、安裝 content pack — 即時推播，不必等隔天的報表。</p>
+    </div>
+    <div class="mapping-card">
+      <h4>主動心跳</h4>
+      <p>每 5 分鐘 jt-glogarch 主動透過 nginx 探測一筆，等 syslog 回來。沒回來 → 立即告警，捕捉「有人關掉轉送」這種微妙故障，不會誤報。</p>
+    </div>
+    <div class="mapping-card">
+      <h4>獨立保留期</h4>
+      <p>稽核保留期跟歸檔保留期分開設（預設 180 天可調）。即使歸檔已被清理，操作軌跡仍保留所需期間。</p>
+    </div>
+  </div>
+  <p class="mapping-cta">
+    設定步驟與 nginx 設定範本 → <a href="https://github.com/jasoncheng7115/jt-glogarch/blob/main/README-zh_TW.md#%E8%A1%8C%E7%82%BA%E7%A8%BD%E6%A0%B8" target="_blank" rel="noopener">README · 行為稽核</a>
+  </p>
+</section>
+
+<section id="screenshots">
+  <h2>畫面</h2>
+  <p class="subhead">Web UI 雙語（英文 / 繁體中文）、明暗主題切換。</p>
+  <div class="shots">
+    <button class="shot" type="button" data-lightbox="screenshots/1_dashboard_zhtw.png">
+      <img class="ss-img" src="screenshots/1_dashboard_zhtw.png" alt="儀表板" loading="lazy">
+      <div class="label">儀表板<small>迷你折線卡片、伺服器狀態、最近作業</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="screenshots/2_archives_zhtw.png">
+      <img class="ss-img" src="screenshots/2_archives_zhtw.png" alt="歸檔清單" loading="lazy">
+      <div class="label">歸檔清單<small>可篩選列表、批次匯入、時間軸選取</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="screenshots/3_jobs_zhtw.png">
+      <img class="ss-img" src="screenshots/3_jobs_zhtw.png" alt="作業歷程" loading="lazy">
+      <div class="label">作業歷程<small>即時進度（SSE）、耗時、取消</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="screenshots/4_schedules_zhtw.png">
+      <img class="ss-img" src="screenshots/4_schedules_zhtw.png" alt="排程作業" loading="lazy">
+      <div class="label">排程作業<small>Cron 編輯器、行內進度、立即執行</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="screenshots/5_op_audit_zhtw.png">
+      <img class="ss-img" src="screenshots/5_op_audit_zhtw.png" alt="行為稽核" loading="lazy">
+      <div class="label">行為稽核<small>獨立合規軌跡、可篩選</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="screenshots/6_notify_zhtw.png">
+      <img class="ss-img" src="screenshots/6_notify_zhtw.png" alt="通知設定" loading="lazy">
+      <div class="label">通知設定<small>6 個通道、雙語、各事件獨立觸發</small></div>
+    </button>
+  </div>
+
+  <!-- Lightbox -->
+  <div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-label="畫面預覽">
+    <button class="lightbox-close" type="button" aria-label="關閉">×</button>
+    <img class="lightbox-img" src="" alt="完整畫面">
+  </div>
+</section>
+
+<footer>
+  <div class="row">
+    <a href="https://github.com/jasoncheng7115/jt-glogarch">GitHub</a>
+    <a href="https://github.com/jasoncheng7115/jt-glogarch/blob/main/LICENSE">Apache 2.0</a>
+    <a href="https://github.com/jasoncheng7115/jt-glogarch/blob/main/CHANGELOG-zh_TW.md">變更記錄</a>
+    <a href="index.html">English</a>
+  </div>
+  <div>jt-glogarch v1.7.9 · © 2026 Jason Cheng (Jason Tools)</div>
+</footer>
+
+<script>
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.querySelectorAll('.install .code-block').forEach(b => b.hidden = true);
+      const targetPre = document.getElementById(tab.dataset.target);
+      if (targetPre) targetPre.closest('.code-block').hidden = false;
+    });
+  });
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const code = document.getElementById('cmd-' + btn.dataset.copy).innerText;
+      try {
+        await navigator.clipboard.writeText(code);
+        const orig = btn.innerText; btn.innerText = '已複製';
+        setTimeout(() => btn.innerText = orig, 1200);
+      } catch (e) {}
+    });
+  });
+  (function () {
+    const lb = document.getElementById('lightbox');
+    if (!lb) return;
+    const lbImg = lb.querySelector('.lightbox-img');
+    const closeBtn = lb.querySelector('.lightbox-close');
+    const open = (src) => { lbImg.src = src; lb.hidden = false; document.body.style.overflow = 'hidden'; };
+    const close = () => { lb.hidden = true; lbImg.src = ''; document.body.style.overflow = ''; };
+    document.querySelectorAll('.shot[data-lightbox]').forEach(btn => {
+      btn.addEventListener('click', () => open(btn.dataset.lightbox));
+    });
+    closeBtn.addEventListener('click', close);
+    lb.addEventListener('click', e => { if (e.target === lb) close(); });
+    document.addEventListener('keydown', e => { if (!lb.hidden && e.key === 'Escape') close(); });
+  })();
+  (function () {
+    const nav = document.getElementById('nav');
+    const btn = nav && nav.querySelector('.nav-toggle');
+    const links = nav && nav.querySelector('.links');
+    if (!nav || !btn || !links) return;
+    const close = () => { nav.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); };
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const open = nav.classList.toggle('open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    links.addEventListener('click', e => { if (e.target.tagName === 'A') close(); });
+    document.addEventListener('click', e => { if (!nav.contains(e.target)) close(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+  })();
+</script>
+
+</body>
+</html>

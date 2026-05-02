@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jt-glogarch — Long-term Log Archival for Graylog Open</title>
+  <meta name="description" content="Self-hosted long-term log archival and restoration for Graylog Open 6.x / 7.x. Streaming export, SHA256 integrity, schedules, independent operation audit. Apache 2.0.">
+  <meta property="og:title" content="jt-glogarch">
+  <meta property="og:description" content="The archive feature Graylog Open is missing — self-hosted, streaming, with independent compliance audit.">
+  <meta property="og:type" content="website">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="style.css?v=1.7.9">
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <a href="#top" class="brand">
+    <span class="logo-dot"></span>
+    <span>jt-glogarch</span>
+  </a>
+  <button class="nav-toggle" aria-label="Menu" aria-expanded="false" aria-controls="nav-links">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="links" id="nav-links">
+    <a href="#install">Install</a>
+    <a href="#flow">How it works</a>
+    <a href="#use-cases">Use cases</a>
+    <a href="#features">Features</a>
+    <a href="#audit">Audit</a>
+    <a href="#screenshots">Screenshots</a>
+    <a href="https://github.com/jasoncheng7115/jt-glogarch" target="_blank" rel="noopener">GitHub</a>
+    <a href="index_zh-TW.html" class="lang">繁體中文</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <h1>Logs that survive your cluster.</h1>
+  <p class="tagline">
+    Long-term log archival and restoration for Graylog Open — the feature
+    only the Enterprise edition ships. Streaming exports, SHA256 integrity,
+    point-in-time restore, and an independent compliance audit Graylog admins
+    can't tamper with.
+  </p>
+  <div class="promise-chips">
+    <span class="chip chip-cyan">Graylog Open 6.x / 7.x</span>
+    <span class="chip chip-mint">Self-hosted</span>
+    <span class="chip chip-purple">Streaming · no OOM</span>
+    <span class="chip chip-amber">SHA256 verified</span>
+    <span class="chip chip-coral">Independent audit</span>
+    <span class="chip chip-amber">Apache 2.0</span>
+  </div>
+  <div class="ctas">
+    <a class="btn btn-primary" href="#install">Three-step install →</a>
+    <a class="btn btn-ghost" href="https://github.com/jasoncheng7115/jt-glogarch" target="_blank" rel="noopener">View on GitHub</a>
+  </div>
+</header>
+
+<section id="install">
+  <div class="install">
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-target="tab-quick" type="button">Quick install</button>
+      <button class="tab" data-target="tab-manual" type="button">Manual</button>
+    </div>
+    <p class="prereq-note">
+      <strong>Prerequisites.</strong>
+      Linux host with <code class="kbd">python3 ≥ 3.10</code>, <code class="kbd">pip</code>, and <code class="kbd">git</code>.
+      The installer creates a system user, sets up systemd, generates a self-signed
+      cert and brings up the Web UI on HTTPS port <code class="kbd">8990</code>.
+    </p>
+    <div class="code-block">
+      <button class="copy-btn" data-copy="quick">copy</button>
+      <pre id="tab-quick"><code id="cmd-quick">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
+sudo bash /opt/jt-glogarch/deploy/install.sh</code></pre>
+    </div>
+    <div class="code-block" hidden id="tab-manual-wrap">
+      <button class="copy-btn" data-copy="manual">copy</button>
+      <pre id="tab-manual"><code id="cmd-manual">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
+cd /opt/jt-glogarch
+sudo pip install --no-build-isolation .
+sudo cp deploy/jt-glogarch.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now jt-glogarch</code></pre>
+    </div>
+    <dl class="post-note">
+      <dt>Web UI</dt>
+      <dd><code class="kbd">https://&lt;server-ip&gt;:8990</code> <span class="muted">(login with your Graylog credentials)</span></dd>
+      <dt>Config</dt>
+      <dd><code class="kbd">/opt/jt-glogarch/config.yaml</code></dd>
+      <dt>Logs</dt>
+      <dd><code class="kbd">journalctl -u jt-glogarch -f</code></dd>
+    </dl>
+    <p class="install-followup">
+      <strong>Then point it at Graylog.</strong>
+      Edit <code class="kbd">config.yaml</code> with your Graylog API URL and a token
+      (Graylog → System → Users → Edit tokens). Optional: add OpenSearch hosts to
+      enable the ~5× faster Direct mode. Full setup → <a href="https://github.com/jasoncheng7115/jt-glogarch#configuration" target="_blank" rel="noopener">README · Configuration</a>
+    </p>
+  </div>
+</section>
+
+<section id="flow">
+  <h2>Two paths in. Two paths out.</h2>
+  <p class="subhead">Pick API or OpenSearch Direct on the way out — pick GELF or OpenSearch Bulk on the way back in. Cross-mode dedup keeps everything coherent.</p>
+  <div class="modes">
+    <div class="mode">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14M13 5l7 7-7 7"/>
+        </svg>
+      </div>
+      <h3>Graylog API export</h3>
+      <p>Standard REST API path. Works with any Graylog Open install. Stream filters, time-window pagination beyond the 10K offset limit, JVM heap monitor that auto-pauses when Graylog gets stressed.</p>
+    </div>
+    <div class="mode">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12l4 4 14-14M3 18l4 4 14-14"/>
+        </svg>
+      </div>
+      <h3>OpenSearch Direct export</h3>
+      <p>Bypasses Graylog and queries OpenSearch directly. <strong>~5× faster</strong>. Per-index export with <code class="kbd">search_after</code> pagination (no 10K limit), host failover, transient retry on 500/502/503/429.</p>
+    </div>
+    <div class="mode">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12H7M13 5l-7 7 7 7"/>
+        </svg>
+      </div>
+      <h3>GELF import</h3>
+      <p>Default restore path. Each message replays through the full Graylog input → process → indexer chain. Pipeline rules, extractors, stream routing, alerts — all preserved.</p>
+    </div>
+    <div class="mode">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 18l-4-4-14 14M21 12l-4-4-14 14"/>
+        </svg>
+      </div>
+      <h3>OpenSearch Bulk import</h3>
+      <p><strong>5–10× faster</strong> direct write to OpenSearch via <code class="kbd">_bulk</code>. Skips Graylog processing entirely. For "restore as-is" — disaster recovery, migration, point-in-time investigations.</p>
+    </div>
+  </div>
+</section>
+
+<section id="use-cases">
+  <h2>Six things you'll do with it.</h2>
+  <p class="subhead">The same archive serves multiple needs — once the data lives in compressed <code class="kbd">.json.gz</code> files with checksums, you can pull from any of these angles.</p>
+  <div class="features">
+    <div class="feature">
+      <h4>Compliance retention</h4>
+      <p>Keep 1 year of authentication logs while Graylog's hot index retention stays at 90 days. Schedule a daily stream-filtered export and let cheap storage take everything past 90 days.</p>
+    </div>
+    <div class="feature">
+      <h4>Forensic restore</h4>
+      <p>An incident from 6 months ago needs investigation but those logs rotated out of OpenSearch. Find the archive, click Import, point at a Graylog instance with GELF — back online and searchable.</p>
+    </div>
+    <div class="feature">
+      <h4>Cluster migration</h4>
+      <p>Move from old Graylog to new Graylog. OpenSearch Direct exports the whole cluster fast, GELF or Bulk imports it into the new one. No vendor lock-in, no cloud middleman.</p>
+    </div>
+    <div class="feature">
+      <h4>Disaster recovery</h4>
+      <p>Mount remote storage at <code class="kbd">/data/graylog-archives</code> and schedule daily exports. Even if your live Graylog cluster dies, you keep searchable archives at another site.</p>
+    </div>
+    <div class="feature">
+      <h4>Cost reduction</h4>
+      <p>OpenSearch hot tier is expensive. Archive older indices to compressed storage (~10× compression), let the active cluster carry only recent searches. Old data still recoverable in minutes.</p>
+    </div>
+    <div class="feature">
+      <h4>Independent audit</h4>
+      <p>Graylog's built-in audit log is admin-deletable. <strong>jt-glogarch</strong>'s independent operation audit captures what really happened on the cluster, in a database Graylog admins don't own.</p>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <h2>Engineered for the long haul.</h2>
+  <p class="subhead">Built to run quietly for years against a busy Graylog cluster.</p>
+  <div class="features">
+    <div class="feature"><h4>Streaming write</h4><p>Never holds messages in memory. <code class="kbd">.json.gz</code> chunks roll over at 50 MB by default. OOM-proof on multi-GB indices.</p></div>
+    <div class="feature"><h4>Smart deduplication</h4><p>Same-mode exact match prevents re-export. Cross-mode coverage check prevents duplicates when switching between API and OpenSearch.</p></div>
+    <div class="feature"><h4>Resume from interruption</h4><p>Service crash mid-export? Restart and continue from the last completed chunk. Nothing lost, nothing duplicated.</p></div>
+    <div class="feature"><h4>SHA256 integrity</h4><p>Every archive ships with a <code class="kbd">.sha256</code> sidecar. Scheduled re-verification runs in parallel workers; corrupted files are flagged on the dashboard.</p></div>
+    <div class="feature"><h4>Cron-based schedules</h4><p>Export, cleanup, verify — POSIX cron with the day-of-week numbering you actually expect. Live edits via Web UI take effect immediately, no service restart.</p></div>
+    <div class="feature"><h4>JVM heap guard</h4><p>API exports auto-pause when Graylog heap exceeds 85%. Resume after GC recovers; stop after 5 minutes if it doesn't. Your Graylog stays alive.</p></div>
+    <div class="feature"><h4>Pre-flight compliance</h4><p>Before any GELF or Bulk send, jt-glogarch checks target capacity, fixes mapping conflicts, and reconciles indexer failures after import. Zero indexer failures = compliance pass.</p></div>
+    <div class="feature"><h4>Notifications</h4><p>Telegram · Discord · Slack · Microsoft Teams · Nextcloud Talk · Email. Bilingual (EN / 繁體中文). Independent triggers per event type.</p></div>
+    <div class="feature"><h4>Web UI + CLI</h4><p>Full Web UI (light/dark, EN/zh-TW) plus a <code class="kbd">glogarch</code> CLI for scripting. Same operations, same database, your choice.</p></div>
+  </div>
+</section>
+
+<section id="audit">
+  <h2>Audit that admins can't tamper with.</h2>
+  <p class="subhead">
+    Compliance frameworks (ISO 27001, PCI-DSS, GDPR…) require an audit trail
+    of administrator actions. Graylog's built-in audit log is managed by
+    Graylog itself — anyone with admin rights can delete or modify it.
+    From an auditor's perspective: untrustworthy.
+  </p>
+  <div class="mapping-grid">
+    <div class="mapping-card">
+      <h4>nginx access log → syslog</h4>
+      <p>nginx in front of Graylog forwards every API call to <strong>jt-glogarch</strong>'s syslog listener over UDP. Independent path, independent storage.</p>
+      <p class="muted-line">Graylog admins can delete <em>their own</em> audit log. They cannot delete <em>this</em> one.</p>
+    </div>
+    <div class="mapping-card">
+      <h4>60+ operation types</h4>
+      <p>Stream / pipeline / user / search / dashboard / content pack / lookup table / extractor — every meaningful create / modify / delete is captured and classified.</p>
+      <p class="muted-line">Filterable in Web UI by user, method, URI, status, time range, sensitive-only.</p>
+    </div>
+    <div class="mapping-card">
+      <h4>Resolved usernames</h4>
+      <p>Basic Auth, API tokens, browser sessions, cookie auth — all resolve to the actual Graylog username. Token prefix cache, per-user lookups, IP fallback.</p>
+      <p class="muted-line">Even when 5 admins share an IP, cookie-based session resolution distinguishes them.</p>
+    </div>
+    <div class="mapping-card">
+      <h4>Sensitive-operation alerts</h4>
+      <p>Configurable patterns trigger real-time notifications via your channels. User deletions, admin grants, content pack installs — pings as they happen, not in next morning's report.</p>
+    </div>
+    <div class="mapping-card">
+      <h4>Active heartbeat</h4>
+      <p>Every 5 minutes jt-glogarch probes through nginx and watches for the syslog echo. Quiet pipeline → instant alert. Catches "someone disabled the forwarding" without false positives.</p>
+    </div>
+    <div class="mapping-card">
+      <h4>Independent retention</h4>
+      <p>Audit retention is separate from archive retention (default 180 days, tunable). Even if log archives are pruned, the operation history stays as long as you need.</p>
+    </div>
+  </div>
+  <p class="mapping-cta">
+    Setup steps + nginx config template → <a href="https://github.com/jasoncheng7115/jt-glogarch#operation-audit" target="_blank" rel="noopener">README · Operation Audit</a>
+  </p>
+</section>
+
+<section id="screenshots">
+  <h2>Screenshots</h2>
+  <p class="subhead">Web UI is bilingual (EN / 繁體中文) with light and dark themes.</p>
+  <div class="shots">
+    <button class="shot" type="button" data-lightbox="screenshots/1_dashboard_en.png">
+      <img class="ss-img" src="screenshots/1_dashboard_en.png" alt="Dashboard" loading="lazy">
+      <div class="label">Dashboard<small>Sparkline cards, server status, recent jobs</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="screenshots/2_archives_en.png">
+      <img class="ss-img" src="screenshots/2_archives_en.png" alt="Archive list" loading="lazy">
+      <div class="label">Archives<small>Filterable list, batch import, time-range timeline</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="screenshots/3_jobs_en.png">
+      <img class="ss-img" src="screenshots/3_jobs_en.png" alt="Job history" loading="lazy">
+      <div class="label">Job history<small>Real-time progress (SSE), elapsed time, cancel</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="screenshots/4_schedules_en.png">
+      <img class="ss-img" src="screenshots/4_schedules_en.png" alt="Schedules" loading="lazy">
+      <div class="label">Schedules<small>Cron editor, inline progress, "Run now" for any type</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="screenshots/5_op_audit_en.png">
+      <img class="ss-img" src="screenshots/5_op_audit_en.png" alt="Operation audit" loading="lazy">
+      <div class="label">Operation audit<small>Independent compliance trail, filterable</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="screenshots/6_notify_en.png">
+      <img class="ss-img" src="screenshots/6_notify_en.png" alt="Notifications" loading="lazy">
+      <div class="label">Notifications<small>6 channels, bilingual, per-event triggers</small></div>
+    </button>
+  </div>
+
+  <!-- Lightbox -->
+  <div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-label="Screenshot preview">
+    <button class="lightbox-close" type="button" aria-label="Close">×</button>
+    <img class="lightbox-img" src="" alt="Full-size screenshot">
+  </div>
+</section>
+
+<footer>
+  <div class="row">
+    <a href="https://github.com/jasoncheng7115/jt-glogarch">GitHub</a>
+    <a href="https://github.com/jasoncheng7115/jt-glogarch/blob/main/LICENSE">Apache 2.0</a>
+    <a href="https://github.com/jasoncheng7115/jt-glogarch/blob/main/CHANGELOG.md">Changelog</a>
+    <a href="index_zh-TW.html">繁體中文</a>
+  </div>
+  <div>jt-glogarch v1.7.9 · © 2026 Jason Cheng (Jason Tools)</div>
+</footer>
+
+<script>
+  // Tab switcher — toggles the .code-block wrapper, not the inner <pre>,
+  // so the copy button (positioned on the wrapper) is shown/hidden too.
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.querySelectorAll('.install .code-block').forEach(b => b.hidden = true);
+      const targetPre = document.getElementById(tab.dataset.target);
+      if (targetPre) targetPre.closest('.code-block').hidden = false;
+    });
+  });
+  // Copy buttons
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const code = document.getElementById('cmd-' + btn.dataset.copy).innerText;
+      try {
+        await navigator.clipboard.writeText(code);
+        const orig = btn.innerText; btn.innerText = 'copied';
+        setTimeout(() => btn.innerText = orig, 1200);
+      } catch (e) {}
+    });
+  });
+
+  // Lightbox — click a screenshot tile to expand inline; Esc / X / outside click closes.
+  (function () {
+    const lb = document.getElementById('lightbox');
+    if (!lb) return;
+    const lbImg = lb.querySelector('.lightbox-img');
+    const closeBtn = lb.querySelector('.lightbox-close');
+    const open = (src) => {
+      lbImg.src = src;
+      lb.hidden = false;
+      document.body.style.overflow = 'hidden';
+    };
+    const close = () => {
+      lb.hidden = true;
+      lbImg.src = '';
+      document.body.style.overflow = '';
+    };
+    document.querySelectorAll('.shot[data-lightbox]').forEach(btn => {
+      btn.addEventListener('click', () => open(btn.dataset.lightbox));
+    });
+    closeBtn.addEventListener('click', close);
+    lb.addEventListener('click', e => { if (e.target === lb) close(); });
+    document.addEventListener('keydown', e => { if (!lb.hidden && e.key === 'Escape') close(); });
+  })();
+
+  // Mobile nav — hamburger toggles the link drawer; tapping a link or
+  // outside the nav closes it.
+  (function () {
+    const nav = document.getElementById('nav');
+    const btn = nav && nav.querySelector('.nav-toggle');
+    const links = nav && nav.querySelector('.links');
+    if (!nav || !btn || !links) return;
+    const close = () => { nav.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); };
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const open = nav.classList.toggle('open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    links.addEventListener('click', e => { if (e.target.tagName === 'A') close(); });
+    document.addEventListener('click', e => { if (!nav.contains(e.target)) close(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+  })();
+</script>
+
+</body>
+</html>
