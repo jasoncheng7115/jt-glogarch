@@ -2,6 +2,14 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.7.10] - 2026-05-03
+
+### Fixed — Job History "Records" column was misleading for verify and cleanup
+
+- The Job History column header read "Records" / "記錄數", but for verify the cell shows the count of *archive files* scanned and for cleanup the count of *files deleted*. A reader could easily mistake "verify completed: 3,454" as "only 3,454 messages verified" when in fact 3,454 archive files containing millions of messages had been verified.
+- Fix: column header renamed to neutral "Processed" / "處理量", and each cell now appends an explicit unit per `job_type` — `records / 筆` for export and import, `archives / 份` for verify, `files / 個檔` for cleanup. Three call sites of `formatRecords()` updated to pass `j.job_type`.
+- Also factored out a separate `unit_records` i18n key for the four other places (archive timeline tooltip, export-complete inline status, op-audit total count) that had been reusing `th_messages` purely to render the word "records" — those now no longer change meaning when the table header gets renamed in the future.
+
 ## [1.7.9] - 2026-05-02
 
 ### Fixed — Schedules with day-of-week fired one day off (critical correctness)

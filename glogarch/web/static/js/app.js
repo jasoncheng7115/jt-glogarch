@@ -85,11 +85,22 @@ function formatNumber(n) {
     return (n || 0).toLocaleString();
 }
 
-function formatRecords(done, total) {
+function _unitFor(jobType) {
+    // verify counts archive files (份), cleanup counts deleted files (個檔),
+    // export/import count messages (筆). Header reads "Processed" / "處理量"
+    // and the row appends the right unit so "3,454" never gets misread as
+    // "only 3,454 messages" when verify actually scanned 3,454 archives
+    // containing millions of messages.
+    if (jobType === 'verify')  return t('unit_archives');
+    if (jobType === 'cleanup') return t('unit_files');
+    return t('unit_records'); // export, import, default
+}
+function formatRecords(done, total, jobType) {
     const d = formatNumber(done);
-    if (!total) return d;
+    const u = jobType ? ` <span style="color:var(--text-muted);font-size:0.85em">${_unitFor(jobType)}</span>` : '';
+    if (!total) return `${d}${u}`;
     const t_ = formatNumber(total);
-    return `<span style="white-space:nowrap"><strong>${d}</strong> <span style="color:var(--text-muted);font-size:0.8em;opacity:0.7">of</span> <span style="color:var(--text-muted);font-size:0.9em">${t_}</span></span>`;
+    return `<span style="white-space:nowrap"><strong>${d}</strong> <span style="color:var(--text-muted);font-size:0.8em;opacity:0.7">of</span> <span style="color:var(--text-muted);font-size:0.9em">${t_}</span>${u}</span>`;
 }
 
 function formatDT(iso) {
@@ -250,7 +261,7 @@ async function loadDashboard() {
                 <td>${j.job_type} ${badges}</td>
                 <td>${statusBadge(j.status, j.error_message)}</td>
                 <td>${j.progress_pct.toFixed(0)}%</td>
-                <td style="text-align:right">${isDim ? '<span style="color:var(--text-muted);font-size:0.85em">' + t('job_no_new_data') + '</span>' : formatRecords(j.messages_done, j.messages_total)}</td>
+                <td style="text-align:right">${isDim ? '<span style="color:var(--text-muted);font-size:0.85em">' + t('job_no_new_data') + '</span>' : formatRecords(j.messages_done, j.messages_total, j.job_type)}</td>
                 <td>${formatDT(j.started_at)}</td>
                 <td>${formatElapsed(j.started_at, j.completed_at)}</td>
             </tr>`;
@@ -1404,7 +1415,7 @@ async function loadApiCoverage(el) {
 
         // Stats
         html += `<div style="display:flex;gap:15px;margin-top:8px;font-size:0.8em;color:var(--text-muted)">`;
-        html += `<span><span style="display:inline-block;width:10px;height:10px;background:var(--success);border-radius:2px;margin-right:3px;opacity:0.7"></span>${t('api_archived')}: ${formatNumber(stats.total)} ${t('nav_archives').toLowerCase()}, ${formatNumber(stats.total_messages)} ${t('th_messages').toLowerCase()}</span>`;
+        html += `<span><span style="display:inline-block;width:10px;height:10px;background:var(--success);border-radius:2px;margin-right:3px;opacity:0.7"></span>${t('api_archived')}: ${formatNumber(stats.total)} ${t('nav_archives').toLowerCase()}, ${formatNumber(stats.total_messages)} ${t('unit_records')}</span>`;
         if (latest < now) {
             const gapHours = Math.round((now - latest) / 3600000);
             html += `<span><span style="display:inline-block;width:10px;height:10px;background:var(--danger);border-radius:2px;margin-right:3px;opacity:0.3"></span>${t('api_not_archived')}: ~${gapHours}h</span>`;
@@ -1569,7 +1580,7 @@ async function startExport() {
                     } else if ((job.messages_done || 0) === 0) {
                         if (text) text.innerHTML = `<span style="color:var(--warning)">${t('export_no_data')}</span>`;
                     } else {
-                        if (text) text.innerHTML = `<span class="status-completed">${t('progress_completed')} (${formatNumber(job.messages_done)} ${t('th_messages').toLowerCase()})</span>`;
+                        if (text) text.innerHTML = `<span class="status-completed">${t('progress_completed')} (${formatNumber(job.messages_done)} ${t('unit_records')})</span>`;
                     }
                     resetBtn();
                     return;
@@ -1604,7 +1615,7 @@ async function loadJobs() {
         if (j.status === 'completed' && j.messages_done === 0 && !j.error_message) {
             recordsHtml = `<span style="color:var(--text-muted);font-size:0.85em">${t('job_no_new_data')}</span>`;
         } else {
-            recordsHtml = formatRecords(j.messages_done, j.messages_total);
+            recordsHtml = formatRecords(j.messages_done, j.messages_total, j.job_type);
         }
 
         // Source + mode badges
@@ -2035,7 +2046,7 @@ function watchJob(jobId, type, onComplete) {
             } else if (msgs === 0) {
                 text.innerHTML = `<span style="color:var(--warning)">${t('export_no_data')}</span>`;
             } else {
-                let html = `<span class="status-completed">${t('progress_completed')} (${formatNumber(msgs)} ${t('th_messages').toLowerCase()})</span>`;
+                let html = `<span class="status-completed">${t('progress_completed')} (${formatNumber(msgs)} ${t('unit_records')})</span>`;
                 // Surface bulk-mode "where to find" notice (and any other
                 // post-completion info written into the job's error_message)
                 if (job.error_message) {
@@ -2193,7 +2204,7 @@ async function loadHistory() {
         <td title="${j.id}">${j.id.substring(0, 8)}</td>
         <td>${j.job_type}</td>
         <td>${statusBadge(j.status)}</td>
-        <td style="text-align:right">${formatRecords(j.messages_done, j.messages_total)}</td>
+        <td style="text-align:right">${formatRecords(j.messages_done, j.messages_total, j.job_type)}</td>
         <td>${formatDT(j.started_at)}</td>
         <td>${formatDT(j.completed_at)}</td>
         <td style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : 'var(--text-muted)'};font-size:0.85em;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${esc(j.error_message || '')}</td>
@@ -2711,7 +2722,7 @@ async function loadAuditData(page) {
             if (_auditPage < totalPages) html += `<button class="btn-sm btn-secondary" onclick="loadAuditData(${_auditPage+1})">→</button>`;
             pag.innerHTML = html;
         } else if (pag) {
-            pag.innerHTML = data.total ? `<span style="color:var(--text-muted)">${data.total} ${t('th_messages').toLowerCase()}</span>` : '';
+            pag.innerHTML = data.total ? `<span style="color:var(--text-muted)">${data.total} ${t('unit_records')}</span>` : '';
         }
 
         // Stats
