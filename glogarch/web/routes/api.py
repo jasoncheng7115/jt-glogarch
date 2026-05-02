@@ -1835,9 +1835,14 @@ def _schedule_to_dict(s) -> dict:
             from apscheduler.triggers.cron import CronTrigger
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
             from datetime import datetime
+            from glogarch.scheduler.scheduler import posix_cron_to_apscheduler
             # Use the scheduler's local timezone for display
             tz = AsyncIOScheduler().timezone
-            trigger = CronTrigger.from_crontab(s.cron_expr, timezone=tz)
+            # POSIX cron numbers dow as 0/7=Sun, 6=Sat; APScheduler numbers
+            # 0=Mon, 6=Sun. Convert so the displayed next-fire matches what
+            # apply_schedule() actually registers with APScheduler.
+            cron_for_aps = posix_cron_to_apscheduler(s.cron_expr)
+            trigger = CronTrigger.from_crontab(cron_for_aps, timezone=tz)
             next_fire = trigger.get_next_fire_time(None, datetime.now(tz))
             if next_fire:
                 next_run = next_fire.isoformat()

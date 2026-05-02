@@ -2,6 +2,17 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.7.9] - 2026-05-02
+
+### Fixed — Schedules with day-of-week fired one day off (critical correctness)
+
+- A customer reported that auto-verify, configured to run "every first Saturday of the month at 03:00" via the UI preset (cron `0 3 1-7 * 6`), did NOT fire on Saturday 2026-05-02. Instead the next-fire was 2026-05-03 Sunday.
+- Root cause: APScheduler's `CronTrigger.from_crontab` numbers the day-of-week field as `0=Mon, 6=Sun`, while POSIX cron — which everything in this project's UI presets, README, and customer mental model assumes — uses `0=Sun, 6=Sat`. The off-by-one meant `* * * * 6` executed on Sunday rather than Saturday, and `* * * * 0` executed on Monday rather than Sunday. The two affected built-in UI presets:
+  - `0 0 * * 0` labelled "Weekly (Sunday 00:00)" actually fired Mondays.
+  - `0 3 1-7 * 6` labelled "Monthly (1st Saturday 03:00)" actually fired the first Sunday.
+- Fix: added `posix_cron_to_apscheduler()` in `glogarch/scheduler/scheduler.py` that translates the dow field before handing it to APScheduler. Single numbers, ranges, lists, wildcards, step expressions, and named days are all handled; ranges that wrap after conversion (e.g. POSIX Fri-Mon `5-1` → APS `4-6,0`) are split at the week edge. Both `apply_schedule()` (runtime registration) and `_schedule_to_dict()` (UI's "next run" column computed from cron) route through the same helper, so what the user sees and what fires now agree. Existing schedules in the DB are stored as POSIX and interpreted correctly on next service start. 17 new unit tests in `tests/test_posix_cron.py`.
+- **Impact on existing schedules**: any schedule that had a numeric dow field will now fire on the day a POSIX user would expect. Schedules without dow numbers (`0 3 * * *`, `0 0 * * *`, etc.) are unaffected. Customers who were unknowingly relying on the off-by-one should not see any harm — the actual fire day shifts to match what the cron string literally says.
+
 ## [1.7.8] - 2026-04-30
 
 ### Fixed — Schedule page mirrored running progress to every export schedule

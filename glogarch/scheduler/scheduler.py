@@ -19,6 +19,56 @@ from glogarch.utils.logging import get_logger
 log = get_logger("scheduler")
 
 
+# POSIX cron dow numbering: 0/7 = Sun, 1 = Mon, ..., 6 = Sat
+# APScheduler dow numbering: 0 = Mon, 1 = Tue, ..., 6 = Sun
+# All cron expressions in this project (UI presets, customer-written, DB-stored)
+# follow POSIX. We convert before handing to APScheduler so the day actually
+# matches the user's intent.
+_POSIX_TO_APS_DOW = {0: 6, 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6}
+
+
+def _convert_dow_token(tok: str) -> str:
+    tok = tok.strip()
+    if not tok or tok == "*":
+        return tok
+    # Step expressions (e.g. */2) — semantics depend on base, but POSIX and
+    # APScheduler both step from 0 over a 7-day cycle; emit untouched.
+    if "/" in tok:
+        return tok
+    # Named days (mon, tue, ..., sun) are interpreted identically by APS — keep.
+    if any(c.isalpha() for c in tok):
+        return tok
+    # Numeric range like "1-5"
+    if "-" in tok:
+        a_s, b_s = tok.split("-", 1)
+        a, b = _POSIX_TO_APS_DOW[int(a_s)], _POSIX_TO_APS_DOW[int(b_s)]
+        if a == b:
+            return str(a)
+        if a < b:
+            return f"{a}-{b}"
+        # Wrapped after conversion (e.g. POSIX 5-1 Fri-Mon → APS 4-0): split at week edge
+        high = f"{a}-6" if a < 6 else "6"
+        low = "0" if b == 0 else f"0-{b}"
+        return f"{high},{low}"
+    # Plain number
+    return str(_POSIX_TO_APS_DOW[int(tok)])
+
+
+def posix_cron_to_apscheduler(cron_expr: str) -> str:
+    """Translate a 5-field cron expression so that the day-of-week field is
+    interpreted with POSIX semantics (0/7=Sun, 6=Sat) when handed to
+    APScheduler's `CronTrigger.from_crontab` (which numbers 0=Mon, 6=Sun).
+
+    Returns the original expression if it does not have exactly 5 fields,
+    so non-standard inputs are passed through unchanged."""
+    parts = cron_expr.strip().split()
+    if len(parts) != 5:
+        return cron_expr
+    minute, hour, dom, month, dow = parts
+    new_dow = ",".join(_convert_dow_token(t) for t in dow.split(","))
+    return f"{minute} {hour} {dom} {month} {new_dow}"
+
+
 class ArchiveScheduler:
     """Manages periodic export and cleanup jobs."""
 
@@ -332,16 +382,18 @@ class ArchiveScheduler:
                         name=job_id, type=sched.job_type)
             return
 
+        cron_for_aps = posix_cron_to_apscheduler(sched.cron_expr)
         self.scheduler.add_job(
             func,
-            trigger=CronTrigger.from_crontab(sched.cron_expr),
+            trigger=CronTrigger.from_crontab(cron_for_aps),
             id=job_id,
             name=self._JOB_NAMES.get(sched.job_type, job_id),
             args=[sched.name],
             replace_existing=True,
         )
         log.info("Schedule registered", name=job_id, type=sched.job_type,
-                 cron=sched.cron_expr)
+                 cron=sched.cron_expr,
+                 cron_aps=(cron_for_aps if cron_for_aps != sched.cron_expr else None))
 
     def remove_schedule(self, name: str) -> None:
         """Remove a job from the running APScheduler if it exists."""
