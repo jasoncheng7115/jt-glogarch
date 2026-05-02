@@ -209,7 +209,7 @@ sudo systemctl enable --now jt-glogarch</code></pre>
       <p>可設定的 pattern 觸發即時通知。刪除使用者、授予 admin、安裝 content pack — 即時推播，不必等隔天的報表。</p>
     </div>
     <div class="mapping-card">
-      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>主動心跳</h4>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>稽核管道斷線偵測</h4>
       <p>每 5 分鐘 jt-glogarch 主動透過 nginx 探測一筆，等 syslog 回來。沒回來 → 立即告警，捕捉「有人關掉轉送」這種微妙故障，不會誤報。</p>
     </div>
     <div class="mapping-card">
