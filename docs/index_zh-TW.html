@@ -94,7 +94,7 @@ sudo systemctl enable --now jt-glogarch</code></pre>
 </section>
 
 <section id="flow">
-  <h2>兩條進、兩條出。</h2>
+  <h2>兩種匯出、兩種匯入。</h2>
   <p class="subhead">出去走 API 或 OpenSearch Direct，回來走 GELF 或 OpenSearch Bulk。跨模式重複資料刪除確保資料一致。</p>
   <div class="modes">
     <div class="mode">
@@ -184,7 +184,7 @@ sudo systemctl enable --now jt-glogarch</code></pre>
 </section>
 
 <section id="audit">
-  <h2>獨立於 Graylog 的合規稽核軌跡。</h2>
+  <h2>獨立於 Graylog 的軌跡稽核。</h2>
   <p class="subhead">
     法規（ISO 27001、PCI-DSS、個資法等）要求保留管理者操作軌跡。
   </p>
@@ -213,8 +213,8 @@ sudo systemctl enable --now jt-glogarch</code></pre>
       <p>每 5 分鐘 jt-glogarch 主動透過 nginx 探測一筆，等 syslog 回來。沒回來 → 立即告警，捕捉「有人關掉轉送」這種微妙故障，不會誤報。</p>
     </div>
     <div class="mapping-card">
-      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="13" height="14" rx="2"/><path d="M3 9h13M8 3v4M12 3v4"/><circle cx="19" cy="16" r="3"/><path d="M19 14v-1.5a1.5 1.5 0 0 0-1.5-1.5"/></svg>獨立保留期</h4>
-      <p>稽核保留期跟歸檔保留期分開設（預設 180 天可調）。即使歸檔已被清理，操作軌跡仍保留所需期間。</p>
+      <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="13" height="14" rx="2"/><path d="M3 9h13M8 3v4M12 3v4"/><circle cx="19" cy="16" r="3"/><path d="M19 14v-1.5a1.5 1.5 0 0 0-1.5-1.5"/></svg>獨立保留期限</h4>
+      <p>稽核保留期限跟歸檔保留期限分開設定（預設 180 天可調）。即使歸檔已被清理，操作軌跡仍保留所需期間。</p>
     </div>
   </div>
   <p class="mapping-cta">
