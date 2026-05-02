@@ -146,7 +146,7 @@ sudo systemctl enable --now jt-glogarch</code></pre>
     </div>
     <div class="feature">
       <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg>鑑識調查還原</h4>
-      <p>6 個月前的資安事件需要調查，但記錄已從 OpenSearch 滾掉。歸檔清單上找到、按匯入、指向 Graylog 與 GELF — 重新上線、可搜尋。</p>
+      <p>6 個月前的資安事件需要調查，但記錄已超過 OpenSearch 的保留期限。歸檔清單上找到、按匯入、指向 Graylog 與 GELF — 重新上線、可搜尋。</p>
     </div>
     <div class="feature">
       <h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="6" height="16" rx="1.5"/><rect x="15" y="4" width="6" height="16" rx="1.5"/><path d="M9 12h6m-2-3l2 3-2 3"/></svg>叢集遷移</h4>
@@ -178,16 +178,15 @@ sudo systemctl enable --now jt-glogarch</code></pre>
     <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Cron 排程</h4><p>匯出、清理、驗證 — POSIX cron 慣例（0=週日）。Web UI 上的編輯立即生效，不必重啟服務。</p></div>
     <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 7.7-8 9-4.6-1.3-8-4.5-8-9V6z"/><path d="M11 8l-2 5h2.5l-1 4 4-6h-2.5l1-3z"/></svg>JVM heap 防護</h4><p>API 匯出在 Graylog heap 超過 85% 時自動暫停；GC 回收後自動繼續；5 分鐘未恢復才停止。Graylog 不會被你的歸檔工作拖垮。</p></div>
     <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8l1 1 2-2M9 14l1 1 2-2M14.5 8H17M14.5 14H17"/></svg>合規 Pre-flight</h4><p>GELF 或 Bulk 送出前，先檢查目標容量、修復 mapping 衝突；送完還會核對 indexer 失敗數。零 indexer 失敗 = 合規通過。</p></div>
-    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2H4.5z"/><path d="M10 21h4"/></svg>多通道通知</h4><p>Telegram · Discord · Slack · Microsoft Teams · Nextcloud Talk · Email。雙語（EN / 繁體中文）。每個事件可獨立啟停。</p></div>
-    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 9l3 2-3 2M12 13h5"/></svg>Web UI + CLI</h4><p>完整 Web UI（明/暗主題、英/繁中）外加 <code class="kbd">glogarch</code> CLI。同操作、同資料庫，看你愛哪個。</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2H4.5z"/><path d="M10 21h4"/></svg>多管道通知</h4><p>Telegram · Discord · Slack · Microsoft Teams · Nextcloud Talk · Email。雙語（EN / 繁體中文）。每個事件可獨立啟停。</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 9l3 2-3 2M12 13h5"/></svg>Web UI + CLI</h4><p>完整 Web UI（深/淺主題、英/繁中）外加 <code class="kbd">glogarch</code> CLI。同操作、同資料庫，看你愛哪個。</p></div>
   </div>
 </section>
 
 <section id="audit">
   <h2>獨立於 Graylog 的合規稽核軌跡。</h2>
   <p class="subhead">
-    法規（ISO 27001、PCI-DSS、個資法等）要求保留管理者操作軌跡。Graylog 內建 audit log 由
-    Graylog 自身管理 — 任何具有 admin 權限者都能修改或刪除。從稽核角度:不可信。
+    法規（ISO 27001、PCI-DSS、個資法等）要求保留管理者操作軌跡。
   </p>
   <div class="mapping-grid">
     <div class="mapping-card">
@@ -249,7 +248,7 @@ sudo systemctl enable --now jt-glogarch</code></pre>
     </button>
     <button class="shot" type="button" data-lightbox="screenshots/6_notify_zhtw.png">
       <img class="ss-img" src="screenshots/6_notify_zhtw.png" alt="通知設定" loading="lazy">
-      <div class="label">通知設定<small>6 個通道、雙語、各事件獨立觸發</small></div>
+      <div class="label">通知設定<small>6 個管道、雙語、各事件獨立觸發</small></div>
     </button>
   </div>
 
