@@ -1,6 +1,6 @@
 # jt-glogarch v1.7.10
 
-**Language**: **English** | [繁體中文](README-zh_TW.md)
+**Language**: **English** | [繁體中文](README-zh_TW.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
 
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
