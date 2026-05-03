@@ -42,8 +42,10 @@
   <div class="promise-chips">
     <span class="chip chip-cyan">Graylog Open 6.x / 7.x</span>
     <span class="chip chip-mint">自架</span>
+    <span class="chip chip-purple">歸檔</span>
+    <span class="chip chip-amber">通知</span>
     <span class="chip chip-coral">獨立稽核</span>
-    <span class="chip chip-amber">Apache 2.0</span>
+    <span class="chip chip-cyan">Apache 2.0</span>
   </div>
   <div class="ctas">
     <a class="btn btn-primary" href="#install">三步驟安裝 →</a>
@@ -84,6 +86,10 @@ sudo systemctl enable --now jt-glogarch</code></pre>
       <dd><code class="kbd">/opt/jt-glogarch/config.yaml</code></dd>
       <dt>記錄檢視</dt>
       <dd><code class="kbd">journalctl -u jt-glogarch -f</code></dd>
+      <dt>升級</dt>
+      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/upgrade.sh</code> <span class="muted">（會先快照備份 DB，不會破壞資料）</span></dd>
+      <dt>移除</dt>
+      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/uninstall.sh</code> <span class="muted">（每個刪除動作都會逐一詢問）</span></dd>
     </dl>
     <p class="install-followup">
       <strong>接著指向 Graylog。</strong>

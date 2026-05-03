@@ -44,8 +44,10 @@
   <div class="promise-chips">
     <span class="chip chip-cyan">Graylog Open 6.x / 7.x</span>
     <span class="chip chip-mint">Self-hosted</span>
+    <span class="chip chip-purple">Archival</span>
+    <span class="chip chip-amber">Notifications</span>
     <span class="chip chip-coral">Independent audit</span>
-    <span class="chip chip-amber">Apache 2.0</span>
+    <span class="chip chip-cyan">Apache 2.0</span>
   </div>
   <div class="ctas">
     <a class="btn btn-primary" href="#install">Three-step install →</a>
@@ -86,6 +88,10 @@ sudo systemctl enable --now jt-glogarch</code></pre>
       <dd><code class="kbd">/opt/jt-glogarch/config.yaml</code></dd>
       <dt>Logs</dt>
       <dd><code class="kbd">journalctl -u jt-glogarch -f</code></dd>
+      <dt>Upgrade</dt>
+      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/upgrade.sh</code> <span class="muted">(safe, takes a DB snapshot first)</span></dd>
+      <dt>Uninstall</dt>
+      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/uninstall.sh</code> <span class="muted">(prompts before deleting any data)</span></dd>
     </dl>
     <p class="install-followup">
       <strong>Then point it at Graylog.</strong>

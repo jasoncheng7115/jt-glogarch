@@ -293,13 +293,7 @@ OpenSearch 只保留最近的資料供搜尋。
 
 ### 6. 行為稽核 — 獨立追蹤 Graylog 上的所有操作
 
-法規（ISO 27001、PCI-DSS、個資法等）要求保留管理者操作軌跡，但 Graylog 內建的
-audit log 由 Graylog 本身管理，**具有 admin 權限者可以自行刪除或竄改**，從稽核
-角度不可信。jt-glogarch 透過 nginx access log → syslog 旁路，獨立側錄所有經過
-nginx 進入 Graylog 的 API 操作（建立/修改/刪除 stream、pipeline、user、search、
-content pack、lookup table…等 60 種以上），存進 SQLite，**Graylog 端 admin
-無權限存取此資料庫**。也支援敏感行為即時通知（多管道）與心跳偵測（nginx 轉送
-中斷立即告警）。
+法規（ISO 27001、PCI-DSS、個資法等）要求保留管理者操作軌跡，但 Graylog 內建的 audit log 由 Graylog 本身管理，**具有 admin 權限者可以自行刪除或竄改**，從稽核角度不可信。jt-glogarch 透過 nginx access log → syslog 旁路，獨立側錄所有經過 nginx 進入 Graylog 的 API 操作（建立/修改/刪除 stream、pipeline、user、search、content pack、lookup table…等 60 種以上），存進 SQLite，**Graylog 端 admin 無權限存取此資料庫**。也支援敏感行為即時通知（多管道）與心跳偵測（nginx 轉送中斷立即告警）。
 
 > 設定：行為稽核頁 → 取得 nginx 設定範本 → 套用至各 Graylog 節點 → 啟用通知
 
@@ -341,6 +335,37 @@ echo "Open: https://$(hostname):8990"
 ```
 
 使用 Graylog 帳號登入。
+
+
+### 升級
+
+```bash
+sudo bash /opt/jt-glogarch/deploy/upgrade.sh
+```
+
+會從本 repo 拉最新版本，先把 `jt-glogarch.db` 線上快照備份到
+`/var/backups/jt-glogarch/`，再把 `config.yaml` 補上新版引入的預設值，
+然後 force-reinstall Python 套件並重啟服務。**升級過程中沒有資料銷毀
+步驟**，可以在 jt-glogarch 運作中執行。
+
+
+### 移除
+
+```bash
+sudo bash /opt/jt-glogarch/deploy/uninstall.sh
+```
+
+會停掉服務、移除 systemd unit、`pip uninstall` 套件，然後**逐一詢問**
+是否刪除以下項目：
+
+- `/data/graylog-archives`（實際 `.json.gz` 歸檔檔案）
+- `/etc/jt-glogarch`（config 目錄，視部署方式可能有可能沒）
+- `/opt/jt-glogarch`（原始碼 + DB + 憑證；刪掉這個等於放棄 job/稽核歷史與 SSL keypair）
+- 系統使用者 `jt-glogarch`
+
+每個破壞性提示**預設都是不刪**。若您先前在 Graylog 節點 nginx 設定了
+`access_log syslog:server=...` 把稽核 syslog 拋進 port 8991，記得也
+把那行從 nginx 設定移除並 reload nginx。
 
 
 ### 設定行為稽核（nginx）
@@ -825,10 +850,7 @@ op_audit:
 2. **GELF input 驗證** — 必須存在於指定 port 且為 RUNNING 狀態
 3. **Capacity check** — 用對方 rotation strategy 估算這次匯入會建立幾份
    index；如果**刪除型 retention 會把剛匯入的資料刪掉**直接 abort
-4. **欄位 mapping 衝突自動修正** — 從 DB 讀每份歸檔記錄好的 `field_schema`，
-   找出歸檔內部矛盾（同欄位有 numeric 和 string）或對方目前是 numeric 而歸檔
-   有字串值的欄位，**透過 Graylog custom field mappings API 自動把這些欄位
-   pin 為 `keyword`**
+4. **欄位 mapping 衝突自動修正** — 從 DB 讀每份歸檔記錄好的 `field_schema`，找出歸檔內部矛盾（同欄位有 numeric 和 string）或對方目前是 numeric 而歸檔有字串值的欄位，**透過 Graylog custom field mappings API 自動把這些欄位 pin 為 `keyword`**
 5. **OpenSearch 欄位上限突破** — 自動 PUT 一個 OpenSearch index template 把
    `index.mapping.total_fields.limit` 拉到 10000，徹底解決套用大量 custom
    mappings 時撞到 Graylog 預設 1000 欄位上限導致 index rotation 失敗的問題
@@ -841,9 +863,7 @@ op_audit:
 
 ### 必填:目標 Graylog API 帳密
 
-從 v1.3.0 開始，匯入對話框**必填** Graylog API URL + Token（或帳號/密碼）。
-同一組帳密同時用於 preflight、journal 監控、與對帳。**沒有「不監控」這個
-選項了**。
+從 v1.3.0 開始，匯入對話框**必填** Graylog API URL + Token（或帳號/密碼）。同一組帳密同時用於 preflight、journal 監控、與對帳。**沒有「不監控」這個選項了**。
 
 ### 兩種匯入模式(v1.3.0 起)
 
@@ -903,11 +923,7 @@ Protocol:     TCP   ← 預設。可靠,有 backpressure
 > - **TCP（建議，預設）：** 有內建 backpressure。當目標 Graylog input buffer 滿
 >   時，TCP 寫入會自然暫停傳送，jt-glogarch 會跟著降速，**不會掉訊息**。吞吐量
 >   約 1,000~3,000 筆/秒。
-> - **UDP（不建議用於大量匯入）：** 較快（~5,000~10,000 筆/秒）但 buffer 滿時
->   會**無聲地丟掉封包**，jt-glogarch 完全收不到任何錯誤回報 — `messages_done`
->   會說「我送了 X 筆」，但目標 Graylog 可能只收到一部分。症狀：匯入後的時間
->   軸會看到一段一段空白。**百萬筆等級的匯入若沒有流量控制，UDP 損失率常見
->   20-30%。**
+> - **UDP（不建議用於大量匯入）：** 較快（~5,000~10,000 筆/秒）但 buffer 滿時會**無聲地丟掉封包**，jt-glogarch 完全收不到任何錯誤回報 — `messages_done` 會說「我送了 X 筆」，但目標 Graylog 可能只收到一部分。症狀：匯入後的時間軸會看到一段一段空白。**百萬筆等級的匯入若沒有流量控制，UDP 損失率常見 20-30%。**
 >
 > 即使使用 UDP，Journal 監控（透過 Graylog API）永遠開啟，當對方未處理的
 > journal entries 超過 50 萬時會自動降速。但 UDP 在初始衝量時還是無法完全

@@ -350,6 +350,38 @@ echo "Open: https://$(hostname):8990"
 
 Login with your Graylog credentials.
 
+### Upgrade
+
+```bash
+sudo bash /opt/jt-glogarch/deploy/upgrade.sh
+```
+
+Pulls the latest tag from this repo, takes an online SQLite snapshot of
+`jt-glogarch.db` into `/var/backups/jt-glogarch/` first, applies any new
+config defaults to `config.yaml`, force-reinstalls the Python package, and
+restarts the service. Safe to run while jt-glogarch is active — there is
+no data loss step.
+
+### Uninstall
+
+```bash
+sudo bash /opt/jt-glogarch/deploy/uninstall.sh
+```
+
+Stops the service, removes the systemd unit, and `pip uninstall`s the
+package. Then asks **separately** before deleting any of:
+
+- `/data/graylog-archives` (the actual archive `.json.gz` files)
+- `/etc/jt-glogarch` (config dir, if you used it)
+- `/opt/jt-glogarch` (source + DB + certs — losing this means losing the
+  job/audit history and SSL keypair)
+- the `jt-glogarch` system user
+
+Defaults to **keep** for every destructive prompt. If you also wired
+nginx to forward audit syslog into port 8991, remove the corresponding
+`access_log syslog:server=...` line from your Graylog nodes' nginx
+config and reload nginx.
+
 ### Setup Operation Audit (nginx)
 
 jt-glogarch includes a built-in Operation Audit feature that tracks who did what on Graylog. It works by receiving access logs from nginx reverse proxies on your Graylog servers. **Enabled by default** — just configure nginx.
@@ -842,11 +874,7 @@ before any GELF send):
 3. **Capacity check** — calculates how many indices the import will create from
    the rotation strategy and aborts if the target's deletion-based retention
    policy would erase data we just wrote
-4. **Field mapping conflict resolution** — reads each archive's recorded
-   `field_schema` from the DB, finds fields where archives have intra-conflict
-   types or where the target's current mapping is numeric while archives have
-   string values, and **automatically pins those fields as `keyword` on the
-   target** via Graylog's custom field mappings API
+4. **Field mapping conflict resolution** — reads each archive's recorded `field_schema` from the DB, finds fields where archives have intra-conflict types or where the target's current mapping is numeric while archives have string values, and **automatically pins those fields as `keyword` on the target** via Graylog's custom field mappings API
 5. **OpenSearch field-limit override** — automatically PUTs an OpenSearch index
    template that raises `index.mapping.total_fields.limit` to 10000, eliminating
    the rotation failure that hits Graylog's default 1000-field limit when many
