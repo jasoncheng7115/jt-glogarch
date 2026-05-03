@@ -629,7 +629,11 @@
             <span style="color:var(--text-muted);font-size:0.82em" data-i18n="audit_subtitle">Track who did what on Graylog</span>
         </div>
 
-        <!-- Stats cards (dashboard style) -->
+        <!-- Stats cards (dashboard style) — explicitly window-labelled
+             so the numbers won't look "wrong" when the all-time list
+             below shows older sensitive entries that fell out of the
+             24-hour window. -->
+        <div style="font-size:0.85em;color:var(--text-muted);margin-bottom:6px" data-i18n="audit_stats_window">Statistics for the last 24 hours</div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
             <div class="card stat-card" id="audit-stat-total" style="padding:14px 16px;cursor:default" data-i18n-title="audit_tip_ops">
                 <h3 style="font-size:0.8em;margin:0" data-i18n="audit_total_requests" data-icon="shield">24h Ops</h3>

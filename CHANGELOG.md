@@ -2,6 +2,13 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.7.11] - 2026-05-03
+
+### Fixed — Operation Audit page stat cards looked "wrong" without explaining the time window
+
+- The four stat cards on `/op-audit` (`Operations`, `Users`, `Login Fail`, `Sensitive`) are computed by `/api/audit/stats?hours=24`, i.e. last-24-hour counts. The list below them is paginated all-time history. When older sensitive entries appeared in the list (each showing a `!` marker) but the `Sensitive` card showed `0`, users reasonably assumed the page was buggy — the time-window difference was only documented in the cards' hover tooltips, which most users never see.
+- Fix: added a small subtitle line "Statistics for the last 24 hours" / "最近 24 小時統計" directly above the card grid, plus tightened the sensitive card tooltip to also say "in the last 24 hours" so all four tooltips are consistent. No code/data change — purely a labelling clarification.
+
 ## [1.7.10] - 2026-05-03
 
 ### Fixed — Job History "Records" column was misleading for verify and cleanup
