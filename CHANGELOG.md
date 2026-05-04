@@ -2,6 +2,20 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.7.12] - 2026-05-04
+
+### Fixed — Import-complete notification always reported `Duration: 0s`
+
+- Telegram/Discord/Slack/Teams/Nextcloud Talk/Email "import complete" messages always showed `Duration: 0s` / `耗時: 0s`, regardless of the actual run length. A real-world batch test on 192.168.1.83 imported five archives of 502 / 26,221 / 31,769 / 131,944 / 373,258 records taking 12 / 14 / 18 / 32 / 102 seconds respectively — every notification still said `0s`.
+- Root cause: `notify_import_complete(...)` accepts `duration_seconds: float = 0`, but neither call site in `glogarch/import_/importer.py` (Bulk-mode path and GELF-mode path) ever measured or passed it. The `Importer.run()` method had no start-time bookkeeping. The export side already does this correctly (`ExportResult.duration_seconds` is set right before `notify_export_complete(...)`); the import side never received the same treatment.
+- Fix: record `_start_time = time.time()` at the top of `Importer.run()`, add `duration_seconds: float` to `ImportResult`, compute `result.duration_seconds = time.time() - _start_time` immediately before each `notify_import_complete(...)` call, and pass it through. Mirrors the existing exporter pattern. No template / message format change — the existing `{duration}` placeholder was already correct, just always receiving `0`.
+
+### Fixed — `Notification send failed` warning logged on every successful send
+
+- `journalctl -u jt-glogarch` was filling with `Notification send failed   error="_make_filtering_bound_logger.<locals>.make_method.<locals>.meth() got multiple values for argument 'event'"` after every notification. Confusing in monitoring, even though the messages themselves were arriving fine.
+- Root cause: `glogarch/notify/sender.py::send_notification` logs `log.info("Notification sent", channel=..., event=event.value)`. structlog's bound logger reserves the first positional/`event` kwarg for the message, so passing both `"Notification sent"` and `event=` triggers the duplicate-kw error. The exception bubbled up to the importer, which logged it as `Notification send failed` despite the actual delivery having succeeded.
+- Fix: rename the structured-log key from `event=` to `notify_event=`. Notifications were never broken — only the post-delivery info-log line — but the spurious warning is now gone.
+
 ## [1.7.11] - 2026-05-03
 
 ### Fixed — Operation Audit page stat cards looked "wrong" without explaining the time window

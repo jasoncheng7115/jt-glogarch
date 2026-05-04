@@ -94,7 +94,7 @@ async def send_notification(
 
     for r in results:
         if r["success"]:
-            log.info("Notification sent", channel=r["channel"], event=event.value)
+            log.info("Notification sent", channel=r["channel"], notify_event=event.value)
         else:
             log.error("Notification failed", channel=r["channel"], error=r.get("error"))
 

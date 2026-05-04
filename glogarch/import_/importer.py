@@ -9,6 +9,7 @@ Supports:
 from __future__ import annotations
 
 import asyncio
+import time as _time
 import uuid
 from datetime import datetime
 from typing import Callable
@@ -119,6 +120,7 @@ class ImportResult:
         self.errors: list[str] = []
         self.notices: list[str] = []  # informational messages (e.g. "find your data in stream X")
         self.job_id: str = ""
+        self.duration_seconds: float = 0.0
 
 
 class Importer:
@@ -178,6 +180,7 @@ class Importer:
         result = ImportResult()
         job_id = job_id or str(uuid.uuid4())
         result.job_id = job_id
+        _start_time = _time.time()
 
         fc = flow_control or ImportFlowControl()
         fc.rate_ms = self.import_config.delay_between_batches_ms
@@ -365,8 +368,10 @@ class Importer:
 
                 try:
                     from glogarch.notify.sender import notify_import_complete
+                    result.duration_seconds = _time.time() - _start_time
                     await notify_import_complete(
                         result.archives_processed, result.messages_sent, result.errors,
+                        duration_seconds=result.duration_seconds,
                     )
                 except Exception:
                     pass
@@ -538,8 +543,10 @@ class Importer:
 
             try:
                 from glogarch.notify.sender import notify_import_complete
+                result.duration_seconds = _time.time() - _start_time
                 await notify_import_complete(
                     result.archives_processed, result.messages_sent, result.errors,
+                    duration_seconds=result.duration_seconds,
                 )
             except Exception as nerr:
                 # Surface notification failures so they're not silently lost.
