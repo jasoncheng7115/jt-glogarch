@@ -606,6 +606,59 @@ class ArchiveDB:
                 self._rollback_safely()
                 raise
 
+    def update_schedule_last_run(
+        self, name: str, when: datetime | None = None
+    ) -> None:
+        """Update schedules.last_run_at for the named schedule.
+
+        Locked because callers used to do `db.conn.execute(UPDATE ...); db.conn.commit()`
+        directly. With long-running exports calling self.update_job() every batch
+        from a worker thread, and other unlocked writers from the asyncio loop,
+        the shared sqlite3.Connection's transaction-state tracker raced and
+        Python auto-issued BEGIN while a tx was already open, yielding
+        OperationalError("cannot start a transaction within a transaction") —
+        which then aborted a whole index in the OpenSearch exporter.
+        """
+        when = when or datetime.utcnow()
+        with self._lock:
+            try:
+                self.conn.execute(
+                    "UPDATE schedules SET last_run_at = ? WHERE name = ?",
+                    (_dt_to_str(when), name),
+                )
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def cleanup_stale_running_jobs(self) -> int:
+        """Mark all jobs.status='running' as failed. Called at service startup —
+        any 'running' rows are from a previous process that died (restart, OOM,
+        crash), so they can never finish. Returns the number of rows updated.
+        """
+        now = _dt_to_str(datetime.utcnow())
+        with self._lock:
+            try:
+                rows = self.conn.execute(
+                    "SELECT id, messages_done, messages_total FROM jobs WHERE status='running'"
+                ).fetchall()
+                for row in rows:
+                    job_id, done, total = row[0], row[1] or 0, row[2] or 0
+                    if done > 0:
+                        msg = (f"Interrupted by service restart "
+                               f"({done:,} / {total:,} processed, partial files cleaned up)")
+                    else:
+                        msg = "Interrupted by service restart"
+                    self.conn.execute(
+                        "UPDATE jobs SET status='failed', error_message=?, completed_at=? WHERE id=?",
+                        (msg, now, job_id),
+                    )
+                self.conn.commit()
+                return len(rows)
+            except Exception:
+                self._rollback_safely()
+                raise
+
     # --- Import History ---
 
     def record_import(self, record: ImportHistoryRecord) -> int:
@@ -652,6 +705,56 @@ class ArchiveDB:
         return [dict(r) for r in rows]
 
     # --- API Audit ---
+
+    def backfill_audit_usernames(
+        self,
+        ip_user_pairs: list[tuple[str, str]],
+        default_user: str = "",
+    ) -> int:
+        """Fill in missing api_audit.username values.
+
+        Strategy:
+          1. For each (ip, user) pair, set username=user where remote_addr=ip
+             and username is currently blank ('' or '-').
+          2. Then, if default_user is non-empty, fill any remaining blanks.
+        Returns total rows updated.
+
+        Locked because the audit listener runs this periodically from the
+        asyncio event-loop thread, while exporters/importers run in worker
+        threads and write via update_job() every batch. Bypassing _lock here
+        produced a race on the shared sqlite3.Connection's transaction-state
+        tracker that surfaced as
+        OperationalError("cannot start a transaction within a transaction")
+        on a random concurrent write — causing one OpenSearch export index
+        to be skipped in a long-running scheduled run.
+        """
+        if not ip_user_pairs and not default_user:
+            return 0
+        total = 0
+        with self._lock:
+            try:
+                for ip, user in ip_user_pairs:
+                    if not ip or not user:
+                        continue
+                    cnt = self.conn.execute(
+                        "UPDATE api_audit SET username = ? "
+                        "WHERE remote_addr = ? AND (username = '' OR username = '-')",
+                        (user, ip),
+                    ).rowcount
+                    total += cnt
+                if default_user:
+                    cnt = self.conn.execute(
+                        "UPDATE api_audit SET username = ? "
+                        "WHERE username = '' OR username = '-'",
+                        (default_user,),
+                    ).rowcount
+                    total += cnt
+                if total:
+                    self.conn.commit()
+                return total
+            except Exception:
+                self._rollback_safely()
+                raise
 
     def insert_api_audit_batch(self, entries: list[dict]) -> int:
         """Batch insert parsed API audit entries."""

@@ -2,6 +2,23 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.7.13] - 2026-05-12
+
+### Fixed — Random "cannot start a transaction within a transaction" failure aborts one index in long OpenSearch exports
+
+- A customer's overnight scheduled OpenSearch export reported `匯出區段: 9 / 略過區段: 0 / 錯誤: 1` after 12h15m, with the error `Index graylog_1254 failed: cannot start a transaction within a transaction`. That string is a literal SQLite error message, not from OpenSearch, and it means the index was silently skipped — no archive file produced, no DB record for the time window — even though the export itself was reported as "completed (with errors)". The other nine chunks finished fine, so the symptom appears intermittent.
+- Root cause: `glogarch/core/database.py` uses a single shared `sqlite3.Connection` and serialises writes with `self._lock`. Four code paths were writing through the connection directly with `db.conn.execute(UPDATE ...); db.conn.commit()` without holding `_lock`:
+  1. `glogarch/audit/listener.py::_refresh_ip_user_cache` — runs every ~5 min from the asyncio event loop while exports run for hours, doing per-IP `UPDATE api_audit` + `commit` on the shared connection.
+  2. `glogarch/web/routes/api.py` (4 sites) — `UPDATE schedules SET last_run_at` issued by the "run now" schedule endpoint and by the export run finally-block in a worker thread.
+  3. `glogarch/web/app.py::_cleanup_stale_jobs` — startup-time cleanup (low risk, but inconsistent with the rest).
+  During a 12h export, the worker thread calls `db.update_job()` every batch (≈20,000 times). The audit listener fires ~144 times in parallel. When the worker had just committed (the C-level `in_transaction` flag flipped to False, lock released) and the audit listener entered `execute(UPDATE)` in the same instant, both threads read `in_transaction=False` and both auto-issued `BEGIN`. Whichever lost the race got SQLite's `cannot start a transaction within a transaction` raised inside `record_archive` / `update_job`, which the exporter's per-index `try/except` caught at `glogarch/opensearch/exporter.py:269` — aborting the whole index for that run.
+- Fix: every write now goes through a locked helper.
+  - New `ArchiveDB.update_schedule_last_run(name, when=None)` — replaces the 4× unlocked `UPDATE schedules` sites in `web/routes/api.py`.
+  - New `ArchiveDB.backfill_audit_usernames(ip_user_pairs, default_user)` — replaces the per-IP backfill loop and final commit in `audit/listener.py::_refresh_ip_user_cache`.
+  - New `ArchiveDB.cleanup_stale_running_jobs()` — replaces the inline implementation in `web/app.py::_cleanup_stale_jobs`.
+  - Added `tests/test_concurrent_db_writes.py` with four regression tests that hammer the new helpers from multiple threads alongside `update_job()` for 1–2s of dense contention each. The previous unlocked pattern fails these reliably; the locked pattern is clean.
+- Operational note: the failed `graylog_1254` segment will be picked up automatically by the next scheduled OpenSearch export, because dedup (`find_archive` + `get_coverage_ratio`) returns "not archived" for that time window — no archive file or DB row was created during the failed attempt. The retry only succeeds if the index still exists in OpenSearch when the schedule fires (i.e. before Graylog rotation deletes it).
+
 ## [1.7.12] - 2026-05-04
 
 ### Fixed — Import-complete notification always reported `Duration: 0s`

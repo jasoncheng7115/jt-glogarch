@@ -57,25 +57,9 @@ class APIAuthMiddleware(BaseHTTPMiddleware):
 def _cleanup_stale_jobs(db):
     """Mark all running jobs as failed on startup — they were interrupted by restart."""
     try:
-        from datetime import datetime
-        now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-        # Build error message with context about what was done before interruption
-        rows = db.conn.execute(
-            "SELECT id, messages_done, messages_total FROM jobs WHERE status='running'"
-        ).fetchall()
-        for row in rows:
-            job_id, done, total = row[0], row[1] or 0, row[2] or 0
-            if done > 0:
-                msg = f"Interrupted by service restart ({done:,} / {total:,} processed, partial files cleaned up)"
-            else:
-                msg = "Interrupted by service restart"
-            db.conn.execute(
-                "UPDATE jobs SET status='failed', error_message=?, completed_at=? WHERE id=?",
-                (msg, now, job_id),
-            )
-        db.conn.commit()
-        if rows:
-            log.info("Cleaned up stale running jobs", count=len(rows))
+        count = db.cleanup_stale_running_jobs()
+        if count:
+            log.info("Cleaned up stale running jobs", count=count)
     except Exception:
         pass
 

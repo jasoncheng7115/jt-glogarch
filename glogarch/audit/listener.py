@@ -365,31 +365,17 @@ class AuditSyslogListener:
                 if ip and user:
                     self._session_cache[f"ip:{ip}"] = user
 
-            # 4. Backfill DB records without username
-            backfill_count = 0
+            # 4. Backfill DB records without username — delegate to the locked
+            #    helper so we don't race the shared sqlite3 connection with
+            #    long-running exporter/importer writes.
+            ip_user_pairs: list[tuple[str, str]] = []
             for ip_key, user in list(self._session_cache.items()):
                 if not ip_key.startswith("ip:"):
                     continue
-                ip = ip_key[3:]
-                cnt = self.db.conn.execute(
-                    "UPDATE api_audit SET username = ? "
-                    "WHERE remote_addr = ? AND (username = '' OR username = '-')",
-                    (user, ip)
-                ).rowcount
-                backfill_count += cnt
-
-            # 5. Backfill remaining with default user
+                ip_user_pairs.append((ip_key[3:], user))
             default = self._session_cache.get("_default_user", "")
-            if default:
-                cnt = self.db.conn.execute(
-                    "UPDATE api_audit SET username = ? "
-                    "WHERE username = '' OR username = '-'",
-                    (default,)
-                ).rowcount
-                backfill_count += cnt
-
+            backfill_count = self.db.backfill_audit_usernames(ip_user_pairs, default)
             if backfill_count:
-                self.db.conn.commit()
                 log.info("Backfilled audit usernames", count=backfill_count)
 
         except Exception as e:

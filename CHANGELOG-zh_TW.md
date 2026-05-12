@@ -2,6 +2,23 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.7.13] - 2026-05-12
+
+### 修正 — 長時間 OpenSearch 匯出隨機出現「cannot start a transaction within a transaction」，整個索引被跳過
+
+- 客戶夜間排程的 OpenSearch 匯出跑了 12h15m 之後，通知顯示「匯出區段: 9 / 略過區段: 0 / 錯誤: 1」，錯誤訊息為 `Index graylog_1254 failed: cannot start a transaction within a transaction`。這串文字是 SQLite 的字面錯誤訊息，**並非** OpenSearch 端的問題；它代表 `graylog_1254` 這個索引在那一輪匯出中**被無聲地跳過了** — 既沒有 archive 檔案落地、DB 也沒有該時間窗的 archive 記錄，但整體匯出仍被通報為「完成（有錯誤）」。其餘九個區段都正常，所以表面上看起來是偶發。
+- 成因：`glogarch/core/database.py` 使用單一共用 `sqlite3.Connection`，並以 `self._lock` 串行所有寫入。但有四處程式繞過 `_lock`，直接 `db.conn.execute(UPDATE ...); db.conn.commit()`：
+  1. `glogarch/audit/listener.py::_refresh_ip_user_cache` — 每約 5 分鐘從 asyncio 事件迴圈執行緒觸發一次，匯出期間它也照跑，逐 IP 對共用連線發 `UPDATE api_audit` + `commit`。
+  2. `glogarch/web/routes/api.py`（共 4 處）— 排程「立即執行」端點與 export 工作執行緒 finally 區塊所做的 `UPDATE schedules SET last_run_at`。
+  3. `glogarch/web/app.py::_cleanup_stale_jobs` — 啟動時清理殘留 running 作業（風險低，但作法和其他不一致）。
+  匯出在 12 小時內每幾秒透過工作執行緒呼叫一次 `db.update_job()` 報進度（約 20,000 次）；同期間 audit listener 觸發約 144 次。當工作執行緒剛 `commit()`（C 層 `in_transaction` 旗標翻為 False、鎖釋放），audit listener 也恰好進入 C 層 `execute(UPDATE)`，雙方都讀到 `in_transaction=False`、雙方都自動發送 `BEGIN`。輸的那一方收到 SQLite 的 `cannot start a transaction within a transaction`，從 `record_archive` / `update_job` 中冒泡到 `glogarch/opensearch/exporter.py:269` 的 per-index `try/except`，**整個索引就此中止**。
+- 修法：所有寫入一律透過加鎖的封裝。
+  - 新增 `ArchiveDB.update_schedule_last_run(name, when=None)` — 取代 `web/routes/api.py` 內四處未加鎖的 `UPDATE schedules`。
+  - 新增 `ArchiveDB.backfill_audit_usernames(ip_user_pairs, default_user)` — 取代 `audit/listener.py::_refresh_ip_user_cache` 中逐 IP 的迴圈 UPDATE 與最後 commit。
+  - 新增 `ArchiveDB.cleanup_stale_running_jobs()` — 取代 `web/app.py::_cleanup_stale_jobs` 中的內嵌實作。
+  - 新增 `tests/test_concurrent_db_writes.py`，含四個迴歸測試，分別讓多執行緒對新封裝與 `update_job()` 密集競爭 1–2 秒。舊的繞鎖寫法在這些測試下會穩定失敗，新的加鎖寫法則乾淨通過。
+- 操作備註：失敗的 `graylog_1254` 區段，下次排程匯出會自動再次嘗試 — 因為失敗時沒有任何 archive 檔案或 DB 列被建立，去重邏輯（`find_archive` + `get_coverage_ratio`）對該時間窗回報「未歸檔」。**前提是排程觸發時該索引在 OpenSearch 中仍存在**（尚未被 Graylog rotation 刪除）。
+
 ## [1.7.12] - 2026-05-04
 
 ### 修正 — 匯入完成通知一律顯示「耗時：0s」

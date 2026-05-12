@@ -807,9 +807,7 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
                 except Exception:
                     pass
             raise
-        db.conn.execute("UPDATE schedules SET last_run_at = ? WHERE name = ?",
-                        (datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), name))
-        db.conn.commit()
+        db.update_schedule_last_run(name)
         _audit(request, "schedule_run_now", f"{name} cleanup deleted={result.files_deleted}")
         return {"status": "completed", "files_deleted": result.files_deleted, "bytes_freed": result.bytes_freed}
 
@@ -853,9 +851,7 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
                 except Exception:
                     pass
             raise
-        db.conn.execute("UPDATE schedules SET last_run_at = ? WHERE name = ?",
-                        (datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), name))
-        db.conn.commit()
+        db.update_schedule_last_run(name)
         _audit(request, "schedule_run_now", f"{name} verify total={result.total_checked} corrupted={len(result.corrupted)}")
         return {"status": "completed", "total_checked": result.total_checked, "valid": result.valid,
                 "corrupted": len(result.corrupted), "missing": len(result.missing_files)}
@@ -915,9 +911,7 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
                 )
             finally:
                 try:
-                    db.conn.execute("UPDATE schedules SET last_run_at = ? WHERE name = ?",
-                                   (datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), name))
-                    db.conn.commit()
+                    db.update_schedule_last_run(name)
                 except Exception:
                     pass
     else:
@@ -945,9 +939,7 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
                 )
             finally:
                 try:
-                    db.conn.execute("UPDATE schedules SET last_run_at = ? WHERE name = ?",
-                                   (datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), name))
-                    db.conn.commit()
+                    db.update_schedule_last_run(name)
                 except Exception:
                     pass
 
