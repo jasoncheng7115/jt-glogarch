@@ -2,6 +2,25 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.7.14] - 2026-05-14
+
+### Fixed — `deploy/install.sh` failed on a clean Ubuntu 24.04 install with `externally-managed-environment`
+
+- A customer doing a fresh install on Ubuntu 24.04.4 LTS (Python 3.12) reported `sudo bash deploy/install.sh` aborted at "Installing jt-glogarch and dependencies..." with `error: externally-managed-environment` / "This environment is externally managed", suggesting `apt install python3-xyz`, a venv, or `pipx`. The installer never reached the systemd / directories / SSL-cert steps, so the system was left half-configured.
+- Root cause: Ubuntu 24.04 (and Debian 12+) ship `/usr/lib/python3.12/EXTERNALLY-MANAGED` per PEP 668. With that marker present, `pip install <pkg>` against the system Python refuses by default and requires `--break-system-packages` to override. `deploy/install.sh`, `deploy/upgrade.sh`, and `deploy/uninstall.sh` were written before PEP 668 was widely enforced and never passed the flag. Ubuntu 22.04 (Python 3.10/3.11) does not ship the marker, so the same scripts worked there — the breakage only surfaced when a customer installed on 24.04.
+- jt-glogarch is a dedicated single-purpose service install: it runs as its own system user, the systemd unit invokes `/usr/local/bin/glogarch`, and there is no expectation that the host runs other Python applications side-by-side. Writing into the system Python is the intended deployment model, so `--break-system-packages` is the correct flag here. (Migrating to a venv would change the systemd unit path, every reference in docs, the upgrade flow, and is not in scope.)
+- Fix: detect the EXTERNALLY-MANAGED marker at the top of each deploy script and add `--break-system-packages` to every `pip install` / `pip uninstall` call when present. On older distros without the marker, behavior is unchanged. Detection is portable:
+  ```bash
+  EM_FILE=$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["stdlib"] + "/EXTERNALLY-MANAGED")' 2>/dev/null || true)
+  PIP_FLAGS=""
+  if [ -n "$EM_FILE" ] && [ -f "$EM_FILE" ]; then
+      PIP_FLAGS="--break-system-packages"
+      echo "Detected PEP 668 (EXTERNALLY-MANAGED) — using --break-system-packages"
+  fi
+  ```
+  Applied to `deploy/install.sh` (setuptools/wheel upgrade + both jt-glogarch installs), `deploy/upgrade.sh` (the `pip install --force-reinstall`), and `deploy/uninstall.sh` (the `pip uninstall`).
+- Customer workaround if they cannot wait for v1.7.14 to land in their checkout: re-run pip manually with the flag explicitly, e.g. `sudo pip install --break-system-packages --no-build-isolation --no-cache-dir --force-reinstall --no-deps /opt/jt-glogarch` (then the second pip with deps), then re-run `sudo bash deploy/install.sh` — the user / dirs / SSL / systemd steps that the script aborted before are idempotent and complete cleanly on the second pass.
+
 ## [1.7.13] - 2026-05-12
 
 ### Fixed — Random "cannot start a transaction within a transaction" failure aborts one index in long OpenSearch exports

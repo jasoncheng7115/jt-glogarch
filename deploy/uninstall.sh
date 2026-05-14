@@ -77,9 +77,16 @@ echo ""
 
 # --- 2. pip uninstall ---
 PIP=$(command -v pip3 || command -v pip || true)
+# Detect PEP 668 lockdown (Ubuntu 24.04+ / Debian 12+) so `pip uninstall`
+# doesn't refuse on the way out.
+EM_FILE=$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["stdlib"] + "/EXTERNALLY-MANAGED")' 2>/dev/null || true)
+PIP_FLAGS=""
+if [ -n "$EM_FILE" ] && [ -f "$EM_FILE" ]; then
+    PIP_FLAGS="--break-system-packages"
+fi
 if [ -n "$PIP" ] && $PIP show jt-glogarch &>/dev/null; then
     echo "Uninstalling Python package..."
-    run "$PIP uninstall -y jt-glogarch 2>&1 | tail -1"
+    run "$PIP uninstall $PIP_FLAGS -y jt-glogarch 2>&1 | tail -1"
 fi
 echo ""
 

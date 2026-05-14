@@ -38,6 +38,19 @@ fi
 PIP=$(command -v pip3 || command -v pip)
 echo "pip OK ($PIP)"
 
+# Detect PEP 668 lockdown (Ubuntu 24.04+ / Debian 12+ / Python 3.11+ ship
+# /usr/lib/pythonX.Y/EXTERNALLY-MANAGED, which makes `pip install` refuse to
+# write to the system Python without --break-system-packages). jt-glogarch
+# is a dedicated service install — writing into the system Python is the
+# intended deployment model — so pass the flag through automatically. Older
+# distros never get this flag (the marker file isn't present there).
+EM_FILE=$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["stdlib"] + "/EXTERNALLY-MANAGED")' 2>/dev/null || true)
+PIP_FLAGS=""
+if [ -n "$EM_FILE" ] && [ -f "$EM_FILE" ]; then
+    PIP_FLAGS="--break-system-packages"
+    echo "Detected PEP 668 (EXTERNALLY-MANAGED) — using --break-system-packages"
+fi
+
 # --- Create service user ---
 echo ""
 if id "$SERVICE_USER" &>/dev/null; then
@@ -53,15 +66,15 @@ usermod -aG systemd-journal "$SERVICE_USER" 2>/dev/null || true
 # Ensure setuptools is new enough to read pyproject.toml metadata
 echo ""
 echo "Upgrading setuptools and wheel..."
-$PIP install --upgrade "setuptools>=68.0" wheel 2>&1 | tail -1
+$PIP install $PIP_FLAGS --upgrade "setuptools>=68.0" wheel 2>&1 | tail -1
 
 # Install Python dependencies and package
 # Clean any stale build artifacts to ensure latest code is installed
 rm -rf "$INSTALL_DIR/build" "$INSTALL_DIR"/*.egg-info 2>/dev/null
 echo ""
 echo "Installing jt-glogarch and dependencies..."
-$PIP install --no-build-isolation --no-cache-dir --force-reinstall --no-deps "$INSTALL_DIR"
-$PIP install --no-build-isolation --no-cache-dir "$INSTALL_DIR"
+$PIP install $PIP_FLAGS --no-build-isolation --no-cache-dir --force-reinstall --no-deps "$INSTALL_DIR"
+$PIP install $PIP_FLAGS --no-build-isolation --no-cache-dir "$INSTALL_DIR"
 echo ""
 echo "Python packages installed OK"
 

@@ -25,6 +25,16 @@ fi
 CURRENT=$(python3 -c "import glogarch; print(glogarch.__version__)" 2>/dev/null || echo "unknown")
 echo "Current version: $CURRENT"
 
+# Detect PEP 668 lockdown (Ubuntu 24.04+ / Debian 12+ / Python 3.11+ ship
+# /usr/lib/pythonX.Y/EXTERNALLY-MANAGED). Pass --break-system-packages when
+# present so the upgrade pip call works the same way install.sh does.
+EM_FILE=$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["stdlib"] + "/EXTERNALLY-MANAGED")' 2>/dev/null || true)
+PIP_FLAGS=""
+if [ -n "$EM_FILE" ] && [ -f "$EM_FILE" ]; then
+    PIP_FLAGS="--break-system-packages"
+    echo "Detected PEP 668 (EXTERNALLY-MANAGED) — using --break-system-packages"
+fi
+
 # 0. Fix permissions and environment (for upgrades from older versions)
 usermod -aG systemd-journal jt-glogarch 2>/dev/null || true
 
@@ -74,7 +84,7 @@ fi
 # 3. Install
 echo ""
 echo "[3/5] Installing..."
-pip install --no-build-isolation --no-cache-dir --force-reinstall --no-deps "$INSTALL_DIR" 2>&1 | tail -1
+pip install $PIP_FLAGS --no-build-isolation --no-cache-dir --force-reinstall --no-deps "$INSTALL_DIR" 2>&1 | tail -1
 
 # 4. Restart
 echo ""

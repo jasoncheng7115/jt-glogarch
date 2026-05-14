@@ -2,6 +2,25 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.7.14] - 2026-05-14
+
+### 修正 — Ubuntu 24.04 全新安裝執行 `deploy/install.sh` 時失敗於 `externally-managed-environment`
+
+- 客戶於 Ubuntu 24.04.4 LTS（Python 3.12）的全新環境跑 `sudo bash deploy/install.sh`，在「Installing jt-glogarch and dependencies...」階段就中止，錯誤訊息為 `error: externally-managed-environment` / 「This environment is externally managed」，並建議改用 `apt install python3-xyz`、venv 或 `pipx`。install.sh 還沒走到後面的目錄建立、SSL 憑證、systemd 服務等步驟，系統被留在半成品狀態。
+- 成因：Ubuntu 24.04（與 Debian 12+）依 PEP 668 規範隨機附帶 `/usr/lib/python3.12/EXTERNALLY-MANAGED` 標記檔。當這個檔案存在時，`pip install <pkg>` 對系統 Python 預設拒絕安裝，必須額外帶 `--break-system-packages` 旗標才會放行。`deploy/install.sh`、`deploy/upgrade.sh`、`deploy/uninstall.sh` 是在 PEP 668 還沒普及前寫的，從未帶過這個旗標。Ubuntu 22.04（Python 3.10/3.11）沒有這個標記檔，所以同樣的腳本在 22.04 一直能跑 — 問題只在 24.04 客戶第一次裝時才浮現。
+- jt-glogarch 是專屬單一用途的服務型安裝：以自己的 system user 執行、systemd unit 呼叫 `/usr/local/bin/glogarch`、預期該主機**不會**並行跑其他 Python 應用。把套件寫進系統 Python 本來就是設計上預期的部署模式，因此 `--break-system-packages` 是正確的旗標。（要改用 venv 會牽動 systemd unit 路徑、所有文件參照、upgrade 流程，影響面大，**不在此次修法範圍**。）
+- 修法：在每個 deploy 腳本開頭偵測 EXTERNALLY-MANAGED 標記檔；存在就把 `--break-system-packages` 自動加到所有的 `pip install` / `pip uninstall` 呼叫上。舊版發行版沒有標記檔的話行為完全不變。偵測程式碼跨發行版可移植：
+  ```bash
+  EM_FILE=$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["stdlib"] + "/EXTERNALLY-MANAGED")' 2>/dev/null || true)
+  PIP_FLAGS=""
+  if [ -n "$EM_FILE" ] && [ -f "$EM_FILE" ]; then
+      PIP_FLAGS="--break-system-packages"
+      echo "Detected PEP 668 (EXTERNALLY-MANAGED) — using --break-system-packages"
+  fi
+  ```
+  套用範圍：`deploy/install.sh`（setuptools/wheel 升級 + 兩個 jt-glogarch install 步驟）、`deploy/upgrade.sh`（`pip install --force-reinstall` 那一段）、`deploy/uninstall.sh`（`pip uninstall`）。
+- 客戶若無法等 v1.7.14 進入本地 checkout，立即解法：手動帶旗標補跑 pip，例如 `sudo pip install --break-system-packages --no-build-isolation --no-cache-dir --force-reinstall --no-deps /opt/jt-glogarch`（再跑第二個含 deps 的 pip），然後重新執行 `sudo bash deploy/install.sh` — 前面失敗時還沒做的「建立使用者 / 目錄 / SSL 憑證 / systemd」步驟都是冪等（idempotent），第二次跑會正常走完。
+
 ## [1.7.13] - 2026-05-12
 
 ### 修正 — 長時間 OpenSearch 匯出隨機出現「cannot start a transaction within a transaction」，整個索引被跳過
