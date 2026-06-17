@@ -25,6 +25,39 @@ default_server: log4                    # 預設使用的伺服器
 
 > API Token 取得：Graylog → System → Users → 你的帳號 → Edit Tokens → Create Token
 
+### 多台伺服器（多來源歸檔）
+
+把每台 Graylog 伺服器都列在 `servers:` 下。每個匯出工作（手動或排程）都鎖定**一台**伺服器（在 Web UI 匯出／排程對話框選擇，或用 `glogarch export --server <名稱>`）。要自動歸檔多台，就**為每台各建一個匯出排程**。
+
+每台伺服器還能透過 per-server 的 `opensearch:` 區塊帶**自己的** OpenSearch 叢集（供 OpenSearch 直連模式使用）；未填時則退回全域的 `opensearch:` 區塊：
+
+```yaml
+servers:
+  - name: graylog-main
+    url: "http://192.168.1.132:9000"
+    auth_token: "TOKEN_A"
+    verify_ssl: false
+    opensearch:                         # 此伺服器背後的叢集
+      hosts:
+        - "http://192.168.1.132:9200"
+        - "http://192.168.1.127:9200"   # 「同一個叢集」的容錯節點
+      username: admin
+      password: "OS_PASSWORD_A"
+      verify_ssl: false
+
+  - name: graylog-siteB
+    url: "http://10.0.0.5:9000"
+    auth_token: "TOKEN_B"
+    verify_ssl: false
+    opensearch:
+      hosts: ["http://10.0.0.5:9200"]
+      username: admin
+      password: "OS_PASSWORD_B"
+      verify_ssl: false
+
+default_server: graylog-main
+```
+
 ---
 
 ## export — 匯出設定
@@ -66,8 +99,8 @@ import:
 
 ```yaml
 opensearch:
-  hosts:                                # 可填多台，自動 failover
-    - "http://192.168.1.132:9200"
+  hosts:                                # 「同一個叢集」的容錯節點
+    - "http://192.168.1.132:9200"       # （並非多個叢集）
     - "http://192.168.1.127:9200"
   username: admin
   password: "your-password"
@@ -75,6 +108,15 @@ opensearch:
 ```
 
 > 不使用 OpenSearch 直連模式可整段不填。
+
+**全域 vs per-server。** 這個頂層 `opensearch:` 區塊是**全域後備**。若某台伺服器設了自己的 `servers[].opensearch:` 區塊，就會改用該區塊。`hosts` 清單永遠是**同一個叢集的容錯節點** —— 要歸檔**不同的** OpenSearch 叢集，請各自建立獨立的伺服器條目，並為其設定 per-server 的 `opensearch:` 區塊（見[多台伺服器](#多台伺服器多來源歸檔)）。
+
+| 你要歸檔的是… | 設定方式 |
+|---|---|
+| 一個叢集、多個節點 | `hosts: [節點1, 節點2, …]`（容錯備援） |
+| 多個獨立叢集 | 每個叢集各建一個 `servers[]` 條目，各自帶 `opensearch:` 區塊 |
+
+> CLI：`glogarch test-opensearch --server <名稱>` 會測試該伺服器解析到的叢集。
 
 ---
 

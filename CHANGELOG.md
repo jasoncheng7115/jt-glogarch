@@ -2,6 +2,18 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.7.16] - 2026-06-17
+
+### Added — Per-server OpenSearch cluster (archive multiple sources)
+
+- jt-glogarch could already archive **multiple Graylog servers** (list them all under `servers:`, then create one export schedule per server — each export job targets one server, chosen in the Web UI export/schedule dialog or via `glogarch export --server <name>`). This was never documented, so users assumed only one source was possible. The README, CONFIG reference (EN + zh_TW), and `deploy/config.yaml.example` now show a multi-source config example.
+- **OpenSearch Direct mode was limited to a single cluster.** The top-level `opensearch:` block is one cluster, and its `hosts` list is the failover *nodes* of that one cluster — there was no way to point different Graylog servers at different OpenSearch clusters. OpenSearch-mode export of a *second* site's cluster was impossible.
+- Fix: `GraylogServerConfig` gains an optional `opensearch:` block. When set, OpenSearch-mode export for that server uses its own cluster; when omitted, it falls back to the global top-level `opensearch:` block. Resolution is centralised in the new `Settings.get_opensearch(server_name)` helper, used by every export path:
+  - Scheduled export (`scheduler.py`), manual export + schedule run-now (`web/routes/api.py`), and CLI `glogarch export` (`cli/main.py`).
+  - The OpenSearch settings/test endpoints (`/api/opensearch/status|indices|test`) and `glogarch test-opensearch` accept an optional `server` argument to operate on a specific server's resolved cluster.
+- **Fully backward compatible.** Existing single-cluster configs are unchanged — a server with no `opensearch:` block transparently uses the global block. The `hosts` list still means "failover nodes of one cluster"; to archive *separate* clusters, give each its own `servers[]` entry with a per-server `opensearch:` block.
+- Docs: new "Archiving Multiple Sources" section in both READMEs, expanded `servers` / `opensearch` sections in CONFIG.md + CONFIG-zh_TW.md (with a "one cluster vs multiple clusters" table), commented per-server example in `deploy/config.yaml.example`, and a richer `glogarch config` generated template.
+
 ## [1.7.15] - 2026-05-28
 
 ### Fixed — Sensitive-operation notification omits the source IP

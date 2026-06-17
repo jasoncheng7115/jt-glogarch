@@ -183,9 +183,10 @@ def _export_opensearch(settings, server_config, db, dt_from, dt_to, index_set, r
     from glogarch.opensearch.exporter import OpenSearchExporter
     from glogarch.export.exporter import _ensure_naive
 
-    if not settings.opensearch.hosts:
+    os_config = settings.get_opensearch(server_config.name)
+    if not os_config.hosts:
         console.print("[red]Error: opensearch.hosts not configured in config.yaml[/red]")
-        console.print("Please add opensearch connection settings:")
+        console.print("Please add opensearch connection settings (global or per-server):")
         console.print("  opensearch:")
         console.print("    hosts: [\"http://192.168.1.127:9200\"]")
         console.print("    username: admin")
@@ -193,7 +194,7 @@ def _export_opensearch(settings, server_config, db, dt_from, dt_to, index_set, r
         return
 
     exporter = OpenSearchExporter(
-        server_config, settings.opensearch, settings.export,
+        server_config, os_config, settings.export,
         settings.rate_limit, db,
     )
 
@@ -249,20 +250,22 @@ def _print_export_result(result):
 
 
 @cli.command("test-opensearch")
-def test_opensearch():
+@click.option("--server", default=None, help="Test the OpenSearch cluster bound to this Graylog server (per-server block, else global).")
+def test_opensearch(server):
     """Test OpenSearch connection."""
     from glogarch.opensearch.client import OpenSearchClient
 
     settings = get_settings()
 
-    if not settings.opensearch.hosts:
+    os_config = settings.get_opensearch(server)
+    if not os_config.hosts:
         console.print("[red]Error: opensearch.hosts not configured in config.yaml[/red]")
         return
 
-    console.print(f"Testing OpenSearch: {', '.join(settings.opensearch.hosts)}")
+    console.print(f"Testing OpenSearch: {', '.join(os_config.hosts)}")
 
     async def _test():
-        async with OpenSearchClient(settings.opensearch) as client:
+        async with OpenSearchClient(os_config) as client:
             return await client.test_connection()
 
     result = asyncio.run(_test())
@@ -836,6 +839,10 @@ def config(output: str):
     """Generate example config.yaml."""
     example = """\
 # jt-glogarch Configuration
+#
+# Multiple servers can be archived: list every Graylog server here, then
+# create one export schedule per server (each schedule pins config.server).
+# The Web UI export/schedule dialogs let you pick which server to archive.
 servers:
   - name: graylog-main
     url: "http://192.168.1.132:9000"
@@ -844,8 +851,40 @@ servers:
     username: admin
     password: admin
     verify_ssl: false
+    # Optional: OpenSearch cluster behind THIS server, for OpenSearch-mode
+    # export. `hosts` are failover NODES of this one cluster. Omit to use
+    # the global `opensearch:` block below as fallback.
+    opensearch:
+      hosts: ["http://192.168.1.132:9200", "http://192.168.1.127:9200"]
+      username: admin
+      password: your-os-password
+      verify_ssl: false
+
+  # A second Graylog server with its OWN OpenSearch cluster:
+  - name: graylog-siteB
+    url: "http://10.0.0.5:9000"
+    auth_token: "siteB-api-token-here"
+    verify_ssl: false
+    opensearch:
+      hosts: ["http://10.0.0.5:9200"]
+      username: admin
+      password: siteB-os-password
+      verify_ssl: false
 
 default_server: graylog-main
+
+# export_mode: api uses the Graylog REST API; opensearch reads OpenSearch
+# directly (faster, no 10k-offset limit). Per-server `opensearch:` above only
+# matters for opensearch mode.
+export_mode: api
+
+# Global OpenSearch fallback — used for any server WITHOUT its own
+# `opensearch:` block above. Single cluster; `hosts` are failover nodes.
+opensearch:
+  hosts: ["http://192.168.1.132:9200", "http://192.168.1.127:9200"]
+  username: admin
+  password: your-os-password
+  verify_ssl: false
 
 export:
   base_path: /data/graylog-archives

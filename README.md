@@ -1,4 +1,4 @@
-# jt-glogarch v1.7.15
+# jt-glogarch v1.7.16
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.7.15-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.7.16-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -604,6 +604,53 @@ database_path: /opt/jt-glogarch/jt-glogarch.db
 
 > Schedules, notifications, import settings, and retention policies can all be configured in the Web UI under "Schedules" and "Notification Settings".
 > For the full config reference, see [CONFIG.md](CONFIG.md) or [`deploy/config.yaml.example`](deploy/config.yaml.example).
+
+### Archiving Multiple Sources
+
+jt-glogarch can archive **multiple Graylog servers**, each with its **own OpenSearch cluster**. List every server under `servers:`, then create **one export schedule per server** (the export and schedule dialogs in the Web UI let you pick which server to archive).
+
+```yaml
+servers:
+  # Server A — with its own OpenSearch cluster (for OpenSearch-mode export).
+  - name: graylog-main
+    url: "http://192.168.1.132:9000"
+    auth_token: "TOKEN_A"
+    verify_ssl: false
+    opensearch:                       # per-server cluster; `hosts` are
+      hosts:                          # failover NODES of THIS one cluster
+        - "http://192.168.1.132:9200"
+        - "http://192.168.1.127:9200"
+      username: admin
+      password: "OS_PASSWORD_A"
+      verify_ssl: false
+
+  # Server B — a different site with a different OpenSearch cluster.
+  - name: graylog-siteB
+    url: "http://10.0.0.5:9000"
+    auth_token: "TOKEN_B"
+    verify_ssl: false
+    opensearch:
+      hosts:
+        - "http://10.0.0.5:9200"
+      username: admin
+      password: "OS_PASSWORD_B"
+      verify_ssl: false
+
+default_server: graylog-main
+
+# Global fallback — used by any server WITHOUT its own `opensearch:` block.
+opensearch:
+  hosts:
+    - "http://192.168.1.132:9200"
+  username: admin
+  password: "OS_PASSWORD_A"
+  verify_ssl: false
+```
+
+**Notes:**
+- **Graylog API mode** needs no OpenSearch at all — just list each server under `servers:` and schedule one export per server.
+- **OpenSearch Direct mode** uses the server's own `opensearch:` block if present, otherwise the global `opensearch:` block. The `hosts` list within a block is the **failover nodes of a single cluster**, *not* separate clusters — to archive separate clusters, give each its own server entry.
+- CLI: `glogarch export --server graylog-siteB --mode opensearch` and `glogarch test-opensearch --server graylog-siteB` operate on that server's cluster.
 
 
 

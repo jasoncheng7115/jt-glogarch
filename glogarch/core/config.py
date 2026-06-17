@@ -9,6 +9,13 @@ import yaml
 from pydantic import BaseModel, Field
 
 
+class OpenSearchConfig(BaseModel):
+    hosts: list[str] = Field(default_factory=list)  # e.g. ["http://192.168.1.127:9200"]
+    username: str | None = None
+    password: str | None = None
+    verify_ssl: bool = False
+
+
 class GraylogServerConfig(BaseModel):
     name: str
     url: str  # e.g. "https://graylog.example.com/api"
@@ -16,6 +23,10 @@ class GraylogServerConfig(BaseModel):
     username: str | None = None
     password: str | None = None
     verify_ssl: bool = True
+    # Optional per-server OpenSearch cluster for OpenSearch-mode export.
+    # When unset, the global top-level `opensearch:` block is used as fallback.
+    # `hosts` within are failover NODES of THIS server's single cluster.
+    opensearch: OpenSearchConfig | None = None
 
 
 class ExportConfig(BaseModel):
@@ -56,13 +67,6 @@ class ScheduleConfig(BaseModel):
     export_cron: str | None = "0 * * * *"
     export_days: int = 180
     cleanup_cron: str | None = "0 3 * * *"
-
-
-class OpenSearchConfig(BaseModel):
-    hosts: list[str] = Field(default_factory=list)  # e.g. ["http://192.168.1.127:9200"]
-    username: str | None = None
-    password: str | None = None
-    verify_ssl: bool = False
 
 
 class TelegramConfig(BaseModel):
@@ -174,6 +178,21 @@ class Settings(BaseModel):
         if self.servers:
             return self.servers[0]
         raise ValueError(f"No server configured (requested: {target!r})")
+
+    def get_opensearch(self, server_name: str | None = None) -> OpenSearchConfig:
+        """Resolve the OpenSearch cluster for a given Graylog server.
+
+        Returns the server's own `opensearch` block when set (multi-cluster
+        archiving), otherwise falls back to the global top-level `opensearch:`
+        block. Resolution never raises — an unconfigured server yields the
+        global block (which may itself be empty)."""
+        try:
+            server = self.get_server(server_name)
+        except ValueError:
+            return self.opensearch
+        if server.opensearch is not None and server.opensearch.hosts:
+            return server.opensearch
+        return self.opensearch
 
 
 # Singleton

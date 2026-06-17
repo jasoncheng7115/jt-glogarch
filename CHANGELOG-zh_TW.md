@@ -2,6 +2,18 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.7.16] - 2026-06-17
+
+### 新增 — 每台伺服器各自的 OpenSearch 叢集（歸檔多個來源）
+
+- jt-glogarch 其實一直都能歸檔**多台 Graylog 伺服器**（把所有伺服器列在 `servers:` 下，再為每台各建一個匯出排程 —— 每個匯出工作鎖定一台，可在 Web UI 匯出／排程對話框選擇，或用 `glogarch export --server <名稱>`）。但這從未寫進文件，導致使用者誤以為只能設定單一來源。現在 README、CONFIG 參考文件（英文 + 繁中）、以及 `deploy/config.yaml.example` 都補上了多來源設定範例。
+- **OpenSearch 直連模式原本僅限單一叢集。** 頂層的 `opensearch:` 區塊是一個叢集，底下的 `hosts` 清單是「同一個叢集」的容錯**節點** —— 無法讓不同的 Graylog 伺服器對應到不同的 OpenSearch 叢集。要用 OpenSearch 模式歸檔**第二個站點**的叢集是做不到的。
+- 修法：`GraylogServerConfig` 新增選用的 `opensearch:` 區塊。設定後，該伺服器的 OpenSearch 模式匯出會使用它自己的叢集；未設定則退回全域頂層的 `opensearch:` 區塊。解析邏輯集中在新的 `Settings.get_opensearch(server_name)` helper，所有匯出路徑都改用它：
+  - 排程匯出（`scheduler.py`）、手動匯出與排程立即執行（`web/routes/api.py`）、以及 CLI `glogarch export`（`cli/main.py`）。
+  - OpenSearch 設定／測試端點（`/api/opensearch/status|indices|test`）與 `glogarch test-opensearch` 都接受選用的 `server` 參數，針對指定伺服器解析到的叢集運作。
+- **完全向後相容。** 既有的單一叢集設定不受影響 —— 沒有 `opensearch:` 區塊的伺服器會透明地沿用全域區塊。`hosts` 清單仍代表「同一個叢集的容錯節點」；要歸檔**不同的**叢集，請各自建立獨立的 `servers[]` 條目，並設定 per-server 的 `opensearch:` 區塊。
+- 文件：兩份 README 新增「歸檔多個來源」章節；CONFIG.md 與 CONFIG-zh_TW.md 擴充 `servers` / `opensearch` 章節（附「一個叢集 vs 多個叢集」對照表）；`deploy/config.yaml.example` 加入註解版 per-server 範例；`glogarch config` 產生的範本內容也更完整。
+
 ## [1.7.15] - 2026-05-28
 
 ### 修正 — 敏感行為通知未顯示來源 IP

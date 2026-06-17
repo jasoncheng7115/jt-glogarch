@@ -218,11 +218,12 @@ async def trigger_export(request: Request, background_tasks: BackgroundTasks):
         from glogarch.opensearch.exporter import OpenSearchExporter
         from glogarch.export.exporter import _ensure_naive
 
-        if not settings.opensearch.hosts:
+        os_config = settings.get_opensearch(server_name)
+        if not os_config.hosts:
             return JSONResponse({"error": "OpenSearch not configured"}, status_code=400)
 
         os_exporter = OpenSearchExporter(
-            server_config, settings.opensearch, settings.export,
+            server_config, os_config, settings.export,
             settings.rate_limit, db,
         )
         # OpenSearch: no resume point — rely on per-chunk dedup to avoid gaps
@@ -885,10 +886,11 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
             _job_progress[job_id] = events[-50:]
         events.append(info)
 
-    if export_mode == "opensearch" and settings.opensearch.hosts:
+    os_config = settings.get_opensearch(cfg.get("server"))
+    if export_mode == "opensearch" and os_config.hosts:
         from glogarch.opensearch.exporter import OpenSearchExporter
         os_exporter = OpenSearchExporter(
-            server_config, settings.opensearch, settings.export,
+            server_config, os_config, settings.export,
             settings.rate_limit, db,
         )
         # OpenSearch mode: do NOT use resume point to skip indices.
@@ -1318,22 +1320,27 @@ async def list_index_sets(request: Request):
 # --- OpenSearch ---
 
 @router.get("/opensearch/status")
-async def opensearch_status(request: Request):
-    """Get OpenSearch connection status and config."""
+async def opensearch_status(request: Request, server: str | None = None):
+    """Get OpenSearch connection status and config.
+
+    When `server` is given, reports that Graylog server's resolved cluster
+    (per-server block if set, else the global fallback)."""
     settings = _settings(request)
-    has_config = bool(settings.opensearch.hosts)
+    os_config = settings.get_opensearch(server)
+    has_config = bool(os_config.hosts)
     return {
         "configured": has_config,
-        "hosts": settings.opensearch.hosts,
+        "hosts": os_config.hosts,
         "export_mode": settings.export_mode,
     }
 
 
 @router.get("/opensearch/indices")
-async def list_opensearch_indices(request: Request, prefix: str | None = None):
+async def list_opensearch_indices(request: Request, prefix: str | None = None, server: str | None = None):
     """Get available OpenSearch indices with time ranges for coverage visualization."""
     settings = _settings(request)
-    if not settings.opensearch.hosts:
+    os_config = settings.get_opensearch(server)
+    if not os_config.hosts:
         return {"indices": [], "active_index": None}
 
     from glogarch.opensearch.client import OpenSearchClient
@@ -1344,7 +1351,7 @@ async def list_opensearch_indices(request: Request, prefix: str | None = None):
             from glogarch.graylog.client import GraylogClient
             from glogarch.ratelimit.limiter import RateLimiter
             rl = RateLimiter(settings.rate_limit)
-            async with GraylogClient(settings.get_server(), rl) as gl:
+            async with GraylogClient(settings.get_server(server), rl) as gl:
                 index_sets = await gl.get_index_sets()
                 prefix = "graylog"
                 for iset in index_sets:
@@ -1354,7 +1361,7 @@ async def list_opensearch_indices(request: Request, prefix: str | None = None):
         except Exception:
             prefix = "graylog"
 
-    async with OpenSearchClient(settings.opensearch) as client:
+    async with OpenSearchClient(os_config) as client:
         indices = await client.list_indices(prefix)
         active = await client.get_active_write_index(prefix)
 
@@ -1416,9 +1423,10 @@ async def test_opensearch(request: Request):
         body = await request.json()
     except Exception:
         body = {}
-    hosts = body.get("hosts") or settings.opensearch.hosts
-    username = body.get("username") or settings.opensearch.username
-    password = body.get("password") or settings.opensearch.password
+    os_config = settings.get_opensearch(body.get("server"))
+    hosts = body.get("hosts") or os_config.hosts
+    username = body.get("username") or os_config.username
+    password = body.get("password") or os_config.password
 
     if not hosts:
         return JSONResponse({"connected": False, "error": "No OpenSearch hosts configured"}, status_code=400)
@@ -1430,7 +1438,7 @@ async def test_opensearch(request: Request):
         hosts=hosts if isinstance(hosts, list) else [hosts],
         username=username,
         password=password,
-        verify_ssl=settings.opensearch.verify_ssl,
+        verify_ssl=os_config.verify_ssl,
     )
 
     async with OpenSearchClient(test_config) as client:

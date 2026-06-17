@@ -186,10 +186,11 @@ class ArchiveScheduler:
                  server=server_config.name,
                  initial_from=str(time_from), to=str(time_to))
 
-        if export_mode == "opensearch" and self.settings.opensearch.hosts:
+        os_config = self.settings.get_opensearch(cfg.get("server"))
+        if export_mode == "opensearch" and os_config.hosts:
             from glogarch.opensearch.exporter import OpenSearchExporter
             exporter = OpenSearchExporter(
-                server_config, self.settings.opensearch, self.settings.export,
+                server_config, os_config, self.settings.export,
                 self.settings.rate_limit, self.db,
             )
             # OpenSearch: no resume point — rely on per-chunk dedup to avoid gaps

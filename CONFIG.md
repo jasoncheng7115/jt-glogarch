@@ -25,6 +25,39 @@ default_server: log4                    # Default server to use
 
 > Get an API Token: Graylog → System → Users → Your Account → Edit Tokens → Create Token
 
+### Multiple servers (multi-source archiving)
+
+List every Graylog server under `servers:`. Each export job — manual or scheduled — targets **one** server (chosen in the Web UI export/schedule dialog, or via `glogarch export --server <name>`). To archive several servers automatically, create **one export schedule per server**.
+
+Each server may carry its **own** OpenSearch cluster via a per-server `opensearch:` block (used by OpenSearch-mode export). When omitted, the global top-level `opensearch:` block is used as fallback:
+
+```yaml
+servers:
+  - name: graylog-main
+    url: "http://192.168.1.132:9000"
+    auth_token: "TOKEN_A"
+    verify_ssl: false
+    opensearch:                         # cluster behind THIS server
+      hosts:
+        - "http://192.168.1.132:9200"
+        - "http://192.168.1.127:9200"   # failover NODES of the SAME cluster
+      username: admin
+      password: "OS_PASSWORD_A"
+      verify_ssl: false
+
+  - name: graylog-siteB
+    url: "http://10.0.0.5:9000"
+    auth_token: "TOKEN_B"
+    verify_ssl: false
+    opensearch:
+      hosts: ["http://10.0.0.5:9200"]
+      username: admin
+      password: "OS_PASSWORD_B"
+      verify_ssl: false
+
+default_server: graylog-main
+```
+
 ---
 
 ## export — Export Settings
@@ -66,8 +99,8 @@ import:
 
 ```yaml
 opensearch:
-  hosts:                                # Multiple hosts for failover
-    - "http://192.168.1.132:9200"
+  hosts:                                # Failover NODES of ONE cluster
+    - "http://192.168.1.132:9200"       # (NOT separate clusters)
     - "http://192.168.1.127:9200"
   username: admin
   password: "your-password"
@@ -75,6 +108,15 @@ opensearch:
 ```
 
 > Skip this section entirely if not using OpenSearch direct mode.
+
+**Global vs per-server.** This top-level `opensearch:` block is the **global fallback**. A server with its own `servers[].opensearch:` block uses that instead. The `hosts` list is always the **failover nodes of a single cluster** — to archive *different* OpenSearch clusters, give each cluster its own server entry with a per-server `opensearch:` block (see [Multiple servers](#multiple-servers-multi-source-archiving)).
+
+| You want to archive… | How |
+|---|---|
+| One cluster, multiple nodes | `hosts: [node1, node2, …]` (failover) |
+| Multiple separate clusters | One `servers[]` entry per cluster, each with its own `opensearch:` block |
+
+> CLI: `glogarch test-opensearch --server <name>` tests the cluster resolved for that server.
 
 ---
 

@@ -1,4 +1,4 @@
-# jt-glogarch v1.7.15
+# jt-glogarch v1.7.16
 
 **語言**: [English](README.md) | **繁體中文**  
 **網站**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.7.15-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.7.16-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -590,6 +590,53 @@ database_path: /opt/jt-glogarch/jt-glogarch.db
 
 > 排程、通知、匯入、保留策略等設定都可在 Web UI 的「排程作業」和「通知設定」頁面完成。
 > 完整設定參考請見 [CONFIG-zh_TW.md](CONFIG-zh_TW.md) 或 [`deploy/config.yaml.example`](deploy/config.yaml.example)。
+
+### 歸檔多個來源
+
+jt-glogarch 可同時歸檔**多台 Graylog 伺服器**，每台還能各自對應**自己的 OpenSearch 叢集**。把每台伺服器都列在 `servers:` 下，再**為每台各建一個匯出排程**（Web UI 的匯出與排程對話框都可選擇要歸檔哪一台）。
+
+```yaml
+servers:
+  # 伺服器 A —— 帶自己的 OpenSearch 叢集（供 OpenSearch 直連模式使用）。
+  - name: graylog-main
+    url: "http://192.168.1.132:9000"
+    auth_token: "TOKEN_A"
+    verify_ssl: false
+    opensearch:                       # 此伺服器專屬叢集；底下 hosts 是
+      hosts:                          # 「同一個叢集」的多節點容錯備援
+        - "http://192.168.1.132:9200"
+        - "http://192.168.1.127:9200"
+      username: admin
+      password: "OS_PASSWORD_A"
+      verify_ssl: false
+
+  # 伺服器 B —— 另一個站點，使用不同的 OpenSearch 叢集。
+  - name: graylog-siteB
+    url: "http://10.0.0.5:9000"
+    auth_token: "TOKEN_B"
+    verify_ssl: false
+    opensearch:
+      hosts:
+        - "http://10.0.0.5:9200"
+      username: admin
+      password: "OS_PASSWORD_B"
+      verify_ssl: false
+
+default_server: graylog-main
+
+# 全域後備 —— 給「沒有自己 opensearch: 區塊」的伺服器使用。
+opensearch:
+  hosts:
+    - "http://192.168.1.132:9200"
+  username: admin
+  password: "OS_PASSWORD_A"
+  verify_ssl: false
+```
+
+**注意事項：**
+- **Graylog API 模式**完全不需要 OpenSearch —— 只要把每台列在 `servers:` 下，再為每台各排一個匯出即可。
+- **OpenSearch 直連模式**會優先使用該伺服器自己的 `opensearch:` 區塊，沒有才退回全域 `opensearch:` 區塊。單一區塊內的 `hosts` 清單是**同一個叢集的容錯節點**，並非多個叢集；要歸檔不同叢集，請各自建立獨立的伺服器條目。
+- CLI：`glogarch export --server graylog-siteB --mode opensearch` 與 `glogarch test-opensearch --server graylog-siteB` 會針對該伺服器的叢集運作。
 
 
 
