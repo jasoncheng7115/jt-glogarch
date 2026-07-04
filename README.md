@@ -379,6 +379,16 @@ config defaults to `config.yaml`, force-reinstalls the Python package, and
 restarts the service. Safe to run while jt-glogarch is active — there is
 no data loss step.
 
+> **Upgrading to 1.10.x from an older version? Run `upgrade.sh` twice.**
+> The first run is still executing your *old* upgrade script, which pulls the
+> new code but predates the PDF-report dependency step. Run it a second time so
+> the now-updated script installs the PDF-report runtime deps (Chromium + a CJK
+> font). You can tell it worked when the second run prints
+> `=== PDF Reports runtime deps (Chromium + CJK font) ===`. Upgrades *between*
+> 1.10.x versions install everything in a single run. (The **offline** upgrade
+> below always installs everything in one run.) If you don't use PDF Reports,
+> the second run is optional.
+
 #### B. Offline / air-gapped upgrade (host has NO internet)
 
 For customer sites that cannot reach the internet. You build a **self-contained

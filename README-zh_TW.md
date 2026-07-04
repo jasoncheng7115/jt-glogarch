@@ -551,7 +551,7 @@ curl -sk https://localhost:8990/api/health
 
 jt-glogarch 提供**兩種**升級方式。兩者都會先備份資料庫、絕不覆寫 `config.yaml`、最後重啟服務 —— 差別只在「新版程式如何送進主機」。
 
-#### 甲、線上升級（主機可連外網）
+#### 1. 線上升級（主機可連外網）
 
 ```bash
 sudo bash /opt/jt-glogarch/deploy/upgrade.sh
@@ -559,12 +559,16 @@ sudo bash /opt/jt-glogarch/deploy/upgrade.sh
 
 升級指令碼會自動：備份 DB → git pull → pip install → 重啟服務 → 確認版本。
 
+> **從舊版（1.10.0 以前）升級到 1.10.x：請執行 `upgrade.sh` 兩次。**
+> 第一次執行時，跑的仍是你主機上的**舊版**升級腳本 —— 它會拉下新程式碼，但還沒有安裝 PDF 報表相依的步驟。請再執行第二次，讓已更新的新腳本安裝 PDF 報表所需的執行環境（Chromium＋中文字型）。第二次執行若出現
+> `=== PDF Reports runtime deps (Chromium + CJK font) ===` 即代表成功。1.10.x 版本之間互升則一次到位；下方的**離線升級**也一律一次到位。若不使用 PDF 報表功能，第二次執行可略過。
+
 > - `config.yaml` 和 `jt-glogarch.db` 不會被覆蓋（git 不追蹤）
 > - 新版若有新設定欄位會自動使用預設值，不需手動加
 > - DB schema 會在服務啟動時自動升級（`_migrate()`）
 > - 建議升級後檢查 [CHANGELOG](CHANGELOG-zh_TW.md) 確認是否有需要注意的變更
 
-#### 乙、離線／封閉網路升級（主機無法連外網）
+#### 2. 離線／封閉網路升級（主機無法連外網）
 
 適用於**無法連外網**的客戶站台。做法是在任一台可連外網的機器上打包成**自帶所有相依套件的離線包**，用實體方式帶進去（USB／內部檔案分享／scp），在目標主機本機執行 —— pip 全程不連網路（`--no-index`）。
 
