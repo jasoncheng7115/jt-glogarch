@@ -105,7 +105,11 @@ def line_chart(labels, series):
             "data": {"labels": labels, "datasets": ds},
             "options": {"responsive": True, "maintainAspectRatio": False,
                         "plugins": {"legend": {"display": len(ds) > 1}},
-                        "scales": {"y": {"beginAtZero": True}}}}
+                        "scales": {"y": {"beginAtZero": True},
+                                   # Thin a dense time axis to ~12 horizontal ticks
+                                   # instead of cramming every bucket at a 45° slant.
+                                   "x": {"ticks": {"autoSkip": True, "maxTicksLimit": 12,
+                                                   "maxRotation": 0, "minRotation": 0}}}}}
 
 
 def pie_chart(labels, values):

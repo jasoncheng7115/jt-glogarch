@@ -16,6 +16,11 @@
   <meta name="twitter:image" content="https://jasoncheng7115.github.io/jt-glogarch/og-image.png">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="style.css?v=1.7.9">
+  <style>
+    .hero-rotator { transition: opacity .45s ease; }
+    .hero-rotator.is-fading { opacity: 0; }
+    @media (prefers-reduced-motion: reduce) { .hero-rotator { transition: none; } }
+  </style>
 </head>
 <body>
 
@@ -40,7 +45,7 @@
 </nav>
 
 <header class="hero" id="top">
-  <h1>叢集會汰換，記錄長存。</h1>
+  <h1 class="hero-rotator" id="heroRotator">熱度會退，記錄不退。</h1>
   <p class="tagline">
     Graylog Open 長期記錄歸檔與還原工具，再補上 Enterprise 版才有的 Archive 功能。
     串流匯出、SHA256 完整性驗證、時間點還原、Graylog 管理員無法刪除的獨立合規稽核。
@@ -283,6 +288,21 @@ sudo systemctl enable --now jt-glogarch</code></pre>
 </footer>
 
 <script>
+  // Hero tagline auto-rotation — 5 lines, 4s each (0.45s cross-fade), 20s loop.
+  (function () {
+    var lines = ["熱度會退，記錄不退。", "冷藏，不是丟棄。", "資料降溫，價值不降。",
+                 "別為冷資料，付熱資料的代價。", "別讓冷資料，佔著熱資料的位。"];
+    var el = document.getElementById('heroRotator');
+    if (!el) return;
+    var i = 0;
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    setInterval(function () {
+      i = (i + 1) % lines.length;
+      if (reduce) { el.textContent = lines[i]; return; }
+      el.classList.add('is-fading');
+      setTimeout(function () { el.textContent = lines[i]; el.classList.remove('is-fading'); }, 450);
+    }, 4000);
+  })();
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));

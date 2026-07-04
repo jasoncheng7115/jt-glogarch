@@ -2276,6 +2276,22 @@ async def report_dashboards(request: Request, server: str = Query(default="")):
     return {"items": items}
 
 
+@router.get("/reports/dashboard-tabs")
+async def report_dashboard_tabs(request: Request, server: str = Query(default=""),
+                                id: str = Query(default="")):
+    """List a dashboard's tabs for the report tab picker."""
+    settings = _settings(request)
+    try:
+        srv = settings.get_server(server or None)
+    except Exception:
+        return {"items": []}
+    if not id:
+        return {"items": []}
+    from glogarch.report import graylog_data
+    items = await graylog_data.list_dashboard_tabs(srv, id)
+    return {"items": items}
+
+
 @router.get("/reports/status")
 def report_status(request: Request):
     """Beta capability check — is the PDF render engine available?"""

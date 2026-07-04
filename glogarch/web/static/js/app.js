@@ -3328,6 +3328,7 @@ function copyAuditBody(btn) {
 // ============================================================
 let _reportServers = [];
 let _reportDashboards = [];
+let _reportDashTabs = {};   // {dashboardId: chosen tab state_id}
 
 async function loadReportsPage() {
     const [defs, hist, status, servers] = await Promise.all([
@@ -3362,9 +3363,11 @@ function renderReportsTable(items) {
             <td>${r.enabled ? t('settings_yes') : t('settings_no')}</td>
             <td class="text-muted fs-085">${r.last_run_at ? esc(formatDT(r.last_run_at)) : '-'}</td>
             <td>
-                <button class="btn-sm btn-primary" data-act="generateReport" data-arg="${esc(r.name)}">${icon('play',14)} ${t('reports_generate')}</button>
-                <button class="btn-sm btn-secondary" data-act="openReportModal" data-arg="${esc(r.name)}">${t('btn_edit')}</button>
-                <button class="btn-sm btn-danger" data-act="deleteReport" data-arg="${esc(r.name)}">${icon('trash',14)}</button>
+                <div class="row-actions">
+                    <button class="btn-sm btn-primary" data-act="generateReport" data-arg="${esc(r.name)}">${icon('play',14)} ${t('reports_generate')}</button>
+                    <button class="btn-sm btn-secondary" data-act="openReportModal" data-arg="${esc(r.name)}">${t('btn_edit')}</button>
+                    <button class="btn-sm btn-danger" data-act="deleteReport" data-arg="${esc(r.name)}">${icon('trash',14)}</button>
+                </div>
             </td></tr>`;
     }).join('');
 }
@@ -3404,6 +3407,14 @@ async function openReportModal(name) {
       <div class="form-group"><label>${t('reports_f_lang')}</label>
         <select id="rp-lang" class="no-custom"><option value="zh-TW"${cfg.lang!=='en'?' selected':''}>繁體中文</option><option value="en"${cfg.lang==='en'?' selected':''}>English</option></select></div>
       <div class="form-group"><label>${t('reports_f_header')}</label><input type="text" id="rp-header" value="${esc(cfg.header_text||'')}" placeholder="機密"></div>
+      <div class="form-group"><label>${t('reports_f_logo')}</label>
+        <div class="row-actions">
+          <input type="file" id="rp-logo-file" accept="image/png,image/jpeg,image/svg+xml" data-act-change="reportLogoPick">
+          <button type="button" class="btn-sm btn-secondary" data-act="reportLogoClear">${t('reports_logo_clear')}</button>
+        </div>
+        <img id="rp-logo-prev" class="report-logo-prev${cfg.logo_data_uri?'':' hidden'}" src="${esc(cfg.logo_data_uri||'')}" alt="">
+        <input type="hidden" id="rp-logo" value="${esc(cfg.logo_data_uri||'')}">
+        <div class="text-muted fs-08 mt3">${t('reports_logo_hint')}</div></div>
       <div class="form-group"><label class="inline-check"><input type="checkbox" id="rp-archive" ${cfg.include_archive_summary!==false?'checked':''}> ${t('reports_f_archive')}</label></div>
       <hr class="u003">
       <div class="form-group"><label>${t('reports_f_server')}</label><select id="rp-server" class="no-custom" data-act-change="reportLoadDashboards"><option value="">-</option>${serverOpts}</select></div>
@@ -3424,14 +3435,67 @@ async function openReportModal(name) {
       </div>
       <hr class="u003">
       <div class="form-group"><label>${t('reports_f_recipients')}</label><input type="text" id="rp-recipients" value="${esc((cfg.recipients||[]).join(', '))}" placeholder="a@x.com, b@y.com"></div>
-      <div class="form-group"><label>${t('reports_f_cron')}</label><input type="text" id="rp-cron" value="${esc(cfg.schedule_cron||'')}" placeholder="0 8 * * 1"></div>
+      <div class="form-group"><label>${t('reports_f_cron')}</label>
+        <select id="rp-cron-freq" class="no-custom" data-act-change="reportCronPreset">
+          <option value="">${t('reports_cron_none')}</option>
+          <option value="0 * * * *">${t('reports_cron_hourly')}</option>
+          <option value="0 8 * * *">${t('reports_cron_daily')}</option>
+          <option value="0 8 * * 1">${t('reports_cron_weekly')}</option>
+          <option value="0 8 1 * *">${t('reports_cron_monthly')}</option>
+          <option value="custom">${t('reports_cron_custom')}</option>
+        </select>
+        <input type="text" id="rp-cron" class="mt3" value="${esc(cfg.schedule_cron||'')}" placeholder="0 8 * * 1"></div>
       <div class="form-group"><label class="inline-check"><input type="checkbox" id="rp-enabled" ${cfg.__enabled!==false?'checked':''}> ${t('reports_f_enabled')}</label></div>`;
     document.getElementById('report-modal-result').innerHTML = '';
     document.getElementById('report-modal').classList.remove('hidden');
     document.getElementById('report-modal').style.display = 'flex';
     _reportDashboards = cfg.dashboards || [];
     reportToggleMode(cfg.dashboard_mode || 'rebuild');
+    reportCronInit(cfg.schedule_cron || '');
     if (cfg.server) reportLoadDashboards(cfg.server);
+}
+
+// Cron picker: presets fill the (advanced) text field; text field stays the
+// single source of truth read by _gatherReport.
+const _RP_CRON_PRESETS = ['', '0 * * * *', '0 8 * * *', '0 8 * * 1', '0 8 1 * *'];
+function reportCronInit(cron) {
+    const sel = document.getElementById('rp-cron-freq');
+    const txt = document.getElementById('rp-cron');
+    if (!sel || !txt) return;
+    if (_RP_CRON_PRESETS.includes(cron)) {
+        sel.value = cron;
+        txt.classList.add('hidden');   // preset (incl. "none") controls it
+    } else {
+        sel.value = 'custom';
+        txt.classList.remove('hidden');
+    }
+}
+function reportCronPreset() {
+    const sel = document.getElementById('rp-cron-freq');
+    const txt = document.getElementById('rp-cron');
+    if (!sel || !txt) return;
+    if (sel.value === 'custom') { txt.classList.remove('hidden'); txt.focus(); }
+    else { txt.value = sel.value; txt.classList.add('hidden'); }
+}
+
+// Cover logo: read the chosen image entirely client-side into a data URI stored
+// in the report config (rendered on the cover; no backend upload needed).
+function reportLogoPick() {
+    const f = document.getElementById('rp-logo-file')?.files?.[0];
+    if (!f) return;
+    if (f.size > 300 * 1024) { showAlert(t('reports_logo_too_big')); return; }
+    const rd = new FileReader();
+    rd.onload = e => {
+        document.getElementById('rp-logo').value = e.target.result;
+        const p = document.getElementById('rp-logo-prev');
+        if (p) { p.src = e.target.result; p.classList.remove('hidden'); }
+    };
+    rd.readAsDataURL(f);
+}
+function reportLogoClear() {
+    const h = document.getElementById('rp-logo'); if (h) h.value = '';
+    const p = document.getElementById('rp-logo-prev'); if (p) { p.src = ''; p.classList.add('hidden'); }
+    const f = document.getElementById('rp-logo-file'); if (f) f.value = '';
 }
 
 function closeReportModal() { const m = document.getElementById('report-modal'); m.classList.add('hidden'); m.style.display = 'none'; }
@@ -3443,8 +3507,38 @@ async function reportLoadDashboards(server) {
     const r = await fetchJSON(`${API}/reports/dashboards?server=${encodeURIComponent(server)}`);
     const items = r.items || [];
     const chosen = new Set((_reportDashboards || []).map(d => d.id || d));
+    _reportDashTabs = {};
+    (_reportDashboards || []).forEach(d => { if (d && d.id) _reportDashTabs[d.id] = d.tab || ''; });
     if (!items.length) { el.textContent = t('reports_no_dash'); return; }
-    el.innerHTML = items.map(d => `<label class="inline-check u113"><input type="checkbox" class="rp-dash" value="${esc(d.id)}" data-title="${esc(d.title)}" ${chosen.has(d.id)?'checked':''}> ${esc(d.title)}</label>`).join('');
+    el.innerHTML = items.map(d => `
+      <div class="rp-dash-row">
+        <label class="inline-check u113"><input type="checkbox" class="rp-dash" value="${esc(d.id)}" data-title="${esc(d.title)}" data-act-change="reportDashToggle" data-act-self ${chosen.has(d.id) ? 'checked' : ''}> ${esc(d.title)}</label>
+        <select class="rp-dash-tab no-custom hidden" data-id="${esc(d.id)}"><option value="">${t('reports_all_tabs')}</option></select>
+      </div>`).join('');
+    // Populate the tab dropdown for any pre-selected (multi-tab) dashboards.
+    items.forEach(d => { if (chosen.has(d.id)) _populateDashTabs(d.id); });
+}
+
+async function reportDashToggle(el) {
+    if (el.checked) { await _populateDashTabs(el.value); }
+    else {
+        const sel = document.querySelector('.rp-dash-tab[data-id="' + el.value + '"]');
+        if (sel) sel.classList.add('hidden');
+    }
+}
+
+// Fetch a dashboard's tabs; show the picker only when it actually has >1 tab.
+async function _populateDashTabs(id) {
+    const server = document.getElementById('rp-server')?.value;
+    const sel = document.querySelector('.rp-dash-tab[data-id="' + id + '"]');
+    if (!server || !sel) return;
+    const r = await fetchJSON(`${API}/reports/dashboard-tabs?server=${encodeURIComponent(server)}&id=${encodeURIComponent(id)}`);
+    const tabs = r.items || [];
+    if (tabs.length <= 1) { sel.classList.add('hidden'); return; }
+    const cur = _reportDashTabs[id] || '';
+    sel.innerHTML = `<option value="">${t('reports_all_tabs')}</option>` +
+        tabs.map((tb, i) => `<option value="${esc(tb.id)}"${tb.id === cur ? ' selected' : ''}>${esc(tb.title || (t('reports_tab') + ' ' + (i + 1)))}</option>`).join('');
+    sel.classList.remove('hidden');
 }
 
 function reportToggleMode(mode) {
@@ -3457,7 +3551,10 @@ function reportToggleMode(mode) {
 function _gatherReport() {
     const v = id => (document.getElementById(id)?.value || '').trim();
     const ck = id => !!document.getElementById(id)?.checked;
-    const dashboards = Array.from(document.querySelectorAll('.rp-dash:checked')).map(c => ({id: c.value, title: c.dataset.title}));
+    const dashboards = Array.from(document.querySelectorAll('.rp-dash:checked')).map(c => {
+        const sel = document.querySelector('.rp-dash-tab[data-id="' + c.value + '"]');
+        return {id: c.value, title: c.dataset.title, tab: (sel && sel.value) || ''};
+    });
     const hours = parseInt(v('rp-hours'), 10);
     const maxw = parseInt(v('rp-maxw'), 10);
     return {
@@ -3474,6 +3571,7 @@ function _gatherReport() {
             graylog_web_username: v('rp-webuser'), graylog_web_password: v('rp-webpass'),
             recipients: v('rp-recipients').split(',').map(s => s.trim()).filter(Boolean),
             schedule_cron: v('rp-cron'),
+            logo_data_uri: v('rp-logo'),
         },
     };
 }

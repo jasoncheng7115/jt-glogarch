@@ -44,6 +44,22 @@ async def list_dashboards(server) -> list[dict]:
     return out
 
 
+async def list_dashboard_tabs(server, dashboard_id: str) -> list[dict]:
+    """List a dashboard's tabs (state_id + tab title) for the report picker."""
+    auth = _basic_auth(server)
+    out = []
+    try:
+        async with httpx.AsyncClient(verify=server.verify_ssl, timeout=15.0) as c:
+            v = (await c.get(f"{server.url.rstrip('/')}/api/views/{dashboard_id}",
+                             auth=auth, headers={"Accept": "application/json"})).json()
+            for sid, s in (v.get("state") or {}).items():
+                title = (((s.get("titles") or {}).get("tab") or {}).get("title")) or ""
+                out.append({"id": sid, "title": title})
+    except Exception as e:
+        log.warning("list_dashboard_tabs failed", error=str(e))
+    return out
+
+
 def _basic_auth(server):
     if server.auth_token:
         return httpx.BasicAuth(server.auth_token, "token")
@@ -99,12 +115,15 @@ def png_to_data_uri(png: bytes) -> str:
 async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                                      time_range_seconds: int = 86400,
                                      max_widgets: int = 20,
-                                     lang: str = "zh-TW") -> list[dict]:
+                                     lang: str = "zh-TW",
+                                     tab: str | None = None) -> list[dict]:
     """Return report `sections` reconstructed from a Graylog dashboard's widgets.
     Empty list on failure (caller degrades)."""
     auth = _basic_auth(server)
     base = server.url.rstrip("/")
     hdr = {"Accept": "application/json", "Content-Type": "application/json", "X-Requested-By": "jt-glogarch"}
+    # max_widgets <= 0 (or unset) means "no limit — render every widget".
+    cap = max_widgets if (max_widgets and max_widgets > 0) else 10 ** 9
     try:
         async with httpx.AsyncClient(verify=server.verify_ssl, timeout=30.0) as c:
             view = (await c.get(f"{base}/api/views/{dashboard_id}", auth=auth, headers=hdr)).json()
@@ -136,7 +155,9 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
     # Correlate PER STATE (tab): a state's widgets map to that state's results.
     rendered = []
     for state_id, state in states.items():
-        if len(rendered) >= max_widgets:
+        if tab and state_id != tab:
+            continue                       # only the chosen tab
+        if len(rendered) >= cap:
             break
         st_res = ((results.get(state_id) or {}).get("search_types")) or {}
         if not st_res:
@@ -222,24 +243,29 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict) -> dict | None:
             val = tot
         return {"kind": "single", "title": title, "value": _fmt_metric(val), "label": ""}
 
-    labels = [_rowkey(r) for r in drows]
+    labels = [_rowkey(r) for r in drows]                       # keys (for lookups)
+    disp = ([_fmt_time_label((r.get("key") or [""])[0]) for r in drows]
+            if is_time else labels)                            # display labels
 
     if not col_pivots:
         values = [_first_value(r) for r in drows]
         if viz == "pie":
-            top = sorted(zip(labels, values), key=lambda x: (x[1] or 0), reverse=True)[:8]
+            top = sorted(zip(disp, values), key=lambda x: (x[1] or 0), reverse=True)[:8]
             return {"kind": "chart", "title": title,
                     "config": builder.pie_chart([l for l, _ in top], [v for _, v in top])}
-        if is_time:
+        if is_time and viz != "bar":
             return {"kind": "chart", "title": title, "tall": True,
-                    "config": builder.line_chart(labels, [{"label": title, "data": values}])}
-        # bar (cap to top 15 for readability)
-        top = sorted(zip(labels, values), key=lambda x: (x[1] or 0), reverse=True)[:15]
+                    "config": builder.line_chart(disp, [{"label": title, "data": values}])}
+        if is_time and viz == "bar":
+            return {"kind": "chart", "title": title, "tall": True,
+                    "config": _bar_multi(disp, [{"label": title, "data": values}], _barmode(cfg))}
+        # non-time bar (cap to top 15 for readability)
+        top = sorted(zip(disp, values), key=lambda x: (x[1] or 0), reverse=True)[:15]
         return {"kind": "chart", "title": title,
                 "config": builder.bar_chart([l for l, _ in top], [v for _, v in top],
                                             horizontal=len(top) > 6)}
 
-    # column pivots -> multiple series
+    # column pivots -> multiple series (data keyed by raw rowkey, displayed via disp)
     series_map = {}
     order = []
     for r in drows:
@@ -253,18 +279,57 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict) -> dict | None:
                 order.append(colname)
             series_map[colname][_rowkey(r)] = v.get("value")
     series = [{"label": name, "data": [series_map[name].get(l, 0) for l in labels]} for name in order[:6]]
-    if is_time:
+    if is_time and viz != "bar":
         return {"kind": "chart", "title": title, "tall": True,
-                "config": builder.line_chart(labels, series)}
-    # grouped bar
+                "config": builder.line_chart(disp, series)}
+    # bar: preserve Graylog's bar mode (grouped / stacked / overlay), incl. time bars
+    return {"kind": "chart", "title": title, "tall": bool(is_time),
+            "config": _bar_multi(disp, series, _barmode(cfg))}
+
+
+def _fmt_time_label(ts) -> str:
+    """Graylog time-bucket key (ISO like 2026-07-03T09:45:00.000+08:00) ->
+    short 'MM-DD HH:MM' for a readable chart x-axis."""
+    from datetime import datetime
+    s = str(ts).strip()
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return dt.strftime("%m-%d %H:%M")
+    except (ValueError, TypeError):
+        return s[:16] if len(s) > 16 else s
+
+
+def _barmode(cfg: dict) -> str:
+    """Graylog bar visualization mode: group | stack | relative | overlay."""
+    vc = cfg.get("visualization_config") or {}
+    return str(vc.get("barmode") or "group").lower()
+
+
+def _bar_multi(labels, series, barmode="group"):
+    """Multi-series bar chart honouring Graylog's bar mode.
+
+    - stack / relative -> stacked bars
+    - overlay          -> bars overlap at the same x (Chart.js grouped:false) + alpha
+    - group (default)  -> side-by-side grouped bars
+    """
     from glogarch.report.builder import PALETTE
-    datasets = [{"label": s["label"], "data": s["data"], "backgroundColor": PALETTE[i % len(PALETTE)]}
-                for i, s in enumerate(series)]
-    return {"kind": "chart", "title": title,
-            "config": {"type": "bar", "data": {"labels": labels, "datasets": datasets},
-                       "options": {"responsive": True, "maintainAspectRatio": False,
-                                   "plugins": {"legend": {"display": True}},
-                                   "scales": {"y": {"beginAtZero": True}}}}}
+    stacked = barmode in ("stack", "relative")
+    overlay = barmode == "overlay"
+    datasets = []
+    for i, s in enumerate(series):
+        c = PALETTE[i % len(PALETTE)]
+        d = {"label": s.get("label", ""), "data": s["data"],
+             "backgroundColor": (c + "99" if overlay else c), "borderRadius": 2}
+        if overlay:
+            d["grouped"] = False
+        datasets.append(d)
+    return {"type": "bar", "data": {"labels": labels, "datasets": datasets},
+            "options": {"responsive": True, "maintainAspectRatio": False,
+                        "plugins": {"legend": {"display": len(datasets) > 1}},
+                        "scales": {"x": {"stacked": stacked,
+                                         "ticks": {"autoSkip": True, "maxTicksLimit": 12,
+                                                   "maxRotation": 0, "minRotation": 0}},
+                                   "y": {"beginAtZero": True, "stacked": stacked}}}}
 
 
 def _rowkey(r):

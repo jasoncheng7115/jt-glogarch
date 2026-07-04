@@ -66,6 +66,7 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
         for dash in dashboards:
             did = dash.get("id") if isinstance(dash, dict) else dash
             dtitle = dash.get("title") if isinstance(dash, dict) else did
+            dtab = dash.get("tab") if isinstance(dash, dict) else None
             if mode == "screenshot":
                 sec = {"type": "image", "title": dtitle or did,
                        "description": _t(lang, "native"), "img_data_uri": None}
@@ -80,7 +81,8 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
                 built = []
                 if server:
                     built = await graylog_data.rebuild_dashboard_sections(
-                        server, did, time_range_seconds=trs, max_widgets=maxw, lang=lang)
+                        server, did, time_range_seconds=trs, max_widgets=maxw, lang=lang,
+                        tab=(dtab or None))
                 if built:
                     sections.extend(built)
                 else:

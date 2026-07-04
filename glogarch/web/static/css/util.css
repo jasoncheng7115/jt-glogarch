@@ -7,6 +7,18 @@
 .hidden { display: none !important; }
 .invisible { visibility: hidden; }
 
+/* table row action buttons — keep icon+text buttons vertically aligned */
+.row-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.row-actions .btn-sm { display: inline-flex; align-items: center; gap: 4px; }
+
+/* report dashboard row with per-dashboard tab picker */
+.rp-dash-row { display: flex; align-items: center; gap: 8px; margin: 2px 0; flex-wrap: wrap; }
+.rp-dash-tab { max-width: 200px; }
+
+/* report cover logo preview */
+.report-logo-prev { max-height: 48px; margin-top: 6px; border: 1px solid var(--border, #ccc);
+    border-radius: 4px; padding: 4px; background: #fff; display: block; }
+
 /* command / code block (upgrade instructions) */
 .upgrade-cmd {
     background: var(--bg-secondary, #1e1e1e);

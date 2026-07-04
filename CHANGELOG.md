@@ -2,6 +2,22 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.9.3] - 2026-07-04
+
+### Improved — PDF Reports (beta)
+
+- **Readable time-axis labels.** Rebuilt time-series charts showed raw ISO bucket keys (`2026-07-03T09:45:00.000+08:00`) crammed at 45°. Now formatted to `MM-DD HH:MM` and thinned to ~12 horizontal ticks.
+- **Bar-chart mode fidelity.** A rebuilt bar widget now mirrors the source Graylog visualization's `barmode` — stacked / grouped / overlay / relative — instead of always grouping.
+- **`max_widgets = 0` (or blank) now means "all widgets"** (it previously rendered none).
+- **Per-dashboard tab selection.** Multi-tab dashboards (e.g. 13-tab OPNsense) can now target a single tab; the report picker shows a tab dropdown, and `GET /api/reports/dashboard-tabs` lists them. Default is still all tabs.
+- **Cover logo.** New optional cover-logo upload in the report editor (client-side data-URI, ≤300 KB) rendered on the cover page.
+- **Cron picker.** The report schedule field now has a friendly frequency dropdown (hourly / daily / weekly / monthly / custom) in addition to the raw cron text.
+- **UI polish.** Report action buttons aligned; the Reports nav item is now `統計報表` (four chars, consistent with the other nav items); "Rebuild → branded charts" (was "our charts").
+
+### Improved — project site
+
+- The zh-TW landing hero rotates five taglines (4s each, cross-faded, respects `prefers-reduced-motion`).
+
 ## [1.9.2] - 2026-07-04
 
 ### Added — offline / air-gapped upgrade
