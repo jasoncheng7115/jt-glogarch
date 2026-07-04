@@ -62,6 +62,27 @@ function showAlert(msg) {
     showConfirm('', msg, null);
 }
 
+/** Copy arbitrary text to the clipboard (used by the fingerprint modal). */
+function copyText(text) {
+    if (!text) return;
+    navigator.clipboard.writeText(String(text)).then(() => showAlert(t('msg_copied'))).catch(() => {});
+}
+
+/** Show a report's SHA-256 fingerprint + how to independently verify the PDF. */
+function showReportFingerprint(arg) {
+    const [hash, filename] = String(arg).split('|');
+    const fn = filename || 'report.pdf';
+    const body = `<div class="fp-modal">
+        <div class="fp-row"><span class="fp-label">${t('reports_fp_sha256')}</span>
+          <code class="fp-full" id="fp-full-hash">${esc(hash)}</code>
+          <button type="button" class="btn-sm btn-secondary" data-act="copyText" data-arg="${esc(hash)}">${icon('copy',14)}</button></div>
+        <div class="fp-hint">${t('reports_fp_hint')}</div>
+        <pre class="fp-cmd">sha256sum ${esc(fn)}</pre>
+        <div class="fp-hint fs-08">${t('reports_fp_note')}</div>
+      </div>`;
+    showConfirm(icon('shield') + ' ' + t('reports_verify_title'), body, null);
+}
+
 /** Escape HTML to prevent XSS */
 function esc(s) {
     if (!s) return '';
@@ -222,7 +243,7 @@ async function loadDashboard() {
     }
 
     const _stb0 = document.querySelector('#servers-table tbody');
-    if (_stb0) _stb0.innerHTML = `<tr><td colspan="4" class="text-center text-muted"><span class="spinner-text">${t('loading')}...</span></td></tr>`;
+    if (_stb0) _stb0.innerHTML = `<tr><td colspan="5" class="text-center text-muted"><span class="spinner-text">${t('loading')}...</span></td></tr>`;
     try {
         const servers = await fetchJSON(`${API}/servers`);
         // Detect Data Node — set global flag for export/import mode warnings
@@ -238,6 +259,7 @@ async function loadDashboard() {
                 <td>${esc(s.url)}</td>
                 <td>${s.connected ? statusBadge('completed') : statusBadge('failed')}</td>
                 <td>${s.version || '-'}${s.has_datanode ? ' <span class="u031">(Data Node)</span>' : ''}</td>
+                <td><button class="btn-sm btn-secondary" data-act="testGraylogServer" data-arg="${esc(s.name)}">${icon('refresh', 14)} ${t('btn_test_connection')}</button></td>
             </tr>
         `).join('');
     } catch (e) {
@@ -1712,6 +1734,9 @@ async function loadSchedules() {
         } else if (s.job_type === 'verify') {
             modeHtml = '-';
             configHtml = 'SHA256';
+        } else if (s.job_type === 'report_cleanup') {
+            modeHtml = '-';
+            configHtml = `${c.days || 720} ${t('export_days')}`;
         }
         // Show running status only on the schedule that actually triggered the job.
         let runningHtml = '';
@@ -1849,9 +1874,11 @@ function onSchedTypeChange() {
     const exportOpts = document.getElementById('sched-export-options');
     const cleanupOpts = document.getElementById('sched-cleanup-options');
     const verifyOpts = document.getElementById('sched-verify-options');
+    const reportCleanupOpts = document.getElementById('sched-report-cleanup-options');
     if (exportOpts) exportOpts.style.display = type === 'export' ? 'block' : 'none';
     if (cleanupOpts) cleanupOpts.style.display = type === 'cleanup' ? 'block' : 'none';
     if (verifyOpts) verifyOpts.style.display = type === 'verify' ? 'block' : 'none';
+    if (reportCleanupOpts) reportCleanupOpts.style.display = type === 'report_cleanup' ? 'block' : 'none';
 }
 
 function onSchedFreqChange() {
@@ -1886,6 +1913,8 @@ async function addSchedule() {
             }
         } else if (type === 'cleanup') {
             body.retention_days = parseInt(document.getElementById('sched-retention-days')?.value) || 1095;
+        } else if (type === 'report_cleanup') {
+            body.days = parseInt(document.getElementById('sched-report-days')?.value) || 720;
         }
         await fetchJSON(`${API}/schedules`, {
             method: 'POST',
@@ -1939,6 +1968,10 @@ async function editSchedule(name) {
     if (sched.job_type === 'cleanup') {
         const retDays = document.getElementById('sched-retention-days');
         if (retDays) retDays.value = c.retention_days || 1095;
+    }
+    if (sched.job_type === 'report_cleanup') {
+        const rd = document.getElementById('sched-report-days');
+        if (rd) rd.value = c.days || 720;
     }
     if (sched.job_type === 'export') {
         await loadSchedServers();
@@ -3004,7 +3037,7 @@ function renderServersTable(data) {
         const osCell = s.has_opensearch ? t('settings_yes') : t('settings_no');
         const defCell = isDef
             ? `<span class="u020">${t('settings_is_default')}</span>`
-            : `<button class="btn-sm btn-secondary" data-act="setDefaultServer" data-arg="${esc(s.name)}">${t('settings_make_default')}</button>`;
+            : `<button class="btn-sm btn-secondary" data-act="setDefaultServer" data-arg="${esc(s.name)}">${icon('shield', 14)} ${t('settings_make_default')}</button>`;
         return `<tr>
             <td>${esc(s.name)}</td>
             <td>${esc(s.url)}</td>
@@ -3012,8 +3045,9 @@ function renderServersTable(data) {
             <td>${esc(osCell)}</td>
             <td>${defCell}</td>
             <td>
+                <button class="btn-sm btn-secondary" data-act="testGraylogServer" data-arg="${esc(s.name)}">${icon('refresh', 14)} ${t('btn_test_connection')}</button>
                 <button class="btn-sm btn-secondary" data-act="openServerModal" data-arg="${esc(s.name)}" data-icon-btn>${icon('lock', 14)} ${t('btn_edit')}</button>
-                <button class="btn-sm btn-danger" data-act="deleteServer" data-arg="${esc(s.name)}">${icon('trash', 14)}</button>
+                <button class="btn-sm btn-danger" data-act="deleteServer" data-arg="${esc(s.name)}">${icon('trash', 14)} ${t('btn_delete')}</button>
             </td>
         </tr>`;
     }).join('');
@@ -3074,7 +3108,7 @@ function _toggleSrvOs() {
 function openServerModal(name) {
     const s = name ? _serversCache.find(x => x.name === name) : null;
     const title = document.getElementById('server-modal-title');
-    if (title) title.textContent = s ? t('settings_edit_server') : t('settings_add_server');
+    if (title) title.innerHTML = icon('server') + ' ' + esc(s ? t('settings_edit_server') : t('settings_add_server'));
     document.getElementById('server-modal-form').innerHTML = buildServerForm(s);
     _setResult('server-modal-result', true, '');
     document.getElementById('server-modal-result').innerHTML = '';
@@ -3145,6 +3179,19 @@ function deleteServer(name) {
         if (r.error) { showAlert(r.error); return; }
         loadSettingsPage();
     });
+}
+
+async function testGraylogServer(name) {
+    // Inline result (like the OpenSearch panel), no popup. Prefer the dashboard
+    // result line; fall back to the settings one.
+    const el = document.getElementById('servers-result') || document.getElementById('config-servers-result');
+    if (el) el.innerHTML = `<span class="u022">${esc(name)} — ${t('btn_test_connection')}…</span>`;
+    const r = await fetchJSON(`${API}/config/servers/${encodeURIComponent(name)}/test`, { method: 'POST' });
+    const html = (r && r.connected)
+        ? `<span class="status-completed">${t('test_connected')}</span> ${esc(name)} — Graylog ${esc(r.version || '')}`
+        : `<span class="status-failed">${t('test_failed')}</span> ${esc(name)} — ${esc((r && r.error) || t('unknown_error'))}`;
+    if (el) el.innerHTML = html;
+    else showAlert(html.replace(/<[^>]+>/g, ''));
 }
 
 async function setDefaultServer(name) {
@@ -3365,8 +3412,9 @@ function renderReportsTable(items) {
             <td>
                 <div class="row-actions">
                     <button class="btn-sm btn-primary" data-act="generateReport" data-arg="${esc(r.name)}">${icon('play',14)} ${t('reports_generate')}</button>
-                    <button class="btn-sm btn-secondary" data-act="openReportModal" data-arg="${esc(r.name)}">${t('btn_edit')}</button>
-                    <button class="btn-sm btn-danger" data-act="deleteReport" data-arg="${esc(r.name)}">${icon('trash',14)}</button>
+                    <button class="btn-sm btn-secondary" data-act="openReportModal" data-arg="${esc(r.name)}">${icon('edit',14)} ${t('btn_edit')}</button>
+                    <button class="btn-sm btn-info" data-act="duplicateReport" data-arg="${esc(r.name)}">${icon('copy',14)} ${t('reports_duplicate')}</button>
+                    <button class="btn-sm btn-danger" data-act="deleteReport" data-arg="${esc(r.name)}">${icon('trash',14)} ${t('btn_delete')}</button>
                 </div>
             </td></tr>`;
     }).join('');
@@ -3375,12 +3423,14 @@ function renderReportsTable(items) {
 function renderReportHistory(items) {
     const tb = document.querySelector('#reports-history-table tbody');
     if (!tb) return;
-    if (!items.length) { tb.innerHTML = `<tr><td colspan="5" class="text-center text-muted u128">${t('log_no_data')}</td></tr>`; return; }
+    if (!items.length) { tb.innerHTML = `<tr><td colspan="6" class="text-center text-muted u128">${t('log_no_data')}</td></tr>`; return; }
     tb.innerHTML = items.map(h => `<tr>
-        <td>${esc(h.report_name)}</td>
+        <td>${esc(h.report_name)} ${h.triggered_by === 'scheduled' ? '<span class="job-badge job-badge-sched">' + t('job_scheduled') + '</span>' : '<span class="job-badge job-badge-manual">' + t('job_manual') + '</span>'}</td>
         <td class="text-muted fs-085">${esc(formatDT(h.created_at))}</td>
-        <td>${h.status === 'completed' ? statusBadge('completed') : statusBadge('failed')}${h.error ? ' <span class="text-danger fs-08">'+esc(h.error)+'</span>' : ''}</td>
+        <td>${h.status === 'completed' ? statusBadge('completed')
+              : statusBadge('failed') + (h.error ? ` <span class="text-danger fs-08">${esc((h.error || '').slice(0, 18))}${(h.error || '').length > 18 ? '…' : ''}</span> <span class="link-like fs-08" data-act="showAlert" data-arg="${esc(h.error)}">${t('reports_err_detail')}</span>` : '')}</td>
         <td>${h.size_bytes ? formatBytes(h.size_bytes) : '-'}</td>
+        <td>${h.sha256 ? `<code class="fp-hash" title="SHA-256: ${esc(h.sha256)}">${esc(h.sha256.slice(0,12))}…</code> <span class="link-like fs-08" data-act="showReportFingerprint" data-arg="${esc(h.sha256)}|${esc(h.filename||'')}">${t('reports_verify')}</span>` : '-'}</td>
         <td>${h.status === 'completed' && h.file_path ? `<a class="btn-sm btn-secondary" href="${API}/reports/history/${h.id}/download">${icon('download',14)} PDF</a>` : '-'}</td>
     </tr>`).join('');
 }
@@ -3394,28 +3444,29 @@ async function openReportModal(name) {
     if (name) {
         const list = await fetchJSON(`${API}/reports`);
         const r = (list.items || []).find(x => x.name === name);
-        if (r) { cfg = r.config || {}; cfg.__name = r.name; cfg.__enabled = r.enabled; existing = true; }
+        if (r) { cfg = r.config || {}; cfg.__name = r.name; cfg.__id = r.id; cfg.__enabled = r.enabled; existing = true; }
     }
-    document.getElementById('report-modal-title').textContent = existing ? t('reports_edit') : t('reports_add');
+    document.getElementById('report-modal-title').innerHTML = icon('log') + ' ' + esc(existing ? t('reports_edit') : t('reports_add'));
     const serverOpts = _reportServers.map(s => `<option value="${esc(s.name)}"${cfg.server===s.name?' selected':''}>${esc(s.name)}</option>`).join('');
+    // Max-widget picker: "全部" (0 = unlimited) is the default.
+    const _mwVal = String((cfg.max_widgets === undefined || cfg.max_widgets === null) ? 0 : cfg.max_widgets);
+    let _mwList = ['0', '10', '20', '30', '50'];
+    if (!_mwList.includes(_mwVal)) _mwList.push(_mwVal);
+    const _mwSelect = `<select id="rp-maxw" class="no-custom">${_mwList.map(v => `<option value="${v}"${v===_mwVal?' selected':''}>${v==='0'?esc(t('reports_maxw_all')):v}</option>`).join('')}</select>`;
     document.getElementById('report-modal-form').innerHTML = `
       <input type="hidden" id="rp-orig" value="${esc(cfg.__name||'')}">
-      <div class="form-group"><label>${t('reports_f_name')}</label><input type="text" id="rp-name" value="${esc(cfg.__name||'')}" ${existing?'readonly':''} placeholder="weekly-security"></div>
+      <input type="hidden" id="rp-id" value="${esc(cfg.__id!==undefined&&cfg.__id!==null?String(cfg.__id):'')}">
+      <div class="form-group"><label>${t('reports_f_name')}</label><input type="text" id="rp-name" value="${esc(cfg.__name||'')}" placeholder="weekly-security">${existing?`<div class="text-muted fs-08 mt3">${t('reports_name_editable_hint')}</div>`:''}</div>
       <div class="form-group"><label>${t('reports_f_title')}</label><input type="text" id="rp-title" value="${esc(cfg.title||'')}" placeholder="安全事件週報"></div>
       <div class="form-group"><label>${t('reports_f_subtitle')}</label><input type="text" id="rp-subtitle" value="${esc(cfg.subtitle||'')}"></div>
       <div class="form-group"><label>${t('reports_f_author')}</label><input type="text" id="rp-author" value="${esc(cfg.author||'')}"></div>
       <div class="form-group"><label>${t('reports_f_lang')}</label>
         <select id="rp-lang" class="no-custom"><option value="zh-TW"${cfg.lang!=='en'?' selected':''}>繁體中文</option><option value="en"${cfg.lang==='en'?' selected':''}>English</option></select></div>
       <div class="form-group"><label>${t('reports_f_header')}</label><input type="text" id="rp-header" value="${esc(cfg.header_text||'')}" placeholder="機密"></div>
-      <div class="form-group"><label>${t('reports_f_logo')}</label>
-        <div class="row-actions">
-          <input type="file" id="rp-logo-file" accept="image/png,image/jpeg,image/svg+xml" data-act-change="reportLogoPick">
-          <button type="button" class="btn-sm btn-secondary" data-act="reportLogoClear">${t('reports_logo_clear')}</button>
-        </div>
-        <img id="rp-logo-prev" class="report-logo-prev${cfg.logo_data_uri?'':' hidden'}" src="${esc(cfg.logo_data_uri||'')}" alt="">
-        <input type="hidden" id="rp-logo" value="${esc(cfg.logo_data_uri||'')}">
-        <div class="text-muted fs-08 mt3">${t('reports_logo_hint')}</div></div>
-      <div class="form-group"><label class="inline-check"><input type="checkbox" id="rp-archive" ${cfg.include_archive_summary!==false?'checked':''}> ${t('reports_f_archive')}</label></div>
+      ${_reportLogoField('rp-logo', cfg.logo_data_uri, 'logo-preview-cover', 'reports_f_logo', 'reports_logo_hint')}
+      ${_reportLogoField('rp-hlogo', cfg.header_logo_data_uri, 'logo-preview-dark', 'reports_f_hlogo_dark', 'reports_hlogo_dark_hint')}
+      ${_reportLogoField('rp-hlogo2', cfg.header_logo_light_data_uri, '', 'reports_f_hlogo_light', 'reports_hlogo_light_hint')}
+      <div class="form-group"><label class="inline-check"><input type="checkbox" id="rp-archive" ${cfg.include_archive_summary===true?'checked':''}> ${t('reports_f_archive')}</label></div>
       <hr class="u003">
       <div class="form-group"><label>${t('reports_f_server')}</label><select id="rp-server" class="no-custom" data-act-change="reportLoadDashboards"><option value="">-</option>${serverOpts}</select></div>
       <div class="form-group"><label>${t('reports_f_dashboards')}</label><div id="rp-dashboards" class="text-muted fs-085">${t('reports_pick_server')}</div></div>
@@ -3425,26 +3476,66 @@ async function openReportModal(name) {
           <option value="screenshot"${cfg.dashboard_mode==='screenshot'?' selected':''}>${t('reports_mode_shot')}</option>
         </select>
         <div class="text-muted fs-08 mt3" data-i18n="reports_mode_hint">${t('reports_mode_hint')}</div></div>
+      <div class="form-group" id="rp-usedbtime-g"><label class="inline-check"><input type="checkbox" id="rp-usedbtime" ${cfg.use_dashboard_time!==false?'checked':''} data-act-change="reportToggleDbTime" data-act-self> ${t('reports_f_usedbtime')}</label>
+        <div class="text-muted fs-08 mt3">${t('reports_usedbtime_hint')}</div></div>
       <div class="u037">
-        <div class="form-group flex1"><label>${t('reports_f_hours')}</label><input type="text" id="rp-hours" value="${esc(String(Math.round((cfg.time_range_seconds||86400)/3600)))}" placeholder="24"></div>
-        <div class="form-group flex1" id="rp-maxw-g"><label>${t('reports_f_maxw')}</label><input type="text" id="rp-maxw" value="${esc(String(cfg.max_widgets||16))}" placeholder="16"></div>
+        <div class="form-group flex1${cfg.use_dashboard_time!==false?' hidden':''}" id="rp-hours-g"><label>${t('reports_f_hours')}</label><input type="text" id="rp-hours" value="${esc(String(Math.round((cfg.time_range_seconds||86400)/3600)))}" placeholder="24"></div>
+        <div class="form-group flex1" id="rp-maxw-g"><label>${t('reports_f_maxw')}</label>${_mwSelect}</div>
+      </div>
+      <div id="rp-rebuild-opts">
+        <div class="rp-grid3">
+          <div class="form-group"><label>${t('reports_f_msgrows')}</label><input type="text" id="rp-msgrows" value="${esc(String(cfg.message_rows!==undefined?cfg.message_rows:20))}" placeholder="20"></div>
+          <div class="form-group"><label>${t('reports_f_msgcols')}</label><input type="text" id="rp-msgcols" value="${esc(String(cfg.message_max_cols!==undefined?cfg.message_max_cols:8))}" placeholder="8"></div>
+          <div class="form-group"><label>${t('reports_f_bardir')}</label>
+            <select id="rp-bardir" class="no-custom">
+              <option value="v"${cfg.bar_horizontal?'':' selected'}>${esc(t('reports_bar_vertical'))}</option>
+              <option value="h"${cfg.bar_horizontal?' selected':''}>${esc(t('reports_bar_horizontal'))}</option>
+            </select></div>
+        </div>
+        <div class="text-muted fs-08 mt3">${t('reports_msgcols_hint')}</div>
+        <div class="form-group mt8"><label class="inline-check"><input type="checkbox" id="rp-heatval" ${cfg.heatmap_values===true?'checked':''}> ${t('reports_f_heatval')}</label>
+          <div class="text-muted fs-08 mt3">${t('reports_heatval_hint')}</div></div>
       </div>
       <div id="rp-shot-creds"${cfg.dashboard_mode==='screenshot'?'':' class="hidden"'}>
         <div class="form-group"><label>${t('reports_f_webuser')}</label><input type="text" id="rp-webuser" value="${esc(cfg.graylog_web_username||'')}" autocomplete="off" placeholder="${t('reports_web_hint')}"></div>
         <div class="form-group"><label>${t('reports_f_webpass')}</label>${_reportSecret('rp-webpass', cfg.graylog_web_password)}</div>
       </div>
       <hr class="u003">
+      <div class="form-group"><label class="inline-check"><input type="checkbox" id="rp-wm-enabled" ${cfg.watermark_enabled?'checked':''} data-act-change="reportToggleWm" data-act-self> ${t('reports_f_wm')}</label></div>
+      <div id="rp-wm-opts"${cfg.watermark_enabled?'':' class="hidden"'}>
+        <div class="form-group"><label>${t('reports_f_wm_text')}</label><input type="text" id="rp-wm-text" value="${esc(cfg.watermark_text||'')}" placeholder="${esc(t('reports_wm_text_ph'))}"></div>
+        <div class="rp-grid3">
+          <div class="form-group"><label>${t('reports_f_wm_size')}</label>
+            <select id="rp-wm-size" class="no-custom">
+              <option value="small"${cfg.watermark_size==='small'?' selected':''}>${t('reports_wm_small')}</option>
+              <option value="medium"${cfg.watermark_size==='medium'?' selected':''}>${t('reports_wm_medium')}</option>
+              <option value="large"${(cfg.watermark_size||'large')==='large'?' selected':''}>${t('reports_wm_large')}</option>
+            </select></div>
+          <div class="form-group"><label>${t('reports_f_wm_dir')}</label>
+            <select id="rp-wm-dir" class="no-custom">
+              <option value="diagonal"${(cfg.watermark_direction||'diagonal')==='diagonal'?' selected':''}>${t('reports_wm_diagonal')}</option>
+              <option value="horizontal"${cfg.watermark_direction==='horizontal'?' selected':''}>${t('reports_wm_horizontal')}</option>
+            </select></div>
+        </div>
+        <div class="form-group"><label>${t('reports_f_wm_append')}</label>
+          <div class="wm-append">
+            ${['server','ip','time','dashboard','recipients'].map(k=>`<label class="inline-check"><input type="checkbox" class="rp-wm-ap" value="${k}" ${(cfg.watermark_append||[]).includes(k)?'checked':''}> ${t('reports_wm_ap_'+k)}</label>`).join('')}
+          </div>
+          <div class="text-muted fs-08 mt3">${t('reports_wm_hint')}</div></div>
+      </div>
       <div class="form-group"><label>${t('reports_f_recipients')}</label><input type="text" id="rp-recipients" value="${esc((cfg.recipients||[]).join(', '))}" placeholder="a@x.com, b@y.com"></div>
       <div class="form-group"><label>${t('reports_f_cron')}</label>
         <select id="rp-cron-freq" class="no-custom" data-act-change="reportCronPreset">
           <option value="">${t('reports_cron_none')}</option>
           <option value="0 * * * *">${t('reports_cron_hourly')}</option>
-          <option value="0 8 * * *">${t('reports_cron_daily')}</option>
-          <option value="0 8 * * 1">${t('reports_cron_weekly')}</option>
-          <option value="0 8 1 * *">${t('reports_cron_monthly')}</option>
+          <option value="0 5 * * *">${t('reports_cron_daily')}</option>
+          <option value="0 5 * * 1">${t('reports_cron_weekly')}</option>
+          <option value="0 5 1 * *">${t('reports_cron_monthly')}</option>
           <option value="custom">${t('reports_cron_custom')}</option>
         </select>
-        <input type="text" id="rp-cron" class="mt3" value="${esc(cfg.schedule_cron||'')}" placeholder="0 8 * * 1"></div>
+        <input type="text" id="rp-cron" class="mt3" value="${esc(cfg.schedule_cron||'')}" placeholder="0 5 * * 1"></div>
+      <div class="form-group"><label class="inline-check"><input type="checkbox" id="rp-align-midnight" ${cfg.align_midnight?'checked':''}> ${t('reports_f_align_midnight')}</label>
+        <div class="text-muted fs-08 mt3">${t('reports_align_midnight_hint')}</div></div>
       <div class="form-group"><label class="inline-check"><input type="checkbox" id="rp-enabled" ${cfg.__enabled!==false?'checked':''}> ${t('reports_f_enabled')}</label></div>`;
     document.getElementById('report-modal-result').innerHTML = '';
     document.getElementById('report-modal').classList.remove('hidden');
@@ -3452,12 +3543,13 @@ async function openReportModal(name) {
     _reportDashboards = cfg.dashboards || [];
     reportToggleMode(cfg.dashboard_mode || 'rebuild');
     reportCronInit(cfg.schedule_cron || '');
+    _wireLogoDnD();
     if (cfg.server) reportLoadDashboards(cfg.server);
 }
 
 // Cron picker: presets fill the (advanced) text field; text field stays the
 // single source of truth read by _gatherReport.
-const _RP_CRON_PRESETS = ['', '0 * * * *', '0 8 * * *', '0 8 * * 1', '0 8 1 * *'];
+const _RP_CRON_PRESETS = ['', '0 * * * *', '0 5 * * *', '0 5 * * 1', '0 5 1 * *'];
 function reportCronInit(cron) {
     const sel = document.getElementById('rp-cron-freq');
     const txt = document.getElementById('rp-cron');
@@ -3480,84 +3572,167 @@ function reportCronPreset() {
 
 // Cover logo: read the chosen image entirely client-side into a data URI stored
 // in the report config (rendered on the cover; no backend upload needed).
-function reportLogoPick() {
-    const f = document.getElementById('rp-logo-file')?.files?.[0];
+// Generic logo picker (cover + header share this via a `data-lg` prefix).
+function _applyLogoDataUri(prefix, uri) {
+    document.getElementById(prefix).value = uri;
+    const p = document.getElementById(prefix + '-prev');
+    if (p) { p.src = uri; p.classList.remove('hidden'); }
+    document.getElementById(prefix + '-ph')?.classList.add('hidden');
+    document.getElementById(prefix + '-box')?.classList.remove('empty');
+    document.getElementById(prefix + '-clear')?.classList.remove('hidden');
+}
+
+function _handleLogoFile(prefix, f) {
     if (!f) return;
-    if (f.size > 300 * 1024) { showAlert(t('reports_logo_too_big')); return; }
+    if (!/^image\//.test(f.type || '')) { showAlert(t('reports_logo_none')); return; }
+    if (f.size > 3 * 1024 * 1024) { showAlert(t('reports_logo_too_big')); return; }
     const rd = new FileReader();
-    rd.onload = e => {
-        document.getElementById('rp-logo').value = e.target.result;
-        const p = document.getElementById('rp-logo-prev');
-        if (p) { p.src = e.target.result; p.classList.remove('hidden'); }
-    };
+    rd.onload = e => _applyLogoDataUri(prefix, e.target.result);
     rd.readAsDataURL(f);
 }
-function reportLogoClear() {
-    const h = document.getElementById('rp-logo'); if (h) h.value = '';
-    const p = document.getElementById('rp-logo-prev'); if (p) { p.src = ''; p.classList.add('hidden'); }
-    const f = document.getElementById('rp-logo-file'); if (f) f.value = '';
+
+function reportLogoPick(el) {
+    const prefix = (el && el.dataset && el.dataset.lg) || 'rp-logo';
+    _handleLogoFile(prefix, document.getElementById(prefix + '-file')?.files?.[0]);
+}
+
+// Attach drag-and-drop to every logo preview box in the report modal.
+function _wireLogoDnD() {
+    document.querySelectorAll('#report-modal-form .logo-preview-box').forEach(box => {
+        if (box._dndWired) return;
+        box._dndWired = true;
+        const prefix = box.id.replace(/-box$/, '');
+        box.addEventListener('dragover', e => { e.preventDefault(); box.classList.add('logo-drag'); });
+        box.addEventListener('dragleave', () => box.classList.remove('logo-drag'));
+        box.addEventListener('drop', e => {
+            e.preventDefault();
+            box.classList.remove('logo-drag');
+            _handleLogoFile(prefix, e.dataTransfer?.files?.[0]);
+        });
+    });
+}
+function reportLogoClear(prefix) {
+    prefix = prefix || 'rp-logo';
+    const h = document.getElementById(prefix); if (h) h.value = '';
+    const p = document.getElementById(prefix + '-prev'); if (p) { p.src = ''; p.classList.add('hidden'); }
+    const f = document.getElementById(prefix + '-file'); if (f) f.value = '';
+    document.getElementById(prefix + '-ph')?.classList.remove('hidden');
+    document.getElementById(prefix + '-box')?.classList.add('empty');
+    document.getElementById(prefix + '-clear')?.classList.add('hidden');
+}
+
+// One tidy logo picker (preview box + a styled choose button + clear). bgClass
+// sets the preview backdrop so you can judge the logo against where it'll sit:
+// '' = light, 'logo-preview-cover' = brand cover, 'logo-preview-dark' = dark band.
+function _reportLogoField(prefix, value, bgClass, labelKey, hintKey) {
+    const has = !!value;
+    return `<div class="form-group">
+      <label>${t(labelKey)}</label>
+      <div class="logo-field">
+        <div class="logo-preview-box ${bgClass}${has?'':' empty'}" id="${prefix}-box">
+          <img id="${prefix}-prev" class="report-logo-prev${has?'':' hidden'}" src="${esc(value||'')}" alt="">
+          <span class="logo-placeholder${has?' hidden':''}" id="${prefix}-ph">${esc(t('reports_logo_none'))}</span>
+        </div>
+        <div class="logo-controls">
+          <label class="logo-pick-btn">${icon('upload',14)} <span>${esc(t('reports_logo_choose'))}</span>
+            <input type="file" id="${prefix}-file" accept="image/png,image/jpeg,image/svg+xml" data-act-change="reportLogoPick" data-act-self data-lg="${prefix}"></label>
+          <button type="button" class="logo-clear-btn${has?'':' hidden'}" id="${prefix}-clear" data-act="reportLogoClear" data-arg="${prefix}">${icon('close',14)} ${esc(t('reports_logo_clear'))}</button>
+        </div>
+      </div>
+      <input type="hidden" id="${prefix}" value="${esc(value||'')}">
+      <div class="text-muted fs-08 mt3">${t(hintKey)}</div>
+    </div>`;
 }
 
 function closeReportModal() { const m = document.getElementById('report-modal'); m.classList.add('hidden'); m.style.display = 'none'; }
 
 async function reportLoadDashboards(server) {
     const el = document.getElementById('rp-dashboards');
-    if (!server) { el.textContent = t('reports_pick_server'); return; }
-    el.textContent = t('loading') + '...';
+    if (!server) { el.innerHTML = `<div class="load-block">${esc(t('reports_pick_server'))}</div>`; return; }
+    el.innerHTML = `<div class="load-block"><span class="spinner-text">${esc(t('loading'))}...</span></div>`;
     const r = await fetchJSON(`${API}/reports/dashboards?server=${encodeURIComponent(server)}`);
     const items = r.items || [];
     const chosen = new Set((_reportDashboards || []).map(d => d.id || d));
     _reportDashTabs = {};
-    (_reportDashboards || []).forEach(d => { if (d && d.id) _reportDashTabs[d.id] = d.tab || ''; });
-    if (!items.length) { el.textContent = t('reports_no_dash'); return; }
+    (_reportDashboards || []).forEach(d => { if (d && d.id) _reportDashTabs[d.id] = d.tabs || (d.tab ? [d.tab] : []); });
+    if (!items.length) { el.innerHTML = `<div class="load-block">${esc(t('reports_no_dash'))}</div>`; return; }
     el.innerHTML = items.map(d => `
-      <div class="rp-dash-row">
-        <label class="inline-check u113"><input type="checkbox" class="rp-dash" value="${esc(d.id)}" data-title="${esc(d.title)}" data-act-change="reportDashToggle" data-act-self ${chosen.has(d.id) ? 'checked' : ''}> ${esc(d.title)}</label>
-        <select class="rp-dash-tab no-custom hidden" data-id="${esc(d.id)}"><option value="">${t('reports_all_tabs')}</option></select>
+      <div class="rp-dash-block">
+        <label class="inline-check u113 rp-dash-row"><input type="checkbox" class="rp-dash" value="${esc(d.id)}" data-title="${esc(d.title)}" data-act-change="reportDashToggle" data-act-self ${chosen.has(d.id) ? 'checked' : ''}> ${esc(d.title)}</label>
+        <div class="rp-dash-tabs hidden" data-id="${esc(d.id)}"></div>
       </div>`).join('');
-    // Populate the tab dropdown for any pre-selected (multi-tab) dashboards.
+    // Populate the tab checkboxes for any pre-selected (multi-tab) dashboards.
     items.forEach(d => { if (chosen.has(d.id)) _populateDashTabs(d.id); });
 }
 
 async function reportDashToggle(el) {
+    const box = document.querySelector('.rp-dash-tabs[data-id="' + el.value + '"]');
     if (el.checked) { await _populateDashTabs(el.value); }
-    else {
-        const sel = document.querySelector('.rp-dash-tab[data-id="' + el.value + '"]');
-        if (sel) sel.classList.add('hidden');
-    }
+    else if (box) { box.classList.add('hidden'); box.innerHTML = ''; }
 }
 
-// Fetch a dashboard's tabs; show the picker only when it actually has >1 tab.
+// Fetch a dashboard's tabs; show a multi-select checklist only when it has >1
+// tab. No tab checked = all tabs. Each checked tab becomes its own report section.
 async function _populateDashTabs(id) {
     const server = document.getElementById('rp-server')?.value;
-    const sel = document.querySelector('.rp-dash-tab[data-id="' + id + '"]');
-    if (!server || !sel) return;
+    const box = document.querySelector('.rp-dash-tabs[data-id="' + id + '"]');
+    if (!server || !box) return;
     const r = await fetchJSON(`${API}/reports/dashboard-tabs?server=${encodeURIComponent(server)}&id=${encodeURIComponent(id)}`);
     const tabs = r.items || [];
-    if (tabs.length <= 1) { sel.classList.add('hidden'); return; }
-    const cur = _reportDashTabs[id] || '';
-    sel.innerHTML = `<option value="">${t('reports_all_tabs')}</option>` +
-        tabs.map((tb, i) => `<option value="${esc(tb.id)}"${tb.id === cur ? ' selected' : ''}>${esc(tb.title || (t('reports_tab') + ' ' + (i + 1)))}</option>`).join('');
-    sel.classList.remove('hidden');
+    if (tabs.length <= 1) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+    const cur = new Set(_reportDashTabs[id] || []);
+    box.innerHTML = `<div class="rp-tabs-hint">${esc(t('reports_tabs_hint'))}</div>` +
+        tabs.map((tb, i) => `<label class="inline-check fs-08"><input type="checkbox" class="rp-tab" data-dash="${esc(id)}" value="${esc(tb.id)}"${cur.has(tb.id) ? ' checked' : ''}> ${esc(tb.title || (t('reports_tab') + ' ' + (i + 1)))}</label>`).join('');
+    box.classList.remove('hidden');
+}
+
+function reportToggleDbTime(el) {
+    // When "use dashboard time" is on, the manual hours override is hidden.
+    document.getElementById('rp-hours-g')?.classList.toggle('hidden', !!el.checked);
 }
 
 function reportToggleMode(mode) {
+    const shot = mode === 'screenshot';
     const creds = document.getElementById('rp-shot-creds');
     const maxwg = document.getElementById('rp-maxw-g');
-    if (creds) creds.classList.toggle('hidden', mode !== 'screenshot');
-    if (maxwg) maxwg.classList.toggle('hidden', mode === 'screenshot');
+    const rebuildOpts = document.getElementById('rp-rebuild-opts');
+    const usedbG = document.getElementById('rp-usedbtime-g');
+    const hoursG = document.getElementById('rp-hours-g');
+    const heatvalG = document.getElementById('rp-heatval-g');
+    if (creds) creds.classList.toggle('hidden', !shot);
+    if (maxwg) maxwg.classList.toggle('hidden', shot);
+    // Message-rows + bar-direction + heatmap-values are rebuild-only (screenshot
+    // renders the native dashboard as-is), as is the per-widget-time toggle.
+    if (rebuildOpts) rebuildOpts.classList.toggle('hidden', shot);
+    if (usedbG) usedbG.classList.toggle('hidden', shot);
+    if (heatvalG) heatvalG.classList.toggle('hidden', shot);
+    // Screenshot always needs an explicit capture window → force the hours field
+    // visible; in rebuild it follows the use-dashboard-time checkbox.
+    if (hoursG) {
+        const useDb = document.getElementById('rp-usedbtime')?.checked;
+        hoursG.classList.toggle('hidden', shot ? false : (useDb !== false));
+    }
+}
+
+function reportToggleWm(on) {
+    const opts = document.getElementById('rp-wm-opts');
+    if (opts) opts.classList.toggle('hidden', !document.getElementById('rp-wm-enabled')?.checked);
 }
 
 function _gatherReport() {
     const v = id => (document.getElementById(id)?.value || '').trim();
     const ck = id => !!document.getElementById(id)?.checked;
     const dashboards = Array.from(document.querySelectorAll('.rp-dash:checked')).map(c => {
-        const sel = document.querySelector('.rp-dash-tab[data-id="' + c.value + '"]');
-        return {id: c.value, title: c.dataset.title, tab: (sel && sel.value) || ''};
+        const tabs = Array.from(document.querySelectorAll('.rp-tab[data-dash="' + c.value + '"]:checked')).map(x => x.value);
+        return {id: c.value, title: c.dataset.title, tabs};
     });
     const hours = parseInt(v('rp-hours'), 10);
     const maxw = parseInt(v('rp-maxw'), 10);
+    const msgrows = parseInt(v('rp-msgrows'), 10);
+    const msgcols = parseInt(v('rp-msgcols'), 10);
+    const rid = v('rp-id');
     return {
+        id: rid === '' ? null : rid,
         name: v('rp-name'),
         enabled: ck('rp-enabled'),
         config: {
@@ -3567,11 +3742,24 @@ function _gatherReport() {
             server: v('rp-server'), dashboards,
             dashboard_mode: v('rp-mode') || 'rebuild',
             time_range_seconds: (isNaN(hours) ? 24 : hours) * 3600,
-            max_widgets: isNaN(maxw) ? 16 : maxw,
+            max_widgets: isNaN(maxw) ? 0 : maxw,
             graylog_web_username: v('rp-webuser'), graylog_web_password: v('rp-webpass'),
             recipients: v('rp-recipients').split(',').map(s => s.trim()).filter(Boolean),
+            watermark_enabled: ck('rp-wm-enabled'),
+            watermark_text: v('rp-wm-text'),
+            watermark_size: v('rp-wm-size') || 'large',
+            watermark_direction: v('rp-wm-dir') || 'diagonal',
+            watermark_append: Array.from(document.querySelectorAll('.rp-wm-ap:checked')).map(x => x.value),
+            align_midnight: ck('rp-align-midnight'),
             schedule_cron: v('rp-cron'),
             logo_data_uri: v('rp-logo'),
+            header_logo_data_uri: v('rp-hlogo'),
+            header_logo_light_data_uri: v('rp-hlogo2'),
+            message_rows: isNaN(msgrows) ? 20 : msgrows,
+            message_max_cols: isNaN(msgcols) ? 8 : msgcols,
+            bar_horizontal: v('rp-bardir') === 'h',
+            heatmap_values: ck('rp-heatval'),
+            use_dashboard_time: ck('rp-usedbtime'),
         },
     };
 }
@@ -3590,6 +3778,27 @@ function deleteReport(name) {
         if (r.error) { showAlert(r.error); return; }
         loadReportsPage();
     });
+}
+
+// Duplicate a report definition; auto-name "<name> - (N)" avoiding collisions.
+async function duplicateReport(name) {
+    const list = await fetchJSON(`${API}/reports`);
+    const items = list.items || [];
+    const src = items.find(x => x.name === name);
+    if (!src) return;
+    const existing = new Set(items.map(x => x.name));
+    let i = 1, newName;
+    do { newName = `${name} - (${i})`; i++; } while (existing.has(newName));
+    const cfg = JSON.parse(JSON.stringify(src.config || {}));
+    cfg.name = newName;
+    // Masked secrets (***) from the list can't be copied — clear so they're re-entered.
+    if (typeof cfg.graylog_web_password === 'string' && cfg.graylog_web_password.includes('*')) cfg.graylog_web_password = '';
+    const r = await fetchJSON(`${API}/reports`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: newName, enabled: src.enabled, config: cfg}),
+    });
+    if (r.error) { showAlert(r.error); return; }
+    loadReportsPage();
 }
 
 async function generateReport(name) {

@@ -76,9 +76,11 @@
                     <th data-i18n="th_url">URL</th>
                     <th data-i18n="th_status">Status</th>
                     <th data-i18n="th_version">Version</th>
+                    <th data-i18n="th_actions">Actions</th>
                 </tr></thead>
                 <tbody></tbody>
             </table>
+            <div id="servers-result" class="test-result-line"></div>
         </div>
         <div class="section">
             <h2 data-i18n="opensearch_connection" data-icon="db">OpenSearch Connection</h2>
@@ -435,7 +437,7 @@
             <button class="btn-primary" data-act="startExport" data-i18n="btn_start_export" data-icon="play">Start Export</button>
         </div>
         <div id="export-progress" class="progress-section u066">
-            <h3 data-i18n="export_progress">Export Progress</h3>
+            <h3 data-i18n="export_progress" data-icon="download">Export Progress</h3>
             <div class="progress-bar"><div class="progress-fill" id="export-progress-bar"></div></div>
             <div class="progress-text" id="export-progress-text"></div>
         </div>
@@ -479,6 +481,7 @@
                     <option value="export" data-i18n-opt="sched_type_export">Export</option>
                     <option value="cleanup" data-i18n-opt="sched_type_cleanup">Cleanup</option>
                     <option value="verify" data-i18n-opt="sched_type_verify">Verify</option>
+                    <option value="report_cleanup" data-i18n-opt="sched_type_report_cleanup">Report cleanup</option>
                 </select>
             </div>
             <div class="form-group">
@@ -544,6 +547,13 @@
                     <small class="form-hint" data-i18n="sched_verify_hint">Verify archive integrity by checking SHA256 hash of all completed archives.</small>
                 </div>
             </div>
+            <div class="u066" id="sched-report-cleanup-options">
+                <div class="form-group">
+                    <label data-i18n="sched_report_retention_days" data-icon="trash">Report retention days</label>
+                    <input type="number" id="sched-report-days" value="720" min="1">
+                    <small class="form-hint" data-i18n="sched_report_retention_hint">Generated report PDFs older than this are deleted.</small>
+                </div>
+            </div>
             <div class="u047">
                 <button class="btn-primary" data-act="addSchedule" id="sched-submit-btn" data-i18n="btn_save" data-icon="shield">Save</button>
                 <button class="btn-secondary" data-act="closeSchedModal" data-i18n="btn_cancel" data-icon="close">Cancel</button>
@@ -568,7 +578,7 @@
         <h1 data-i18n="page_notify_settings" data-icon="bell">Notification Settings</h1>
 
         <div class="section">
-            <h2 data-i18n="notify_events">Trigger Events</h2>
+            <h2 data-i18n="notify_events" data-icon="bell">Trigger Events</h2>
             <div class="card u128" id="notify-events-card">
                 <div id="notify-events-form"></div>
             </div>
@@ -582,7 +592,7 @@
         </div>
 
         <div class="section">
-            <h2 data-i18n="notify_channels">Channels</h2>
+            <h2 data-i18n="notify_channels" data-icon="globe">Channels</h2>
             <div id="notify-channels-form"></div>
         </div>
 
@@ -596,7 +606,7 @@
         <h1 data-i18n="page_logs" data-icon="log">System Logs</h1>
 
         <div class="section">
-            <h2 data-i18n="log_realtime">Real-time Log</h2>
+            <h2 data-i18n="log_realtime" data-icon="log">Real-time Log</h2>
             <div class="u056">
                 <select id="log-lines" class="no-custom u129">
                     <option value="50">50</option>
@@ -692,7 +702,7 @@
         <div id="audit-detail-modal" class="modal-overlay u066">
             <div class="modal-card u160">
                 <button class="u134" data-act="closeModalById" data-arg="audit-detail-modal" title="Close">&times;</button>
-                <h3 data-i18n="audit_detail">Request Detail</h3>
+                <h3 data-i18n="audit_detail" data-icon="eye">Request Detail</h3>
                 <div id="audit-detail-content"></div>
                 <div class="u108">
                     <button class="btn-secondary" data-act="closeModalById" data-arg="audit-detail-modal" data-i18n="btn_close" data-icon="close">Close</button>
@@ -740,6 +750,7 @@
                     <th data-i18n="th_time">Time</th>
                     <th data-i18n="th_status">Status</th>
                     <th data-i18n="reports_th_size">Size</th>
+                    <th data-i18n="reports_th_fingerprint">Fingerprint</th>
                     <th data-i18n="th_actions">Actions</th>
                 </tr></thead>
                 <tbody></tbody>
@@ -825,11 +836,11 @@
             <h2 data-i18n="settings_upgrade" data-icon="download">System Upgrade</h2>
             <div class="text-muted fs-085 mb8" data-i18n="settings_upgrade_desc"></div>
             <div class="form-card">
-                <h3 class="fs-085" data-i18n="settings_upgrade_online">A. Online upgrade (host has internet)</h3>
+                <h3 class="fs-085" data-i18n="settings_upgrade_online" data-icon="refresh">A. Online upgrade (host has internet)</h3>
                 <div class="text-muted fs-085 mb8" data-i18n="settings_upgrade_online_desc"></div>
                 <pre class="upgrade-cmd">sudo bash /opt/jt-glogarch/deploy/upgrade.sh</pre>
 
-                <h3 class="fs-085 mt8" data-i18n="settings_upgrade_offline">B. Offline / air-gapped upgrade</h3>
+                <h3 class="fs-085 mt8" data-i18n="settings_upgrade_offline" data-icon="archive">B. Offline / air-gapped upgrade</h3>
                 <div class="text-muted fs-085 mb8" data-i18n="settings_upgrade_offline_desc"></div>
                 <pre class="upgrade-cmd"># 1) On an internet-connected machine (same Python + CPU arch as target):
 bash scripts/build-offline-bundle.sh

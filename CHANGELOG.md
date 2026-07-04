@@ -2,6 +2,34 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.10.2] - 2026-07-05
+
+### PDF Reports (beta) — major fidelity + feature pass
+
+- **Faithful widget rendering.** Heatmaps render as colour-graded grids honouring the widget's `color_scale` (Portland/Viridis/…) with a legend and no in-cell numbers by default (matching Graylog; optional toggle). Tables stay tables, maps stay maps. Column-pivot tables now include the rollup total column and sort the pivot columns. Metric values map to columns by series key, so a null metric no longer shifts the next column's value. Bar mode (group/stack/overlay) mirrored; overlay drawn with outlined layers for legibility.
+- **Units.** Byte metrics render as GB/MB/B on chart axes and single values, matching each series' Graylog unit setting.
+- **Colours match Graylog** (Plotly default colourway).
+- **Single-value trend badges** (delta + %, coloured by `trend_preference`).
+- **Best-fit table columns** (no more forced equal widths); wide message tables guarded by a configurable max-columns setting + row-limit note.
+- **Empty-data widgets** show "(no data)" instead of a broken empty chart.
+- **World map** redesigned (clean palette, brand bubbles).
+- **Header/footer** brand bands drawn full-bleed (no viewer-dependent gap), only from page 2; cover has clean white margins with a centred brand block. **Table of contents shows page numbers.** Time-range captions now in local time.
+- **Screenshot mode**: full long-capture of just the dashboard grid (auto-scroll to load every widget, sliced across pages); clear, specific failure reasons.
+- **Snap-to-midnight** time option for scheduled reports; cron presets default to 05:00.
+- **Flattened watermark** (non-selectable/non-deletable), configurable text/size/direction, auto-appends server/IP/time/dashboard/recipients across at most two lines, font auto-fit so every page shows all of it.
+- **SHA-256 fingerprint** for each report (DB + `.sha256` sidecar + Web UI verify), report name editable, job history shows 100% + widget count, two header-logo variants (dark/light) with drag-and-drop upload.
+- **Auto report-cleanup schedule** (720-day default, editable days + cron), bootstrapped on install and upgrade.
+
+### Deployment
+
+- Install / upgrade / offline scripts now install the PDF Reports runtime deps (Chromium into a shared path + a CJK font + PyMuPDF + Pillow).
+
+### Web UI
+
+- Inline "test connection" for Graylog servers (dashboard + settings); server table delete/set-default/test buttons tidied.
+- Upgrade command blocks readable in light theme; upgrade steps numbered.
+- Heavier dashboards: search poll window raised (partial results kept) so large boards return complete data.
+
 ## [1.9.3] - 2026-07-04
 
 ### Improved — PDF Reports (beta)

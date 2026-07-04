@@ -711,6 +711,8 @@ async def save_schedule(request: Request):
         config_data = {
             "retention_days": body.get("retention_days", _settings(request).retention.retention_days),
         }
+    elif body.get("job_type") == "report_cleanup":
+        config_data = {"days": int(body.get("days", 720) or 720)}
     sched = ScheduleRecord(
         name=body["name"],
         job_type=body.get("job_type", "export"),
@@ -2065,6 +2067,34 @@ async def test_config_server(request: Request):
         return {"connected": False, "error": sanitize(str(e))}
 
 
+@router.post("/config/servers/{name}/test")
+async def test_saved_server(request: Request, name: str):
+    """Test connectivity to an already-saved Graylog server (uses stored creds)."""
+    import httpx
+    from glogarch.utils.sanitize import sanitize
+    settings = _settings(request)
+    srv = next((s for s in settings.servers if s.name == name), None)
+    if not srv:
+        return JSONResponse({"error": "Server not found"}, status_code=404)
+    if srv.auth_token:
+        auth = httpx.BasicAuth(srv.auth_token, "token")
+    else:
+        auth = httpx.BasicAuth(srv.username or "", srv.password or "")
+    try:
+        async with httpx.AsyncClient(verify=srv.verify_ssl, timeout=10.0) as client:
+            resp = await client.get(f"{srv.url.rstrip('/')}/api/system", auth=auth,
+                                    headers={"Accept": "application/json"})
+            if resp.status_code == 200:
+                data = resp.json()
+                return {"connected": True, "version": data.get("version"),
+                        "hostname": data.get("hostname")}
+            if resp.status_code in (401, 403):
+                return {"connected": False, "error": "Authentication failed (check token / credentials)"}
+            return {"connected": False, "error": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"connected": False, "error": sanitize(str(e))}
+
+
 @router.get("/config/opensearch")
 def get_config_opensearch(request: Request):
     """Global OpenSearch config (password masked)."""
@@ -2205,7 +2235,7 @@ def _report_public(rec: dict) -> dict:
         if cfg.get(k):
             cfg[k] = _mask(cfg[k])
     return {
-        "name": rec["name"], "enabled": bool(rec["enabled"]),
+        "id": rec["id"], "name": rec["name"], "enabled": bool(rec["enabled"]),
         "last_run_at": rec.get("last_run_at"), "config": cfg,
     }
 
@@ -2219,27 +2249,50 @@ def list_reports(request: Request):
 @router.post("/reports")
 async def save_report(request: Request):
     import json as _json
+    import sqlite3
     from glogarch.core.config_writer import reconcile_secret
     body = await request.json()
     name = (body.get("name") or "").strip()
     if not name:
         return JSONResponse({"error": "name is required"}, status_code=400)
     db = _db(request)
-    existing = db.get_report(name)
+    # Identity is the stable numeric id, so the NAME can be edited freely. When
+    # editing, `id` is present → update that row (rename-capable). When creating,
+    # the name must be free.
+    report_id = body.get("id")
+    old_rec = db.get_report_by_id(int(report_id)) if report_id else None
     old_cfg = {}
-    if existing:
+    if old_rec:
         try:
-            old_cfg = _json.loads(existing.get("config_json") or "{}")
+            old_cfg = _json.loads(old_rec.get("config_json") or "{}")
         except Exception:
             old_cfg = {}
+    else:
+        # Creating (or the id vanished): the target name must not already exist.
+        if db.get_report(name):
+            return JSONResponse({"error": f"A report named '{name}' already exists."},
+                                status_code=409)
     cfg = dict(body.get("config") or {})
     # reconcile masked secrets against stored values
     for k in _REPORT_SECRET_KEYS:
         cfg[k] = reconcile_secret(cfg.get(k), old_cfg.get(k))
-    db.save_report(name, _json.dumps(cfg, ensure_ascii=False), bool(body.get("enabled", True)))
+    cfg_json = _json.dumps(cfg, ensure_ascii=False)
+    enabled = bool(body.get("enabled", True))
+    old_name = old_rec["name"] if old_rec else None
+    try:
+        if old_rec:
+            db.update_report(int(report_id), name, cfg_json, enabled)
+        else:
+            db.save_report(name, cfg_json, enabled)
+    except sqlite3.IntegrityError:
+        return JSONResponse({"error": f"A report named '{name}' already exists."},
+                            status_code=409)
     sched = getattr(request.app.state, "scheduler", None)
     if sched:
         try:
+            # On rename, drop the old cron job before (re)registering the new name.
+            if old_name and old_name != name:
+                sched.remove_report(old_name)
             sched.apply_report(name)
         except Exception:
             pass
@@ -2329,11 +2382,32 @@ async def generate_report_now(request: Request, name: str):
     def _run():
         from glogarch.report import generator
         from glogarch.utils.sanitize import sanitize
+        from glogarch.core.models import JobRecord, JobType, JobStatus
+        import uuid as _uuid
+        from datetime import datetime as _dt
+        job_id = str(_uuid.uuid4())
         try:
-            asyncio.run(generator.generate_report(db, settings, cfg, triggered_by="manual"))
+            db.create_job(JobRecord(id=job_id, job_type=JobType.REPORT, status=JobStatus.RUNNING,
+                                    source="manual:report", started_at=_dt.utcnow()))
+        except Exception:
+            job_id = None
+        try:
+            _res = asyncio.run(generator.generate_report(db, settings, cfg, triggered_by="manual"))
+            _units = int((_res or {}).get("units", 0) or 0)
+            if job_id:
+                db.update_job(job_id, status=JobStatus.COMPLETED, completed_at=_dt.utcnow(),
+                              progress_pct=100.0, messages_done=_units, messages_total=_units,
+                              error_message=f"report={name}")
         except Exception as e:
+            if job_id:
+                try:
+                    db.update_job(job_id, status=JobStatus.FAILED, completed_at=_dt.utcnow(),
+                                  error_message=sanitize(str(e)))
+                except Exception:
+                    pass
             try:
-                db.record_report_history(name, "", "", 0, "failed", sanitize(str(e)))
+                db.record_report_history(name, "", "", 0, "failed", sanitize(str(e)),
+                                         triggered_by="manual")
             except Exception:
                 pass
         finally:

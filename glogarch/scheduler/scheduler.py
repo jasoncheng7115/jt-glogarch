@@ -303,6 +303,45 @@ class ArchiveScheduler:
             self._running_jobs["verify"] = False
             self._update_schedule_last_run(schedule_name)
 
+    def _run_report_cleanup(self, schedule_name: str = "auto-report-cleanup") -> None:
+        """Scheduled cleanup of generated report PDFs older than N days."""
+        if self._running_jobs.get("report_cleanup"):
+            return
+        self._running_jobs["report_cleanup"] = True
+        job_id = self._create_run_job(JobType.CLEANUP, f"scheduled:report-cleanup:{schedule_name}")
+        try:
+            import json as _json
+            import os as _os
+            days = 720
+            for s in self.db.list_schedules():
+                if s.name == schedule_name and s.config_json:
+                    try:
+                        days = int(_json.loads(s.config_json).get("days", 720))
+                    except Exception:
+                        pass
+                    break
+            paths = self.db.prune_report_history(days=days)
+            deleted = 0
+            for p in paths:
+                for f in (p, (p + ".sha256") if p else None):
+                    try:
+                        if f and _os.path.exists(f):
+                            _os.remove(f)
+                    except Exception:
+                        pass
+                deleted += 1
+            log.info("Scheduled report cleanup completed", deleted=deleted, days=days)
+            self._finish_run_job(job_id, JobStatus.COMPLETED, messages_done=deleted,
+                                 messages_total=deleted, progress_pct=100.0,
+                                 error_message=f"Deleted {deleted} reports older than {days} days")
+        except Exception as e:
+            from glogarch.utils.sanitize import sanitize
+            log.error("Scheduled report cleanup failed", error=str(e))
+            self._finish_run_job(job_id, JobStatus.FAILED, error_message=sanitize(str(e)))
+        finally:
+            self._running_jobs["report_cleanup"] = False
+            self._update_schedule_last_run(schedule_name)
+
     def _update_schedule_last_run(self, name: str) -> None:
         try:
             schedules = self.db.list_schedules()
@@ -349,6 +388,7 @@ class ArchiveScheduler:
         "export": "Automatic Export",
         "cleanup": "Automatic Cleanup",
         "verify": "Automatic Verify",
+        "report_cleanup": "Automatic Report Cleanup",
     }
 
     def _job_callable(self, job_type: str):
@@ -358,6 +398,8 @@ class ArchiveScheduler:
             return self._run_cleanup
         if job_type == "verify":
             return self._run_verify
+        if job_type == "report_cleanup":
+            return self._run_report_cleanup
         return None
 
     def apply_schedule(self, sched: ScheduleRecord) -> None:
@@ -455,6 +497,21 @@ class ArchiveScheduler:
             log.info("Bootstrapped auto-cleanup from config.yaml",
                      cron=sched_config.cleanup_cron)
 
+        # Auto-add the report-cleanup schedule (720-day retention) if missing.
+        # Runs on every startup, so both fresh installs and upgrades from older
+        # versions gain it automatically without touching config.yaml.
+        if "auto-report-cleanup" not in existing:
+            rec = ScheduleRecord(
+                name="auto-report-cleanup",
+                job_type="report_cleanup",
+                cron_expr="0 4 * * *",
+                config_json=json.dumps({"days": 720}),
+                enabled=True,
+            )
+            self.db.save_schedule(rec)
+            existing["auto-report-cleanup"] = rec
+            log.info("Bootstrapped auto-report-cleanup (720-day retention)")
+
         # Register every DB schedule with APScheduler
         for sched in existing.values():
             self.apply_schedule(sched)
@@ -504,20 +561,42 @@ class ArchiveScheduler:
         def _work():
             import asyncio
             import json
+            import uuid as _uuid
+            from datetime import datetime as _dt
             from glogarch.report import generator
             from glogarch.utils.sanitize import sanitize
+            from glogarch.core.models import JobRecord, JobType, JobStatus
             rep = self.db.get_report(name)
             if not rep:
                 return
+            job_id = str(_uuid.uuid4())
+            try:
+                self.db.create_job(JobRecord(id=job_id, job_type=JobType.REPORT,
+                                             status=JobStatus.RUNNING, source="scheduled:report",
+                                             started_at=_dt.utcnow()))
+            except Exception:
+                job_id = None
             try:
                 cfg = json.loads(rep.get("config_json") or "{}")
                 cfg["name"] = name
-                asyncio.run(generator.generate_report(self.db, self.settings, cfg,
-                                                      triggered_by="scheduled"))
+                _res = asyncio.run(generator.generate_report(self.db, self.settings, cfg,
+                                                             triggered_by="scheduled"))
+                _units = int((_res or {}).get("units", 0) or 0)
+                if job_id:
+                    self.db.update_job(job_id, status=JobStatus.COMPLETED, completed_at=_dt.utcnow(),
+                                       progress_pct=100.0, messages_done=_units, messages_total=_units,
+                                       error_message=f"report={name}")
             except Exception as e:
                 log.error("Scheduled report failed", report=name, error=str(e))
+                if job_id:
+                    try:
+                        self.db.update_job(job_id, status=JobStatus.FAILED, completed_at=_dt.utcnow(),
+                                           error_message=sanitize(str(e)))
+                    except Exception:
+                        pass
                 try:
-                    self.db.record_report_history(name, "", "", 0, "failed", sanitize(str(e)))
+                    self.db.record_report_history(name, "", "", 0, "failed", sanitize(str(e)),
+                                                  triggered_by="scheduled")
                 except Exception:
                     pass
 

@@ -11,9 +11,15 @@
 .row-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .row-actions .btn-sm { display: inline-flex; align-items: center; gap: 4px; }
 
-/* report dashboard row with per-dashboard tab picker */
+/* report dashboard row with per-dashboard multi-tab picker */
 .rp-dash-row { display: flex; align-items: center; gap: 8px; margin: 2px 0; flex-wrap: wrap; }
-.rp-dash-tab { max-width: 200px; }
+/* Group each dashboard with its tabs; highlight the block when it's selected so
+   the tabs read as belonging to the dashboard above them. */
+.rp-dash-block { border-radius: 8px; padding: 3px 8px; border: 1px solid transparent; }
+.rp-dash-block:has(.rp-dash:checked) { background: var(--bg-subtle, #f5f6f8); border-color: var(--border, #e5e7eb); }
+.rp-dash-tabs { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 2px 0 4px 12px;
+    padding: 4px 0 4px 14px; border-left: 3px solid var(--brand, #6c63ff); }
+.rp-tabs-hint { width: 100%; color: var(--text-muted); font-size: 0.72em; margin-bottom: 2px; }
 
 /* report cover logo preview */
 .report-logo-prev { max-height: 48px; margin-top: 6px; border: 1px solid var(--border, #ccc);
@@ -21,9 +27,11 @@
 
 /* command / code block (upgrade instructions) */
 .upgrade-cmd {
-    background: var(--bg-secondary, #1e1e1e);
-    color: var(--text, #ddd);
-    border: 1px solid var(--border, #444);
+    /* Terminal-style block: keep it dark with light text in BOTH themes so the
+       command is always legible (theme vars made the text vanish on light). */
+    background: #1f2430;
+    color: #e5e7eb;
+    border: 1px solid #3a3f4b;
     border-radius: 6px;
     padding: 10px 12px;
     margin: 4px 0 8px;
@@ -114,6 +122,9 @@
 .u035 { display:block; }
 .u036 { display:flex;align-items:baseline;gap:12px;flex-wrap:wrap; }
 .u037 { display:flex;align-items:center;gap:10px; }
+/* Report modal: 3-up option grid, top-aligned so uneven hints don't misalign. */
+.rp-grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px 14px; align-items:start; }
+.rp-grid3 .form-group { margin:0; }
 .u038 { display:flex;align-items:center;gap:10px;flex-wrap:wrap; }
 .u039 { display:flex;align-items:center;gap:12px; }
 .u040 { display:flex;align-items:center;gap:6px;cursor:pointer; }
@@ -249,3 +260,59 @@
 .report-beta { display:inline-block; background:#ff9800; color:#3a2600; font-weight:700; font-size:10px; letter-spacing:1px; padding:2px 8px; border-radius:4px; vertical-align:middle; margin-left:6px; }
 .modal-wide { width:620px; max-width:94vw; max-height:90vh; overflow-y:auto; }
 .report-warn { background:rgba(255,152,0,0.12); color:var(--warning); padding:9px 12px; border-radius:6px; font-size:0.86em; }
+
+/* clickable inline text (e.g. "details" to expand an error) */
+.link-like { color: var(--brand, #6c63ff); cursor: pointer; text-decoration: underline; }
+
+/* loading / empty block (e.g. dashboard picker while fetching) */
+.load-block {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 64px; padding: 18px; border: 1px dashed var(--border, #ccc);
+    border-radius: 8px; color: var(--text-muted); font-size: 0.9em;
+}
+.load-block .spinner-text::before { width: 18px; height: 18px; }
+
+/* uniform row height for report tables (rows with/without a PDF button) */
+#reports-history-table tbody td, #reports-table tbody td { height: 42px; vertical-align: middle; }
+
+/* report cover-logo field: preview box + controls, tidy layout */
+.logo-field { display: flex; align-items: stretch; gap: 12px; }
+.logo-preview-box { flex: 1; display: flex; align-items: center; justify-content: center;
+    min-width: 120px; height: 60px; padding: 6px 10px; border: 1px solid var(--border, #ccc);
+    border-radius: 8px; background: #fff; overflow: hidden; }
+.logo-preview-box.empty { border-style: dashed; background: #fafafa; }
+.logo-preview-box.logo-drag { outline: 2px dashed var(--brand, #6c63ff); outline-offset: -3px; }
+.logo-preview-box .report-logo-prev { max-height: 46px; max-width: 100%; border: 0; padding: 0; margin: 0; background: transparent; }
+.logo-placeholder { color: var(--text-muted); font-size: 0.8em; }
+.logo-controls { display: flex; flex-direction: column; justify-content: center; gap: 6px; min-width: 108px; }
+/* Native file input is ugly — hide it and drive it from a styled label button. */
+.logo-controls input[type=file] { display: none; }
+.logo-pick-btn, .logo-clear-btn { display: inline-flex; align-items: center; justify-content: center;
+    gap: 5px; font-size: 12px; padding: 6px 10px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border, #ccc); background: var(--bg-subtle, #f3f4f6); color: var(--text, #1f2430); }
+.logo-pick-btn:hover, .logo-clear-btn:hover { background: #e9ebf0; }
+.logo-clear-btn.hidden { display: none; }
+
+/* Preview backdrops so you judge the logo where it'll actually sit. */
+.logo-preview-box.logo-preview-cover,
+.logo-preview-box.logo-preview-cover.empty {
+    background: #6c63ff; border-color: #4b43c4; border-style: solid;
+}
+.logo-preview-box.logo-preview-dark,
+.logo-preview-box.logo-preview-dark.empty {
+    background: #6c63ff; border-color: #4b43c4; border-style: solid;
+}
+.logo-preview-box.logo-preview-cover .logo-placeholder,
+.logo-preview-box.logo-preview-dark .logo-placeholder { color: rgba(255,255,255,0.8); }
+
+/* Report integrity fingerprint (SHA-256) */
+code.fp-hash { font-size: 11px; background: var(--bg-subtle, #f3f4f6); padding: 1px 5px; border-radius: 4px; }
+.fp-modal { text-align: left; }
+.fp-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.fp-label { font-weight: 600; }
+.fp-full { font-size: 12px; word-break: break-all; background: var(--bg-subtle, #f3f4f6); padding: 4px 8px; border-radius: 4px; flex: 1; min-width: 200px; }
+.fp-hint { color: var(--text-muted, #6b7280); font-size: 12px; margin: 8px 0; }
+.fp-cmd { background: #1f2430; color: #e5e7eb; padding: 8px 12px; border-radius: 6px; font-size: 12px; overflow-x: auto; user-select: all; }
+
+/* Inline connection-test result line (Graylog servers table), like OpenSearch. */
+.test-result-line { margin-top: 10px; font-size: 13px; min-height: 18px; }

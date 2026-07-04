@@ -568,7 +568,20 @@
 }
 
 .modal-card h3 {
-    margin-bottom: 15px;
+    /* Sticky title: stays pinned at the top of a scrolling dialog so it never
+       scrolls out of view. Negative margins bleed it over the card padding,
+       and top:-30px offsets the padding so it pins at the very top edge. */
+    position: sticky;
+    top: -30px;
+    z-index: 5;
+    margin: -30px -30px 15px;
+    padding: 22px 30px 12px;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border);
+    border-radius: 10px 10px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 /* Host labels */
@@ -1283,6 +1296,13 @@ button, .btn-primary, .btn-secondary, .btn-danger {
     color: white;
 }
 
+.btn-info {
+    background: #0e9aa7;
+    color: white;
+    border: 1px solid #0e9aa7;
+}
+.btn-info:hover { background: #0b818c; }
+
 .btn-sm {
     padding: 4px 10px;
     font-size: 0.8em;
@@ -1485,6 +1505,8 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
 
     /* Modal full-screen on mobile */
     .modal-card { max-width: 95vw; max-height: 90vh; overflow-y: auto; padding: 15px; }
+    /* Match the sticky-title bleed to the smaller mobile padding. */
+    .modal-card h3 { top: -15px; margin: -15px -15px 12px; padding: 14px 15px 10px; }
 
     /* Card text smaller */
     .card-value { font-size: 1.4em; }

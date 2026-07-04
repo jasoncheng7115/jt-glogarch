@@ -23,6 +23,7 @@ class JobType(str, Enum):
     IMPORT = "import"
     CLEANUP = "cleanup"
     VERIFY = "verify"
+    REPORT = "report"
 
 
 class JobStatus(str, Enum):

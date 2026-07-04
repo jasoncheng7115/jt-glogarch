@@ -131,6 +131,8 @@ CREATE TABLE IF NOT EXISTS report_history (
     size_bytes   INTEGER NOT NULL DEFAULT 0,
     status       TEXT NOT NULL DEFAULT 'completed',
     error        TEXT,
+    triggered_by TEXT NOT NULL DEFAULT 'manual',
+    sha256       TEXT NOT NULL DEFAULT '',
     created_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_report_hist ON report_history (report_id, created_at);
@@ -235,6 +237,15 @@ class ArchiveDB:
             existing_audit = {row[1] for row in conn.execute("PRAGMA table_info(api_audit)").fetchall()}
             if existing_audit and "target_name" not in existing_audit:
                 conn.execute("ALTER TABLE api_audit ADD COLUMN target_name TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+        # report_history: triggered_by column (manual vs scheduled)
+        try:
+            existing_rh = {row[1] for row in conn.execute("PRAGMA table_info(report_history)").fetchall()}
+            if existing_rh and "triggered_by" not in existing_rh:
+                conn.execute("ALTER TABLE report_history ADD COLUMN triggered_by TEXT NOT NULL DEFAULT 'manual'")
+            if existing_rh and "sha256" not in existing_rh:
+                conn.execute("ALTER TABLE report_history ADD COLUMN sha256 TEXT NOT NULL DEFAULT ''")
         except Exception:
             pass
 
@@ -658,6 +669,34 @@ class ArchiveDB:
         r = self.conn.execute("SELECT * FROM reports WHERE name = ?", (name,)).fetchone()
         return dict(r) if r else None
 
+    def get_report_by_id(self, report_id: int) -> dict | None:
+        r = self.conn.execute("SELECT * FROM reports WHERE id = ?", (report_id,)).fetchone()
+        return dict(r) if r else None
+
+    def update_report(self, report_id: int, name: str, config_json: str,
+                      enabled: bool = True) -> None:
+        """Update an existing report by its stable id — supports renaming.
+        Raises sqlite3.IntegrityError if the new name collides with another row."""
+        with self._lock:
+            try:
+                self.conn.execute(
+                    "UPDATE reports SET name = ?, config_json = ?, enabled = ? WHERE id = ?",
+                    (name, config_json, 1 if enabled else 0, report_id),
+                )
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def delete_report_by_id(self, report_id: int) -> None:
+        with self._lock:
+            try:
+                self.conn.execute("DELETE FROM reports WHERE id = ?", (report_id,))
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
     def delete_report(self, name: str) -> None:
         with self._lock:
             try:
@@ -679,14 +718,15 @@ class ArchiveDB:
 
     def record_report_history(self, report_name: str, file_path: str, filename: str,
                               size_bytes: int, status: str = "completed",
-                              error: str | None = None) -> int:
+                              error: str | None = None, triggered_by: str = "manual",
+                              sha256: str = "") -> int:
         with self._lock:
             try:
                 cur = self.conn.execute(
                     """INSERT INTO report_history
-                       (report_name, file_path, filename, size_bytes, status, error, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (report_name, file_path, filename, size_bytes, status, error,
+                       (report_name, file_path, filename, size_bytes, status, error, triggered_by, sha256, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (report_name, file_path, filename, size_bytes, status, error, triggered_by, sha256,
                      _dt_to_str(datetime.utcnow())),
                 )
                 self.conn.commit()
@@ -704,6 +744,24 @@ class ArchiveDB:
     def get_report_history_entry(self, hist_id: int) -> dict | None:
         r = self.conn.execute("SELECT * FROM report_history WHERE id = ?", (hist_id,)).fetchone()
         return dict(r) if r else None
+
+    def prune_report_history(self, days: int = 180) -> list[str]:
+        """Delete report_history rows older than `days` and return the file paths
+        that were removed (so the caller can unlink the PDFs + sidecars)."""
+        from datetime import timedelta
+        cutoff = _dt_to_str(datetime.utcnow() - timedelta(days=days))
+        with self._lock:
+            try:
+                rows = self.conn.execute(
+                    "SELECT file_path FROM report_history WHERE created_at < ?", (cutoff,)
+                ).fetchall()
+                paths = [r["file_path"] for r in rows if r["file_path"]]
+                self.conn.execute("DELETE FROM report_history WHERE created_at < ?", (cutoff,))
+                self.conn.commit()
+                return paths
+            except Exception:
+                self._rollback_safely()
+                raise
 
     def update_schedule_last_run(
         self, name: str, when: datetime | None = None

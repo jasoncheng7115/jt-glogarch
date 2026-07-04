@@ -55,6 +55,37 @@ PYEOF
 echo "  runtime deps:"; sed 's/^/    /' "$STAGE/requirements.txt"
 python3 -m pip download --dest "$STAGE" -r "$STAGE/requirements.txt" 2>&1 | tail -3
 
+# 2b. PDF Reports [report] extra — bundle the Playwright wheel + its deps so the
+#     offline target can `pip install playwright` without the network.
+echo "[2b/4] Downloading PDF Reports wheels (Playwright + PyMuPDF + Pillow)..."
+python3 -m pip download --dest "$STAGE" playwright pymupdf pillow 2>&1 | tail -2 \
+    || echo "  WARNING: could not download report wheels — offline bundle will lack PDF Reports."
+
+# 2c. Chromium browser + a CJK font, so offline hosts render Chinese PDFs.
+#     Chromium goes into a temp browsers path, then tarred; report-deps.sh on
+#     the target extracts it into /opt/jt-glogarch/.playwright.
+echo "[2c/4] Bundling Chromium browser + CJK font..."
+BROWSERS_TMP="$(mktemp -d)"
+if PLAYWRIGHT_BROWSERS_PATH="$BROWSERS_TMP" python3 -m playwright install chromium >/dev/null 2>&1; then
+    tar czf "$STAGE/chromium-browser.tar.gz" -C "$BROWSERS_TMP" . 2>/dev/null
+    echo "  Chromium bundled ($(du -h "$STAGE/chromium-browser.tar.gz" | cut -f1))."
+else
+    echo "  WARNING: 'playwright install chromium' failed on build host — bundle lacks the browser."
+fi
+rm -rf "$BROWSERS_TMP"
+mkdir -p "$STAGE/fonts"
+CJK_FONT=$(fc-list :lang=zh 2>/dev/null | grep -oiE "/[^:]*(wqy-zenhei\.ttc|NotoSansCJK[^:]*\.(ttc|otf))" | head -1)
+if [ -n "$CJK_FONT" ] && [ -f "$CJK_FONT" ]; then
+    cp "$CJK_FONT" "$STAGE/fonts/"
+    echo "  CJK font bundled: $(basename "$CJK_FONT")."
+else
+    echo "  WARNING: no CJK font on build host — apt install fonts-wqy-zenhei and rebuild for Chinese PDFs."
+fi
+# Ship report-deps.sh alongside upgrade-offline.sh (used in offline mode).
+for p in "$REPO_ROOT/deploy/report-deps.sh" "$REPO_ROOT/github/deploy/report-deps.sh"; do
+    [ -f "$p" ] && cp "$p" "$STAGE/report-deps.sh" && break
+done
+
 # 3. Include the source tree + upgrade script. The source is synced to
 #    /opt/jt-glogarch on the target so that `python -m glogarch` run from /opt
 #    (the CLI) uses the new code too — the wheel only updates dist-packages
@@ -89,6 +120,15 @@ On the air-gapped target host (as root):
 Requires: an existing jt-glogarch install and Python ${PYVER} on the same
 platform this bundle was built on. pip never touches the network.
 Wheels included: $(ls "$STAGE"/*.whl 2>/dev/null | wc -l)
+
+PDF Reports (beta): this bundle ships the Playwright wheel, the Chromium
+browser ($([ -f "$STAGE/chromium-browser.tar.gz" ] && echo "included" || echo "MISSING")) and a CJK font
+($([ -f "$STAGE"/fonts/* ] 2>/dev/null && echo "included" || echo "MISSING")). upgrade-offline.sh installs all three.
+  NOTE: Chromium needs OS shared libraries (libnss3, libatk1.0, libxkbcommon,
+  libgbm, libasound2, …). On a fully air-gapped host install these from your
+  distro's install media BEFORE running reports; the bundle cannot carry .debs.
+  Verify after upgrade:  sudo -u jt-glogarch env PLAYWRIGHT_BROWSERS_PATH=/opt/jt-glogarch/.playwright \\
+                           python3 -m playwright install --dry-run chromium
 EOF
 
 # 4. Tar it up.

@@ -120,6 +120,16 @@ fi
 echo "[3/5] Installing from offline bundle (no network)..."
 pip install $PIP_FLAGS --no-index --find-links="$BUNDLE_DIR" --no-build-isolation "$WHEEL" 2>&1 | tail -2
 pip install $PIP_FLAGS --no-index --no-build-isolation --force-reinstall --no-deps "$WHEEL" 2>&1 | tail -1
+# PDF Reports: the [report] extra (Playwright) isn't pulled by a bare wheel
+# install — install it by name from the bundled wheels (skips silently if the
+# bundle predates PDF Reports and has no playwright wheel).
+pip install $PIP_FLAGS --no-index --find-links="$BUNDLE_DIR" --no-build-isolation playwright pymupdf pillow 2>&1 | tail -1 \
+    || echo "  (no bundled report wheels — PDF Reports unavailable on this bundle)"
+# Chromium browser + CJK font come from the bundle (offline mode).
+if [ -f "$BUNDLE_DIR/report-deps.sh" ]; then
+    source "$BUNDLE_DIR/report-deps.sh"
+    install_report_deps "$PIP_FLAGS" "$BUNDLE_DIR"
+fi
 
 # 4. Restart
 echo "[4/5] Restarting service..."

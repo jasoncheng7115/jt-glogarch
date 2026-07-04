@@ -38,10 +38,13 @@ dev = [
     "pytest-httpx>=0.30",
     "ruff>=0.2",
 ]
-# PDF Reports (beta) — headless-Chromium renderer. Also requires
+# PDF Reports (beta) — headless-Chromium renderer + PyMuPDF for post-processing
+# (clearing the header/footer band off the cover page). Also requires
 # `playwright install chromium` and CJK fonts on the host.
 report = [
     "playwright>=1.40",
+    "pymupdf>=1.24",
+    "pillow>=10.0",
 ]
 
 [project.scripts]

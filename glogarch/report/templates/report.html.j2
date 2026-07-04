@@ -16,22 +16,23 @@
   /* ---------- Cover ---------- */
   .cover { padding: 0; page-break-after: always; }
   .cover-panel {
-    background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
-    color: #fff; height: 247mm; padding: 26mm 20mm; display: flex; flex-direction: column;
+    background: var(--brand);
+    color: #fff; height: 261mm; padding: 26mm 22mm; display: flex; flex-direction: column;
   }
-  .cover-logo { height: 40px; margin-bottom: 8mm; }
-  .cover-logo img { height: 40px; }
-  .cover-kicker { font-size: 12px; letter-spacing: 3px; text-transform: uppercase; opacity: .85; }
+  .cover-logo { height: 46px; margin-bottom: 9mm; }
+  .cover-logo img { height: 46px; }
+  .cover-brand { display: flex; flex-direction: column; gap: 2.5mm; }
+  .cover-kicker { font-size: 13px; letter-spacing: 4px; text-transform: uppercase; opacity: .85; display: inline-block; }
   .cover-spacer { flex: 1; }
-  .cover-title { font-size: 34px; font-weight: 800; line-height: 1.2; margin: 0 0 6mm; }
-  .cover-sub { font-size: 15px; opacity: .92; margin-bottom: 12mm; max-width: 130mm; }
-  .cover-meta { border-top: 1px solid rgba(255,255,255,.35); padding-top: 6mm; font-size: 12px; opacity: .95; }
-  .cover-meta div { margin: 2px 0; }
+  .cover-title { font-size: 38px; font-weight: 800; line-height: 1.2; margin: 0 0 7mm; }
+  .cover-sub { font-size: 17px; opacity: .92; margin-bottom: 14mm; max-width: 140mm; }
+  .cover-meta { border-top: 1px solid rgba(255,255,255,.35); padding-top: 7mm; font-size: 14px; opacity: .95; }
+  .cover-meta div { margin: 3px 0; }
   .cover-badge { display:inline-block; background:#ff9800; color:#3a2600; font-weight:700; font-size:10px; letter-spacing:1px; padding:2px 8px; border-radius:4px; vertical-align:middle; margin-left:8px; }
 
   /* ---------- Section / content ---------- */
   h1.section { font-size: 20px; font-weight: 800; color: var(--ink); margin: 10mm 0 2mm; padding-bottom: 3mm; border-bottom: 3px solid var(--brand); }
-  h2.widget { font-size: 14px; font-weight: 700; margin: 6mm 0 1mm; color: var(--ink); }
+  h2.widget { font-size: 14px; font-weight: 700; margin: 0 0 2mm; color: var(--ink); }
   .desc { color: var(--muted); font-size: 11px; margin: 0 0 3mm; }
   .toc-title, .summary-title { font-size: 20px; font-weight: 800; margin: 10mm 0 4mm; padding-bottom: 3mm; border-bottom: 3px solid var(--brand); }
   .toc-item { display:flex; justify-content:space-between; padding: 3mm 0; border-bottom: 1px dotted var(--line); font-size: 13px; }
@@ -40,16 +41,52 @@
   .card { border: 1px solid var(--line); border-radius: 8px; padding: 6mm; margin: 3mm 0 6mm; page-break-inside: avoid; }
   .chart-wrap { position: relative; width: 100%; height: 62mm; }
   .chart-wrap.tall { height: 78mm; }
+  .map-wrap { width: 100%; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; line-height: 0; }
+  .map-wrap svg { width: 100%; height: auto; display: block; }
   .single-value { text-align:center; padding: 8mm 0; }
   .single-value .v { font-size: 40px; font-weight: 800; color: var(--brand); }
   .single-value .l { font-size: 12px; color: var(--muted); margin-top: 2mm; }
+  .trend { display: inline-block; margin-top: 3mm; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 700; }
+  .trend-good { background: #e6f4ea; color: #1e7e34; }
+  .trend-bad { background: #fdecea; color: #c62828; }
+  .trend-neutral { background: #eef0f3; color: #5f6672; }
+  .widget-range { font-size: 10px; color: var(--muted); text-align: right; margin-top: 2mm; }
 
-  table.data { width:100%; border-collapse: collapse; font-size: 11px; }
+  /* Auto layout everywhere = best-fit column widths (not averaged). The
+     message-table max-columns setting guards against pathologically wide
+     tables; word-break lets long cell values wrap instead of overflowing. */
+  table.data { width:100%; border-collapse: collapse; font-size: 11px; table-layout: auto; }
   table.data th { background: #f3f4f6; text-align:left; padding: 5px 8px; border-bottom: 2px solid var(--line); font-weight:700; }
   table.data td { padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  table.data th, table.data td { overflow-wrap: anywhere; word-break: break-word; }
   table.data tr:nth-child(even) td { background:#fafafa; }
+  table.data th.num, table.data td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  /* Wide message tables: shrink font so more columns fit within the page. */
+  table.data.wide { font-size: 9px; }
+  table.data.wide th, table.data.wide td { padding: 3px 5px; }
+
+  /* Heatmap grid (row-pivot × column-pivot, colour-graded cells) */
+  .heat-scroll { width: 100%; overflow: hidden; }
+  table.heat { width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; }
+  /* Keep the header row + first column as compact as possible so the coloured
+     value cells get the most space. */
+  table.heat th { background: #f3f4f6; font-weight: 600; padding: 2px 3px; border: 1px solid var(--line);
+                  text-align: center; font-size: 8px; white-space: nowrap; }
+  table.heat th.heat-row, table.heat th.heat-corner { width: 19mm; }
+  table.heat th.heat-row { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 8px; padding: 2px 6px 2px 2px; }
+  table.heat th.heat-corner { background: #fff; border: none; }
+  table.heat td { padding: 4px 5px; border: 1px solid #fff; text-align: center; font-variant-numeric: tabular-nums; }
+  table.heat.wide { font-size: 8px; }
+  table.heat.wide th, table.heat.wide td { padding: 2px 3px; }
+  /* One tidy caption line: colour scale on the left, truncation note beside it. */
+  .heat-footer { display: flex; align-items: center; margin-top: 2.5mm; gap: 4mm; font-size: 9px; color: var(--muted); }
+  .heat-note { font-size: 9px; color: var(--muted); }
+  .heat-legend { display: inline-flex; align-items: center; gap: 5px; }
+  .heat-legend-bar { display: inline-block; width: 30mm; height: 2.6mm; border-radius: 2px; border: 1px solid var(--line); }
+  .rows-note { font-size: 9px; color: var(--muted); text-align: right; margin-top: 2mm; }
 
   .shot { width: 100%; border: 1px solid var(--line); border-radius: 6px; margin: 3mm 0 6mm; page-break-inside: avoid; }
+  .page-break { page-break-after: always; break-after: page; height: 0; }
   .summary p { font-size: 12px; }
   .kpi-row { display:flex; gap: 6mm; margin: 4mm 0; }
   .kpi { flex:1; border:1px solid var(--line); border-radius:8px; padding:5mm; text-align:center; }
@@ -64,7 +101,9 @@
   <div class="cover">
     <div class="cover-panel">
       <div class="cover-logo">{% if report.logo_data_uri %}<img src="{{ report.logo_data_uri }}" alt="">{% endif %}</div>
-      <div class="cover-kicker">{{ report.kicker|default('Graylog Open Archive') }}</div>
+      <div class="cover-brand">
+        <div class="cover-kicker">{{ report.kicker|default('Graylog Open Archive') }}</div>
+      </div>
       <div class="cover-spacer"></div>
       <div class="cover-title">{{ report.title }}{% if report.beta %}<span class="cover-badge">BETA</span>{% endif %}</div>
       {% if report.subtitle %}<div class="cover-sub">{{ report.subtitle }}</div>{% endif %}
@@ -103,7 +142,9 @@
     {% if sec.description %}<div class="desc">{{ sec.description }}</div>{% endif %}
 
     {% if sec.type == 'image' %}
-      {% if sec.img_data_uri %}<img class="shot" src="{{ sec.img_data_uri }}" alt="">{% else %}<div class="empty">{{ t.no_capture }}</div>{% endif %}
+      {% if sec.img_slices %}
+        {% for s in sec.img_slices %}<img class="shot" src="{{ s }}" alt="">{% if not loop.last %}<div class="page-break"></div>{% endif %}{% endfor %}
+      {% elif sec.img_data_uri %}<img class="shot" src="{{ sec.img_data_uri }}" alt="">{% else %}<div class="empty">⚠ {{ sec.capture_error|default(t.no_capture) }}</div>{% endif %}
 
     {% elif sec.type == 'charts' %}
       {% for w in sec.widgets %}
@@ -111,15 +152,29 @@
         <h2 class="widget">{{ w.title }}</h2>
         {% if w.description %}<div class="desc">{{ w.description }}</div>{% endif %}
         {% if w.kind == 'single' %}
-          <div class="single-value"><div class="v">{{ w.value }}</div>{% if w.label %}<div class="l">{{ w.label }}</div>{% endif %}</div>
+          <div class="single-value"><div class="v">{{ w.value }}</div>{% if w.label %}<div class="l">{{ w.label }}</div>{% endif %}
+            {% if w.trend %}<div class="trend trend-{{ w.trend.cls }}">{{ w.trend.arrow }} {{ w.trend.delta }}{% if w.trend.pct %} / {{ w.trend.pct }}{% endif %}</div>{% endif %}</div>
         {% elif w.kind == 'table' %}
-          <table class="data"><thead><tr>{% for c in w.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
-          <tbody>{% for row in w.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
+          <table class="data{% if w.columns|length > 6 %} wide{% endif %}"><thead><tr>{% for c in w.columns %}<th{% if w.numeric_from is defined and loop.index0 >= w.numeric_from %} class="num"{% endif %}>{{ c }}</th>{% endfor %}</tr></thead>
+          <tbody>{% for row in w.rows %}<tr>{% for cell in row %}<td{% if w.numeric_from is defined and loop.index0 >= w.numeric_from %} class="num"{% endif %}>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
+          {% if w.rows_note %}<div class="rows-note">{{ w.rows_note }}</div>{% endif %}
+        {% elif w.kind == 'map' %}
+          <div class="map-wrap">{{ w.svg | safe }}</div>
+        {% elif w.kind == 'heatmap' %}
+          <div class="heat-scroll"><table class="heat{% if w.wide %} wide{% endif %}">
+            <thead><tr><th class="heat-corner"></th>{% for c in w.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+            <tbody>{% for row in w.rows %}<tr><th class="heat-row">{{ row.label }}</th>{% for cell in row.cells %}<td style="background:{{ cell.bg }};color:{{ cell.fg }}">{{ cell.text }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+          </table></div>
+          <div class="heat-footer">
+            {% if w.legend_gradient %}<span class="heat-legend"><span>{{ w.legend_min }}</span><span class="heat-legend-bar" style="background:{{ w.legend_gradient }}"></span><span>{{ w.legend_max }}</span></span>{% endif %}
+            {% if w.truncated %}<span class="heat-note">· {{ t.heat_truncated|default('僅顯示數值最高的列與欄') }}</span>{% endif %}
+          </div>
         {% elif w.kind == 'chart' %}
           <div class="chart-wrap{% if w.tall %} tall{% endif %}"><canvas id="{{ w.canvas_id }}"></canvas></div>
         {% else %}
           <div class="empty">{{ t.no_data }}</div>
         {% endif %}
+        {% if w.range_label %}<div class="widget-range">🕒 {{ w.range_label }}</div>{% endif %}
       </div>
       {% endfor %}
     {% endif %}
@@ -132,10 +187,34 @@
     Chart.defaults.font.size = 11;
     Chart.defaults.color = '#1f2430';
     Chart.defaults.animation = false;
+    function fmtUnit(v, unit) {
+      if (unit == null || typeof v !== 'number') return v;
+      if (unit.unit_type === 'size') {
+        let n = Math.abs(v), neg = v < 0, u = ['B','KB','MB','GB','TB','PB'], i = 0;
+        while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; }
+        return (neg ? '-' : '') + (i === 0 ? n.toFixed(0) : n.toFixed(1)) + ' ' + u[i];
+      }
+      if (unit.unit_type === 'percent') return v.toFixed(1) + '%';
+      return v;
+    }
     const CHARTS = {{ charts_json|safe }};
     for (const c of CHARTS) {
       const el = document.getElementById(c.canvas_id);
-      if (el) { try { new Chart(el.getContext('2d'), c.config); } catch (e) { console.error(e); } }
+      if (!el) continue;
+      // Format the value axis with the widget's Graylog unit (bytes → GB, …).
+      if (c.unit) {
+        const o = c.config.options = c.config.options || {};
+        const s = o.scales = o.scales || {};
+        const ax = (c.config.data && c.config.data.labels && c.config.type === 'bar'
+                    && c.config.options && c.config.options.indexAxis === 'y') ? 'x' : 'y';
+        s[ax] = s[ax] || {};
+        s[ax].ticks = s[ax].ticks || {};
+        s[ax].ticks.callback = (val) => fmtUnit(val, c.unit);
+        o.plugins = o.plugins || {};
+        o.plugins.tooltip = o.plugins.tooltip || {};
+        o.plugins.tooltip.callbacks = { label: (ctx) => fmtUnit(ctx.parsed[ax], c.unit) };
+      }
+      try { new Chart(el.getContext('2d'), c.config); } catch (e) { console.error(e); }
     }
   </script>
 </body>

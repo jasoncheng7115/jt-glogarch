@@ -20,17 +20,20 @@ log = get_logger("report.builder")
 _TPL_DIR = Path(__file__).parent / "templates"
 _ASSETS = Path(__file__).parent / "assets"
 
-# Chart dataset palette (brand-forward, print-friendly).
-PALETTE = ["#6c63ff", "#29b6f6", "#4caf50", "#ff9800", "#ef5350", "#ab47bc",
-           "#26a69a", "#ec407a", "#8d6e63", "#78909c"]
+# Chart dataset palette. Graylog renders charts with Plotly and, when a widget
+# has no custom per-series colours (formatting_settings=null), falls back to
+# Plotly's DEFAULT qualitative colourway. We mirror that exact sequence so our
+# rebuilt charts match Graylog's colours/saturation series-for-series.
+PALETTE = ["#636efa", "#EF553B", "#00cc96", "#ab63fa", "#FFA15A", "#19d3f3",
+           "#FF6692", "#B6E880", "#FF97FF", "#FECB52"]
 
 _I18N = {
-    "zh-TW": {"period": "期間", "generated": "產生時間", "author": "產生者", "server": "伺服器",
+    "zh-TW": {"period": "期間", "generated": "產製時間", "author": "產製單位", "server": "產製來源",
               "toc": "目錄", "summary": "摘要", "no_capture": "（無法擷取儀表板畫面）",
-              "no_data": "（無資料）"},
-    "en": {"period": "Period", "generated": "Generated", "author": "Author", "server": "Server",
+              "no_data": "（無資料）", "heat_truncated": "僅顯示數值最高的列與欄"},
+    "en": {"period": "Period", "generated": "Generated", "author": "Issued by", "server": "Source",
            "toc": "Table of Contents", "summary": "Executive Summary", "no_capture": "(dashboard capture unavailable)",
-           "no_data": "(no data)"},
+           "no_data": "(no data)", "heat_truncated": "Showing the highest-value rows and columns only"},
 }
 
 
@@ -56,7 +59,8 @@ def build_html(report: dict, sections: list[dict]) -> str:
                 if w.get("kind") == "chart":
                     n += 1
                     w["canvas_id"] = f"chart{n}"
-                    charts.append({"canvas_id": w["canvas_id"], "config": w["config"]})
+                    charts.append({"canvas_id": w["canvas_id"], "config": w["config"],
+                                   "unit": w.get("unit")})
     toc = [sec["title"] for sec in sections]
     tpl = _env().get_template("report.html.j2")
     return tpl.render(
@@ -85,10 +89,11 @@ def bar_chart(labels, values, label="", horizontal=False):
     return {
         "type": "bar",
         "data": {"labels": labels, "datasets": [{"label": label, "data": values,
-                 "backgroundColor": PALETTE[0], "borderRadius": 3}]},
+                 "backgroundColor": PALETTE[0], "borderRadius": 0}]},
         "options": {"indexAxis": "y" if horizontal else "x", "responsive": True,
                     "maintainAspectRatio": False,
-                    "plugins": {"legend": {"display": bool(label)}},
+                    "plugins": {"legend": {"display": bool(label), "position": "bottom",
+                                           "labels": {"padding": 16, "boxWidth": 14, "boxHeight": 12}}},
                     "scales": {"y": {"beginAtZero": True}}},
     }
 
@@ -104,7 +109,8 @@ def line_chart(labels, series):
     return {"type": "line",
             "data": {"labels": labels, "datasets": ds},
             "options": {"responsive": True, "maintainAspectRatio": False,
-                        "plugins": {"legend": {"display": len(ds) > 1}},
+                        "plugins": {"legend": {"display": len(ds) > 1, "position": "bottom",
+                                               "labels": {"padding": 16, "boxWidth": 14, "boxHeight": 12}}},
                         "scales": {"y": {"beginAtZero": True},
                                    # Thin a dense time axis to ~12 horizontal ticks
                                    # instead of cramming every bucket at a 45° slant.
@@ -112,12 +118,35 @@ def line_chart(labels, series):
                                                    "maxRotation": 0, "minRotation": 0}}}}}
 
 
+def geo_map(points):
+    """points: list of (lat, lon, count). Returns a self-contained equirectangular
+    SVG world map with count-sized bubbles (no map tiles / no network — renders
+    offline in the PDF)."""
+    import math
+    base = (_ASSETS / "worldmap.svg").read_text(encoding="utf-8")
+    # Recolour the baked-in ocean/land to a clean, modern flat-map palette:
+    # a soft near-white ocean and light blue-grey land with a subtle coastline.
+    base = base.replace('fill="#cfe6f2"', 'fill="#f2f5fa"')                       # ocean
+    base = base.replace('fill="#e9e7dd"', 'fill="#d4dbe6" stroke="#c2cbd9" stroke-width="0.12"')  # land
+    mx = max((c for _, _, c in points), default=1) or 1
+    bubbles = []
+    # Draw largest bubbles first so smaller ones stay visible on top.
+    for lat, lon, count in sorted(points, key=lambda p: -p[2]):
+        x = lon + 180.0        # equirectangular: viewBox is 0..360 x 0..180
+        y = 90.0 - lat
+        r = 1.0 + 7.0 * math.sqrt(max(count, 0) / mx)
+        bubbles.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{r:.2f}" '
+                       f'fill="#636efa" fill-opacity="0.55" stroke="#ffffff" stroke-width="0.35"/>')
+    return base.replace("</svg>", "".join(bubbles) + "</svg>")
+
+
 def pie_chart(labels, values):
     return {"type": "doughnut",
             "data": {"labels": labels, "datasets": [{"data": values,
                      "backgroundColor": PALETTE}]},
             "options": {"responsive": True, "maintainAspectRatio": False,
-                        "plugins": {"legend": {"position": "right"}}}}
+                        "plugins": {"legend": {"position": "bottom",
+                                               "labels": {"padding": 16, "boxWidth": 14, "boxHeight": 12}}}}}
 
 
 # --- Sample report (used for renderer verification / demo) ---

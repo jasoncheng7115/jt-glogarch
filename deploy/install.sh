@@ -74,9 +74,17 @@ rm -rf "$INSTALL_DIR/build" "$INSTALL_DIR"/*.egg-info 2>/dev/null
 echo ""
 echo "Installing jt-glogarch and dependencies..."
 $PIP install $PIP_FLAGS --no-build-isolation --no-cache-dir --force-reinstall --no-deps "$INSTALL_DIR"
-$PIP install $PIP_FLAGS --no-build-isolation --no-cache-dir "$INSTALL_DIR"
+# Install runtime deps + the [report] extra (Playwright) so PDF Reports work
+# out of the box. Bracket-extra syntax requires the path quoted.
+$PIP install $PIP_FLAGS --no-build-isolation --no-cache-dir "$INSTALL_DIR"[report]
 echo ""
 echo "Python packages installed OK"
+
+# --- PDF Reports host deps: Chromium browser + CJK font (best-effort) ---
+if [ -f "$INSTALL_DIR/deploy/report-deps.sh" ]; then
+    source "$INSTALL_DIR/deploy/report-deps.sh"
+    install_report_deps "$PIP_FLAGS"
+fi
 
 # --- Create directories ---
 echo ""

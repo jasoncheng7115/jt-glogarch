@@ -116,6 +116,14 @@ fi
 echo ""
 echo "[3/5] Installing..."
 pip install $PIP_FLAGS --no-build-isolation --no-cache-dir --force-reinstall --no-deps "$INSTALL_DIR" 2>&1 | tail -1
+# Pull in the [report] extra (Playwright) — an existing install predating PDF
+# Reports won't have it; upgrades must. Deps-only, cheap when already satisfied.
+pip install $PIP_FLAGS --no-build-isolation --no-cache-dir "$INSTALL_DIR"[report] 2>&1 | tail -1
+# Chromium browser + CJK font (best-effort; re-runnable — skips if present).
+if [ -f "$INSTALL_DIR/deploy/report-deps.sh" ]; then
+    source "$INSTALL_DIR/deploy/report-deps.sh"
+    install_report_deps "$PIP_FLAGS"
+fi
 
 # 4. Restart
 echo ""
