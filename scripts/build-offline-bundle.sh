@@ -62,15 +62,34 @@ python3 -m pip download --dest "$STAGE" playwright pymupdf pillow 2>&1 | tail -2
     || echo "  WARNING: could not download report wheels — offline bundle will lack PDF Reports."
 
 # 2c. Chromium browser + a CJK font, so offline hosts render Chinese PDFs.
-#     Chromium goes into a temp browsers path, then tarred; report-deps.sh on
-#     the target extracts it into /opt/jt-glogarch/.playwright.
+#     CRITICAL: the Chromium REVISION must match the Playwright *wheel* we ship
+#     (not the build host's possibly-older installed Playwright), or the target
+#     installs playwright-X, looks for chromium-<rev-for-X>, and can't find the
+#     bundled chromium. So install Chromium using the exact bundled wheel inside
+#     an isolated venv.
 echo "[2c/4] Bundling Chromium browser + CJK font..."
 BROWSERS_TMP="$(mktemp -d)"
-if PLAYWRIGHT_BROWSERS_PATH="$BROWSERS_TMP" python3 -m playwright install chromium >/dev/null 2>&1; then
-    tar czf "$STAGE/chromium-browser.tar.gz" -C "$BROWSERS_TMP" . 2>/dev/null
-    echo "  Chromium bundled ($(du -h "$STAGE/chromium-browser.tar.gz" | cut -f1))."
+BP="$BROWSERS_TMP/bp"
+PW_WHEEL=$(ls "$STAGE"/playwright-*.whl 2>/dev/null | head -1)
+_chromium_ok=0
+if [ -n "$PW_WHEEL" ] && python3 -m venv "$BROWSERS_TMP/venv" >/dev/null 2>&1; then
+    "$BROWSERS_TMP/venv/bin/pip" install -q "$PW_WHEEL" >/dev/null 2>&1 || true
+    if PLAYWRIGHT_BROWSERS_PATH="$BP" "$BROWSERS_TMP/venv/bin/python" -m playwright install chromium >/dev/null 2>&1; then
+        _chromium_ok=1
+        echo "  Chromium installed via the bundled Playwright wheel ($(basename "$PW_WHEEL"))."
+    fi
+fi
+if [ "$_chromium_ok" != 1 ]; then
+    echo "  (venv install unavailable — falling back to the build host's Playwright; revision may mismatch)"
+    if PLAYWRIGHT_BROWSERS_PATH="$BP" python3 -m playwright install chromium >/dev/null 2>&1; then
+        _chromium_ok=1
+    fi
+fi
+if [ "$_chromium_ok" = 1 ]; then
+    tar czf "$STAGE/chromium-browser.tar.gz" -C "$BP" . 2>/dev/null
+    echo "  Chromium bundled ($(du -h "$STAGE/chromium-browser.tar.gz" | cut -f1)): $(ls "$BP" | grep -i chromium- | head -1)"
 else
-    echo "  WARNING: 'playwright install chromium' failed on build host — bundle lacks the browser."
+    echo "  WARNING: could not install Chromium on build host — bundle lacks the browser."
 fi
 rm -rf "$BROWSERS_TMP"
 mkdir -p "$STAGE/fonts"

@@ -1,0 +1,27 @@
+# Runtime data / secrets — MUST never be committed and must survive git operations
+# (git clean/stash during upgrades). Keep these ignored so an upgrade can reset
+# the source tree without touching user data.
+config.yaml
+config.yaml.bak*
+/etc/jt-glogarch/config.yaml
+*.db
+*.db-wal
+*.db-shm
+.session_secret
+certs/
+.playwright/
+
+# Generated report output
+reports/
+backups/
+
+# Python build / cache artefacts
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/

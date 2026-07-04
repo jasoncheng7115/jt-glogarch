@@ -2,6 +2,17 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.10.3] - 2026-07-05
+
+### Fixed — upgrade tooling (found during full .83 upgrade testing)
+
+- **Offline bundle Chromium revision mismatch.** The bundle installed Chromium using the build host's (possibly older) Playwright, while shipping a newer Playwright *wheel* — so the target installed playwright-X, looked for `chromium-<rev-for-X>`, and couldn't find the bundled browser (PDF rendering failed offline). The bundle now installs Chromium via the exact bundled wheel in an isolated venv, so the revision always matches.
+- **Repository `.gitignore` added.** `config.yaml`, `*.db`(+`-wal`/`-shm`), `.session_secret`, `certs/`, `.playwright/`, and report/backup output are now ignored, so an upgrade's `git` operations can never touch user data.
+
+### Note
+
+- Upgrading **online** from a pre-1.10.0 version to 1.10.x installs the new code on the first `upgrade.sh` run and the PDF-report runtime deps (Chromium + CJK font) on a **second** run (the first run is still executing the old script that predates the dependency step). The **offline** upgrade installs everything in a single run. Verified end-to-end on a clean box for both paths (PDF render smoke test passes as the service user).
+
 ## [1.10.2] - 2026-07-05
 
 ### PDF Reports (beta) — major fidelity + feature pass
