@@ -112,6 +112,28 @@ CREATE TABLE IF NOT EXISTS api_audit (
 CREATE INDEX IF NOT EXISTS idx_api_audit_ts ON api_audit (timestamp);
 CREATE INDEX IF NOT EXISTS idx_api_audit_user ON api_audit (username);
 CREATE INDEX IF NOT EXISTS idx_api_audit_uri ON api_audit (method, uri);
+
+CREATE TABLE IF NOT EXISTS reports (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL UNIQUE,
+    config_json  TEXT NOT NULL DEFAULT '{}',
+    enabled      INTEGER NOT NULL DEFAULT 1,
+    last_run_at  TEXT,
+    created_at   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS report_history (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_id    INTEGER,
+    report_name  TEXT NOT NULL DEFAULT '',
+    file_path    TEXT NOT NULL DEFAULT '',
+    filename     TEXT NOT NULL DEFAULT '',
+    size_bytes   INTEGER NOT NULL DEFAULT 0,
+    status       TEXT NOT NULL DEFAULT 'completed',
+    error        TEXT,
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_report_hist ON report_history (report_id, created_at);
 """
 
 
@@ -606,6 +628,83 @@ class ArchiveDB:
                 self._rollback_safely()
                 raise
 
+    # --- Reports (beta) ---
+
+    def save_report(self, name: str, config_json: str, enabled: bool = True) -> int:
+        with self._lock:
+            try:
+                existing = self.conn.execute(
+                    "SELECT last_run_at, created_at FROM reports WHERE name = ?", (name,)
+                ).fetchone()
+                created = existing["created_at"] if existing else _dt_to_str(datetime.utcnow())
+                last_run = existing["last_run_at"] if existing else None
+                cur = self.conn.execute(
+                    """INSERT OR REPLACE INTO reports
+                       (id, name, config_json, enabled, last_run_at, created_at)
+                       VALUES ((SELECT id FROM reports WHERE name = ?), ?, ?, ?, ?, ?)""",
+                    (name, name, config_json, 1 if enabled else 0, last_run, created),
+                )
+                self.conn.commit()
+                return cur.lastrowid  # type: ignore[return-value]
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def list_reports(self) -> list[dict]:
+        rows = self.conn.execute("SELECT * FROM reports ORDER BY name").fetchall()
+        return [dict(r) for r in rows]
+
+    def get_report(self, name: str) -> dict | None:
+        r = self.conn.execute("SELECT * FROM reports WHERE name = ?", (name,)).fetchone()
+        return dict(r) if r else None
+
+    def delete_report(self, name: str) -> None:
+        with self._lock:
+            try:
+                self.conn.execute("DELETE FROM reports WHERE name = ?", (name,))
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def update_report_last_run(self, name: str, when: datetime | None = None) -> None:
+        with self._lock:
+            try:
+                self.conn.execute("UPDATE reports SET last_run_at = ? WHERE name = ?",
+                                  (_dt_to_str(when or datetime.utcnow()), name))
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def record_report_history(self, report_name: str, file_path: str, filename: str,
+                              size_bytes: int, status: str = "completed",
+                              error: str | None = None) -> int:
+        with self._lock:
+            try:
+                cur = self.conn.execute(
+                    """INSERT INTO report_history
+                       (report_name, file_path, filename, size_bytes, status, error, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (report_name, file_path, filename, size_bytes, status, error,
+                     _dt_to_str(datetime.utcnow())),
+                )
+                self.conn.commit()
+                return cur.lastrowid  # type: ignore[return-value]
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def list_report_history(self, limit: int = 50) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM report_history ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_report_history_entry(self, hist_id: int) -> dict | None:
+        r = self.conn.execute("SELECT * FROM report_history WHERE id = ?", (hist_id,)).fetchone()
+        return dict(r) if r else None
+
     def update_schedule_last_run(
         self, name: str, when: datetime | None = None
     ) -> None:
@@ -627,6 +726,31 @@ class ArchiveDB:
                     (_dt_to_str(when), name),
                 )
                 self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def recover_stuck_importing(self) -> int:
+        """Flip any archive stuck in IMPORTING back to COMPLETED. Called at
+        service startup: an archive flips to IMPORTING while an import reads it,
+        and the importer's finally block flips it back — but if the process was
+        killed (-9 / OOM / crash / a restart mid-import, e.g. during an upgrade),
+        the row stays IMPORTING and the per-archive lock makes it un-importable
+        forever. On startup no import can be running, so any IMPORTING row is
+        stale. Returns the number of rows recovered.
+        """
+        with self._lock:
+            try:
+                n = self.conn.execute(
+                    "UPDATE archives SET status = 'completed' WHERE status = 'importing'"
+                ).rowcount
+                self.conn.commit()
+                if n:
+                    import logging
+                    logging.getLogger("glogarch.db").warning(
+                        "Recovered %d archive(s) stuck in IMPORTING state on startup", n
+                    )
+                return n
             except Exception:
                 self._rollback_safely()
                 raise

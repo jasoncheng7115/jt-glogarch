@@ -94,13 +94,46 @@ echo "  $CONFIG_DIR"
 mkdir -p "$CERT_DIR"
 echo "  $CERT_DIR"
 
-# --- Copy example config if needed ---
+# --- Write a minimal bootstrap config if none exists ---
+# Fresh installs get an EMPTY servers list on purpose: the Web UI detects the
+# unconfigured state and launches the first-run setup wizard at /setup, so the
+# admin never has to hand-edit YAML. The full annotated reference lives in
+# deploy/config.yaml.example (and `glogarch config`).
 if [ ! -f "$INSTALL_DIR/config.yaml" ] && [ ! -f "$CONFIG_DIR/config.yaml" ]; then
     echo ""
-    echo "Copying example config..."
-    cp "$INSTALL_DIR/deploy/config.yaml.example" "$INSTALL_DIR/config.yaml"
+    echo "Writing minimal bootstrap config (first-run setup wizard will guide you)..."
+    cat > "$INSTALL_DIR/config.yaml" <<'BOOTSTRAP'
+# jt-glogarch bootstrap config — configure everything from the Web UI.
+# Open https://<this-host>:8990/ and the setup wizard will guide you.
+# Full reference: deploy/config.yaml.example
+servers: []            # populated by the /setup wizard (or Settings page)
+default_server: ""
+export_mode: api
+
+opensearch:
+  hosts: []
+  verify_ssl: false
+
+export:
+  base_path: /data/graylog-archives
+
+database_path: /opt/jt-glogarch/jt-glogarch.db
+log_level: INFO
+
+web:
+  host: 0.0.0.0
+  port: 8990
+  ssl_certfile: /opt/jt-glogarch/certs/server.crt
+  ssl_keyfile: /opt/jt-glogarch/certs/server.key
+  localadmin_password_hash: ""   # set via the setup wizard (step 1)
+
+op_audit:
+  enabled: true
+  listen_port: 8991
+  retention_days: 180
+BOOTSTRAP
     echo "  => $INSTALL_DIR/config.yaml"
-    echo "  Please edit this file with your Graylog server details and API token"
+    echo "  Finish setup in your browser: https://<this-host>:8990/"
 fi
 
 # --- Generate self-signed SSL certificate ---

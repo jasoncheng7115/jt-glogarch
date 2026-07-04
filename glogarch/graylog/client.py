@@ -51,13 +51,36 @@ class GraylogClient:
     async def __aexit__(self, *args):
         await self.close()
 
+    @staticmethod
+    def _error_detail(resp: httpx.Response) -> str:
+        """Build an actionable message from a Graylog error response — Graylog
+        (and the OpenSearch/Elasticsearch backend) put the real reason in the
+        body, which raise_for_status() would otherwise throw away, leaving an
+        opaque '500 Internal Server Error'."""
+        reason = ""
+        try:
+            body = resp.json()
+            if isinstance(body, dict):
+                reason = body.get("message") or body.get("error") or ""
+                # ES errors often nest under details/root_cause
+                if not reason and body.get("details"):
+                    reason = str(body["details"])[:400]
+        except Exception:
+            reason = (resp.text or "").strip()[:400]
+        path = resp.request.url.path if resp.request else ""
+        base = f"HTTP {resp.status_code} from {path}"
+        return f"{base}: {reason}" if reason else base
+
     @retry_async(max_retries=3, base_delay=2.0, exceptions=(httpx.HTTPError,))
     async def _request(
         self, method: str, path: str, **kwargs: Any
     ) -> httpx.Response:
         await self.rate_limiter.acquire()
         resp = await self._client.request(method, path, **kwargs)
-        resp.raise_for_status()
+        if resp.is_error:
+            # Include Graylog's error body so the failure is diagnosable.
+            raise httpx.HTTPStatusError(self._error_detail(resp),
+                                        request=resp.request, response=resp)
         return resp
 
     async def get(self, path: str, **kwargs) -> dict:

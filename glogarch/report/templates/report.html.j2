@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="{{ report.lang|default('zh-TW') }}">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root { --brand: {{ report.brand_color|default('#6c63ff') }}; --brand-dark: {{ report.brand_dark|default('#4b43c4') }}; --ink:#1f2430; --muted:#6b7280; --line:#e5e7eb; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; }
+  body {
+    font-family: "Noto Sans CJK TC","Noto Sans CJK SC","WenQuanYi Zen Hei","PingFang TC","Microsoft JhengHei","Helvetica Neue",Arial,sans-serif;
+    color: var(--ink); font-size: 12px; line-height: 1.55; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .page { page-break-after: always; padding: 0 16mm; }
+  .page:last-child { page-break-after: auto; }
+
+  /* ---------- Cover ---------- */
+  .cover { padding: 0; page-break-after: always; }
+  .cover-panel {
+    background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+    color: #fff; height: 247mm; padding: 26mm 20mm; display: flex; flex-direction: column;
+  }
+  .cover-logo { height: 40px; margin-bottom: 8mm; }
+  .cover-logo img { height: 40px; }
+  .cover-kicker { font-size: 12px; letter-spacing: 3px; text-transform: uppercase; opacity: .85; }
+  .cover-spacer { flex: 1; }
+  .cover-title { font-size: 34px; font-weight: 800; line-height: 1.2; margin: 0 0 6mm; }
+  .cover-sub { font-size: 15px; opacity: .92; margin-bottom: 12mm; max-width: 130mm; }
+  .cover-meta { border-top: 1px solid rgba(255,255,255,.35); padding-top: 6mm; font-size: 12px; opacity: .95; }
+  .cover-meta div { margin: 2px 0; }
+  .cover-badge { display:inline-block; background:#ff9800; color:#3a2600; font-weight:700; font-size:10px; letter-spacing:1px; padding:2px 8px; border-radius:4px; vertical-align:middle; margin-left:8px; }
+
+  /* ---------- Section / content ---------- */
+  h1.section { font-size: 20px; font-weight: 800; color: var(--ink); margin: 10mm 0 2mm; padding-bottom: 3mm; border-bottom: 3px solid var(--brand); }
+  h2.widget { font-size: 14px; font-weight: 700; margin: 6mm 0 1mm; color: var(--ink); }
+  .desc { color: var(--muted); font-size: 11px; margin: 0 0 3mm; }
+  .toc-title, .summary-title { font-size: 20px; font-weight: 800; margin: 10mm 0 4mm; padding-bottom: 3mm; border-bottom: 3px solid var(--brand); }
+  .toc-item { display:flex; justify-content:space-between; padding: 3mm 0; border-bottom: 1px dotted var(--line); font-size: 13px; }
+  .toc-item .n { color: var(--brand); font-weight: 700; margin-right: 8px; }
+
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 6mm; margin: 3mm 0 6mm; page-break-inside: avoid; }
+  .chart-wrap { position: relative; width: 100%; height: 62mm; }
+  .chart-wrap.tall { height: 78mm; }
+  .single-value { text-align:center; padding: 8mm 0; }
+  .single-value .v { font-size: 40px; font-weight: 800; color: var(--brand); }
+  .single-value .l { font-size: 12px; color: var(--muted); margin-top: 2mm; }
+
+  table.data { width:100%; border-collapse: collapse; font-size: 11px; }
+  table.data th { background: #f3f4f6; text-align:left; padding: 5px 8px; border-bottom: 2px solid var(--line); font-weight:700; }
+  table.data td { padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  table.data tr:nth-child(even) td { background:#fafafa; }
+
+  .shot { width: 100%; border: 1px solid var(--line); border-radius: 6px; margin: 3mm 0 6mm; page-break-inside: avoid; }
+  .summary p { font-size: 12px; }
+  .kpi-row { display:flex; gap: 6mm; margin: 4mm 0; }
+  .kpi { flex:1; border:1px solid var(--line); border-radius:8px; padding:5mm; text-align:center; }
+  .kpi .v { font-size: 26px; font-weight:800; color: var(--brand); }
+  .kpi .l { font-size: 11px; color: var(--muted); margin-top: 2mm; }
+  .empty { color: var(--muted); font-size: 12px; font-style: italic; }
+</style>
+</head>
+<body>
+
+  <!-- Cover -->
+  <div class="cover">
+    <div class="cover-panel">
+      <div class="cover-logo">{% if report.logo_data_uri %}<img src="{{ report.logo_data_uri }}" alt="">{% endif %}</div>
+      <div class="cover-kicker">{{ report.kicker|default('Graylog Open Archive') }}</div>
+      <div class="cover-spacer"></div>
+      <div class="cover-title">{{ report.title }}{% if report.beta %}<span class="cover-badge">BETA</span>{% endif %}</div>
+      {% if report.subtitle %}<div class="cover-sub">{{ report.subtitle }}</div>{% endif %}
+      <div class="cover-meta">
+        {% if report.period %}<div>{{ t.period }}: {{ report.period }}</div>{% endif %}
+        <div>{{ t.generated }}: {{ report.generated_at }}</div>
+        {% if report.author %}<div>{{ t.author }}: {{ report.author }}</div>{% endif %}
+        {% if report.server %}<div>{{ t.server }}: {{ report.server }}</div>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Table of contents -->
+  {% if toc %}
+  <div class="page">
+    <div class="toc-title">{{ t.toc }}</div>
+    {% for item in toc %}
+    <div class="toc-item"><span><span class="n">{{ loop.index }}.</span>{{ item }}</span></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Executive summary -->
+  {% if report.summary %}
+  <div class="page summary">
+    <div class="summary-title">{{ t.summary }}</div>
+    {% if report.kpis %}<div class="kpi-row">{% for k in report.kpis %}<div class="kpi"><div class="v">{{ k.value }}</div><div class="l">{{ k.label }}</div></div>{% endfor %}</div>{% endif %}
+    <div>{{ report.summary|safe }}</div>
+  </div>
+  {% endif %}
+
+  <!-- Sections -->
+  {% for sec in sections %}
+  <div class="page">
+    <h1 class="section">{{ sec.title }}</h1>
+    {% if sec.description %}<div class="desc">{{ sec.description }}</div>{% endif %}
+
+    {% if sec.type == 'image' %}
+      {% if sec.img_data_uri %}<img class="shot" src="{{ sec.img_data_uri }}" alt="">{% else %}<div class="empty">{{ t.no_capture }}</div>{% endif %}
+
+    {% elif sec.type == 'charts' %}
+      {% for w in sec.widgets %}
+      <div class="card">
+        <h2 class="widget">{{ w.title }}</h2>
+        {% if w.description %}<div class="desc">{{ w.description }}</div>{% endif %}
+        {% if w.kind == 'single' %}
+          <div class="single-value"><div class="v">{{ w.value }}</div>{% if w.label %}<div class="l">{{ w.label }}</div>{% endif %}</div>
+        {% elif w.kind == 'table' %}
+          <table class="data"><thead><tr>{% for c in w.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+          <tbody>{% for row in w.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
+        {% elif w.kind == 'chart' %}
+          <div class="chart-wrap{% if w.tall %} tall{% endif %}"><canvas id="{{ w.canvas_id }}"></canvas></div>
+        {% else %}
+          <div class="empty">{{ t.no_data }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <script>{{ chartjs_src|safe }}</script>
+  <script>
+    Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+    Chart.defaults.font.size = 11;
+    Chart.defaults.color = '#1f2430';
+    Chart.defaults.animation = false;
+    const CHARTS = {{ charts_json|safe }};
+    for (const c of CHARTS) {
+      const el = document.getElementById(c.canvas_id);
+      if (el) { try { new Chart(el.getContext('2d'), c.config); } catch (e) { console.error(e); } }
+    }
+  </script>
+</body>
+</html>

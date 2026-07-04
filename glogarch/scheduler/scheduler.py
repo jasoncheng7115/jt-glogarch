@@ -459,6 +459,70 @@ class ArchiveScheduler:
         for sched in existing.values():
             self.apply_schedule(sched)
 
+        # Register report schedules (beta)
+        try:
+            for rep in self.db.list_reports():
+                self.apply_report(rep["name"])
+        except Exception as e:
+            log.warning("Report schedule registration failed", error=str(e))
+
+    # --- Reports (beta) ---
+
+    def apply_report(self, name: str) -> None:
+        """(Re)register a report's cron schedule with APScheduler."""
+        import json
+        job_id = f"report:{name}"
+        try:
+            self.scheduler.remove_job(job_id)
+        except Exception:
+            pass
+        rep = self.db.get_report(name)
+        if not rep or not rep.get("enabled"):
+            return
+        try:
+            cfg = json.loads(rep.get("config_json") or "{}")
+        except Exception:
+            return
+        cron = (cfg.get("schedule_cron") or "").strip()
+        if not cron:
+            return
+        self.scheduler.add_job(
+            self._run_report, trigger=CronTrigger.from_crontab(posix_cron_to_apscheduler(cron)),
+            args=[name], id=job_id, replace_existing=True, misfire_grace_time=3600)
+        log.info("Report scheduled", report=name, cron=cron)
+
+    def remove_report(self, name: str) -> None:
+        try:
+            self.scheduler.remove_job(f"report:{name}")
+        except Exception:
+            pass
+
+    def _run_report(self, name: str) -> None:
+        """Generate a scheduled report in a worker thread (Chromium is heavy)."""
+        import threading
+
+        def _work():
+            import asyncio
+            import json
+            from glogarch.report import generator
+            from glogarch.utils.sanitize import sanitize
+            rep = self.db.get_report(name)
+            if not rep:
+                return
+            try:
+                cfg = json.loads(rep.get("config_json") or "{}")
+                cfg["name"] = name
+                asyncio.run(generator.generate_report(self.db, self.settings, cfg,
+                                                      triggered_by="scheduled"))
+            except Exception as e:
+                log.error("Scheduled report failed", report=name, error=str(e))
+                try:
+                    self.db.record_report_history(name, "", "", 0, "failed", sanitize(str(e)))
+                except Exception:
+                    pass
+
+        threading.Thread(target=_work, daemon=True).start()
+
     def start(self) -> None:
         """Start the scheduler."""
         self.setup()

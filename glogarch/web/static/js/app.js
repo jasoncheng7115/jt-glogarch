@@ -45,14 +45,14 @@ async function withButton(btnOrEvent, asyncFn) {
 /** Show loading in a table tbody, then load data */
 async function loadTable(selector, asyncFn) {
     const tbody = document.querySelector(selector + ' tbody');
-    if (tbody) tbody.innerHTML = `<tr><td colspan="20" style="text-align:center;color:var(--text-muted);padding:20px"><span class="spinner-text">${t('loading')}...</span></td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td class="u143" colspan="20"><span class="spinner-text">${t('loading')}...</span></td></tr>`;
     try {
         await asyncFn();
         if (tbody && tbody.innerHTML.includes('spinner-text')) {
-            tbody.innerHTML = `<tr><td colspan="20" style="text-align:center;color:var(--text-muted);padding:20px">${t('log_no_data')}</td></tr>`;
+            tbody.innerHTML = `<tr><td class="u143" colspan="20">${t('log_no_data')}</td></tr>`;
         }
     } catch (e) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="20" style="text-align:center;color:var(--danger);padding:20px">${t('load_failed')}</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td class="u141" colspan="20">${t('load_failed')}</td></tr>`;
     }
     initTableSort();
 }
@@ -97,10 +97,10 @@ function _unitFor(jobType) {
 }
 function formatRecords(done, total, jobType) {
     const d = formatNumber(done);
-    const u = jobType ? ` <span style="color:var(--text-muted);font-size:0.85em">${_unitFor(jobType)}</span>` : '';
+    const u = jobType ? ` <span class="u024">${_unitFor(jobType)}</span>` : '';
     if (!total) return `${d}${u}`;
     const t_ = formatNumber(total);
-    return `<span style="white-space:nowrap"><strong>${d}</strong> <span style="color:var(--text-muted);font-size:0.8em;opacity:0.7">of</span> <span style="color:var(--text-muted);font-size:0.9em">${t_}</span>${u}</span>`;
+    return `<span class="u149"><strong>${d}</strong> <span class="u027">of</span> <span class="u028">${t_}</span>${u}</span>`;
 }
 
 function formatDT(iso) {
@@ -221,6 +221,8 @@ async function loadDashboard() {
         console.error('Failed to load dashboard stats:', e);
     }
 
+    const _stb0 = document.querySelector('#servers-table tbody');
+    if (_stb0) _stb0.innerHTML = `<tr><td colspan="4" class="text-center text-muted"><span class="spinner-text">${t('loading')}...</span></td></tr>`;
     try {
         const servers = await fetchJSON(`${API}/servers`);
         // Detect Data Node — set global flag for export/import mode warnings
@@ -235,7 +237,7 @@ async function loadDashboard() {
                 <td>${esc(s.name)}</td>
                 <td>${esc(s.url)}</td>
                 <td>${s.connected ? statusBadge('completed') : statusBadge('failed')}</td>
-                <td>${s.version || '-'}${s.has_datanode ? ' <span style="color:var(--warning);font-size:0.8em">(Data Node)</span>' : ''}</td>
+                <td>${s.version || '-'}${s.has_datanode ? ' <span class="u031">(Data Node)</span>' : ''}</td>
             </tr>
         `).join('');
     } catch (e) {
@@ -251,9 +253,9 @@ async function loadDashboard() {
             let badges = '';
             if (st === 'scheduled') badges += '<span class="job-badge job-badge-sched">' + t('job_scheduled') + '</span> ';
             else if (st === 'manual') badges += '<span class="job-badge job-badge-manual">' + t('job_manual') + '</span> ';
-            if (sm === 'api') badges += '<span class="job-badge" style="background:rgba(76,175,80,0.1);color:var(--success)">API</span>';
-            else if (sm === 'opensearch') badges += '<span class="job-badge" style="background:rgba(255,152,0,0.1);color:var(--warning)">OS</span>';
-            else if (st && !sm) badges += '<span class="job-badge" style="background:rgba(76,175,80,0.1);color:var(--success)">API</span>';
+            if (sm === 'api') badges += '<span class="job-badge u002">API</span>';
+            else if (sm === 'opensearch') badges += '<span class="job-badge u001">OS</span>';
+            else if (st && !sm) badges += '<span class="job-badge u002">API</span>';
             const isDim = j.status === 'completed' && j.messages_done === 0 && !j.error_message;
             return `
             <tr class="${isDim ? 'job-row-dim' : ''}">
@@ -261,7 +263,7 @@ async function loadDashboard() {
                 <td>${j.job_type} ${badges}</td>
                 <td>${statusBadge(j.status, j.error_message)}</td>
                 <td>${j.progress_pct.toFixed(0)}%</td>
-                <td style="text-align:right">${isDim ? '<span style="color:var(--text-muted);font-size:0.85em">' + t('job_no_new_data') + '</span>' : formatRecords(j.messages_done, j.messages_total, j.job_type)}</td>
+                <td class="u147">${isDim ? '<span class="u024">' + t('job_no_new_data') + '</span>' : formatRecords(j.messages_done, j.messages_total, j.job_type)}</td>
                 <td>${formatDT(j.started_at)}</td>
                 <td>${formatElapsed(j.started_at, j.completed_at)}</td>
             </tr>`;
@@ -280,12 +282,12 @@ async function loadOpenSearchStatus() {
         if (data.configured) {
             const labels = data.hosts.map((h, i) => {
                 const isPrimary = i === 0;
-                const badge = isPrimary ? ` <span style="font-size:0.7em;color:var(--success)">&#9679; Primary</span>` : '';
+                const badge = isPrimary ? ` <span class="u075">&#9679; Primary</span>` : '';
                 return `<span class="host-label" oncontextmenu="showHostMenu(event,${i},${isPrimary})" title="${t('os_right_click')}">${icon('server')} ${esc(h)}${badge}</span>`;
             }).join(' ');
             el.innerHTML = labels;
         } else {
-            el.innerHTML = `<span style="color:var(--warning)">${t('opensearch_not_configured')}</span>`;
+            el.innerHTML = `<span class="u030">${t('opensearch_not_configured')}</span>`;
         }
     } catch (e) {}
 }
@@ -304,9 +306,9 @@ function showHostMenu(e, idx, isPrimary) {
 
     let items = '';
     if (!isPrimary) {
-        items += `<div class="context-menu-item" onclick="osSetPrimary(${idx})">${icon('shield')} ${t('os_set_primary')}</div>`;
+        items += `<div class="context-menu-item" data-act="osSetPrimary" data-args="[${idx}]">${icon('shield')} ${t('os_set_primary')}</div>`;
     }
-    items += `<div class="context-menu-item" onclick="osTestSingle(${idx})">${icon('refresh')} ${t('btn_test_connection')}</div>`;
+    items += `<div class="context-menu-item" data-act="osTestSingle" data-args="[${idx}]">${icon('refresh')} ${t('btn_test_connection')}</div>`;
     if (isPrimary) {
         items += `<div class="context-menu-item disabled">${icon('shield')} ${t('os_is_primary')}</div>`;
     }
@@ -360,7 +362,7 @@ async function osTestSingle(idx) {
 
 async function testOpenSearch() {
     const resultEl = document.getElementById('opensearch-result');
-    resultEl.innerHTML = '<span style="color:var(--text-muted)">Testing...</span>';
+    resultEl.innerHTML = '<span class="u022">Testing...</span>';
     try {
         const data = await fetchJSON(`${API}/opensearch/test`, {
             method: 'POST',
@@ -389,7 +391,7 @@ async function loadNotifyStatus() {
             el.innerHTML = `${t('enabled_channels')}: <strong>${names}</strong>`;
             if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
         } else {
-            el.innerHTML = `<span style="color:var(--warning)">${t('no_channels')}</span>`;
+            el.innerHTML = `<span class="u030">${t('no_channels')}</span>`;
             if (btn) { btn.disabled = true; btn.style.opacity = '0.4'; btn.style.cursor = 'not-allowed'; }
         }
     } catch (e) {}
@@ -397,7 +399,7 @@ async function loadNotifyStatus() {
 
 async function testNotify() {
     const el = document.getElementById('notify-result');
-    el.innerHTML = '<span style="color:var(--text-muted)">Sending...</span>';
+    el.innerHTML = '<span class="u022">Sending...</span>';
     try {
         const data = await fetchJSON(`${API}/notify/test`, {method: 'POST'});
         if (data.results && data.results.length > 0) {
@@ -406,7 +408,7 @@ async function testNotify() {
             );
             el.innerHTML = lines.join('<br>');
         } else {
-            el.innerHTML = `<span style="color:var(--warning)">${t('notify_no_channels')}</span>`;
+            el.innerHTML = `<span class="u030">${t('notify_no_channels')}</span>`;
         }
     } catch (e) {
         el.innerHTML = `<span class="status-failed">${e.message}</span>`;
@@ -421,9 +423,9 @@ let archiveOrder = 'desc';
 async function loadArchives(page) {
     archivePage = page || 1;
     const tbody = document.querySelector('#archives-table tbody');
-    if (tbody) tbody.innerHTML = `<tr><td colspan="20" style="text-align:center;padding:20px"><span class="spinner-text">${t('loading')}...</span></td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td class="u144" colspan="20"><span class="spinner-text">${t('loading')}...</span></td></tr>`;
     try { await _loadArchivesInner(page); } catch(e) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="20" style="text-align:center;color:var(--danger)">${t('load_failed')}</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td class="u140" colspan="20">${t('load_failed')}</td></tr>`;
     }
 }
 async function _loadArchivesInner(page) {
@@ -455,20 +457,20 @@ async function _loadArchivesInner(page) {
     const tbody = document.querySelector('#archives-table tbody');
     tbody.innerHTML = data.items.map(a => `
         <tr>
-            <td><input type="checkbox" class="archive-check" value="${a.id}" onchange="onArchiveCheckChange()"></td>
+            <td><input type="checkbox" class="archive-check" value="${a.id}" data-act-change="onArchiveCheckChange"></td>
             <td class="col-id">${a.id}</td>
             <td class="col-server">${esc(a.server_name)}</td>
             <td class="col-stream">${esc(a.stream_id && a.stream_id.match(/^[a-z]+_\d+$/) ? a.stream_id : (_sn[a.stream_id] || a.stream_name || (a.stream_id ? a.stream_id.substring(0,8) + '...' : 'all')))}</td>
             <td class="col-from">${formatDT(a.time_from)}</td>
             <td class="col-to">${formatDT(a.time_to)}</td>
-            <td class="col-records" style="text-align:right">${formatNumber(a.message_count)}</td>
-            <td class="col-compressed" style="text-align:right">${formatBytes(a.file_size_bytes)}</td>
-            <td class="col-original" style="text-align:right">${a.original_size_bytes ? formatBytes(a.original_size_bytes) : '~' + formatBytes(a.file_size_bytes * 8)}</td>
+            <td class="col-records u147">${formatNumber(a.message_count)}</td>
+            <td class="col-compressed u147">${formatBytes(a.file_size_bytes)}</td>
+            <td class="col-original u147">${a.original_size_bytes ? formatBytes(a.original_size_bytes) : '~' + formatBytes(a.file_size_bytes * 8)}</td>
             <td class="col-status">${statusBadge(a.status)}</td>
-            <td class="col-filename" style="font-size:0.8em;word-break:break-all">${esc((a.file_path || '').split('/').pop())}</td>
-            <td class="col-actions" style="white-space:nowrap">
-                <button class="btn-sm btn-primary" onclick="importSingle(${a.id})" data-i18n="btn_import">Import</button>
-                <button class="btn-sm btn-danger" onclick="deleteArchive(${a.id})" data-i18n="btn_delete">Delete</button>
+            <td class="col-filename u087">${esc((a.file_path || '').split('/').pop())}</td>
+            <td class="col-actions u149">
+                <button class="btn-sm btn-primary" data-act="importSingle" data-args="[${a.id}]" data-i18n="btn_import">Import</button>
+                <button class="btn-sm btn-danger" data-act="deleteArchive" data-args="[${a.id}]" data-i18n="btn_delete">Delete</button>
             </td>
         </tr>
     `).join('');
@@ -496,16 +498,16 @@ async function _loadArchivesInner(page) {
         if (cur < totalPages - 2) pages.push('...');
         if (totalPages > 1) pages.push(totalPages);
 
-        let html = `<button ${cur === 1 ? 'disabled' : ''} onclick="loadArchives(${cur - 1})">&laquo;</button>`;
+        let html = `<button ${cur === 1 ? 'disabled' : ''} data-act="loadArchives" data-args="[${cur - 1}]">&laquo;</button>`;
         pages.forEach(p => {
-            if (p === '...') { html += `<span style="padding:0 6px;color:var(--text-muted)">...</span>`; }
-            else { html += `<button class="${p === cur ? 'active' : ''}" onclick="loadArchives(${p})">${p}</button>`; }
+            if (p === '...') { html += `<span class="u126">...</span>`; }
+            else { html += `<button class="${p === cur ? 'active' : ''}" data-act="loadArchives" data-args="[${p}]">${p}</button>`; }
         });
-        html += `<button ${cur === totalPages ? 'disabled' : ''} onclick="loadArchives(${cur + 1})">&raquo;</button>`;
-        html += `<span style="margin-left:10px;color:var(--text-muted);font-size:0.85em">${data.total} ${t('nav_archives').toLowerCase()}</span>`;
+        html += `<button ${cur === totalPages ? 'disabled' : ''} data-act="loadArchives" data-args="[${cur + 1}]">&raquo;</button>`;
+        html += `<span class="u104">${data.total} ${t('nav_archives').toLowerCase()}</span>`;
         pag.innerHTML = html;
     } else if (pag) {
-        pag.innerHTML = data.total ? `<span style="color:var(--text-muted);font-size:0.85em">${data.total} ${t('nav_archives').toLowerCase()}</span>` : '';
+        pag.innerHTML = data.total ? `<span class="u024">${data.total} ${t('nav_archives').toLowerCase()}</span>` : '';
     }
 }
 
@@ -542,7 +544,8 @@ function initColumnSettings() {
 let _selectAllPages = false;
 let _selectAllTotal = 0;
 
-function toggleArchiveSelectAll(el, evt) {
+function toggleArchiveSelectAll(evt) {
+    const el = evt.target;
     if (evt && evt.shiftKey && el.checked) {
         _selectAllPages = true;
         document.querySelectorAll('.archive-check').forEach(cb => cb.checked = true);
@@ -568,7 +571,7 @@ function onArchiveCheckChange() {
     if (count) {
         if (_selectAllPages) {
             const total = _selectAllTotal || '...';
-            count.innerHTML = `<strong style="color:var(--warning)">${total} ${t('select_all_pages')}</strong>`;
+            count.innerHTML = `<strong class="u030">${total} ${t('select_all_pages')}</strong>`;
         } else {
             count.textContent = `${checked.length} ${t('btn_selected')}`;
         }
@@ -712,19 +715,19 @@ async function loadArchiveTimeline() {
         const totalBytes = items.reduce((s, i) => s + i.bytes, 0);
 
         el.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:10px">
-            <div style="font-size:0.95em;font-weight:500;color:var(--text-label);white-space:nowrap">${icon('clock')} ${t('archive_timeline')} <span style="color:var(--text-muted);font-weight:normal">(${totalDays} ${t('export_days')})</span></div>
-            <div id="tl-tooltip" style="font-size:0.85em;color:var(--text-muted);min-height:1.2em;flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums">${t('tl_drag_hint')}</div>
-            <button id="tl-clear" onclick="clearTimelineSelection()" style="visibility:hidden;background:var(--danger);color:white;border:none;padding:3px 10px;border-radius:4px;font-size:0.75em;cursor:pointer;flex-shrink:0">${t('tl_clear')}</button>
+        <div class="u057">
+            <div class="u089">${icon('clock')} ${t('archive_timeline')} <span class="u029">(${totalDays} ${t('export_days')})</span></div>
+            <div class="u079" id="tl-tooltip">${t('tl_drag_hint')}</div>
+            <button class="u148" id="tl-clear" data-act="clearTimelineSelection">${t('tl_clear')}</button>
         </div>
-        <div style="position:relative">
-            <svg id="tl-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:70px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;display:block;cursor:crosshair">
+        <div class="u136">
+            <svg class="u152" id="tl-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
                 ${bars}
-                <rect id="tl-selection" x="0" y="0" width="0" height="${h}" fill="var(--accent)" opacity="0.2" pointer-events="none" style="display:none"/>
-                <line id="tl-cursor" x1="0" y1="0" x2="0" y2="${h}" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3,3" opacity="0.7" pointer-events="none" style="display:none"/>
+                <rect class="u066" id="tl-selection" x="0" y="0" width="0" height="${h}" fill="var(--accent)" opacity="0.2" pointer-events="none"/>
+                <line class="u066" id="tl-cursor" x1="0" y1="0" x2="0" y2="${h}" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3,3" opacity="0.7" pointer-events="none"/>
             </svg>
         </div>
-        <div style="display:flex;justify-content:space-between;font-size:0.8em;color:var(--text-muted);margin-top:6px">
+        <div class="u058">
             <span>${fmtShort(earliest)}</span>
             <span><strong>${formatNumber(totalArchives)}</strong> ${t('tl_archives')} · <strong>${formatNumber(totalMessages)}</strong> ${t('tl_records')} · <strong>${formatBytes(totalBytes)}</strong></span>
             <span>${fmtShort(today)}</span>
@@ -776,7 +779,7 @@ async function loadArchiveTimeline() {
                 tooltip.innerHTML = `<strong>${dayStr}</strong> · ${item.count} ${t('tl_archives')} · ${formatNumber(item.messages)} ${t('tl_records')} · ${formatBytes(item.bytes)}`;
                 if (cur) cur.setAttribute('opacity', '1');
             } else {
-                tooltip.innerHTML = `<strong>${dayStr}</strong> · <span style="color:var(--danger)">${t('tl_no_data')}</span>`;
+                tooltip.innerHTML = `<strong>${dayStr}</strong> · <span class="u018">${t('tl_no_data')}</span>`;
                 if (cur) cur.setAttribute('opacity', '0.6');
             }
         };
@@ -866,7 +869,7 @@ async function loadArchiveTimeline() {
             if (fromInput) fromInput.value = toLocal(from);
             if (toInput) toInput.value = toLocal(to);
             clearBtn.style.visibility = 'visible';
-            tooltip.innerHTML = `<strong style="color:var(--accent)">${fmtShortH(from)} ~ ${fmtShortH(to)}</strong> ${t('tl_filtering')}`;
+            tooltip.innerHTML = `<strong class="u017">${fmtShortH(from)} ~ ${fmtShortH(to)}</strong> ${t('tl_filtering')}`;
             // Apply filter
             loadArchives(1);
         };
@@ -905,7 +908,7 @@ async function saveArchivePath() {
             .replace('{old}', data.old_path)
             .replace('{new}', data.new_path);
         resultEl.innerHTML = `<span class="status-completed">${t('saved')}</span> (${formatMB(data.available_mb)} ${t('disk_available').toLowerCase()})
-            <div class="form-hint" style="margin-top:6px;white-space:pre-line">${msg}</div>`;
+            <div class="form-hint u114">${msg}</div>`;
         loadArchivePath();
     } else {
         resultEl.innerHTML = `<span class="status-failed">${data.error || 'Failed'}</span>`;
@@ -917,7 +920,7 @@ async function rescanArchives() {
     const btn = event.target.closest('button');
     btn.disabled = true;
     btn.style.opacity = '0.5';
-    el.innerHTML = `<span style="color:var(--text-muted)" class="spinner-text">${t('loading')}...</span>`;
+    el.innerHTML = `<span class="spinner-text u022">${t('loading')}...</span>`;
     try {
         const data = await fetchJSON(`${API}/settings/rescan`, {method: 'POST'});
         if (data.registered !== undefined) {
@@ -1226,7 +1229,7 @@ function startImportStatusPoll(jobId) {
                 const color = action === 'normal' ? 'var(--success)' : action === 'slow' ? 'var(--warning)' : 'var(--danger)';
                 const label = t('import_journal_label');
                 const actionLabel = t(`import_journal_${action}`) || action;
-                badge.innerHTML = `<span style="color:${color}">${label}: ${u !== null ? formatNumber(u) : '?'} (${actionLabel})</span>`;
+                badge.innerHTML = `<span data-style="color:${color}">${label}: ${u !== null ? formatNumber(u) : '?'} (${actionLabel})</span>`;
             }
         } catch(e) {}
     }, 5000);
@@ -1266,7 +1269,7 @@ async function loadExportPage() {
 
 async function loadExportStreams() {
     const div = document.getElementById('export-stream-list');
-    if (div) div.innerHTML = `<span style="color:var(--text-muted)">${icon('refresh')} ${t('loading')}...</span>`;
+    if (div) div.innerHTML = `<span class="u022">${icon('refresh')} ${t('loading')}...</span>`;
     try {
         const data = await fetchJSON(`${API}/streams`);
         if (div && data.items) {
@@ -1275,7 +1278,7 @@ async function loadExportStreams() {
             ).join('');
         }
     } catch (e) {
-        if (div) div.innerHTML = `<span style="color:var(--danger)">${t('load_failed')}</span>`;
+        if (div) div.innerHTML = `<span class="u018">${t('load_failed')}</span>`;
     }
 }
 
@@ -1378,7 +1381,7 @@ async function loadApiCoverage(el) {
         const status = await fetchJSON(`${API}/status`);
         const stats = status.archive_stats || {};
         if (!stats.earliest || !stats.latest) {
-            el.innerHTML = `<div class="coverage-box"><span style="color:var(--text-muted)">${t('log_no_data')}</span></div>`;
+            el.innerHTML = `<div class="coverage-box"><span class="u022">${t('log_no_data')}</span></div>`;
             return;
         }
 
@@ -1388,44 +1391,44 @@ async function loadApiCoverage(el) {
         const totalSpan = now - earliest || 1;
 
         let html = '<div class="coverage-box">';
-        html += `<div style="font-size:0.85em;margin-bottom:8px;color:var(--text-label)">${icon('archive')} ${t('api_coverage_title')}</div>`;
+        html += `<div class="u081">${icon('archive')} ${t('api_coverage_title')}</div>`;
 
         // Timeline bar
-        html += '<div class="timeline-bar" style="height:24px">';
+        html += '<div class="timeline-bar u097">';
         // Archived range
         const archivedWidth = ((latest - earliest) / totalSpan) * 100;
-        html += `<div class="timeline-segment" style="left:0;width:${archivedWidth}%;background:var(--success);opacity:0.7" title="${t('api_archived')}"></div>`;
+        html += `<div class="timeline-segment" data-style="left:0;width:${archivedWidth}%;background:var(--success);opacity:0.7" title="${t('api_archived')}"></div>`;
         // Gap (not yet archived)
         if (latest < now) {
             const gapLeft = archivedWidth;
             const gapWidth = 100 - archivedWidth;
-            html += `<div class="timeline-segment" style="left:${gapLeft}%;width:${gapWidth}%;background:var(--danger);opacity:0.3" title="${t('api_not_archived')}"></div>`;
+            html += `<div class="timeline-segment" data-style="left:${gapLeft}%;width:${gapWidth}%;background:var(--danger);opacity:0.3" title="${t('api_not_archived')}"></div>`;
         }
         html += '</div>';
 
         // Labels — positioned to match timeline bar
         const fmtShort = (iso) => { const d = new Date(iso); const p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())}`; };
-        html += '<div style="position:relative;font-size:0.8em;color:var(--text-muted);margin-top:3px;height:2.4em">';
-        html += `<span style="position:absolute;left:0">${t('api_earliest')}<br>${fmtShort(stats.earliest)}</span>`;
+        html += '<div class="u137">';
+        html += `<span class="u132">${t('api_earliest')}<br>${fmtShort(stats.earliest)}</span>`;
         // Position "latest" label at the end of the green bar
         const latestPos = Math.min(archivedWidth, 85); // cap so it doesn't overlap "now"
-        html += `<span style="position:absolute;left:${latestPos}%;transform:translateX(-50%);text-align:center;font-weight:600;color:var(--success)">${t('api_latest')}<br>${fmtShort(stats.latest)}</span>`;
-        html += `<span style="position:absolute;right:0;text-align:right">${t('api_now')}</span>`;
+        html += `<span data-style="position:absolute;left:${latestPos}%;transform:translateX(-50%);text-align:center;font-weight:600;color:var(--success)">${t('api_latest')}<br>${fmtShort(stats.latest)}</span>`;
+        html += `<span class="u133">${t('api_now')}</span>`;
         html += '</div>';
 
         // Stats
-        html += `<div style="display:flex;gap:15px;margin-top:8px;font-size:0.8em;color:var(--text-muted)">`;
-        html += `<span><span style="display:inline-block;width:10px;height:10px;background:var(--success);border-radius:2px;margin-right:3px;opacity:0.7"></span>${t('api_archived')}: ${formatNumber(stats.total)} ${t('nav_archives').toLowerCase()}, ${formatNumber(stats.total_messages)} ${t('unit_records')}</span>`;
+        html += `<div class="u050">`;
+        html += `<span><span class="u062"></span>${t('api_archived')}: ${formatNumber(stats.total)} ${t('nav_archives').toLowerCase()}, ${formatNumber(stats.total_messages)} ${t('unit_records')}</span>`;
         if (latest < now) {
             const gapHours = Math.round((now - latest) / 3600000);
-            html += `<span><span style="display:inline-block;width:10px;height:10px;background:var(--danger);border-radius:2px;margin-right:3px;opacity:0.3"></span>${t('api_not_archived')}: ~${gapHours}h</span>`;
+            html += `<span><span class="u061"></span>${t('api_not_archived')}: ~${gapHours}h</span>`;
         }
         html += '</div>';
 
         html += '</div>';
         el.innerHTML = html;
     } catch (e) {
-        el.innerHTML = `<div class="coverage-box" style="color:var(--danger)">${t('load_failed')}</div>`;
+        el.innerHTML = `<div class="coverage-box u018">${t('load_failed')}</div>`;
     }
 }
 
@@ -1439,7 +1442,7 @@ async function loadOsCoverage(el) {
         const qs = prefix ? `?prefix=${encodeURIComponent(prefix)}` : '';
         const osData = await fetchJSON(`${API}/opensearch/indices${qs}`);
         if (!osData.indices || osData.indices.length === 0) {
-            el.innerHTML = `<div class="coverage-box"><span style="color:var(--danger)">${t('os_no_indices')}</span></div>`;
+            el.innerHTML = `<div class="coverage-box"><span class="u018">${t('os_no_indices')}</span></div>`;
             return;
         }
 
@@ -1448,13 +1451,13 @@ async function loadOsCoverage(el) {
 
         // Build timeline
         let html = '<div class="coverage-box">';
-        html += `<div style="font-size:0.85em;margin-bottom:8px;color:var(--text-label)">${icon('db')} ${t('os_available_indices')} (${indices.length})</div>`;
+        html += `<div class="u081">${icon('db')} ${t('os_available_indices')} (${indices.length})</div>`;
         html += '<div class="coverage-timeline">';
 
         // Find time range
         const allDates = indices.filter(i => i.min_ts && i.max_ts);
         if (allDates.length === 0) {
-            html += `<span style="color:var(--text-muted)">${t('os_no_time_data')}</span>`;
+            html += `<span class="u022">${t('os_no_time_data')}</span>`;
         } else {
             const minTime = new Date(Math.min(...allDates.map(i => new Date(i.min_ts))));
             const maxTime = new Date(Math.max(...allDates.map(i => new Date(i.max_ts))));
@@ -1473,14 +1476,14 @@ async function loadOsCoverage(el) {
                 const isActive = idx.index === active;
                 const color = isActive ? 'var(--warning)' : 'var(--accent)';
                 const label = `${idx.index} (${formatNumber(idx.docs_count)} docs)`;
-                html += `<div class="timeline-segment" style="left:${left}%;width:${width}%;background:${color}" title="${label}"></div>`;
+                html += `<div class="timeline-segment" data-style="left:${left}%;width:${width}%;background:${color}" title="${label}"></div>`;
             });
 
             html += '</div>';
 
             // Index list (read-only display)
             const exportable = allDates.filter(i => i.index !== active);
-            html += `<div class="os-index-list" style="margin-top:8px">`;
+            html += `<div class="os-index-list u115">`;
             allDates.forEach(idx => {
                 const isActive = idx.index === active;
                 const shortName = idx.index.replace(/.*_/, '#');
@@ -1499,28 +1502,28 @@ async function loadOsCoverage(el) {
             html += '</div>';
 
             // Keep N indices input — prominent
-            html += `<div style="margin-top:12px;padding:10px 12px;background:rgba(108,99,255,0.08);border:1px solid var(--accent);border-radius:6px">
-                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                    <label style="font-size:0.95em;font-weight:500;color:var(--text)">${icon('archive')} ${t('os_keep_recent')}</label>
-                    <input type="number" id="os-keep-n" value="${exportable.length}" min="1"
-                        style="width:70px;padding:6px 10px;border:2px solid var(--accent);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:1.1em;font-weight:bold;text-align:center">
-                    <span style="font-size:0.9em;color:var(--text-muted)"> ${t('os_of_exportable').replace('{n}', exportable.length)}</span>
+            html += `<div class="u107">
+                <div class="u038">
+                    <label class="u088">${icon('archive')} ${t('os_keep_recent')}</label>
+                    <input class="u161" type="number" id="os-keep-n" value="${exportable.length}" min="1"
+                       >
+                    <span class="u090"> ${t('os_of_exportable').replace('{n}', exportable.length)}</span>
                 </div>
-                <small class="form-hint" style="margin-top:6px;display:block">${t('os_keep_recent_hint')}</small>
+                <small class="form-hint u113">${t('os_keep_recent_hint')}</small>
             </div>`;
 
             // Legend
-            html += '<div style="display:flex;gap:15px;margin-top:6px;font-size:0.8em;color:var(--text-muted)">';
-            html += `<span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:3px"></span>${t('os_exportable')}</span>`;
-            html += `<span><span style="display:inline-block;width:10px;height:10px;background:var(--warning);border-radius:2px;margin-right:3px"></span>${t('os_active_skip')}</span>`;
-            html += `<span style="color:var(--danger)">${t('os_not_available')}</span>`;
+            html += '<div class="u049">';
+            html += `<span><span class="u060"></span>${t('os_exportable')}</span>`;
+            html += `<span><span class="u063"></span>${t('os_active_skip')}</span>`;
+            html += `<span class="u018">${t('os_not_available')}</span>`;
             html += '</div>';
         }
 
         html += '</div></div>';
         el.innerHTML = html;
     } catch (e) {
-        el.innerHTML = `<div class="coverage-box" style="color:var(--danger)">${t('load_failed')}</div>`;
+        el.innerHTML = `<div class="coverage-box u018">${t('load_failed')}</div>`;
     }
 }
 
@@ -1552,7 +1555,7 @@ async function startExport() {
     };
 
     // Disable button
-    const btn = document.querySelector('[onclick="startExport()"]');
+    const btn = document.querySelector('[data-act="startExport"]');
     if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.innerHTML = `<span class="spinner-text">${t('loading')}...</span>`; }
 
     const result = await fetchJSON(`${API}/export`, {
@@ -1578,7 +1581,7 @@ async function startExport() {
                     if (job.status === 'failed') {
                         if (text) text.innerHTML = `<span class="status-failed">${t('progress_error')}${job.error_message || ''}</span>`;
                     } else if ((job.messages_done || 0) === 0) {
-                        if (text) text.innerHTML = `<span style="color:var(--warning)">${t('export_no_data')}</span>`;
+                        if (text) text.innerHTML = `<span class="u030">${t('export_no_data')}</span>`;
                     } else {
                         if (text) text.innerHTML = `<span class="status-completed">${t('progress_completed')} (${formatNumber(job.messages_done)} ${t('unit_records')})</span>`;
                     }
@@ -1608,12 +1611,12 @@ async function loadJobs() {
     tbody.innerHTML = data.items.map(j => {
         const isRunning = j.status === 'running' || j.status === 'pending';
         const cancelBtn = isRunning
-            ? `<button class="btn-sm btn-danger" onclick="cancelJob('${j.id}')" data-i18n="btn_cancel">Cancel</button>`
+            ? `<button class="btn-sm btn-danger" data-act="cancelJob" data-arg="${j.id}" data-i18n="btn_cancel">Cancel</button>`
             : '';
         // Records display with context
         let recordsHtml;
         if (j.status === 'completed' && j.messages_done === 0 && !j.error_message) {
-            recordsHtml = `<span style="color:var(--text-muted);font-size:0.85em">${t('job_no_new_data')}</span>`;
+            recordsHtml = `<span class="u024">${t('job_no_new_data')}</span>`;
         } else {
             recordsHtml = formatRecords(j.messages_done, j.messages_total, j.job_type);
         }
@@ -1625,25 +1628,25 @@ async function loadJobs() {
         let srcHtml = '';
         if (srcType === 'scheduled') srcHtml += `<span class="job-badge job-badge-sched">${t('job_scheduled')}</span> `;
         else if (srcType === 'manual') srcHtml += `<span class="job-badge job-badge-manual">${t('job_manual')}</span> `;
-        if (srcMode === 'api') srcHtml += `<span class="job-badge" style="background:rgba(76,175,80,0.1);color:var(--success)">API</span>`;
-        else if (srcMode === 'opensearch') srcHtml += `<span class="job-badge" style="background:rgba(255,152,0,0.1);color:var(--warning)">OpenSearch</span>`;
-        else if (srcType && !srcMode) srcHtml += `<span class="job-badge" style="background:rgba(76,175,80,0.1);color:var(--success)">API</span>`;
+        if (srcMode === 'api') srcHtml += `<span class="job-badge u002">API</span>`;
+        else if (srcMode === 'opensearch') srcHtml += `<span class="job-badge u001">OpenSearch</span>`;
+        else if (srcType && !srcMode) srcHtml += `<span class="job-badge u002">API</span>`;
 
         return `<tr class="${j.status === 'completed' && j.messages_done === 0 ? 'job-row-dim' : ''}">
             <td title="${j.id}">${j.id.substring(0, 8)}</td>
             <td>${j.job_type} ${srcHtml}</td>
             <td>${statusBadge(j.status)}</td>
-            <td style="white-space:nowrap">
-                <div class="progress-bar" style="width:120px;height:14px;display:inline-block;vertical-align:middle">
-                    <div class="progress-fill" style="width:${j.progress_pct}%"></div>
+            <td class="u149">
+                <div class="progress-bar u155">
+                    <div class="progress-fill" data-style="width:${j.progress_pct}%"></div>
                 </div> ${j.progress_pct.toFixed(0)}%
-                ${j.current_detail && j.status === 'running' ? `<div style="font-size:0.75em;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px" title="${esc(j.current_detail)}">${esc(j.current_detail)}</div>` : ''}
+                ${j.current_detail && j.status === 'running' ? `<div class="u074" title="${esc(j.current_detail)}">${esc(j.current_detail)}</div>` : ''}
             </td>
-            <td style="text-align:right">${recordsHtml}</td>
+            <td class="u147">${recordsHtml}</td>
             <td>${formatDT(j.started_at)}</td>
             <td>${formatDT(j.completed_at)}</td>
             <td>${formatElapsed(j.started_at, j.completed_at)}</td>
-            <td style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : (j.error_message || '').indexOf('Skipped') !== -1 ? 'var(--text-muted)' : 'var(--text-muted)'};font-size:0.85em;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${esc(j.error_message || '')}</td>
+            <td data-style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : (j.error_message || '').indexOf('Skipped') !== -1 ? 'var(--text-muted)' : 'var(--text-muted)'};font-size:0.85em;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${esc(j.error_message || '')}</td>
             <td>${cancelBtn}</td>
         </tr>`;
     }).join('');
@@ -1692,8 +1695,8 @@ async function loadSchedules() {
         if (s.job_type === 'export') {
             const mode = c.mode === 'opensearch' ? 'OpenSearch' : 'API';
             const serverName = c.server || window._defaultServerName || '';
-            const serverLabel = serverName ? `<span class="host-label" style="font-size:0.7em;margin-right:4px">${esc(serverName)}</span>` : '';
-            modeHtml = `${serverLabel}<span class="host-label" style="font-size:0.75em">${mode}</span>`;
+            const serverLabel = serverName ? `<span class="host-label u076">${esc(serverName)}</span>` : '';
+            modeHtml = `${serverLabel}<span class="host-label u072">${mode}</span>`;
             if (c.mode === 'opensearch') {
                 if (c.keep_indices) {
                     configHtml = `${c.keep_indices} ${t('sched_indices_unit')}`;
@@ -1719,12 +1722,12 @@ async function loadSchedules() {
             const elapsed = formatElapsed(runningJob.started_at);
             const detail = runningJob.current_detail || '';
             const statsLine = runningJob.messages_done ? `${pct}% ${msgs} ${elapsed}` : `${pct}% ${elapsed}`;
-            runningHtml = `<div style="margin-top:6px">
-                <div class="progress-bar" style="height:12px;width:180px;display:inline-block;vertical-align:middle">
-                    <div class="progress-fill" style="width:${pct}%"></div>
+            runningHtml = `<div class="u112">
+                <div class="progress-bar u096">
+                    <div class="progress-fill" data-style="width:${pct}%"></div>
                 </div>
-                <span style="font-size:0.8em;color:var(--warning);margin-left:6px">${esc(statsLine)}</span>
-                ${detail ? `<div style="font-size:0.75em;color:var(--text-muted);margin-top:2px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(detail)}">${esc(detail)}</div>` : ''}
+                <span class="u084">${esc(statsLine)}</span>
+                ${detail ? `<div class="u073" title="${esc(detail)}">${esc(detail)}</div>` : ''}
             </div>`;
         }
         return `<tr>
@@ -1735,12 +1738,12 @@ async function loadSchedules() {
             <td>${configHtml}</td>
             <td>${s.enabled ? '<span class="status-completed">' + t('yes') + '</span>' : '<span class="status-failed">' + t('no') + '</span>'}</td>
             <td>${formatDT(s.last_run_at)}${runningHtml}</td>
-            <td>${s.enabled ? formatDT(s.next_run_at) : '<span style="color:var(--text-muted)">-</span>'}</td>
-            <td><div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
-                <button class="btn-sm btn-primary" onclick="editSchedule('${esc(s.name)}')">${icon('shield')} ${t('btn_edit')}</button>
-                ${(s.job_type === 'export' || s.job_type === 'cleanup' || s.job_type === 'verify') && !anyRunningExport ? `<button class="btn-sm btn-success" onclick="runScheduleNow('${esc(s.name)}')" title="${t('btn_run_now')}">${icon('play')} ${t('btn_run_now')}</button>` : ''}
-                <button class="btn-sm ${s.enabled ? 'btn-secondary' : 'btn-primary'}" onclick="toggleSchedule('${esc(s.name)}',${!s.enabled})">${s.enabled ? icon('pause') + ' ' + t('btn_disable') : icon('play') + ' ' + t('btn_enable')}</button>
-                ${s.name.startsWith('auto-') ? '' : `<button class="btn-sm btn-danger" onclick="deleteSchedule('${esc(s.name)}')">${icon('trash')}</button>`}
+            <td>${s.enabled ? formatDT(s.next_run_at) : '<span class="u022">-</span>'}</td>
+            <td><div class="u051">
+                <button class="btn-sm btn-primary" data-act="editSchedule" data-arg="${esc(s.name)}">${icon('shield')} ${t('btn_edit')}</button>
+                ${(s.job_type === 'export' || s.job_type === 'cleanup' || s.job_type === 'verify') && !anyRunningExport ? `<button class="btn-sm btn-success" data-act="runScheduleNow" data-arg="${esc(s.name)}" title="${t('btn_run_now')}">${icon('play')} ${t('btn_run_now')}</button>` : ''}
+                <button class="btn-sm ${s.enabled ? 'btn-secondary' : 'btn-primary'}" data-act="toggleSchedule" data-args='["${esc(s.name)}",${!s.enabled}]'>${s.enabled ? icon('pause') + ' ' + t('btn_disable') : icon('play') + ' ' + t('btn_enable')}</button>
+                ${s.name.startsWith('auto-') ? '' : `<button class="btn-sm btn-danger" data-act="deleteSchedule" data-arg="${esc(s.name)}">${icon('trash')}</button>`}
             </div></td>
         </tr>`;
     }).join('');
@@ -1828,7 +1831,7 @@ function onSchedModeChange() {
 async function loadSchedStreams() {
     const div = document.getElementById('sched-stream-list');
     if (!div) return;
-    div.innerHTML = `<span style="color:var(--text-muted)">${t('loading')}...</span>`;
+    div.innerHTML = `<span class="u022">${t('loading')}...</span>`;
     try {
         const data = await fetchJSON(`${API}/streams`);
         if (data.items) {
@@ -1837,7 +1840,7 @@ async function loadSchedStreams() {
             ).join('');
         }
     } catch (e) {
-        div.innerHTML = `<span style="color:var(--danger)">${t('load_failed')}</span>`;
+        div.innerHTML = `<span class="u018">${t('load_failed')}</span>`;
     }
 }
 
@@ -2044,7 +2047,7 @@ function watchJob(jobId, type, onComplete) {
             if (job.status === 'failed' || job.phase === 'error') {
                 text.innerHTML = `<span class="status-failed">${t('progress_error')}${esc(job.error_message || job.error || '')}</span>`;
             } else if (msgs === 0) {
-                text.innerHTML = `<span style="color:var(--warning)">${t('export_no_data')}</span>`;
+                text.innerHTML = `<span class="u030">${t('export_no_data')}</span>`;
             } else {
                 let html = `<span class="status-completed">${t('progress_completed')} (${formatNumber(msgs)} ${t('unit_records')})</span>`;
                 // Surface bulk-mode "where to find" notice (and any other
@@ -2052,7 +2055,7 @@ function watchJob(jobId, type, onComplete) {
                 if (job.error_message) {
                     const isViolation = job.error_message.indexOf('Compliance violation') !== -1;
                     const colour = isViolation ? 'var(--warning)' : 'var(--accent)';
-                    html += `<div style="margin-top:8px;padding:8px 10px;background:rgba(108,99,255,0.08);border-left:3px solid ${colour};border-radius:4px;font-size:0.85em">${esc(job.error_message)}</div>`;
+                    html += `<div data-style="margin-top:8px;padding:8px 10px;background:rgba(108,99,255,0.08);border-left:3px solid ${colour};border-radius:4px;font-size:0.85em">${esc(job.error_message)}</div>`;
                 }
                 text.innerHTML = html;
             }
@@ -2156,15 +2159,15 @@ function watchJob(jobId, type, onComplete) {
 function _colorizeLogLine(raw) {
     const e = esc(raw);
     // Determine line color by log level
-    if (/\bERROR\b/i.test(raw)) return `<span style="color:#f44336">${e}</span>`;
-    if (/\bWARN/i.test(raw)) return `<span style="color:#ff9800">${e}</span>`;
-    if (/\berror\b/.test(raw)) return `<span style="color:#e06c75">${e}</span>`;
-    if (/\[info\s*\]/.test(raw)) return `<span style="color:#98c379">${e}</span>`;
-    if (/\bINFO\b/.test(raw)) return `<span style="color:#c5c8c6">${e}</span>`;
-    if (/\bDEBUG\b/i.test(raw)) return `<span style="color:#666">${e}</span>`;
-    if (/Started|Completed|startup complete/i.test(raw)) return `<span style="color:#98c379">${e}</span>`;
-    if (/systemd\[/.test(raw)) return `<span style="color:#6a9fb5">${e}</span>`;
-    return `<span style="color:#aaa">${e}</span>`;
+    if (/\bERROR\b/i.test(raw)) return `<span class="u013">${e}</span>`;
+    if (/\bWARN/i.test(raw)) return `<span class="u015">${e}</span>`;
+    if (/\berror\b/.test(raw)) return `<span class="u012">${e}</span>`;
+    if (/\[info\s*\]/.test(raw)) return `<span class="u008">${e}</span>`;
+    if (/\bINFO\b/.test(raw)) return `<span class="u011">${e}</span>`;
+    if (/\bDEBUG\b/i.test(raw)) return `<span class="u004">${e}</span>`;
+    if (/Started|Completed|startup complete/i.test(raw)) return `<span class="u008">${e}</span>`;
+    if (/systemd\[/.test(raw)) return `<span class="u005">${e}</span>`;
+    return `<span class="u009">${e}</span>`;
 }
 
 async function loadRealtimeLog() {
@@ -2190,7 +2193,7 @@ async function loadAuditLog() {
         <td>${formatDT(a.timestamp)}</td>
         <td>${esc(a.username || '-')}</td>
         <td><strong>${esc(a.action || '')}</strong></td>
-        <td style="font-size:0.85em;max-width:300px;overflow:hidden;text-overflow:ellipsis" title="${esc(a.detail || '')}">${esc(a.detail || '')}</td>
+        <td class="u082" title="${esc(a.detail || '')}">${esc(a.detail || '')}</td>
         <td>${esc(a.ip_address || '')}</td>
     </tr>`).join('');
 }
@@ -2204,10 +2207,10 @@ async function loadHistory() {
         <td title="${j.id}">${j.id.substring(0, 8)}</td>
         <td>${j.job_type}</td>
         <td>${statusBadge(j.status)}</td>
-        <td style="text-align:right">${formatRecords(j.messages_done, j.messages_total, j.job_type)}</td>
+        <td class="u147">${formatRecords(j.messages_done, j.messages_total, j.job_type)}</td>
         <td>${formatDT(j.started_at)}</td>
         <td>${formatDT(j.completed_at)}</td>
-        <td style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : 'var(--text-muted)'};font-size:0.85em;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${esc(j.error_message || '')}</td>
+        <td data-style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : 'var(--text-muted)'};font-size:0.85em;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${esc(j.error_message || '')}</td>
     </tr>`).join('');
 }
 
@@ -2230,7 +2233,7 @@ async function loadNotifySettings() {
             {key: 'on_audit_alert', label: t('evt_audit_alert'), ic: 'warning'},
         ];
         eventsEl.innerHTML = events.map(e =>
-            `<label style="display:flex;align-items:center;gap:8px;margin:8px 0;cursor:pointer">
+            `<label class="u042">
                 <input type="checkbox" class="notify-event" data-key="${e.key}" ${data[e.key] ? 'checked' : ''}> ${icon(e.ic)} ${e.label}
             </label>`
         ).join('');
@@ -2239,7 +2242,7 @@ async function loadNotifySettings() {
     // Notification language
     const langEl = document.getElementById('notify-lang-form');
     if (langEl) {
-        langEl.innerHTML = `<div class="form-group" style="max-width:300px">
+        langEl.innerHTML = `<div class="form-group u120">
             <label data-i18n="notify_language">${t('notify_language')}</label>
             <select id="nf-language">
                 <option value="en" ${data.language === 'en' ? 'selected' : ''}>English</option>
@@ -2260,10 +2263,10 @@ async function loadNotifySettings() {
             nc: '<svg width="20" height="20" viewBox="0 0 24 24" fill="#0082C9"><path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm-1.5 14.5L7 13l1.414-1.414L10.5 13.672l5.086-5.086L17 10l-6.5 6.5z"/></svg>',
             email: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9l5 3.5L17 9"/><path d="M2 17V7c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2z"/></svg>',
         };
-        const _chk = (id, en) => `<label style="display:flex;align-items:center;gap:6px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="${id}" ${en ? 'checked' : ''} onchange="toggleChannelFields(this)"> ${t('notify_enabled')}</label>`;
-        const _vis = (en) => en ? '' : 'style="display:none"';
+        const _chk = (id, en) => `<label class="u041"><input type="checkbox" id="${id}" ${en ? 'checked' : ''} data-act-change="toggleChannelFields" data-act-self> ${t('notify_enabled')}</label>`;
+        const _vis = (en) => en ? '' : 'data-collapsed="1"';
         // Secret field: password input + eye toggle button
-        const _secret = (id, val, extra = '') => `<div class="secret-field"><input type="password" id="${id}" value="${esc(val)}" autocomplete="new-password" ${extra}><button type="button" class="secret-toggle" onclick="toggleSecret('${id}', this)" tabindex="-1" data-i18n-title="show_hide" title="Show/Hide">${icon('eye_closed')}</button></div>`;
+        const _secret = (id, val, extra = '') => `<div class="secret-field"><input type="password" id="${id}" value="${esc(val)}" autocomplete="new-password" ${extra}><button type="button" class="secret-toggle" data-act="toggleSecret" data-act-self tabindex="-1" data-i18n-title="show_hide" title="Show/Hide">${icon('eye_closed')}</button></div>`;
         chEl.innerHTML = `
         <div class="channel-card">
             <h4>${chLogos.tg} Telegram</h4>
@@ -2310,11 +2313,11 @@ async function loadNotifySettings() {
             <div class="channel-fields" ${_vis(data.email.enabled)}>
                 <div class="form-group"><label>${t('notify_smtp_host')}</label><input type="text" id="nf-email-host" value="${esc(data.email.smtp_host || '')}"></div>
                 <div class="form-group"><label>${t('notify_smtp_port')}</label><input type="number" id="nf-email-port" value="${data.email.smtp_port || 587}"></div>
-                <div class="form-group"><label style="cursor:pointer"><input type="checkbox" id="nf-email-tls" ${data.email.smtp_tls ? 'checked' : ''}> ${t('notify_smtp_tls')}</label></div>
+                <div class="form-group"><label class="u033"><input type="checkbox" id="nf-email-tls" ${data.email.smtp_tls ? 'checked' : ''}> ${t('notify_smtp_tls')}</label></div>
                 <div class="form-group"><label>${t('notify_smtp_user')}</label><input type="text" id="nf-email-user" value="${esc(data.email.smtp_user || '')}" autocomplete="off"></div>
                 <div class="form-group"><label>${t('notify_smtp_password')}</label>${_secret('nf-email-pass', data.email.smtp_password || '')}</div>
                 <div class="form-group"><label>${t('notify_from')}</label><input type="text" id="nf-email-from" value="${esc(data.email.from_addr || '')}"></div>
-                <div class="form-group"><label>${t('notify_to')}</label><textarea id="nf-email-to" rows="3" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text)">${esc((data.email.to_addrs || []).join('\n'))}</textarea></div>
+                <div class="form-group"><label>${t('notify_to')}</label><textarea class="u153" id="nf-email-to" rows="3">${esc((data.email.to_addrs || []).join('\n'))}</textarea></div>
                 <div class="form-group"><label>${t('notify_subject_prefix')}</label><input type="text" id="nf-email-prefix" value="${esc(data.email.subject_prefix || '[jt-glogarch]')}"></div>
             </div>
         </div>`;
@@ -2352,8 +2355,9 @@ function toggleChannelFields(checkbox) {
     if (fields) fields.style.display = checkbox.checked ? '' : 'none';
 }
 
-function toggleSecret(id, btn) {
-    const el = document.getElementById(id);
+function toggleSecret(btn) {
+    // Delegation passes the clicked toggle button; the input is its sibling.
+    const el = btn.parentElement.querySelector('input');
     if (!el) return;
     const showing = el.type === 'text';
     el.type = showing ? 'password' : 'text';
@@ -2362,12 +2366,12 @@ function toggleSecret(id, btn) {
 
 async function testNotifyFromSettings() {
     const el = document.getElementById('notify-settings-result');
-    el.innerHTML = `<span style="color:var(--text-muted)">${t('loading')}...</span>`;
+    el.innerHTML = `<span class="u022">${t('loading')}...</span>`;
     const data = await fetchJSON(`${API}/notify/test`, {method: 'POST'});
     if (data.results && data.results.length > 0) {
         el.innerHTML = data.results.map(r => `${esc(r.channel)}: ${r.success ? `<span class="status-completed">${t('result_ok')}</span>` : `<span class="status-failed">${esc(r.error || t('result_failed'))}</span>`}`).join('<br>');
     } else {
-        el.innerHTML = `<span style="color:var(--warning)">${t('notify_no_channels')}</span>`;
+        el.innerHTML = `<span class="u030">${t('notify_no_channels')}</span>`;
     }
 }
 
@@ -2459,10 +2463,10 @@ function showConfirm(title, message, onConfirm) {
     document.getElementById('confirm-message').innerHTML = message;
     const btnRow = document.getElementById('confirm-buttons');
     if (onConfirm) {
-        btnRow.innerHTML = `<button class="btn-danger" onclick="doConfirm()">${icon('shield')} ${t('btn_confirm')}</button>
-            <button class="btn-secondary" onclick="closeConfirm()">${t('btn_cancel')}</button>`;
+        btnRow.innerHTML = `<button class="btn-danger" data-act="doConfirm">${icon('shield')} ${t('btn_confirm')}</button>
+            <button class="btn-secondary" data-act="closeConfirm">${t('btn_cancel')}</button>`;
     } else {
-        btnRow.innerHTML = `<button class="btn-primary" onclick="closeConfirm()">${t('btn_ok')}</button>`;
+        btnRow.innerHTML = `<button class="btn-primary" data-act="closeConfirm">${t('btn_ok')}</button>`;
     }
     modal.style.display = 'flex';
 }
@@ -2591,14 +2595,14 @@ async function checkRunningJobs() {
                 const detail = j.current_detail || j.phase || '';
                 const statusLine = detail && !j.messages_done ? esc(detail) : `${msgs} / ${total}`;
                 text.innerHTML = `
-                    <div class="job-detail-full" style="display:flex;flex-direction:column;gap:2px;line-height:1.3">
+                    <div class="job-detail-full u044">
                         <span>${j.job_type} <strong>${pct}%</strong> · ${elapsed}</span>
-                        <div class="progress-bar" style="height:6px"><div class="progress-fill" style="width:${pct}%"></div></div>
-                        <span style="font-size:0.9em;opacity:0.85">${statusLine}</span>
+                        <div class="progress-bar u099"><div class="progress-fill" data-style="width:${pct}%"></div></div>
+                        <span class="u091">${statusLine}</span>
                     </div>
-                    <div class="job-detail-mini" style="display:none;flex-direction:column;align-items:center;gap:3px;font-size:1.1em" title="${j.job_type} ${pct}% ${msgs} ${elapsed}">
+                    <div class="job-detail-mini u067" title="${j.job_type} ${pct}% ${msgs} ${elapsed}">
                         <strong>${pct}%</strong>
-                        <div class="progress-bar" style="height:4px;width:100%"><div class="progress-fill" style="width:${pct}%"></div></div>
+                        <div class="progress-bar u098"><div class="progress-fill" data-style="width:${pct}%"></div></div>
                     </div>`;
             } else {
                 el.style.display = 'none';
@@ -2635,10 +2639,22 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (path === '/export') { loadExportPage().then(() => setTimeout(initCustomSelects, 200)); }
     else if (path === '/import') { window.location.href = '/archives'; return; }
     else if (path === '/jobs') loadTable('#jobs-table', loadJobs);
-    else if (path === '/schedules') { fetchJSON(`${API}/servers`).then(d => { if (d.items?.length) window._defaultServerName = d.items[0].name; }).catch(()=>{}).finally(() => { loadSchedules().then(() => setTimeout(initCustomSelects, 200)); }); startSchedPoll(); }
+    else if (path === '/schedules') {
+        // Render the schedule table immediately (it is a fast DB-only read) with
+        // a loading spinner. Do NOT block it on /api/servers, which runs live
+        // per-server connectivity + Data Node probes — those carry retries and
+        // connect timeouts that take 20-40s when a node is slow or unreachable.
+        // The server name is only a display fallback (schedules store their own
+        // c.server); it fills in on the next poll once /api/servers resolves.
+        loadTable('#schedules-table', () => loadSchedules().then(() => setTimeout(initCustomSelects, 200)));
+        fetchJSON(`${API}/servers`).then(d => { if (d.items?.length) window._defaultServerName = d.items[0].name; }).catch(()=>{});
+        startSchedPoll();
+    }
     else if (path === '/notify-settings') loadNotifySettings();
     else if (path === '/logs') { loadRealtimeLog(); loadTable('#audit-table', loadAuditLog); }
     else if (path === '/op-audit') { loadAuditData(1); loadAuditStatus(); loadAuditNginxConfig(); }
+    else if (path === '/settings') loadSettingsPage();
+    else if (path === '/reports') loadReportsPage();
 });
 
 // Re-translate dynamic JS-rendered content when language changes.
@@ -2662,6 +2678,10 @@ document.addEventListener('langchange', () => {
         loadRealtimeLog(); loadTable('#audit-table', loadAuditLog);
     } else if (path === '/op-audit') {
         loadAuditData(_auditPage || 1); loadAuditStatus(); loadAuditNginxConfig();
+    } else if (path === '/settings') {
+        loadSettingsPage();
+    } else if (path === '/reports') {
+        loadReportsPage();
     }
 });
 
@@ -2687,28 +2707,28 @@ async function loadAuditData(page) {
     if (fromVal) params.set('time_from', new Date(fromVal).toISOString());
     if (toVal) params.set('time_to', new Date(toVal).toISOString());
     const tbody = document.querySelector('#audit-table tbody');
-    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted)">${t('loading')}...</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td class="u146" colspan="8">${t('loading')}...</td></tr>`;
 
     try {
         const data = await fetchJSON(`${API}/audit?${params}`);
         if (!data.items || data.items.length === 0) {
-            if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted)">${t('log_no_data')}</td></tr>`;
+            if (tbody) tbody.innerHTML = `<tr><td class="u146" colspan="8">${t('log_no_data')}</td></tr>`;
         } else {
             const methodColors = {GET:'#4caf50',POST:'#2196f3',PUT:'#ff9800',DELETE:'#f44336',PATCH:'#9c27b0'};
             if (tbody) tbody.innerHTML = data.items.map(a => {
                 const mc = methodColors[a.method] || '#888';
                 const sc = a.status_code >= 400 ? 'color:var(--danger)' : '';
-                const sens = a.is_sensitive ? `<span style="color:var(--warning)" title="${esc(a.operation)}">⚠</span>` : '';
+                const sens = a.is_sensitive ? `<span class="u030" title="${esc(a.operation)}">⚠</span>` : '';
                 const target = a.target_name || '';
-                const sensIcon = a.is_sensitive ? `<span style="color:var(--danger)" title="${t('audit_sensitive_ops')}">${icon('warning',16)}</span>` : '';
-                return `<tr style="cursor:pointer" onclick="showAuditDetail(${a.id})">
-                    <td style="white-space:nowrap">${formatDT(a.timestamp)}</td>
-                    <td style="font-size:0.85em">${esc(a.server_name || '')}</td>
+                const sensIcon = a.is_sensitive ? `<span class="u018" title="${t('audit_sensitive_ops')}">${icon('warning',16)}</span>` : '';
+                return `<tr class="u033" data-act="showAuditDetail" data-args="[${a.id}]">
+                    <td class="u149">${formatDT(a.timestamp)}</td>
+                    <td class="u077">${esc(a.server_name || '')}</td>
                     <td>${esc(a.username || '-')}</td>
-                    <td style="font-size:0.85em">${esc(a.remote_addr || '')}</td>
+                    <td class="u077">${esc(a.remote_addr || '')}</td>
                     <td>${esc(a.operation || '')}</td>
-                    <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(a.uri)}">${esc(target || a.uri || '')}</td>
-                    <td style="text-align:center">${sensIcon}</td>
+                    <td class="u119" title="${esc(a.uri)}">${esc(target || a.uri || '')}</td>
+                    <td class="u139">${sensIcon}</td>
                 </tr>`;
             }).join('');
         }
@@ -2717,12 +2737,12 @@ async function loadAuditData(page) {
         const pag = document.getElementById('audit-pagination');
         if (pag && totalPages > 1) {
             let html = '';
-            if (_auditPage > 1) html += `<button class="btn-sm btn-secondary" onclick="loadAuditData(${_auditPage-1})">←</button>`;
-            html += `<span style="line-height:30px">${_auditPage} / ${totalPages} (${data.total})</span>`;
-            if (_auditPage < totalPages) html += `<button class="btn-sm btn-secondary" onclick="loadAuditData(${_auditPage+1})">→</button>`;
+            if (_auditPage > 1) html += `<button class="btn-sm btn-secondary" data-act="loadAuditData" data-args="[${_auditPage-1}]">←</button>`;
+            html += `<span class="u100">${_auditPage} / ${totalPages} (${data.total})</span>`;
+            if (_auditPage < totalPages) html += `<button class="btn-sm btn-secondary" data-act="loadAuditData" data-args="[${_auditPage+1}]">→</button>`;
             pag.innerHTML = html;
         } else if (pag) {
-            pag.innerHTML = data.total ? `<span style="color:var(--text-muted)">${data.total} ${t('unit_records')}</span>` : '';
+            pag.innerHTML = data.total ? `<span class="u022">${data.total} ${t('unit_records')}</span>` : '';
         }
 
         // Stats
@@ -2743,7 +2763,7 @@ async function loadAuditData(page) {
         if (sLF && sp.login_failures && !sLF.querySelector('.sparkline-svg')) sLF.insertAdjacentHTML('beforeend', buildSparkSVG(sp.login_failures, '#ff9800', 'number'));
         if (s4 && sp.sensitive && !s4.querySelector('.sparkline-svg')) s4.insertAdjacentHTML('beforeend', buildSparkSVG(sp.sensitive, '#f44336', 'number'));
     } catch (e) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--danger)">${t('load_failed')}</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td class="u145" colspan="7">${t('load_failed')}</td></tr>`;
     }
 }
 
@@ -2769,16 +2789,16 @@ async function loadAuditStatus() {
                     ? `${t('audit_last_received')}: ${formatDT(st.last_received_at)} (${formatNumber(st.received)} ${t('audit_received_count')})`
                     : `${t('audit_last_received')}: -`;
                 const hbAlert = st.heartbeat_alert
-                    ? `<span style="color:var(--danger);font-weight:600">${icon('warning',14)} ${t('audit_heartbeat_alert')}</span>`
+                    ? `<span class="u019">${icon('warning',14)} ${t('audit_heartbeat_alert')}</span>`
                     : '';
-                const ret = st.retention_days ? `<span style="opacity:0.7">${t('audit_retention')}: ${st.retention_days} ${t('audit_retention_days')}</span>` : '';
-                bar.innerHTML = `<span style="color:var(--success);font-weight:600">● ${t('audit_listening')}</span>`
+                const ret = st.retention_days ? `<span class="u123">${t('audit_retention')}: ${st.retention_days} ${t('audit_retention_days')}</span>` : '';
+                bar.innerHTML = `<span class="u021">● ${t('audit_listening')}</span>`
                     + `<span>UDP :${st.port}</span>`
-                    + `<span style="opacity:0.7">${rx}</span>`
+                    + `<span class="u123">${rx}</span>`
                     + ret
                     + hbAlert;
             } else if (st.enabled) {
-                bar.innerHTML = `<span style="color:var(--warning);font-weight:600">● ${t('audit_starting')}...</span>`;
+                bar.innerHTML = `<span class="u032">● ${t('audit_starting')}...</span>`;
             } else {
                 bar.innerHTML = '';
             }
@@ -2821,29 +2841,29 @@ async function showAuditDetail(id) {
                 } catch { /* give up */ }
             }
             if (formatted) {
-                bodyHtml = `<pre class="log-output" style="overflow-x:auto">${_syntaxHL(formatted)}</pre>`;
+                bodyHtml = `<pre class="log-output u124">${_syntaxHL(formatted)}</pre>`;
             } else {
-                bodyHtml = `<pre class="log-output" style="overflow-x:auto;white-space:pre-wrap;word-break:break-all">${esc(entry.request_body)}</pre>`;
+                bodyHtml = `<pre class="log-output u125">${esc(entry.request_body)}</pre>`;
             }
         }
-        const L = 'style="width:100px;font-weight:600;background:var(--hover-bg);padding:8px 10px;white-space:nowrap;border-bottom:1px solid var(--border);vertical-align:top"';
-        const V = 'style="padding:8px 10px;border-bottom:1px solid var(--border);word-break:break-all;max-width:0"';
+        const L = 'class="audit-k"';
+        const V = 'class="audit-v"';
         const tgt = entry.target_name || '';
         el.innerHTML = `
-            <table style="width:100%;font-size:0.9em;border-collapse:separate;border-spacing:0;border:1px solid var(--border);border-radius:6px;table-layout:fixed">
+            <table class="u151">
                 <tr><td ${L}>${t('th_time')}</td><td ${V}>${formatDT(entry.timestamp)}</td></tr>
                 <tr><td ${L}>${t('login_username')}</td><td ${V}>${esc(entry.username || '-')}</td></tr>
                 <tr><td ${L}>${t('audit_operation')}</td><td ${V}>${esc(entry.operation || '-')}</td></tr>
                 <tr><td ${L}>${t('audit_target')}</td><td ${V}>${esc(tgt || '-')}</td></tr>
-                <tr><td ${L}>${t('audit_sensitive_ops')}</td><td ${V}>${entry.is_sensitive ? `<span style="color:var(--danger)">${icon('warning',16)} ${t('audit_sensitive_yes')}</span>` : '-'}</td></tr>
+                <tr><td ${L}>${t('audit_sensitive_ops')}</td><td ${V}>${entry.is_sensitive ? `<span class="u018">${icon('warning',16)} ${t('audit_sensitive_yes')}</span>` : '-'}</td></tr>
                 <tr><td ${L}>${t('audit_method')}</td><td ${V}><strong>${esc(entry.method)}</strong> ${entry.status_code}</td></tr>
                 <tr><td ${L}>URI</td><td ${V}>${esc(entry.uri)}${entry.query_string ? '?' + esc(entry.query_string) : ''}</td></tr>
                 <tr><td ${L}>${t('audit_ip')}</td><td ${V}>${esc(entry.remote_addr)}</td></tr>
-                <tr><td ${L}>${t('audit_user_agent')}</td><td ${V} style="padding:8px 10px;font-size:0.82em">${esc(entry.user_agent || '-')}</td></tr>
+                <tr><td ${L}>${t('audit_user_agent')}</td><td class="u130" ${V}>${esc(entry.user_agent || '-')}</td></tr>
                 <tr><td ${L}>${t('audit_response_time')}</td><td ${V}>${(entry.request_time_ms || 0).toFixed(1)} ms</td></tr>
                 <tr><td ${L}>${t('audit_server')}</td><td ${V}>${esc(entry.server_name || '-')}</td></tr>
             </table>
-            ${bodyHtml ? `<div style="position:relative;margin-top:12px"><h4 style="margin:0 0 6px">${t('audit_request_body')}</h4><button onclick="navigator.clipboard.writeText(document.getElementById('audit-body-raw').textContent).then(()=>{this.innerHTML='✓';setTimeout(()=>{this.innerHTML='${t('btn_copy')}'},1500)})" style="position:absolute;top:38px;right:8px;z-index:1;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:#c5c8c6;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:0.78em;backdrop-filter:blur(4px)">${t('btn_copy')}</button><div id="audit-body-raw" style="display:none">${esc(entry.request_body)}</div>${bodyHtml}</div>` : ''}
+            ${bodyHtml ? `<div class="u138"><h4 class="u117">${t('audit_request_body')}</h4><button class="u135" data-act="copyAuditBody" data-act-self>${t('btn_copy')}</button><div class="u066" id="audit-body-raw">${esc(entry.request_body)}</div>${bodyHtml}</div>` : ''}
         `;
         document.getElementById('audit-detail-modal').style.display = 'flex';
     } catch (e) {}
@@ -2902,11 +2922,11 @@ function _nginxHL(text) {
     const C = '#6a9955', D = '#569cd6', S = '#ce9178', V = '#dcdcaa', T = '#4ec9b0', P = '#c586c0';
     return text.split('\n').map(line => {
         let s = e(line);
-        if (/^\s*#/.test(line)) return `<span style="color:${C}">${s.replace(/(Step \d)/g, `</span><span style="color:${P};font-weight:600">$1</span><span style="color:${C}">`)}</span>`;
-        s = s.replace(/\b(http|server|location|log_format|access_log|client_body_buffer_size|include|sudo|nginx|systemctl|ufw|firewall-cmd)\b/g, `<span style="color:${D};font-weight:600">$1</span>`);
-        s = s.replace(/('[^']*')/g, `<span style="color:${S}">$1</span>`);
-        s = s.replace(/(\$\w+)/g, `<span style="color:${V}">$1</span>`);
-        s = s.replace(/(escape=json|syslog:server=|facility=|tag=)/g, `<span style="color:${T}">$1</span>`);
+        if (/^\s*#/.test(line)) return `<span data-style="color:${C}">${s.replace(/(Step \d)/g, `</span><span data-style="color:${P};font-weight:600">$1</span><span data-style="color:${C}">`)}</span>`;
+        s = s.replace(/\b(http|server|location|log_format|access_log|client_body_buffer_size|include|sudo|nginx|systemctl|ufw|firewall-cmd)\b/g, `<span data-style="color:${D};font-weight:600">$1</span>`);
+        s = s.replace(/('[^']*')/g, `<span data-style="color:${S}">$1</span>`);
+        s = s.replace(/(\$\w+)/g, `<span data-style="color:${V}">$1</span>`);
+        s = s.replace(/(escape=json|syslog:server=|facility=|tag=)/g, `<span data-style="color:${T}">$1</span>`);
         return s;
     }).join('\n');
 }
@@ -2915,19 +2935,19 @@ function _syntaxHL(json) {
     // JSON syntax highlighting — returns HTML with color spans
     return esc(json).replace(
         /("(?:\\.|[^"\\])*")\s*:/g,  // keys
-        '<span style="color:#82aaff">$1</span>:'
+        '<span class="u006">$1</span>:'
     ).replace(
         /:\s*("(?:\\.|[^"\\])*")/g,  // string values
-        ': <span style="color:#c3e88d">$1</span>'
+        ': <span class="u010">$1</span>'
     ).replace(
         /:\s*(\d+\.?\d*)/g,  // numbers
-        ': <span style="color:#f78c6c">$1</span>'
+        ': <span class="u014">$1</span>'
     ).replace(
         /:\s*(true|false)/g,  // booleans
-        ': <span style="color:#ff9cac">$1</span>'
+        ': <span class="u016">$1</span>'
     ).replace(
         /:\s*(null)/g,  // null
-        ': <span style="color:#888">$1</span>'
+        ': <span class="u007">$1</span>'
     );
 }
 
@@ -2936,3 +2956,548 @@ function copyAuditNginxConfig() {
     if (el) navigator.clipboard.writeText(el.textContent).then(() => showAlert(t('msg_copied'))).catch(() => {});
 }
 
+
+// ============================================================
+// System Settings page — Graylog servers + OpenSearch (Web UI editable)
+// ============================================================
+
+let _serversCache = [];
+let _osCache = {};
+
+function _setResult(elId, ok, msg) {
+    const el = document.getElementById(elId);
+    if (el) el.innerHTML = `<span data-style="color:${ok ? 'var(--success)' : 'var(--danger)'}">${esc(msg)}</span>`;
+}
+
+function _secretField(id, val) {
+    return `<div class="secret-field"><input type="password" id="${id}" value="${esc(val || '')}" autocomplete="new-password"><button type="button" class="secret-toggle" data-act="toggleSecret" data-act-self tabindex="-1" title="Show/Hide">${icon('eye_closed')}</button></div>`;
+}
+
+async function loadSettingsPage() {
+    const [servers, os] = await Promise.all([
+        fetchJSON(`${API}/config/servers`),
+        fetchJSON(`${API}/config/opensearch`),
+    ]);
+    _serversCache = servers.items || [];
+    _osCache = os || {};
+    renderServersTable(servers);
+    const modeSel = document.getElementById('settings-export-mode');
+    if (modeSel && servers.export_mode) modeSel.value = servers.export_mode;
+    toggleMaxResultHint(modeSel ? modeSel.value : 'api');
+    renderOpenSearchForm(os);
+    renderAdminForm();
+    applyI18n();
+}
+
+function renderServersTable(data) {
+    const tbody = document.querySelector('#servers-table tbody');
+    if (!tbody) return;
+    const items = data.items || [];
+    const def = data.default_server || '';
+    if (!items.length) {
+        tbody.innerHTML = `<tr><td class="u142" colspan="6">${t('settings_none')}</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = items.map(s => {
+        const auth = s.auth_token ? t('settings_auth_token') : (s.username ? t('settings_auth_userpass') : '-');
+        const isDef = s.name === def;
+        const osCell = s.has_opensearch ? t('settings_yes') : t('settings_no');
+        const defCell = isDef
+            ? `<span class="u020">${t('settings_is_default')}</span>`
+            : `<button class="btn-sm btn-secondary" data-act="setDefaultServer" data-arg="${esc(s.name)}">${t('settings_make_default')}</button>`;
+        return `<tr>
+            <td>${esc(s.name)}</td>
+            <td>${esc(s.url)}</td>
+            <td>${esc(auth)}</td>
+            <td>${esc(osCell)}</td>
+            <td>${defCell}</td>
+            <td>
+                <button class="btn-sm btn-secondary" data-act="openServerModal" data-arg="${esc(s.name)}" data-icon-btn>${icon('lock', 14)} ${t('btn_edit')}</button>
+                <button class="btn-sm btn-danger" data-act="deleteServer" data-arg="${esc(s.name)}">${icon('trash', 14)}</button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function buildServerForm(s) {
+    s = s || {};
+    const os = s.opensearch || {};
+    const hasOs = !!s.has_opensearch;
+    const authType = s.auth_token ? 'token' : (s.username ? 'userpass' : 'token');
+    return `
+      <input type="hidden" id="srv-orig-name" value="${esc(s.name || '')}">
+      <div class="form-group"><label>${t('settings_srv_name')}</label>
+        <input type="text" id="srv-name" value="${esc(s.name || '')}" ${s.name ? 'readonly' : ''} placeholder="graylog-main"></div>
+      <div class="form-group"><label>${t('settings_srv_url')}</label>
+        <input type="text" id="srv-url" value="${esc(s.url || '')}" placeholder="http://192.168.1.10:9000"></div>
+      <div class="form-group"><label>${t('settings_srv_auth_type')}</label>
+        <select id="srv-auth-type" class="no-custom u131" data-act-change="_toggleSrvAuth">
+          <option value="token" ${authType === 'token' ? 'selected' : ''}>${t('settings_auth_token')}</option>
+          <option value="userpass" ${authType === 'userpass' ? 'selected' : ''}>${t('settings_auth_userpass')}</option>
+        </select></div>
+      <div class="form-group" id="srv-token-group"><label>${t('settings_srv_token')}</label>${_secretField('srv-token', s.auth_token)}</div>
+      <div class="form-group" id="srv-user-group"><label>${t('settings_srv_user')}</label>
+        <input type="text" id="srv-user" value="${esc(s.username || '')}" autocomplete="off"></div>
+      <div class="form-group" id="srv-pass-group"><label>${t('settings_srv_pass')}</label>${_secretField('srv-pass', s.password)}</div>
+      <div class="form-group"><label class="u065">
+        <input type="checkbox" id="srv-verify-ssl" ${s.verify_ssl ? 'checked' : ''}> ${t('settings_verify_ssl')}</label></div>
+      <hr class="u003">
+      <div class="form-group"><label class="u065">
+        <input type="checkbox" id="srv-os-enable" ${hasOs ? 'checked' : ''} data-act-change="_toggleSrvOs"> ${t('settings_per_os_enable')}</label></div>
+      <div id="srv-os-group" data-style="${hasOs ? '' : 'display:none'}">
+        <div class="form-group"><label>${t('settings_os_hosts')}</label>
+          <textarea class="u150" id="srv-os-hosts" rows="2">${esc((os.hosts || []).join('\n'))}</textarea></div>
+        <div class="form-group"><label>${t('settings_os_user')}</label>
+          <input type="text" id="srv-os-user" value="${esc(os.username || '')}" autocomplete="off"></div>
+        <div class="form-group"><label>${t('settings_os_pass')}</label>${_secretField('srv-os-pass', os.password)}</div>
+        <div class="form-group"><label class="u065">
+          <input type="checkbox" id="srv-os-verify" ${os.verify_ssl ? 'checked' : ''}> ${t('settings_verify_ssl')}</label></div>
+      </div>`;
+}
+
+function _toggleSrvAuth() {
+    const type = document.getElementById('srv-auth-type')?.value;
+    const tok = document.getElementById('srv-token-group');
+    const usr = document.getElementById('srv-user-group');
+    const pas = document.getElementById('srv-pass-group');
+    if (tok) tok.style.display = (type === 'token') ? '' : 'none';
+    if (usr) usr.style.display = (type === 'userpass') ? '' : 'none';
+    if (pas) pas.style.display = (type === 'userpass') ? '' : 'none';
+}
+
+function _toggleSrvOs() {
+    const on = document.getElementById('srv-os-enable')?.checked;
+    const g = document.getElementById('srv-os-group');
+    if (g) g.style.display = on ? '' : 'none';
+}
+
+function openServerModal(name) {
+    const s = name ? _serversCache.find(x => x.name === name) : null;
+    const title = document.getElementById('server-modal-title');
+    if (title) title.textContent = s ? t('settings_edit_server') : t('settings_add_server');
+    document.getElementById('server-modal-form').innerHTML = buildServerForm(s);
+    _setResult('server-modal-result', true, '');
+    document.getElementById('server-modal-result').innerHTML = '';
+    document.getElementById('server-modal').style.display = 'flex';
+    _toggleSrvAuth();
+}
+
+function _gatherServerBody() {
+    const v = id => (document.getElementById(id)?.value || '').trim();
+    const ck = id => !!document.getElementById(id)?.checked;
+    const authType = document.getElementById('srv-auth-type')?.value;
+    const body = {
+        name: v('srv-name'),
+        url: v('srv-url'),
+        verify_ssl: ck('srv-verify-ssl'),
+    };
+    if (authType === 'token') {
+        body.auth_token = v('srv-token');
+        body.username = '';
+        body.password = '';
+    } else {
+        body.username = v('srv-user');
+        body.password = v('srv-pass');
+        body.auth_token = '';
+    }
+    if (ck('srv-os-enable')) {
+        const hosts = v('srv-os-hosts').split('\n').map(h => h.trim()).filter(Boolean);
+        body.opensearch = {
+            hosts,
+            username: v('srv-os-user'),
+            password: v('srv-os-pass'),
+            verify_ssl: ck('srv-os-verify'),
+        };
+    } else {
+        body.opensearch = { hosts: [] };  // explicit empty → drop per-server OS
+    }
+    return body;
+}
+
+async function saveServer() {
+    const body = _gatherServerBody();
+    if (!body.name || !body.url) { _setResult('server-modal-result', false, t('settings_srv_name') + ' / ' + t('settings_srv_url')); return; }
+    const r = await fetchJSON(`${API}/config/servers`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (r.error) { _setResult('server-modal-result', false, r.error); return; }
+    document.getElementById('server-modal').style.display = 'none';
+    loadSettingsPage();
+}
+
+async function testServerFromModal() {
+    const body = _gatherServerBody();
+    // Omit masked secrets so the backend falls back to the stored value.
+    if (body.auth_token && body.auth_token.includes('***')) delete body.auth_token;
+    if (body.password && body.password.includes('***')) delete body.password;
+    if (!body.url) { _setResult('server-modal-result', false, t('settings_srv_url')); return; }
+    _setResult('server-modal-result', true, t('loading') + '...');
+    const r = await fetchJSON(`${API}/config/servers/test`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (r.connected) _setResult('server-modal-result', true, `${t('test_ok')} (${esc(r.version || '')})`);
+    else _setResult('server-modal-result', false, `${t('test_failed')}: ${esc(r.error || '')}`);
+}
+
+function deleteServer(name) {
+    showConfirm(t('settings_edit_server'), t('settings_confirm_delete').replace('{name}', name), async () => {
+        const r = await fetchJSON(`${API}/config/servers/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        if (r.error) { showAlert(r.error); return; }
+        loadSettingsPage();
+    });
+}
+
+async function setDefaultServer(name) {
+    const r = await fetchJSON(`${API}/config/general`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ default_server: name }),
+    });
+    if (r.error) { showAlert(r.error); return; }
+    loadSettingsPage();
+}
+
+async function saveExportMode(mode) {
+    toggleMaxResultHint(mode);
+    const r = await fetchJSON(`${API}/config/general`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ export_mode: mode }),
+    });
+    _setResult('settings-export-mode-result', !r.error, r.error || t('settings_saved'));
+}
+
+// The max_result_window caveat only applies to Graylog API mode (offset
+// pagination bounded by index.max_result_window). Show it only for API mode.
+function toggleMaxResultHint(mode) {
+    const hint = document.getElementById('settings-max-result-hint');
+    if (!hint) return;
+    hint.classList.toggle('hidden', mode !== 'api');
+}
+
+function renderOpenSearchForm(os) {
+    const el = document.getElementById('settings-os-form');
+    if (!el) return;
+    el.innerHTML = `
+      <div class="form-group"><label>${t('settings_os_hosts')}</label>
+        <textarea class="u150" id="settings-os-hosts" rows="2">${esc((os.hosts || []).join('\n'))}</textarea></div>
+      <div class="form-group"><label>${t('settings_os_user')}</label>
+        <input type="text" id="settings-os-user" value="${esc(os.username || '')}" autocomplete="off"></div>
+      <div class="form-group"><label>${t('settings_os_pass')}</label>${_secretField('settings-os-pass', os.password)}</div>
+      <div class="form-group"><label class="u065">
+        <input type="checkbox" id="settings-os-verify" ${os.verify_ssl ? 'checked' : ''}> ${t('settings_verify_ssl')}</label></div>`;
+}
+
+function _gatherOsBody() {
+    const v = id => (document.getElementById(id)?.value || '').trim();
+    const hosts = v('settings-os-hosts').split('\n').map(h => h.trim()).filter(Boolean);
+    return {
+        hosts,
+        username: v('settings-os-user'),
+        password: v('settings-os-pass'),
+        verify_ssl: !!document.getElementById('settings-os-verify')?.checked,
+    };
+}
+
+async function saveOpenSearchConfig() {
+    const body = _gatherOsBody();
+    const r = await fetchJSON(`${API}/config/opensearch`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    _setResult('settings-os-result', !r.error, r.error || t('settings_saved'));
+    if (!r.error) loadSettingsPage();
+}
+
+async function testOpenSearchConfig() {
+    const body = _gatherOsBody();
+    if (body.password && body.password.includes('***')) delete body.password;
+    _setResult('settings-os-result', true, t('loading') + '...');
+    const r = await fetchJSON(`${API}/opensearch/test`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (r.connected) _setResult('settings-os-result', true, `${t('test_ok')} (${esc(r.version || r.cluster_name || '')})`);
+    else _setResult('settings-os-result', false, `${t('test_failed')}: ${esc(r.error || '')}`);
+}
+
+function renderAdminForm() {
+    const el = document.getElementById('settings-admin-form');
+    if (!el) return;
+    el.innerHTML = `<div class="form-group u121"><label>${t('settings_admin_pass')}</label>${_secretField('settings-admin-pass', '')}</div>`;
+}
+
+async function saveAdminPassword() {
+    const pw = (document.getElementById('settings-admin-pass')?.value || '');
+    const r = await fetchJSON(`${API}/config/admin-password`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }),
+    });
+    _setResult('settings-admin-result', !r.error, r.error || t('settings_admin_saved'));
+    if (!r.error) { const f = document.getElementById('settings-admin-pass'); if (f) f.value = ''; }
+}
+
+// ============================================================
+// CSP-safe event delegation. Replaces inline on* handlers (which require
+// script-src 'unsafe-inline'). Markup uses:
+//   data-act="fnName"                      -> fnName()
+//   data-act="fnName" data-arg="x"         -> fnName("x")
+//   data-act="fnName" data-args='["a","b"]'-> fnName("a","b")
+//   data-act="fnName" data-act-self        -> fnName(clickedEl)
+//   data-act="fnName" data-act-event       -> fnName(event)
+//   data-act-change="fnName"               -> fnName(el.value)   (on change)
+// The named functions remain global (declared with `function` in this file).
+// ============================================================
+(function () {
+    function argsFor(el, e) {
+        if (el.hasAttribute('data-act-self')) return [el];
+        if (el.hasAttribute('data-act-event')) return [e];
+        if (el.dataset.args !== undefined) { try { return JSON.parse(el.dataset.args); } catch (_) { return []; } }
+        if (el.dataset.arg !== undefined) return [el.dataset.arg];
+        return [];
+    }
+    document.addEventListener('click', e => {
+        const el = e.target.closest('[data-act]');
+        if (!el) return;
+        const fn = window[el.dataset.act];
+        if (typeof fn === 'function') fn.apply(null, argsFor(el, e));
+    });
+    document.addEventListener('change', e => {
+        const el = e.target.closest('[data-act-change]');
+        if (!el) return;
+        const fn = window[el.dataset.actChange];
+        if (typeof fn !== 'function') return;
+        let arg;
+        if (el.hasAttribute('data-act-self')) arg = el;
+        else if (el.dataset.pass === 'checked') arg = el.checked;
+        else if (el.dataset.arg !== undefined) arg = el.dataset.arg;
+        else arg = el.value;
+        fn(arg);
+    });
+    document.addEventListener('input', e => {
+        const el = e.target;
+        if (el.matches && el.matches('[data-mark-edited]')) el.dataset.userEdited = 'true';
+        const host = el.closest && el.closest('[data-act-input]');
+        if (host) { const fn = window[host.dataset.actInput]; if (typeof fn === 'function') fn(host.value); }
+    });
+    // Fixed chrome present on every SPA page (was inline onclick/onchange).
+    document.addEventListener('DOMContentLoaded', () => {
+        const st = document.getElementById('sidebar-toggle');
+        if (st) st.addEventListener('click', () => toggleSidebar());
+        const tt = document.getElementById('theme-toggle');
+        if (tt) tt.addEventListener('click', () => toggleTheme());
+        const ls = document.getElementById('lang-select');
+        if (ls) ls.addEventListener('change', e => setLang(e.target.value));
+    });
+})();
+
+// --- Small named helpers replacing former inline DOM-manipulation handlers ---
+function closeModalById(id) { const e = document.getElementById(id); if (e) e.style.display = 'none'; }
+function clearLogOutput() { const e = document.getElementById('log-output'); if (e) e.textContent = ''; }
+function showRateMs(v) { const e = document.getElementById('rate-display'); if (e) e.textContent = v + 'ms'; }
+function copyAuditBody(btn) {
+    const src = document.getElementById('audit-body-raw');
+    if (!src) return;
+    navigator.clipboard.writeText(src.textContent).then(() => {
+        btn.innerHTML = '✓';
+        setTimeout(() => { btn.innerHTML = t('btn_copy'); }, 1500);
+    });
+}
+
+// --- Hydrate dynamic styles under a strict CSP -------------------------------
+// Inline style="" attributes are forbidden by our CSP, so genuinely dynamic
+// values (widths, colours) are emitted as data-style="..." and applied here via
+// CSSOM (element.style.cssText), which CSP does NOT govern. A MutationObserver
+// hydrates any inserted node so every render path is covered automatically.
+(function () {
+    function hydrate(root) {
+        if (root.nodeType !== 1) return;
+        if (root.hasAttribute && root.hasAttribute('data-style')) {
+            root.style.cssText = root.getAttribute('data-style');
+            root.removeAttribute('data-style');
+        }
+        if (root.querySelectorAll) root.querySelectorAll('[data-style]').forEach(el => {
+            el.style.cssText = el.getAttribute('data-style');
+            el.removeAttribute('data-style');
+        });
+    }
+    const obs = new MutationObserver(muts => {
+        for (const m of muts) for (const n of m.addedNodes) hydrate(n);
+    });
+    document.addEventListener('DOMContentLoaded', () => {
+        hydrate(document.body);
+        obs.observe(document.body, { childList: true, subtree: true });
+    });
+})();
+
+// ============================================================
+// Reports (beta)
+// ============================================================
+let _reportServers = [];
+let _reportDashboards = [];
+
+async function loadReportsPage() {
+    const [defs, hist, status, servers] = await Promise.all([
+        fetchJSON(`${API}/reports`), fetchJSON(`${API}/reports/history?limit=30`),
+        fetchJSON(`${API}/reports/status`), fetchJSON(`${API}/config/servers`),
+    ]);
+    _reportServers = servers.items || [];
+    const warn = document.getElementById('reports-engine-warn');
+    if (warn) {
+        if (status && status.render_engine === false) {
+            warn.className = 'report-warn mb15';
+            warn.textContent = t('reports_engine_missing');
+        } else { warn.className = 'hidden'; }
+    }
+    renderReportsTable(defs.items || []);
+    renderReportHistory(hist.items || []);
+    applyI18n();
+}
+
+function renderReportsTable(items) {
+    const tb = document.querySelector('#reports-table tbody');
+    if (!tb) return;
+    if (!items.length) { tb.innerHTML = `<tr><td colspan="5" class="text-center text-muted u128">${t('settings_none')}</td></tr>`; return; }
+    tb.innerHTML = items.map(r => {
+        const c = r.config || {};
+        const bits = [];
+        if (c.include_archive_summary !== false) bits.push(t('reports_content_archive'));
+        if ((c.dashboards || []).length) bits.push(`${c.dashboards.length} ${t('reports_content_dash')}`);
+        return `<tr>
+            <td>${esc(r.name)}${(c.schedule_cron ? ' <span class="job-badge job-badge-sched">'+esc(c.schedule_cron)+'</span>' : '')}</td>
+            <td>${esc(bits.join('、') || '-')}</td>
+            <td>${r.enabled ? t('settings_yes') : t('settings_no')}</td>
+            <td class="text-muted fs-085">${r.last_run_at ? esc(formatDT(r.last_run_at)) : '-'}</td>
+            <td>
+                <button class="btn-sm btn-primary" data-act="generateReport" data-arg="${esc(r.name)}">${icon('play',14)} ${t('reports_generate')}</button>
+                <button class="btn-sm btn-secondary" data-act="openReportModal" data-arg="${esc(r.name)}">${t('btn_edit')}</button>
+                <button class="btn-sm btn-danger" data-act="deleteReport" data-arg="${esc(r.name)}">${icon('trash',14)}</button>
+            </td></tr>`;
+    }).join('');
+}
+
+function renderReportHistory(items) {
+    const tb = document.querySelector('#reports-history-table tbody');
+    if (!tb) return;
+    if (!items.length) { tb.innerHTML = `<tr><td colspan="5" class="text-center text-muted u128">${t('log_no_data')}</td></tr>`; return; }
+    tb.innerHTML = items.map(h => `<tr>
+        <td>${esc(h.report_name)}</td>
+        <td class="text-muted fs-085">${esc(formatDT(h.created_at))}</td>
+        <td>${h.status === 'completed' ? statusBadge('completed') : statusBadge('failed')}${h.error ? ' <span class="text-danger fs-08">'+esc(h.error)+'</span>' : ''}</td>
+        <td>${h.size_bytes ? formatBytes(h.size_bytes) : '-'}</td>
+        <td>${h.status === 'completed' && h.file_path ? `<a class="btn-sm btn-secondary" href="${API}/reports/history/${h.id}/download">${icon('download',14)} PDF</a>` : '-'}</td>
+    </tr>`).join('');
+}
+
+function _reportSecret(id, val) {
+    return `<div class="secret-field"><input type="password" id="${id}" value="${esc(val||'')}" autocomplete="new-password"><button type="button" class="secret-toggle" data-act="toggleSecret" data-act-self tabindex="-1" title="Show/Hide">${icon('eye_closed')}</button></div>`;
+}
+
+async function openReportModal(name) {
+    let cfg = {}; let existing = false;
+    if (name) {
+        const list = await fetchJSON(`${API}/reports`);
+        const r = (list.items || []).find(x => x.name === name);
+        if (r) { cfg = r.config || {}; cfg.__name = r.name; cfg.__enabled = r.enabled; existing = true; }
+    }
+    document.getElementById('report-modal-title').textContent = existing ? t('reports_edit') : t('reports_add');
+    const serverOpts = _reportServers.map(s => `<option value="${esc(s.name)}"${cfg.server===s.name?' selected':''}>${esc(s.name)}</option>`).join('');
+    document.getElementById('report-modal-form').innerHTML = `
+      <input type="hidden" id="rp-orig" value="${esc(cfg.__name||'')}">
+      <div class="form-group"><label>${t('reports_f_name')}</label><input type="text" id="rp-name" value="${esc(cfg.__name||'')}" ${existing?'readonly':''} placeholder="weekly-security"></div>
+      <div class="form-group"><label>${t('reports_f_title')}</label><input type="text" id="rp-title" value="${esc(cfg.title||'')}" placeholder="安全事件週報"></div>
+      <div class="form-group"><label>${t('reports_f_subtitle')}</label><input type="text" id="rp-subtitle" value="${esc(cfg.subtitle||'')}"></div>
+      <div class="form-group"><label>${t('reports_f_author')}</label><input type="text" id="rp-author" value="${esc(cfg.author||'')}"></div>
+      <div class="form-group"><label>${t('reports_f_lang')}</label>
+        <select id="rp-lang" class="no-custom"><option value="zh-TW"${cfg.lang!=='en'?' selected':''}>繁體中文</option><option value="en"${cfg.lang==='en'?' selected':''}>English</option></select></div>
+      <div class="form-group"><label>${t('reports_f_header')}</label><input type="text" id="rp-header" value="${esc(cfg.header_text||'')}" placeholder="機密"></div>
+      <div class="form-group"><label class="inline-check"><input type="checkbox" id="rp-archive" ${cfg.include_archive_summary!==false?'checked':''}> ${t('reports_f_archive')}</label></div>
+      <hr class="u003">
+      <div class="form-group"><label>${t('reports_f_server')}</label><select id="rp-server" class="no-custom" data-act-change="reportLoadDashboards"><option value="">-</option>${serverOpts}</select></div>
+      <div class="form-group"><label>${t('reports_f_dashboards')}</label><div id="rp-dashboards" class="text-muted fs-085">${t('reports_pick_server')}</div></div>
+      <div class="form-group"><label>${t('reports_f_mode')}</label>
+        <select id="rp-mode" class="no-custom" data-act-change="reportToggleMode">
+          <option value="rebuild"${cfg.dashboard_mode!=='screenshot'?' selected':''}>${t('reports_mode_rebuild')}</option>
+          <option value="screenshot"${cfg.dashboard_mode==='screenshot'?' selected':''}>${t('reports_mode_shot')}</option>
+        </select>
+        <div class="text-muted fs-08 mt3" data-i18n="reports_mode_hint">${t('reports_mode_hint')}</div></div>
+      <div class="u037">
+        <div class="form-group flex1"><label>${t('reports_f_hours')}</label><input type="text" id="rp-hours" value="${esc(String(Math.round((cfg.time_range_seconds||86400)/3600)))}" placeholder="24"></div>
+        <div class="form-group flex1" id="rp-maxw-g"><label>${t('reports_f_maxw')}</label><input type="text" id="rp-maxw" value="${esc(String(cfg.max_widgets||16))}" placeholder="16"></div>
+      </div>
+      <div id="rp-shot-creds"${cfg.dashboard_mode==='screenshot'?'':' class="hidden"'}>
+        <div class="form-group"><label>${t('reports_f_webuser')}</label><input type="text" id="rp-webuser" value="${esc(cfg.graylog_web_username||'')}" autocomplete="off" placeholder="${t('reports_web_hint')}"></div>
+        <div class="form-group"><label>${t('reports_f_webpass')}</label>${_reportSecret('rp-webpass', cfg.graylog_web_password)}</div>
+      </div>
+      <hr class="u003">
+      <div class="form-group"><label>${t('reports_f_recipients')}</label><input type="text" id="rp-recipients" value="${esc((cfg.recipients||[]).join(', '))}" placeholder="a@x.com, b@y.com"></div>
+      <div class="form-group"><label>${t('reports_f_cron')}</label><input type="text" id="rp-cron" value="${esc(cfg.schedule_cron||'')}" placeholder="0 8 * * 1"></div>
+      <div class="form-group"><label class="inline-check"><input type="checkbox" id="rp-enabled" ${cfg.__enabled!==false?'checked':''}> ${t('reports_f_enabled')}</label></div>`;
+    document.getElementById('report-modal-result').innerHTML = '';
+    document.getElementById('report-modal').classList.remove('hidden');
+    document.getElementById('report-modal').style.display = 'flex';
+    _reportDashboards = cfg.dashboards || [];
+    reportToggleMode(cfg.dashboard_mode || 'rebuild');
+    if (cfg.server) reportLoadDashboards(cfg.server);
+}
+
+function closeReportModal() { const m = document.getElementById('report-modal'); m.classList.add('hidden'); m.style.display = 'none'; }
+
+async function reportLoadDashboards(server) {
+    const el = document.getElementById('rp-dashboards');
+    if (!server) { el.textContent = t('reports_pick_server'); return; }
+    el.textContent = t('loading') + '...';
+    const r = await fetchJSON(`${API}/reports/dashboards?server=${encodeURIComponent(server)}`);
+    const items = r.items || [];
+    const chosen = new Set((_reportDashboards || []).map(d => d.id || d));
+    if (!items.length) { el.textContent = t('reports_no_dash'); return; }
+    el.innerHTML = items.map(d => `<label class="inline-check u113"><input type="checkbox" class="rp-dash" value="${esc(d.id)}" data-title="${esc(d.title)}" ${chosen.has(d.id)?'checked':''}> ${esc(d.title)}</label>`).join('');
+}
+
+function reportToggleMode(mode) {
+    const creds = document.getElementById('rp-shot-creds');
+    const maxwg = document.getElementById('rp-maxw-g');
+    if (creds) creds.classList.toggle('hidden', mode !== 'screenshot');
+    if (maxwg) maxwg.classList.toggle('hidden', mode === 'screenshot');
+}
+
+function _gatherReport() {
+    const v = id => (document.getElementById(id)?.value || '').trim();
+    const ck = id => !!document.getElementById(id)?.checked;
+    const dashboards = Array.from(document.querySelectorAll('.rp-dash:checked')).map(c => ({id: c.value, title: c.dataset.title}));
+    const hours = parseInt(v('rp-hours'), 10);
+    const maxw = parseInt(v('rp-maxw'), 10);
+    return {
+        name: v('rp-name'),
+        enabled: ck('rp-enabled'),
+        config: {
+            title: v('rp-title'), subtitle: v('rp-subtitle'), author: v('rp-author'),
+            lang: v('rp-lang'), header_text: v('rp-header'),
+            include_archive_summary: ck('rp-archive'),
+            server: v('rp-server'), dashboards,
+            dashboard_mode: v('rp-mode') || 'rebuild',
+            time_range_seconds: (isNaN(hours) ? 24 : hours) * 3600,
+            max_widgets: isNaN(maxw) ? 16 : maxw,
+            graylog_web_username: v('rp-webuser'), graylog_web_password: v('rp-webpass'),
+            recipients: v('rp-recipients').split(',').map(s => s.trim()).filter(Boolean),
+            schedule_cron: v('rp-cron'),
+        },
+    };
+}
+
+async function saveReport() {
+    const body = _gatherReport();
+    if (!body.name) { document.getElementById('report-modal-result').innerHTML = `<span class="err-text">${t('reports_f_name')}</span>`; return; }
+    const r = await fetchJSON(`${API}/reports`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    if (r.error) { document.getElementById('report-modal-result').innerHTML = `<span class="err-text">${esc(r.error)}</span>`; return; }
+    closeReportModal(); loadReportsPage();
+}
+
+function deleteReport(name) {
+    showConfirm(t('reports_edit'), t('reports_confirm_delete').replace('{name}', name), async () => {
+        const r = await fetchJSON(`${API}/reports/${encodeURIComponent(name)}`, {method:'DELETE'});
+        if (r.error) { showAlert(r.error); return; }
+        loadReportsPage();
+    });
+}
+
+async function generateReport(name) {
+    const r = await fetchJSON(`${API}/reports/${encodeURIComponent(name)}/generate`, {method:'POST'});
+    if (r.error) { showAlert(r.error); return; }
+    showAlert(t('reports_started'));
+    setTimeout(loadReportsPage, 4000);
+    setTimeout(loadReportsPage, 12000);
+}

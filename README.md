@@ -1,4 +1,4 @@
-# jt-glogarch v1.7.16
+# jt-glogarch v1.9.2
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.7.16-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.9.2-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -75,6 +75,15 @@ and can restore them back into any Graylog instance via GELF (UDP / TCP).
 >
 > **Recommendation: Do not use Data Node.** When installing Graylog, configure it to connect directly to a standalone OpenSearch deployment instead of using Data Node. This enables OpenSearch Direct high-speed export (~5× faster) and OpenSearch Bulk high-speed import (~5-10× faster). Data Node simplifies initial setup but locks down external OpenSearch access, severely limiting archive and restore performance.
 
+> **Graylog API mode & `index.max_result_window`:** Graylog API export uses time-window offset pagination bounded by OpenSearch's `index.max_result_window` (default **10000**). jt-glogarch keeps every request within this limit automatically, so on a default cluster **no change is needed**. However, if your cluster has **lowered** `max_result_window` below 10000, API-mode export can fail with `500 Result window is too large`. Restore it to at least the default:
+>
+> ```
+> PUT <index>/_settings
+> { "index.max_result_window": 10000 }
+> ```
+>
+> For extreme single-millisecond bursts (>10000 messages sharing one millisecond, which offset pagination cannot split), use **OpenSearch Direct** mode instead.
+
 
 ### Smart Deduplication
 
@@ -124,6 +133,7 @@ GELF mode also has:
 - **Notification Settings** — 6 channels with language selection
 - **System Logs** — Real-time log viewer + audit log
 - **Operation Audit** — Track who did what on Graylog (60+ operation types, filterable, sensitive operation alerts)
+- **Reports (beta)** — Generate branded PDF reports from Graylog dashboards and archive statistics (gradient cover, table of contents, KPI summary, header/footer/page numbers, CJK fonts). Scheduling + email delivery. Needs the optional render engine (headless Chromium): run `sudo bash scripts/install-report-engine.sh` to enable.
 - Dark/Light theme, English/Traditional Chinese
 - Collapsible sidebar, HTTPS, session authentication
 
@@ -353,6 +363,12 @@ Login with your Graylog credentials.
 
 ### Upgrade
 
+jt-glogarch supports **two** upgrade paths. Both back up the database first,
+never overwrite `config.yaml`, and restart the service — the difference is only
+in how the new code reaches the host.
+
+#### A. Online upgrade (host has internet)
+
 ```bash
 sudo bash /opt/jt-glogarch/deploy/upgrade.sh
 ```
@@ -362,6 +378,44 @@ Pulls the latest tag from this repo, takes an online SQLite snapshot of
 config defaults to `config.yaml`, force-reinstalls the Python package, and
 restarts the service. Safe to run while jt-glogarch is active — there is
 no data loss step.
+
+#### B. Offline / air-gapped upgrade (host has NO internet)
+
+For customer sites that cannot reach the internet. You build a **self-contained
+bundle** on any internet-connected machine, carry it in (USB / scp), and run it
+locally — pip never touches the network (`--no-index`).
+
+**Step 1 — on an internet-connected machine** (same Python major.minor and OS
+arch as the target; e.g. CPython 3.10 on linux x86_64):
+
+```bash
+# From a checkout of this repo:
+bash scripts/build-offline-bundle.sh
+# → produces dist/jt-glogarch-<version>-offline.tar.gz
+```
+
+The bundle contains the jt-glogarch wheel **and every runtime dependency wheel**
+**and the source tree** and the offline installer — everything the upgrade needs.
+
+**Step 2 — carry `jt-glogarch-<version>-offline.tar.gz` to the target host** (USB,
+internal file share, scp — whatever your air-gap policy allows).
+
+**Step 3 — on the target host (as root):**
+
+```bash
+tar xzf jt-glogarch-<version>-offline.tar.gz
+cd jt-glogarch-<version>-offline
+sudo bash upgrade-offline.sh
+```
+
+It backs up the DB, refreshes the `/opt/jt-glogarch` source tree, installs the
+package + any missing dependencies **from the bundled wheels only** (no network),
+restarts the service, and verifies `GET /api/health` reports the new version.
+
+> The bundle's compiled dependency wheels (uvloop, httptools, watchfiles…) are
+> platform-specific — build the bundle on the **same Python version and CPU
+> architecture** as the target host. The optional PDF-report engine
+> (Playwright/Chromium) is **not** included; install it separately where wanted.
 
 ### Uninstall
 

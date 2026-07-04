@@ -829,8 +829,10 @@ def server():
         console.print(f"[bold]Starting jt-glogarch web server on "
                       f"http://{settings.web.host}:{settings.web.port}[/bold]")
 
+    # server_header=False strips uvicorn's "Server: uvicorn" banner (it is added
+    # by the ASGI server after our middleware, so it can't be removed there).
     uvicorn.run(app, host=settings.web.host, port=settings.web.port,
-                log_level="info", **ssl_opts)
+                log_level="info", server_header=False, **ssl_opts)
 
 
 @cli.command()

@@ -1,4 +1,4 @@
-# jt-glogarch v1.7.16
+# jt-glogarch v1.9.2
 
 **語言**: [English](README.md) | **繁體中文**  
 **網站**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.7.16-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.9.2-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -74,6 +74,15 @@ Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
 >
 > **建議不要使用 Data Node：** 安裝 Graylog 時建議直接設定連線到獨立部署的 OpenSearch，不要使用 Data Node。這樣才能使用 OpenSearch Direct 高速匯出（約 5 倍速）和 OpenSearch Bulk 高速匯入（約 5-10 倍速）。Data Node 雖然簡化了初始安裝，但會鎖死 OpenSearch 的外部存取，嚴重限制歸檔與還原的效能。
 
+> **Graylog API 模式與 `index.max_result_window`：** Graylog API 匯出採用時間視窗位移分頁，受 OpenSearch 的 `index.max_result_window`（預設 **10000**）限制。jt-glogarch 會自動將每次請求控制在此上限內，因此在預設叢集上**無需任何調整**。但若您的叢集已將 `max_result_window` **調低**於 10000，API 模式匯出可能出現 `500 Result window is too large` 錯誤。請將其還原為至少預設值：
+>
+> ```
+> PUT <index>/_settings
+> { "index.max_result_window": 10000 }
+> ```
+>
+> 若遇到極端的單一毫秒突發（超過 10000 筆訊息共用同一毫秒，位移分頁無法切分），請改用 **OpenSearch Direct** 模式。
+
 
 ### 智慧重複資料刪除
 
@@ -123,6 +132,7 @@ GELF 模式還有：
 - **通知設定** — 6 種管道含語言選擇
 - **系統記錄** — 即時記錄檢視器 + 稽核記錄
 - **行為稽核** — 追蹤 Graylog 上的所有操作（誰在什麼時候做了什麼），支援篩選、敏感操作通知（60+ 種操作類型）
+- **報表（Beta）** — 從 Graylog 儀表板與封存統計產生品牌化 PDF 報表（漸層封面、目錄、KPI 摘要、頁首/頁尾/頁碼、繁中字型）。支援排程與 Email 寄送。需選用的渲染引擎（無頭 Chromium）：執行 `sudo bash scripts/install-report-engine.sh` 啟用。
 - 深色/淺色主題、English/繁體中文 雙語
 - 可收摺側邊欄、HTTPS、Session 認證
 
@@ -539,7 +549,9 @@ curl -sk https://localhost:8990/api/health
 
 ### 升級
 
-GitHub 上有新版本時，一行指令完成升級：
+jt-glogarch 提供**兩種**升級方式。兩者都會先備份資料庫、絕不覆寫 `config.yaml`、最後重啟服務 —— 差別只在「新版程式如何送進主機」。
+
+#### 甲、線上升級（主機可連外網）
 
 ```bash
 sudo bash /opt/jt-glogarch/deploy/upgrade.sh
@@ -551,6 +563,34 @@ sudo bash /opt/jt-glogarch/deploy/upgrade.sh
 > - 新版若有新設定欄位會自動使用預設值，不需手動加
 > - DB schema 會在服務啟動時自動升級（`_migrate()`）
 > - 建議升級後檢查 [CHANGELOG](CHANGELOG-zh_TW.md) 確認是否有需要注意的變更
+
+#### 乙、離線／封閉網路升級（主機無法連外網）
+
+適用於**無法連外網**的客戶站台。做法是在任一台可連外網的機器上打包成**自帶所有相依套件的離線包**，用實體方式帶進去（USB／內部檔案分享／scp），在目標主機本機執行 —— pip 全程不連網路（`--no-index`）。
+
+**步驟 1 —— 在可連外網的機器上**（Python 主版本與 CPU 架構需與目標主機相同，例如 CPython 3.10 + linux x86_64）：
+
+```bash
+# 於本專案的原始碼目錄中：
+bash scripts/build-offline-bundle.sh
+# → 產生 dist/jt-glogarch-<版本>-offline.tar.gz
+```
+
+離線包內含 jt-glogarch wheel、**所有相依套件的 wheel**、**原始碼樹**與離線安裝指令碼 —— 升級所需的東西全部打包在內。
+
+**步驟 2 —— 將 `jt-glogarch-<版本>-offline.tar.gz` 帶到目標主機**（USB、內部檔案分享、scp，依貴站台的隔離政策而定）。
+
+**步驟 3 —— 在目標主機上（以 root 執行）：**
+
+```bash
+tar xzf jt-glogarch-<版本>-offline.tar.gz
+cd jt-glogarch-<版本>-offline
+sudo bash upgrade-offline.sh
+```
+
+它會：備份 DB → 更新 `/opt/jt-glogarch` 原始碼樹 → **僅從離線包內的 wheel** 安裝套件與缺少的相依（完全不連網）→ 重啟服務 → 確認 `GET /api/health` 回報新版本。
+
+> 離線包內的編譯型相依 wheel（uvloop、httptools、watchfiles…）與平台相關，**打包機器的 Python 版本與 CPU 架構必須與目標主機相同**。選用的 PDF 報表引擎（Playwright／Chromium）**不含**在離線包內，需在需要的機器另行安裝。
 
 
 

@@ -46,13 +46,44 @@ echo ""
 echo "[1/5] Backing up database..."
 mkdir -p /var/backups/jt-glogarch
 chown jt-glogarch:jt-glogarch /var/backups/jt-glogarch
-sudo -u jt-glogarch python3 -m glogarch db-backup 2>/dev/null || echo "  (skip: db-backup not available in current version)"
+# Keep stderr visible: a genuine backup failure (disk full, permissions) must
+# NOT be silently swallowed — that backup is the safety net for this upgrade.
+# Only the "command not present in the old version" case is an acceptable skip.
+if sudo -u jt-glogarch python3 -m glogarch db-backup --help >/dev/null 2>&1; then
+    # Run from INSTALL_DIR so db-backup finds ./config.yaml (and thus the DB).
+    if ! ( cd "$INSTALL_DIR" && sudo -u jt-glogarch python3 -m glogarch db-backup ); then
+        echo "  ⚠ WARNING: database backup FAILED (see error above)."
+        if read -r -p "  Continue upgrade without a fresh backup? [y/N] " _ans </dev/tty 2>/dev/null; then
+            case "$_ans" in
+                y|Y) echo "  Continuing without fresh backup." ;;
+                *)   echo "  Aborting upgrade."; exit 1 ;;
+            esac
+        else
+            echo "  (non-interactive) Continuing WITHOUT a fresh backup — verify the backup manually."
+        fi
+    fi
+else
+    echo "  (skip: db-backup not available in current version)"
+fi
 
 # 2. Pull latest
 echo ""
 echo "[2/5] Pulling latest version..."
 cd "$INSTALL_DIR"
-git pull
+# `set -e` would abort on a bare `git pull` failure (local edits to tracked
+# files, e.g. a hotfix, make pull refuse) leaving a half-upgraded box. Try a
+# clean pull; if it fails, auto-stash the local changes and retry so the
+# upgrade proceeds. config.yaml is gitignored, so user config is never touched.
+if ! git pull --ff-only 2>/dev/null; then
+    echo "  Local changes detected — stashing before pull..."
+    git stash push -u -m "jt-glogarch upgrade auto-stash" >/dev/null 2>&1 || true
+    if ! git pull --ff-only; then
+        echo "  ⚠ ERROR: 'git pull' failed even after stashing local changes."
+        echo "     Resolve manually (e.g. 'git status' in $INSTALL_DIR) and re-run."
+        exit 1
+    fi
+    echo "  (local changes saved in 'git stash' — run 'git stash list' to review)"
+fi
 
 # 2.5. Ensure op_audit config exists (new in v1.7+)
 CONFIG_FILE="$INSTALL_DIR/config.yaml"

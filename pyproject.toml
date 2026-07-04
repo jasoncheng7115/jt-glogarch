@@ -38,6 +38,11 @@ dev = [
     "pytest-httpx>=0.30",
     "ruff>=0.2",
 ]
+# PDF Reports (beta) — headless-Chromium renderer. Also requires
+# `playwright install chromium` and CJK fonts on the host.
+report = [
+    "playwright>=1.40",
+]
 
 [project.scripts]
 glogarch = "glogarch.cli.main:cli"
@@ -49,7 +54,7 @@ version = {attr = "glogarch.__version__"}
 include = ["glogarch*"]
 
 [tool.setuptools.package-data]
-glogarch = ["web/templates/*.html", "web/static/**/*"]
+glogarch = ["web/templates/*.html", "web/static/**/*", "report/templates/*.j2", "report/assets/*"]
 
 [tool.ruff]
 target-version = "py310"

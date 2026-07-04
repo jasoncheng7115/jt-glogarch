@@ -2,6 +2,110 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.9.2] - 2026-07-04
+
+### Added — offline / air-gapped upgrade
+
+- **`scripts/build-offline-bundle.sh`** builds a self-contained upgrade bundle (`dist/jt-glogarch-<ver>-offline.tar.gz`) on any internet-connected machine: the jt-glogarch wheel + **every runtime dependency wheel** (full transitive closure, including the compiled uvloop/httptools/watchfiles) + the **source tree** + the offline installer.
+- **`deploy/upgrade-offline.sh`** upgrades a host that has **no internet**. It installs from the bundled wheels only (`pip --no-index`), so pip never touches the network. Backs up the DB, refreshes the `/opt/jt-glogarch` source tree, force-reinstalls the package into dist-packages, restarts, and verifies `/api/health`.
+- Both upgrade methods (online git-pull and offline bundle) are now documented in **README** (EN + zh_TW) and in a new **Settings → System Upgrade** section in the Web UI.
+
+### Fixed
+
+- **Offline upgrade now refreshes the `/opt/jt-glogarch` source tree, not just dist-packages.** A pip wheel install only updates dist-packages (which the systemd service uses); the `/opt` source is what `python -m glogarch` loads when the CLI is run from `/opt` (Python imports the CWD first). Leaving it stale meant a post-upgrade CLI run from `/opt` silently executed the *old* code. The offline installer now syncs the source in place, mirroring what the online git-pull does.
+- **`upgrade.sh` / `upgrade-offline.sh` DB backup** now runs from the install dir so `db-backup` finds `config.yaml` (and thus the DB), and the "continue without a fresh backup?" prompt no longer hangs when run non-interactively (scripted SOP) — it falls back to a loud warning + continue.
+
+### Verified in the field
+
+- Full **offline SOP dry-run** on a Graylog-7.1.2 customer VM: 1.7.9 → 1.9.2 with `pip --no-index` (zero network), healthy.
+- Reproduced the customer's 1.7.9 `500 Result window is too large` (scheduled backup completing green with **0 messages archived**), then confirmed 1.9.2 exports the **same** dataset with no 500 and archives written.
+
+## [1.9.1] - 2026-07-04
+
+### Fixed — export data-integrity sweep (Graylog API + OpenSearch Direct)
+
+A full audit of both export paths for customers upgrading from 1.7.9. Every finding below could, under load, silently lose or duplicate messages while still reporting a green "Completed" job.
+
+- **Graylog API — same-millisecond boundary data loss (HIGH).** When a time window filled the 10,000-result ceiling, the next window advanced by `last_timestamp + 1ms`, silently dropping every message that shared that exact millisecond beyond the ceiling. The window now advances to the *exact* last timestamp and de-duplicates the boundary millisecond by `gl2_message_id`, so no message is lost or duplicated. This required sending the search window at **millisecond precision** (it was truncated to whole seconds, which also caused duplicate re-fetching of the boundary second).
+- **Graylog API — early window termination (HIGH).** Pagination stopped on the mutable per-request `total_results`, which can shrink mid-export if an index rotates/retention-deletes, dropping the window's tail. It now ends on a short page (the reliable end-of-data signal).
+- **Graylog API — silent truncation on odd timestamps (MEDIUM).** An unparseable/stale boundary timestamp used to `break` and silently truncate the chunk. It now raises (surfaced + retried) and the timestamp parser handles any ISO-8601 shape (nanoseconds, explicit offsets).
+- **OpenSearch Direct — no failover on transient 5xx (HIGH).** A `429/500/502/503` that exhausted retries on one node used to abort the whole index; a single overloaded node (circuit breaker / GC pause) silently dropped an entire index even when a healthy node was available. It now fails over to the next host and only raises when *all* hosts are exhausted.
+- **OpenSearch Direct — `search_after` early stop (MEDIUM).** Pagination stopped at a pre-counted `total`, which can under-count due to concurrent merge/refresh drift and skip the tail. It now paginates until the cursor is exhausted.
+- **Both modes — partial failures no longer hide behind a green "Completed".** Per-index/per-chunk failures are now reported in the job note (`⚠ N failed — will retry next run`). A systematic mid-run failure (cluster goes RED after some success) now aborts fast instead of grinding for hours. Disk-exhaustion during OpenSearch export is now a fatal abort, not a per-index error retried on every remaining index.
+- **Rate limiter** no longer holds its lock across the wait, which had serialized all requests and defeated the burst allowance.
+
+### Fixed — upgrade / migration (1.7.9 → 1.9.1)
+
+- **Stuck `IMPORTING` archives are recovered at startup.** An import killed mid-flight (e.g. the service restart during an upgrade) left the archive row `IMPORTING`, which the per-archive lock made permanently un-importable. Startup now flips stale `IMPORTING` rows back to `COMPLETED`, honoring the documented crash-recovery guarantee.
+- **`upgrade.sh` hardened.** A failing database backup is no longer silently swallowed (it prompts before continuing without a fresh backup); a `git pull` blocked by local hotfixes auto-stashes and retries instead of aborting the upgrade half-done.
+
+### Notes
+
+- DB schema and 1.7.9 `config.yaml` already auto-migrate with no manual steps (verified): new columns/tables are added on connect, `api_audit→op_audit` is remapped, no new config key is required, and an existing `servers:` correctly skips the first-run wizard.
+- Known limitation (unchanged): mixing API-mode (stream-filtered) and OpenSearch-mode (whole-index) exports on the *same* server can let time-range dedup skip whole-index data. Use one export mode per server.
+
+## [1.9.0] - 2026-07-03
+
+### Added — PDF Reports (beta)
+
+- **New "Reports" page** — generate branded, professional PDF reports, a la Graylog Enterprise reporting, but open. Reports have a gradient **cover page** (title, subtitle, logo, author, period), **table of contents**, **executive summary with KPI cards**, running **header/footer with page numbers**, and CJK-capable fonts (Traditional Chinese renders correctly).
+- **Graylog dashboards in one of two selectable modes per report:**
+  - **Rebuild** (default) — queries the dashboard's widgets via the Graylog Views API (executes the search + polls the async job across all tabs) and **redraws them as our own branded Chart.js charts** (bar / doughnut / line / grouped, single-value cards, tables) from live data. No Graylog web login needed — the API token suffices.
+  - **Screenshot** — a headless Chromium logs into the Graylog web UI (with the report's configured Graylog web credentials) and captures the native dashboard image — "looks exactly like Graylog".
+- Plus an always-available **archive & audit summary** (branded charts from jt-glogarch's own archive / job / audit statistics) with an executive KPI summary.
+- **Scheduling + email delivery**: reports can run on a cron schedule (APScheduler) and be emailed as PDF attachments via the configured SMTP settings. Generate-now and download-history are available in the UI.
+- **Rendering** mirrors Graylog Enterprise's approach (a headless-Chromium single print pass) via Playwright. Requires the optional `report` extra (`pip install 'jt-glogarch[report]'`), `playwright install chromium`, and CJK fonts on the host; the UI shows a clear notice and degrades gracefully when the render engine is absent.
+- New DB tables `reports` / `report_history` (auto-created), `/api/reports*` endpoints, and `test_reports.py` coverage.
+
+### Security
+
+- Reports developed against the **OWASP Top 10:2025**: report download is path-contained to the reports directory and forced to `attachment` (A01 Broken Access Control); dashboard capture only ever targets a **configured** Graylog server, never an arbitrary URL (A01/SSRF); Chart.js is vendored + pinned, no runtime CDN (A03 Software Supply Chain); web password is masked in transit and reconciled on save (A04); generation failures are caught, sanitized, and recorded rather than surfaced as stack traces (A10 Mishandling of Exceptional Conditions); a per-report concurrency guard prevents duplicate heavy renders (A06). Verified with an OWASP ZAP baseline scan — 0 High / 0 Medium / 0 Low.
+- **Penetration test hardening** (authenticated + unauthenticated probing of the running app): disabled the FastAPI interactive docs and OpenAPI schema (`/docs`, `/redoc`, `/openapi.json`), which sat outside the `/api/` auth middleware and let anonymous clients enumerate every endpoint (A01/A02); added an **SSRF guard** on the connection-test endpoints (`/api/opensearch/test`, `/api/config/servers/test`) that blocks link-local / cloud-metadata targets like `169.254.169.254` while still allowing loopback and RFC1918 internal hosts (A01); malformed JSON bodies now return 400 instead of 500, and a malformed `time_from`/`time_to` on export returns 400 instead of silently starting a broken job (A10). SQL filters confirmed parameterized (no injection); 500 responses confirmed to leak no stack traces. New `test_security.py`.
+
+### Fixed
+
+- **API-mode export no longer 500s on high-volume time chunks ("Result window is too large").** The deep-pagination loop bounded offset by a fixed `MAX_SAFE_OFFSET = 9500` but still requested `limit = batch_size` on top, so a fetch could ask for `from + size = 9500 + 1000 = 10500`, exceeding OpenSearch's default `index.max_result_window` of 10000 → Graylog returned 500. On a busy source (e.g. a firewall) *every* time chunk exceeds this, so every chunk failed and the export produced 0 records after hours of retrying. The loop now guarantees `offset + batch ≤ 10000` for any batch size, and advances the time window using the **last message actually fetched** (previously it re-fetched at offset 9499, which could also skip the tail of a window). Verified end-to-end against a 661,427-message window — paginates cleanly with zero 500s.
+- **API-mode export errors now surface Graylog's actual reason** instead of an opaque `500 Internal Server Error`. The Graylog/OpenSearch error body (e.g. *"Failed to obtain results: Result window is too large, [from + size] must be less than or equal to: [10000] … use scroll or search_after"*) is now included in the job error and notification — previously `raise_for_status()` discarded it. Added a **fail-fast circuit breaker**: if 10 chunks fail in a row with nothing exported, the export aborts immediately (with the real error) instead of grinding through thousands of chunks for hours on a systematic failure. New `test_graylog_error_detail.py`.
+
+## [1.8.0] - 2026-07-02
+
+### Added — Configure Graylog & OpenSearch from the Web UI + first-run setup wizard
+
+- **Connection settings are now editable in the Web UI** (previously `config.yaml` only, requiring a restart). A new **Settings** page manages Graylog servers (add / edit / delete, per-server OpenSearch, default server, test-connection), the global OpenSearch cluster, the default export mode, and an optional emergency local admin password. Changes apply live — no `systemctl restart` needed for connection settings.
+- **First-run setup wizard.** A fresh install ships with an empty `servers:` list; the Web UI detects the unconfigured state and redirects to `/setup`, a 5-step wizard: (1) set an admin password, (2) add a Graylog server (with test), (3) OpenSearch (optional — skip for API-mode), (4) archive path, (5) done. `install.sh` now writes a minimal bootstrap `config.yaml` instead of a dummy example, so the wizard drives first-time configuration.
+- **Bootstrap auth.** Because login authenticates against Graylog, a fresh install (no server yet) had no way in. The wizard's step 1 sets a local admin password (username `localadmin`) and opens an authenticated session; the setup endpoints are the only pre-auth write path and are hard-gated — they return 403 the moment a server exists.
+
+### Changed — Upgrade path (existing customers)
+
+- **Zero-migration and fully backward compatible.** Existing installs already have `servers:` configured, so the wizard never triggers — they simply gain the new Settings page. `upgrade.sh` never overwrites `servers:` / `opensearch:`. Editing a server does a partial update that preserves fields the UI doesn't surface (e.g. a server carrying both username/password and a token) and unrelated top-level config keys.
+- Secrets are masked (`***`) in every GET and reconciled on save — saving without changing a secret keeps the stored value (fixes a latent bug where the notification config could overwrite real secrets with their masked form on restart).
+
+### Security
+
+- **Passes an OWASP ZAP baseline scan with zero High/Medium/Low findings.** Added a strict `Content-Security-Policy` **without `unsafe-inline`** — the entire Web UI was refactored to carry no inline scripts, inline event handlers, or inline `style` attributes (all via external JS event-delegation, CSS classes, and CSSOM for dynamic values). Also added `Permissions-Policy`, `Cross-Origin-Opener-Policy`/`Embedder-Policy`/`Resource-Policy`, `Cache-Control: no-store` (non-static), an anti-CSRF token on the login form, `SameSite=Strict` session cookie (+ existing `Secure`/`HttpOnly`), and stripped the `Server` banner.
+- New `scripts/zap-scan.sh` runs the ZAP baseline DAST scan against a live instance and fails on any Medium/High alert (`.zap/rules.tsv` documents justified exceptions).
+- All Web UI config writes now go through a single **atomic, locked** config writer (`glogarch/core/config_writer.py`): temp-file + `os.replace()` and a process-wide lock, eliminating the previous non-atomic read-modify-write that could lose concurrent updates or truncate `config.yaml` on a crash.
+
+### Tests
+
+- +15 tests: `test_config_writer.py` (atomic write, key preservation, secret reconcile) and `test_settings_api.py` (setup gate, server CRUD, secret masking, and the OLD→NEW **upgrade** path). See `TESTING.md` for the feature↔test map.
+
+### Fixed
+
+- **Export progress bar could read 0% while records were clearly being exported.** API-mode progress is time-/chunk-based (reliable), but one stray message-based percentage remained in the skip path: on a *resume* of a mostly-already-archived range, `messages_done` counts only newly-exported messages while the denominator was the full-range pre-count — so the live bar collapsed to ~0% even though most chunks were done. All export progress views are now consistently chunk-based. (Display-only; no effect on the exported data.)
+- **Login now works with any configured Graylog server.** Previously only the *default* server's account could sign in. Login now tries each configured server (default first) and the first that accepts the credentials wins — important for multi-cluster setups where user directories differ per server. Falls back to the local admin only when no server is reachable.
+- **Dashboard/Settings server list stalled ~10-14s.** The Data Node detection (`GET /api/datanodes`) went through the retrying client, so a 404 on Graylog without data nodes tripped the retry decorator's 2+4+8s backoff (~14s). It is now a direct single-shot call (5s timeout, no retry) skipped entirely for unreachable servers, and `/api/servers` probes all servers concurrently — the endpoint now returns in ~30ms (measured 14.05s → 0.01s for the probe).
+- Settings page: added an icon and explanatory text to "Default Export Mode", and a description to "Global OpenSearch".
+
+## [1.7.17] - 2026-07-02
+
+### Fixed — Schedules page took 20-40s to load with no loading indicator
+
+- Opening the **Schedules** page (`/schedules`) blocked for 20-40 seconds before any content appeared, and showed a blank table (no "loading" state) while it waited.
+- Root cause: the page awaited `GET /api/servers` **before** rendering the schedule table. `/api/servers` runs a live per-server connectivity check (`GET /api/system`) plus a Data Node probe (`GET /api/datanodes`), both routed through the retry decorator (3 attempts, 2s/4s/8s backoff) with a 10s connect timeout. On Graylog 6 `/api/datanodes` returns 404 and burns the full ~14s of retry backoff; an unreachable node adds the connect timeouts on top — 20-40s total. The schedule table itself is a fast DB-only read, but it never ran until that probe finished (`.finally()`).
+- Fix (frontend): render the schedule table immediately with a loading spinner via `loadTable()`, and fetch `/api/servers` in parallel without blocking. The server name is only a display fallback (schedules store their own `c.server`) and fills in on the next poll once the probe resolves.
+- Fix (backend): `/api/servers` now probes all servers concurrently (`asyncio.gather`) instead of serially, so N slow/unreachable servers no longer add up.
+
 ## [1.7.16] - 2026-06-17
 
 ### Added — Per-server OpenSearch cluster (archive multiple sources)

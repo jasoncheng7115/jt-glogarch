@@ -184,12 +184,23 @@ async def trigger_export(request: Request, background_tasks: BackgroundTasks):
     index_set = body.get("index_set") or None
     keep_indices = body.get("keep_indices") or None
 
-    time_to = _parse_dt(body.get("time_to")) if body.get("time_to") else datetime.utcnow()
+    # Validate provided timestamps (OWASP A10): a malformed date must yield a
+    # clean 400, not silently become None and start a broken job.
+    time_to = datetime.utcnow()
+    if body.get("time_to"):
+        time_to = _parse_dt(body["time_to"])
+        if time_to is None:
+            return JSONResponse({"error": "Invalid time_to format"}, status_code=400)
     if days:
         from datetime import timedelta
-        time_from = time_to - timedelta(days=int(days))
+        try:
+            time_from = time_to - timedelta(days=int(days))
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "Invalid days value"}, status_code=400)
     elif body.get("time_from"):
         time_from = _parse_dt(body["time_from"])
+        if time_from is None:
+            return JSONResponse({"error": "Invalid time_from format"}, status_code=400)
     else:
         return JSONResponse({"error": "Must specify time_from or days"}, status_code=400)
 
@@ -730,20 +741,17 @@ async def toggle_schedule(request: Request, name: str):
 
     # For auto-* schedules, also update config.yaml
     if name.startswith("auto-"):
-        import yaml
+        from glogarch.core.config_writer import update_config
         config_path = _config_path(request)
         if config_path.exists():
             try:
-                with open(config_path) as f:
-                    cfg = yaml.safe_load(f) or {}
-                if "schedule" not in cfg:
-                    cfg["schedule"] = {}
-                if name == "auto-export":
-                    cfg["schedule"]["export_cron"] = s.cron_expr if enabled else None
-                elif name == "auto-cleanup":
-                    cfg["schedule"]["cleanup_cron"] = s.cron_expr if enabled else None
-                with open(config_path, "w") as f:
-                    yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+                def _mut(cfg):
+                    sch = cfg.setdefault("schedule", {})
+                    if name == "auto-export":
+                        sch["export_cron"] = s.cron_expr if enabled else None
+                    elif name == "auto-cleanup":
+                        sch["cleanup_cron"] = s.cron_expr if enabled else None
+                update_config(config_path, _mut)
             except Exception:
                 pass
 
@@ -1092,28 +1100,46 @@ def _get_sparkline_data(db: ArchiveDB) -> dict:
 async def list_servers(request: Request):
     """List servers with connectivity status, including Data Node detection."""
     settings = _settings(request)
-    results = []
-    for srv in settings.servers:
-        from glogarch.graylog.client import GraylogClient
-        from glogarch.ratelimit.limiter import RateLimiter
-        import httpx as _httpx
+    from glogarch.graylog.client import GraylogClient
+    from glogarch.ratelimit.limiter import RateLimiter
+    import asyncio as _asyncio
+
+    import httpx as _httpx
+
+    async def _probe(srv):
         rl = RateLimiter(settings.rate_limit)
         async with GraylogClient(srv, rl) as client:
             info = await client.check_connectivity()
             info["name"] = srv.name
             info["url"] = srv.url
-            # Detect Data Node — if present, OS Direct/Bulk modes are unavailable
-            try:
-                datanodes = await client.get("/api/datanodes")
-                if isinstance(datanodes, list) and len(datanodes) > 0:
-                    info["has_datanode"] = True
-                    info["datanode_count"] = len(datanodes)
-                else:
-                    info["has_datanode"] = False
-            except Exception:
-                info["has_datanode"] = False
-            results.append(info)
-    return {"items": results}
+            info["has_datanode"] = False
+            # Detect Data Node via a DIRECT, single-shot call (5s, NO retry).
+            # On Graylog without data nodes /api/datanodes returns 404 — routing
+            # it through client.get() would trip the retry decorator's 2+4+8s
+            # backoff (~14s) and stall the dashboard's Servers table. Skip the
+            # probe entirely if the server is unreachable.
+            if info.get("connected"):
+                try:
+                    if srv.auth_token:
+                        auth = _httpx.BasicAuth(srv.auth_token, "token")
+                    else:
+                        auth = _httpx.BasicAuth(srv.username or "", srv.password or "")
+                    async with _httpx.AsyncClient(verify=srv.verify_ssl, timeout=5.0) as hc:
+                        r = await hc.get(f"{srv.url.rstrip('/')}/api/datanodes",
+                                         auth=auth, headers={"Accept": "application/json"})
+                        if r.status_code == 200:
+                            d = r.json()
+                            if isinstance(d, list) and len(d) > 0:
+                                info["has_datanode"] = True
+                                info["datanode_count"] = len(d)
+                except Exception:
+                    pass
+            return info
+
+    # Probe all servers concurrently so N unreachable servers don't add up
+    # serially. Each probe already returns {"connected": False} on failure.
+    results = await _asyncio.gather(*[_probe(srv) for srv in settings.servers])
+    return {"items": list(results)}
 
 
 # --- Settings ---
@@ -1184,13 +1210,9 @@ async def set_archive_path(request: Request):
 
     config_path = _config_path(request)
     if config_path.exists():
-        with open(config_path) as f:
-            cfg = yaml.safe_load(f) or {}
-        if "export" not in cfg:
-            cfg["export"] = {}
-        cfg["export"]["base_path"] = new_path
-        with open(config_path, "w") as f:
-            yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+        from glogarch.core.config_writer import update_config
+        update_config(config_path,
+                      lambda cfg: cfg.setdefault("export", {}).update({"base_path": new_path}))
 
     # Return with disk info
     usage = shutil.disk_usage(target)
@@ -1399,16 +1421,11 @@ async def reorder_opensearch(request: Request):
     settings.opensearch.hosts = hosts
 
     # Save to config.yaml
-    import yaml
+    from glogarch.core.config_writer import update_config
     config_path = _config_path(request)
     if config_path.exists():
-        with open(config_path) as f:
-            cfg = yaml.safe_load(f) or {}
-        if "opensearch" not in cfg:
-            cfg["opensearch"] = {}
-        cfg["opensearch"]["hosts"] = hosts
-        with open(config_path, "w") as f:
-            yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+        update_config(config_path,
+                      lambda cfg: cfg.setdefault("opensearch", {}).update({"hosts": hosts}))
 
     return {"hosts": hosts, "primary": hosts[0]}
 
@@ -1430,6 +1447,13 @@ async def test_opensearch(request: Request):
 
     if not hosts:
         return JSONResponse({"connected": False, "error": "No OpenSearch hosts configured"}, status_code=400)
+
+    # SSRF guard (OWASP A01): refuse link-local / cloud-metadata targets.
+    from glogarch.utils.netguard import ssrf_block_reason
+    for h in (hosts if isinstance(hosts, list) else [hosts]):
+        reason = ssrf_block_reason(h)
+        if reason:
+            return JSONResponse({"connected": False, "error": reason}, status_code=400)
 
     from glogarch.core.config import OpenSearchConfig
     from glogarch.opensearch.client import OpenSearchClient
@@ -1540,23 +1564,18 @@ def get_audit_status(request: Request):
 @router.post("/audit/toggle")
 async def toggle_audit(request: Request):
     """Toggle op_audit.enabled and save to config.yaml. Requires restart."""
-    import yaml
     settings = _settings(request)
     new_val = not settings.op_audit.enabled
     settings.op_audit.enabled = new_val
 
     # Save to config.yaml
+    from glogarch.core.config_writer import update_config
     config_path = _config_path(request)
     if config_path.exists():
-        with open(config_path) as f:
-            cfg = yaml.safe_load(f) or {}
-        if "op_audit" not in cfg:
-            cfg["op_audit"] = {}
-        cfg["op_audit"]["enabled"] = new_val
-        # Remove old key if present
-        cfg.pop("api_audit", None)
-        with open(config_path, "w") as f:
-            yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+        def _mut(cfg):
+            cfg.setdefault("op_audit", {})["enabled"] = new_val
+            cfg.pop("api_audit", None)  # remove old key if present
+        update_config(config_path, _mut)
 
     _audit(request, "audit_toggle", f"op_audit.enabled={new_val}")
 
@@ -1704,7 +1723,6 @@ async def save_notify_config(request: Request):
     """Save notification config to config.yaml."""
     body = await request.json()
     settings = _settings(request)
-    import yaml
 
     # Update in-memory
     n = settings.notify
@@ -1728,14 +1746,14 @@ async def save_notify_config(request: Request):
                         continue
                     setattr(ch_obj, k, v)
 
-    # Save to config.yaml
+    # Save to config.yaml — persist the RECONCILED model (with real secrets),
+    # never the raw request body, which may carry masked "***" placeholders for
+    # unchanged secrets. Writing the body verbatim used to overwrite real
+    # secrets with their masked form, breaking notifications after restart.
+    from glogarch.core.config_writer import update_config
     config_path = _config_path(request)
     if config_path.exists():
-        with open(config_path) as f:
-            cfg = yaml.safe_load(f) or {}
-        cfg["notify"] = body
-        with open(config_path, "w") as f:
-            yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+        update_config(config_path, lambda cfg: cfg.update({"notify": n.model_dump()}))
 
     _audit(request, "notify_config_saved", "Notification settings updated")
     return {"status": "saved"}
@@ -1858,3 +1876,483 @@ def _schedule_to_dict(s) -> dict:
         "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
         "next_run_at": next_run,
     }
+
+
+# ============================================================
+# Connection settings — Graylog servers + OpenSearch (Web UI editable)
+# and first-run setup wizard. All writes go through the atomic config_writer.
+# ============================================================
+
+
+def _is_unconfigured(settings: Settings) -> bool:
+    """Fresh install with no Graylog server yet — triggers the setup wizard."""
+    return len(settings.servers) == 0
+
+
+def _server_to_dict(s) -> dict:
+    """Serialize a GraylogServerConfig with secrets masked for GET responses."""
+    d = {
+        "name": s.name,
+        "url": s.url,
+        "auth_token": _mask(s.auth_token or ""),
+        "username": s.username or "",
+        "password": _mask(s.password or ""),
+        "verify_ssl": s.verify_ssl,
+        "has_opensearch": bool(s.opensearch and s.opensearch.hosts),
+    }
+    if s.opensearch:
+        d["opensearch"] = {
+            "hosts": list(s.opensearch.hosts),
+            "username": s.opensearch.username or "",
+            "password": _mask(s.opensearch.password or ""),
+            "verify_ssl": s.opensearch.verify_ssl,
+        }
+    return d
+
+
+@router.get("/config/servers")
+def get_config_servers(request: Request):
+    """List Graylog servers (secrets masked), plus default_server + export_mode."""
+    settings = _settings(request)
+    return {
+        "items": [_server_to_dict(s) for s in settings.servers],
+        "default_server": settings.default_server,
+        "export_mode": settings.export_mode,
+    }
+
+
+@router.post("/config/servers")
+async def save_config_server(request: Request):
+    """Create or update ONE Graylog server (keyed by name).
+
+    Partial-update friendly: masked/empty secrets are reconciled against the
+    stored value, and an omitted per-server ``opensearch`` block is preserved —
+    so editing a server never wipes fields the UI didn't surface (important for
+    upgraded customers whose config may carry username+password AND a token)."""
+    body = await request.json()
+    settings = _settings(request)
+    name = (body.get("name") or "").strip()
+    url = (body.get("url") or "").strip()
+    if not name or not url:
+        return JSONResponse({"error": "name and url are required"}, status_code=400)
+
+    from glogarch.core.config import GraylogServerConfig, OpenSearchConfig
+    from glogarch.core.config_writer import update_config, reconcile_secret
+
+    existing = next((s for s in settings.servers if s.name == name), None)
+
+    auth_token = reconcile_secret(body.get("auth_token"),
+                                  existing.auth_token if existing else None)
+    password = reconcile_secret(body.get("password"),
+                                existing.password if existing else None)
+    username = body.get("username")
+    if username is None and existing:
+        username = existing.username
+    verify_ssl = bool(body.get("verify_ssl", existing.verify_ssl if existing else True))
+
+    # Per-server OpenSearch: present with hosts → rebuild; key omitted → keep
+    # existing; present but empty hosts → drop it.
+    os_block = None
+    os_in = body.get("opensearch")
+    if os_in and os_in.get("hosts"):
+        existing_os = existing.opensearch if (existing and existing.opensearch) else None
+        os_block = OpenSearchConfig(
+            hosts=[h.strip() for h in os_in.get("hosts", []) if isinstance(h, str) and h.strip()],
+            username=(os_in.get("username") or None),
+            password=reconcile_secret(os_in.get("password"),
+                                      existing_os.password if existing_os else None),
+            verify_ssl=bool(os_in.get("verify_ssl", existing_os.verify_ssl if existing_os else False)),
+        )
+    elif os_in is None and existing and existing.opensearch:
+        os_block = existing.opensearch
+
+    new_server = GraylogServerConfig(
+        name=name, url=url, auth_token=(auth_token or None),
+        username=(username or None), password=(password or None),
+        verify_ssl=verify_ssl, opensearch=os_block,
+    )
+
+    # In-memory: replace by name or append (applies live to new operations)
+    settings.servers = [s for s in settings.servers if s.name != name] + [new_server]
+    if not settings.default_server:
+        settings.default_server = name
+    new_default = settings.default_server
+
+    def _mut(cfg):
+        srv_list = cfg.setdefault("servers", [])
+        entry = new_server.model_dump(exclude_none=True)
+        for i, e in enumerate(srv_list):
+            if isinstance(e, dict) and e.get("name") == name:
+                srv_list[i] = entry
+                break
+        else:
+            srv_list.append(entry)
+        if not cfg.get("default_server"):
+            cfg["default_server"] = new_default
+    update_config(_config_path(request), _mut)
+
+    _audit(request, "config_server_saved", f"server={name} url={url}")
+    return {"status": "saved", "name": name}
+
+
+@router.delete("/config/servers/{name}")
+def delete_config_server(request: Request, name: str):
+    """Delete a Graylog server; reassign default_server if it pointed here."""
+    settings = _settings(request)
+    if not any(s.name == name for s in settings.servers):
+        return JSONResponse({"error": "Server not found"}, status_code=404)
+    settings.servers = [s for s in settings.servers if s.name != name]
+    if settings.default_server == name:
+        settings.default_server = settings.servers[0].name if settings.servers else ""
+    new_default = settings.default_server
+
+    from glogarch.core.config_writer import update_config
+
+    def _mut(cfg):
+        cfg["servers"] = [e for e in cfg.get("servers", [])
+                          if not (isinstance(e, dict) and e.get("name") == name)]
+        if cfg.get("default_server") == name:
+            cfg["default_server"] = new_default
+    update_config(_config_path(request), _mut)
+
+    _audit(request, "config_server_deleted", f"server={name}")
+    return {"status": "deleted", "name": name}
+
+
+@router.post("/config/servers/test")
+async def test_config_server(request: Request):
+    """Test a Graylog server connection from ad-hoc form values (no save).
+
+    Uses a direct 10s httpx call (no retry) for fast feedback, mirroring the
+    login flow's auth (token as username / "token" as password)."""
+    import httpx
+    from glogarch.utils.sanitize import sanitize
+    from glogarch.core.config_writer import reconcile_secret
+    body = await request.json()
+    settings = _settings(request)
+    name = (body.get("name") or "").strip()
+    url = (body.get("url") or "").strip()
+    if not url:
+        return JSONResponse({"error": "url is required"}, status_code=400)
+    # SSRF guard (OWASP A01): refuse link-local / cloud-metadata targets.
+    from glogarch.utils.netguard import ssrf_block_reason
+    _reason = ssrf_block_reason(url)
+    if _reason:
+        return JSONResponse({"connected": False, "error": _reason}, status_code=400)
+    existing = next((s for s in settings.servers if s.name == name), None)
+    auth_token = reconcile_secret(body.get("auth_token"),
+                                  existing.auth_token if existing else None)
+    username = body.get("username") or (existing.username if existing else None)
+    password = reconcile_secret(body.get("password"),
+                                existing.password if existing else None)
+    verify_ssl = bool(body.get("verify_ssl", False))
+    if auth_token:
+        auth = httpx.BasicAuth(auth_token, "token")
+    else:
+        auth = httpx.BasicAuth(username or "", password or "")
+    try:
+        async with httpx.AsyncClient(verify=verify_ssl, timeout=10.0) as client:
+            resp = await client.get(f"{url.rstrip('/')}/api/system", auth=auth,
+                                    headers={"Accept": "application/json"})
+            if resp.status_code == 200:
+                data = resp.json()
+                return {"connected": True, "version": data.get("version"),
+                        "hostname": data.get("hostname")}
+            if resp.status_code in (401, 403):
+                return {"connected": False, "error": "Authentication failed (check token / credentials)"}
+            return {"connected": False, "error": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"connected": False, "error": sanitize(str(e))}
+
+
+@router.get("/config/opensearch")
+def get_config_opensearch(request: Request):
+    """Global OpenSearch config (password masked)."""
+    os_cfg = _settings(request).opensearch
+    return {
+        "hosts": list(os_cfg.hosts),
+        "username": os_cfg.username or "",
+        "password": _mask(os_cfg.password or ""),
+        "verify_ssl": os_cfg.verify_ssl,
+    }
+
+
+@router.post("/config/opensearch")
+async def save_config_opensearch(request: Request):
+    """Save the global OpenSearch config (password reconciled if masked)."""
+    body = await request.json()
+    settings = _settings(request)
+    from glogarch.core.config import OpenSearchConfig
+    from glogarch.core.config_writer import update_config, reconcile_secret
+    hosts = [h.strip() for h in body.get("hosts", []) if isinstance(h, str) and h.strip()]
+    password = reconcile_secret(body.get("password"), settings.opensearch.password)
+    username = body.get("username")
+    if username is None:
+        username = settings.opensearch.username
+    verify_ssl = bool(body.get("verify_ssl", settings.opensearch.verify_ssl))
+    new_os = OpenSearchConfig(hosts=hosts, username=(username or None),
+                              password=(password or None), verify_ssl=verify_ssl)
+    settings.opensearch = new_os
+    update_config(_config_path(request),
+                  lambda cfg: cfg.update({"opensearch": new_os.model_dump(exclude_none=True)}))
+    _audit(request, "config_opensearch_saved", f"hosts={len(hosts)}")
+    return {"status": "saved"}
+
+
+@router.post("/config/general")
+async def save_config_general(request: Request):
+    """Save export_mode and/or default_server."""
+    body = await request.json()
+    settings = _settings(request)
+    from glogarch.core.config_writer import update_config
+    updates: dict = {}
+    if "export_mode" in body:
+        mode = body["export_mode"]
+        if mode not in ("api", "opensearch"):
+            return JSONResponse({"error": "export_mode must be 'api' or 'opensearch'"}, status_code=400)
+        settings.export_mode = mode
+        updates["export_mode"] = mode
+    if "default_server" in body:
+        ds = (body["default_server"] or "")
+        if ds and not any(s.name == ds for s in settings.servers):
+            return JSONResponse({"error": "default_server not found"}, status_code=400)
+        settings.default_server = ds
+        updates["default_server"] = ds
+    if updates:
+        update_config(_config_path(request), lambda cfg: cfg.update(updates))
+    _audit(request, "config_general_saved", str(updates))
+    return {"status": "saved", **updates}
+
+
+@router.post("/config/admin-password")
+async def save_admin_password(request: Request):
+    """Set or clear the emergency local admin password (authenticated).
+
+    For already-configured (e.g. upgraded) installs to opt into a break-glass
+    localadmin. Empty password clears/disables it."""
+    body = await request.json()
+    pw = body.get("password", "") or ""
+    if pw and len(pw) < 8:
+        return JSONResponse({"error": "Password must be at least 8 characters"}, status_code=400)
+    settings = _settings(request)
+    import hashlib
+    h = hashlib.sha256(pw.encode()).hexdigest() if pw else ""
+    settings.web.localadmin_password_hash = h
+    from glogarch.core.config_writer import update_config
+    update_config(_config_path(request),
+                  lambda cfg: cfg.setdefault("web", {}).update({"localadmin_password_hash": h}))
+    _audit(request, "admin_password_changed", "localadmin " + ("set" if pw else "cleared"))
+    return {"status": "saved", "enabled": bool(pw)}
+
+
+@router.get("/setup/status")
+def setup_status(request: Request):
+    """First-run wizard state. Public (read-only booleans)."""
+    settings = _settings(request)
+    return {
+        "configured": not _is_unconfigured(settings),
+        "has_admin_password": bool(settings.web.localadmin_password_hash),
+    }
+
+
+@router.post("/setup/admin-password")
+async def setup_admin_password(request: Request):
+    """First-run ONLY: set the localadmin password and open an authenticated
+    session so the rest of the wizard can use the normal /api/config/* endpoints.
+
+    Hard-gated: rejected (403) once any server is configured OR a password
+    already exists — this is the sole pre-auth write path and it closes the
+    instant setup progresses."""
+    settings = _settings(request)
+    if not _is_unconfigured(settings):
+        return JSONResponse({"error": "Setup already completed"}, status_code=403)
+    if settings.web.localadmin_password_hash:
+        return JSONResponse({"error": "Admin password already set"}, status_code=403)
+    body = await request.json()
+    pw = body.get("password", "") or ""
+    if len(pw) < 8:
+        return JSONResponse({"error": "Password must be at least 8 characters"}, status_code=400)
+    import hashlib
+    h = hashlib.sha256(pw.encode()).hexdigest()
+    settings.web.localadmin_password_hash = h
+    from glogarch.core.config_writer import update_config
+    update_config(_config_path(request),
+                  lambda cfg: cfg.setdefault("web", {}).update({"localadmin_password_hash": h}))
+    # Open an authenticated (emergency) session for the remaining wizard steps.
+    request.session["authenticated"] = True
+    request.session["username"] = "localadmin"
+    request.session["emergency_mode"] = True
+    _audit(request, "setup_admin_password", "First-run admin password set")
+    return {"status": "ok"}
+
+
+# ============================================================
+# Reports (beta) — Graylog dashboard → PDF, branded, scheduled, emailed
+# ============================================================
+
+_REPORT_SECRET_KEYS = {"graylog_web_password"}
+_reports_running: set = set()  # report names currently generating (concurrency guard)
+
+
+def _report_public(rec: dict) -> dict:
+    import json as _json
+    cfg = {}
+    try:
+        cfg = _json.loads(rec.get("config_json") or "{}")
+    except Exception:
+        cfg = {}
+    for k in _REPORT_SECRET_KEYS:
+        if cfg.get(k):
+            cfg[k] = _mask(cfg[k])
+    return {
+        "name": rec["name"], "enabled": bool(rec["enabled"]),
+        "last_run_at": rec.get("last_run_at"), "config": cfg,
+    }
+
+
+@router.get("/reports")
+def list_reports(request: Request):
+    db = _db(request)
+    return {"items": [_report_public(r) for r in db.list_reports()]}
+
+
+@router.post("/reports")
+async def save_report(request: Request):
+    import json as _json
+    from glogarch.core.config_writer import reconcile_secret
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"error": "name is required"}, status_code=400)
+    db = _db(request)
+    existing = db.get_report(name)
+    old_cfg = {}
+    if existing:
+        try:
+            old_cfg = _json.loads(existing.get("config_json") or "{}")
+        except Exception:
+            old_cfg = {}
+    cfg = dict(body.get("config") or {})
+    # reconcile masked secrets against stored values
+    for k in _REPORT_SECRET_KEYS:
+        cfg[k] = reconcile_secret(cfg.get(k), old_cfg.get(k))
+    db.save_report(name, _json.dumps(cfg, ensure_ascii=False), bool(body.get("enabled", True)))
+    sched = getattr(request.app.state, "scheduler", None)
+    if sched:
+        try:
+            sched.apply_report(name)
+        except Exception:
+            pass
+    _audit(request, "report_saved", f"report={name}")
+    return {"status": "saved", "name": name}
+
+
+@router.delete("/reports/{name}")
+def delete_report(request: Request, name: str):
+    db = _db(request)
+    if not db.get_report(name):
+        return JSONResponse({"error": "Report not found"}, status_code=404)
+    db.delete_report(name)
+    sched = getattr(request.app.state, "scheduler", None)
+    if sched:
+        try:
+            sched.remove_report(name)
+        except Exception:
+            pass
+    _audit(request, "report_deleted", f"report={name}")
+    return {"status": "deleted", "name": name}
+
+
+@router.get("/reports/dashboards")
+async def report_dashboards(request: Request, server: str = Query(default="")):
+    """List Graylog dashboards for the report content picker."""
+    settings = _settings(request)
+    try:
+        srv = settings.get_server(server or None)
+    except Exception:
+        return {"items": []}
+    from glogarch.report import graylog_data
+    items = await graylog_data.list_dashboards(srv)
+    return {"items": items}
+
+
+@router.get("/reports/status")
+def report_status(request: Request):
+    """Beta capability check — is the PDF render engine available?"""
+    ok = True
+    detail = ""
+    try:
+        import playwright  # noqa: F401
+    except Exception as e:
+        ok = False
+        detail = f"playwright not installed: {e}"
+    return {"beta": True, "render_engine": ok, "detail": detail}
+
+
+@router.post("/reports/{name}/generate")
+async def generate_report_now(request: Request, name: str):
+    import json as _json
+    db = _db(request)
+    settings = _settings(request)
+    rec = db.get_report(name)
+    if not rec:
+        return JSONResponse({"error": "Report not found"}, status_code=404)
+    cfg = {}
+    try:
+        cfg = _json.loads(rec.get("config_json") or "{}")
+    except Exception:
+        pass
+    cfg["name"] = name
+
+    # Guard against duplicate concurrent generations of the same report (double
+    # clicks / overlapping runs) each spawning a heavy Chromium process.
+    if name in _reports_running:
+        return JSONResponse({"error": "already running"}, status_code=409)
+    _reports_running.add(name)
+
+    def _run():
+        from glogarch.report import generator
+        from glogarch.utils.sanitize import sanitize
+        try:
+            asyncio.run(generator.generate_report(db, settings, cfg, triggered_by="manual"))
+        except Exception as e:
+            try:
+                db.record_report_history(name, "", "", 0, "failed", sanitize(str(e)))
+            except Exception:
+                pass
+        finally:
+            _reports_running.discard(name)
+
+    asyncio.get_event_loop().run_in_executor(None, _run)
+    _audit(request, "report_generate", f"report={name}")
+    return {"status": "started"}
+
+
+@router.get("/reports/history")
+def report_history(request: Request, limit: int = Query(default=50)):
+    db = _db(request)
+    return {"items": db.list_report_history(limit=limit)}
+
+
+@router.get("/reports/history/{hist_id}/download")
+def report_download(request: Request, hist_id: int):
+    from fastapi.responses import FileResponse
+    db = _db(request)
+    rec = db.get_report_history_entry(hist_id)
+    if not rec or not rec.get("file_path"):
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    # A01 (Broken Access Control) defense-in-depth: only ever serve files that
+    # resolve to inside the reports directory — never an arbitrary path, even if
+    # a DB row were tampered with.
+    reports_dir = (Path(_settings(request).export.base_path) / "reports").resolve()
+    try:
+        p = Path(rec["file_path"]).resolve()
+        p.relative_to(reports_dir)
+    except (ValueError, OSError):
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    if not p.is_file():
+        return JSONResponse({"error": "File missing"}, status_code=404)
+    # Force download (no inline rendering).
+    return FileResponse(str(p), media_type="application/pdf",
+                        filename=rec.get("filename") or p.name,
+                        content_disposition_type="attachment")

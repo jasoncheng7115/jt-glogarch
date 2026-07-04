@@ -160,6 +160,11 @@ class Exporter:
                 for stream_id in stream_list:
                     stream_name = (stream_names or {}).get(stream_id, None) if stream_id else None
 
+                    # Fail-fast: if many chunks fail in a row without a single
+                    # success, the problem is systematic (e.g. a Graylog/OpenSearch
+                    # error on every search) — abort instead of grinding through
+                    # thousands of chunks for hours.
+                    consecutive_failures = 0
                     for chunk_idx, (chunk_from, chunk_to) in enumerate(chunks):
                         if self._cancelled:
                             log.info("Export cancelled by user", job_id=job_id)
@@ -180,7 +185,13 @@ class Exporter:
                             log.debug("Chunk already exported, skipping",
                                       time_from=str(chunk_from), time_to=str(chunk_to))
                             if progress_callback:
-                                pct = (result.messages_total / max(total_records, 1)) * 100 if total_records else ((chunk_idx + 1) / total_chunks) * 100
+                                # Progress is CHUNK-based (time progress), consistent with the
+                                # DB progress_pct and every other view. A message-based percentage
+                                # (messages_done / total_records) is misleading here: messages_done
+                                # counts only NEWLY-exported messages while total_records is the full
+                                # pre-count of the whole range — on a resume with many already-archived
+                                # (skipped) chunks it collapses to ~0% even though most of the range is done.
+                                pct = ((chunk_idx + 1) / total_chunks) * 100 if total_chunks else 0
                                 progress_callback({
                                     "phase": "skipping",
                                     "chunk_index": chunk_idx + 1,
@@ -206,12 +217,25 @@ class Exporter:
                             )
                             result.chunks_exported += 1
                             result.messages_total += msgs_in_chunk
+                            consecutive_failures = 0
 
                         except Exception as e:
                             err_msg = f"Chunk {chunk_idx+1} failed: {e}"
                             log.error(err_msg, chunk_from=str(chunk_from))
                             result.errors.append(err_msg)
-                            # Continue with next chunk
+                            consecutive_failures += 1
+                            # Abort fast on a systematic failure. Two trips:
+                            #  - 10 in a row with NOTHING exported yet (bad creds,
+                            #    cluster RED from the very start), and
+                            #  - 25 in a row at ANY point (a cluster that goes RED
+                            #    mid-run must not grind through thousands of failing
+                            #    chunks for hours just because chunk 1 succeeded).
+                            if (consecutive_failures >= 10 and result.chunks_exported == 0) \
+                                    or consecutive_failures >= 25:
+                                raise RuntimeError(
+                                    f"Aborting export after {consecutive_failures} consecutive "
+                                    f"chunk failures. Last error: {e}")
+                            # otherwise continue with the next chunk
 
                         # Update DB progress periodically (every chunk)
                         pct = ((chunk_idx + 1) / total_chunks) * 100 if total_chunks else 0
@@ -273,10 +297,21 @@ class Exporter:
                                         f"Graylog JVM heap {mem_pct:.0f}% after waiting {jvm_max_wait//60} min. "
                                         f"Export stopped. Consider increasing Xmx or using OpenSearch mode.")
 
-            # Update job status with skip info
-            note = ""
+            # Update job status with skip + failure info. A chunk that raised is
+            # NOT recorded as an archive, so it is retried on the next run (dedup
+            # won't skip it) — but the operator must still be told the run was
+            # partial, otherwise a green "Completed" hides missing data.
+            note_parts = []
             if result.chunks_skipped > 0:
-                note = f"Skipped {result.chunks_skipped}/{result.chunks_skipped + result.chunks_exported} chunks (already archived)"
+                note_parts.append(
+                    f"Skipped {result.chunks_skipped}/"
+                    f"{result.chunks_skipped + result.chunks_exported} chunks (already archived)")
+            if result.errors:
+                sample = "; ".join(result.errors[:3])
+                note_parts.append(
+                    f"⚠ {len(result.errors)} chunk(s) failed — data may be "
+                    f"incomplete, will retry next run: {sample}")
+            note = ". ".join(note_parts)
             self.db.update_job(
                 job_id,
                 status=JobStatus.COMPLETED,

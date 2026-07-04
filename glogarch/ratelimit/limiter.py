@@ -24,13 +24,17 @@ class RateLimiter:
 
     async def acquire(self) -> None:
         """Wait until a token is available."""
-        async with self._lock:
-            self._refill()
-            while self._tokens < 1.0:
-                wait = (1.0 - self._tokens) / self.config.requests_per_second
-                await asyncio.sleep(wait)
+        while True:
+            async with self._lock:
                 self._refill()
-            self._tokens -= 1.0
+                if self._tokens >= 1.0:
+                    self._tokens -= 1.0
+                    return
+                wait = (1.0 - self._tokens) / self.config.requests_per_second
+            # Sleep OUTSIDE the lock. Holding the lock across the sleep serialized
+            # every concurrent caller and defeated the token bucket's burst
+            # allowance (only one request could ever be in flight while waiting).
+            await asyncio.sleep(wait)
 
     def _refill(self) -> None:
         now = time.monotonic()

@@ -31,6 +31,11 @@ log = get_logger("opensearch.export")
 _os_export_lock: dict[str, bool] = {}
 
 
+class _FatalExportError(RuntimeError):
+    """A run-wide fatal condition (disk full) that must abort the WHOLE export,
+    not be swallowed by the per-index error handler and retried on every index."""
+
+
 class OpenSearchExporter:
     """Export logs directly from OpenSearch indices — no Graylog API pagination limits."""
 
@@ -266,6 +271,8 @@ class OpenSearchExporter:
                             )
                             result.chunks_exported += 1
                             result.messages_total += msgs
+                        except _FatalExportError:
+                            raise  # disk full etc. — abort the whole run
                         except Exception as e:
                             err = f"Index {index_name} failed: {e}"
                             log.error(err)
@@ -277,10 +284,18 @@ class OpenSearchExporter:
                             if not has_space:
                                 raise RuntimeError("Disk space exhausted during export")
 
-            # Build completion note with skip info
-            note = ""
+            # Build completion note with skip + failure info. A failed index is
+            # not recorded, so it retries next run — but the operator must still
+            # see that this run was partial rather than a misleading green.
+            note_parts = []
             if result.chunks_skipped > 0:
-                note = f"Skipped {result.chunks_skipped} indices (already archived)"
+                note_parts.append(f"Skipped {result.chunks_skipped} indices (already archived)")
+            if result.errors:
+                sample = "; ".join(result.errors[:3])
+                note_parts.append(
+                    f"⚠ {len(result.errors)} index(es) failed — data may be "
+                    f"incomplete, will retry next run: {sample}")
+            note = ". ".join(note_parts)
             self.db.update_job(
                 job_id, status=JobStatus.COMPLETED, progress_pct=100.0,
                 messages_done=result.messages_total, messages_total=result.messages_total,
@@ -349,7 +364,7 @@ class OpenSearchExporter:
         # Pre-check disk space
         has_space, avail_mb = self.storage.check_disk_space(required_mb=50)
         if not has_space:
-            raise RuntimeError(f"Insufficient disk space: {avail_mb:.0f} MB available")
+            raise _FatalExportError(f"Insufficient disk space: {avail_mb:.0f} MB available")
 
         log.info("Single-scan export starting", index=index_name, batch_size=os_batch)
 
@@ -424,8 +439,13 @@ class OpenSearchExporter:
                 batch_size=os_batch,
                 delay_between_requests_ms=2,
             ):
-                if not batch or self._cancelled:
+                if self._cancelled:
                     break
+                if not batch:
+                    # An empty batch is NOT end-of-stream — skip it and let the
+                    # iterator's own StopIteration end the loop. Treating "empty
+                    # batch" as a terminator would silently truncate the index.
+                    continue
 
                 # Group docs in this batch by chunk boundary, then write each group
                 chunk_groups = {}  # {(c_from, c_to): [docs]}
@@ -522,7 +542,7 @@ class OpenSearchExporter:
                 if chunk_count % 20 == 0:
                     has_space, _ = self.storage.check_disk_space()
                     if not has_space:
-                        raise RuntimeError("Disk space exhausted during export")
+                        raise _FatalExportError("Disk space exhausted during export")
 
         except Exception:
             # Clean up current writer on error

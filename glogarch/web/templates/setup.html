@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>jt-glogarch - Setup</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/auth.css">
+</head>
+<body class="auth auth-top">
+    <div class="setup-card">
+        <div class="setup-header">
+            <h1>jt-glogarch <span class="version">v{{ version }}</span></h1>
+            <div class="step-desc tight" data-i18n="setup_welcome">Welcome to jt-glogarch</div>
+        </div>
+
+        <div class="setup-steps" id="setup-dots">
+            <div class="dot active"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        </div>
+
+        <div id="setup-error" class="setup-error hidden"></div>
+
+        <!-- Step 1: admin password -->
+        <div class="setup-step" data-step="1">
+            <div class="step-title"><span data-i18n="setup_s1_title">Administrator Password</span></div>
+            <div class="step-desc" data-i18n="setup_s1_desc"></div>
+            <div class="form-group"><label data-i18n="settings_admin_pass">New Password</label>
+                <input type="password" id="s1-pass" autocomplete="new-password"></div>
+            <div class="form-group"><label data-i18n="setup_confirm_pass">Confirm Password</label>
+                <input type="password" id="s1-pass2" autocomplete="new-password"></div>
+        </div>
+
+        <!-- Step 2: Graylog server -->
+        <div class="setup-step hidden" data-step="2">
+            <div class="step-title"><span data-i18n="setup_s2_title">Graylog Server</span></div>
+            <div class="step-desc" data-i18n="setup_s2_desc"></div>
+            <div class="form-group"><label data-i18n="settings_srv_name">Name</label>
+                <input type="text" id="s2-name" value="graylog-main"></div>
+            <div class="form-group"><label data-i18n="settings_srv_url">Graylog URL</label>
+                <input type="text" id="s2-url" placeholder="http://192.168.1.10:9000"></div>
+            <div class="form-group"><label data-i18n="settings_srv_auth_type">Authentication</label>
+                <select id="s2-auth">
+                    <option value="token" data-i18n-opt="settings_auth_token">API Token</option>
+                    <option value="userpass" data-i18n-opt="settings_auth_userpass">Username / Password</option>
+                </select></div>
+            <div class="form-group" id="s2-token-g"><label data-i18n="settings_srv_token">API Token</label>
+                <input type="password" id="s2-token" autocomplete="new-password"></div>
+            <div class="form-group hidden" id="s2-user-g"><label data-i18n="settings_srv_user">Username</label>
+                <input type="text" id="s2-user" autocomplete="off"></div>
+            <div class="form-group hidden" id="s2-pass-g"><label data-i18n="settings_srv_pass">Password</label>
+                <input type="password" id="s2-pass" autocomplete="new-password"></div>
+            <div class="form-group"><label class="check"><input type="checkbox" id="s2-verify"> <span data-i18n="settings_verify_ssl">Verify SSL certificate</span></label></div>
+            <button class="btn-secondary" id="s2-test" data-i18n="btn_test">Test</button>
+            <div id="s2-result" class="setup-result"></div>
+        </div>
+
+        <!-- Step 3: OpenSearch (optional) -->
+        <div class="setup-step hidden" data-step="3">
+            <div class="step-title"><span data-i18n="setup_s3_title">OpenSearch (optional)</span></div>
+            <div class="step-desc" data-i18n="setup_s3_desc"></div>
+            <div class="form-group"><label data-i18n="settings_os_hosts">OpenSearch Hosts (one per line)</label>
+                <textarea id="s3-hosts" rows="2" placeholder="http://192.168.1.10:9200"></textarea></div>
+            <div class="form-group"><label data-i18n="settings_os_user">Username</label>
+                <input type="text" id="s3-user" autocomplete="off"></div>
+            <div class="form-group"><label data-i18n="settings_os_pass">Password</label>
+                <input type="password" id="s3-pass" autocomplete="new-password"></div>
+            <div class="form-group"><label class="check"><input type="checkbox" id="s3-verify"> <span data-i18n="settings_verify_ssl">Verify SSL certificate</span></label></div>
+            <button class="btn-secondary" id="s3-test" data-i18n="btn_test">Test</button>
+            <div id="s3-result" class="setup-result"></div>
+        </div>
+
+        <!-- Step 4: archive path -->
+        <div class="setup-step hidden" data-step="4">
+            <div class="step-title"><span data-i18n="setup_s4_title">Archive Storage</span></div>
+            <div class="step-desc" data-i18n="setup_s4_desc"></div>
+            <div class="form-group"><label data-i18n="setup_archive_path">Archive directory</label>
+                <input type="text" id="s4-path" value="/data/graylog-archives"></div>
+            <div id="s4-result" class="setup-result"></div>
+        </div>
+
+        <!-- Step 5: done -->
+        <div class="setup-step hidden" data-step="5">
+            <div class="step-title ok"><span data-i18n="setup_s5_title">All Set</span></div>
+            <div class="step-desc" data-i18n="setup_s5_desc"></div>
+        </div>
+
+        <div class="setup-actions">
+            <button class="btn-secondary hidden" id="btn-back" data-i18n="setup_back">Back</button>
+            <div class="spacer"></div>
+            <span id="setup-busy" class="setup-result muted"></span>
+            <button class="btn-secondary hidden" id="btn-skip" data-i18n="setup_skip">Skip this step</button>
+            <button class="btn-primary" id="btn-next" data-i18n="setup_next">Next</button>
+        </div>
+
+        <div class="setup-footer">
+            <span class="setup-note" id="setup-progress"></span>
+            <div class="setup-controls">
+                <select id="lang-select">
+                    <option value="en">EN</option>
+                    <option value="zh-TW">中文</option>
+                </select>
+                <button class="theme-toggle" id="theme-toggle" title="Toggle theme"></button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/i18n.js"></script>
+    <script src="/static/js/setup.js"></script>
+</body>
+</html>

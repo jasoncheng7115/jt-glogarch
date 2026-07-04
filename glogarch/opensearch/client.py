@@ -51,20 +51,34 @@ class OpenSearchClient:
         import asyncio as _aio
         last_error: Exception | None = None
         max_retries = 3
-        for attempt in range(len(self._hosts)):
-            host_idx = (self._active_host + attempt) % len(self._hosts)
+        n_hosts = len(self._hosts)
+        for attempt in range(n_hosts):
+            host_idx = (self._active_host + attempt) % n_hosts
             url = f"{self._hosts[host_idx]}{path}"
+            host_exhausted = False  # transient failure on this host → try next
             for retry in range(max_retries):
                 try:
                     resp = await self._client.request(method, url, **kwargs)
                     if resp.status_code in (429, 500, 502, 503):
-                        wait = 2 ** retry
-                        log.warning("Transient error, retrying",
-                                    host=self._hosts[host_idx],
-                                    status=resp.status_code,
-                                    retry=retry + 1, wait=wait)
-                        await _aio.sleep(wait)
-                        continue
+                        last_error = httpx.HTTPStatusError(
+                            f"HTTP {resp.status_code} from {self._hosts[host_idx]}",
+                            request=resp.request, response=resp)
+                        if retry < max_retries - 1:
+                            wait = 2 ** retry
+                            log.warning("Transient error, retrying",
+                                        host=self._hosts[host_idx],
+                                        status=resp.status_code,
+                                        retry=retry + 1, wait=wait)
+                            await _aio.sleep(wait)
+                            continue
+                        # Retries exhausted on THIS host — fail over to the next
+                        # host instead of aborting. A single overloaded node
+                        # (503/429 from a circuit breaker or GC pause) must not
+                        # silently drop the whole index when a healthy node exists.
+                        log.warning("Transient errors exhausted, failing over to next host",
+                                    host=self._hosts[host_idx], status=resp.status_code)
+                        host_exhausted = True
+                        break
                     resp.raise_for_status()
                     if host_idx != self._active_host:
                         log.info("Failover to host", host=self._hosts[host_idx])
@@ -74,15 +88,13 @@ class OpenSearchClient:
                     last_error = e
                     log.warning("Host unreachable, trying next",
                                 host=self._hosts[host_idx], error=str(e))
+                    host_exhausted = True
                     break  # try next host
-                except httpx.HTTPStatusError as e:
-                    raise  # non-transient HTTP error
-            else:
-                # Retries exhausted on this host — raise last response
-                last_error = httpx.HTTPStatusError(
-                    f"Retries exhausted: HTTP {resp.status_code}",
-                    request=resp.request, response=resp)
-                break
+                except httpx.HTTPStatusError:
+                    raise  # non-transient HTTP error (4xx) — fail immediately
+            if host_exhausted:
+                continue  # advance outer loop to the next host
+        # All hosts exhausted their retries — raise the last error seen.
         if last_error:
             raise last_error
         raise RuntimeError("No hosts configured")
@@ -253,7 +265,12 @@ class OpenSearchClient:
             # Set search_after to the sort values of the last hit
             search_after = hits[-1].get("sort")
 
-            if not search_after or total_fetched >= total:
+            # Terminate ONLY when the sort cursor is gone or the page ran dry.
+            # Do NOT stop at `total_fetched >= total`: `total` is a point-in-time
+            # `_count` taken before pagination; if it under-counts (concurrent
+            # merge/refresh drift) the loop would stop early and skip the tail.
+            # The `if not hits: break` at the top of the loop is the real end.
+            if not search_after:
                 break
 
         log.info("Index fetch completed", index=index_name, fetched=total_fetched)

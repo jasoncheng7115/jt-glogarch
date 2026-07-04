@@ -1,0 +1,13 @@
+# OWASP ZAP baseline rule config for jt-glogarch.
+# Format (tab-separated): <pluginId>\t<IGNORE|WARN|FAIL>\t<justification>
+# The release gate (scripts/zap-scan.sh) fails on ANY Medium/High risk alert.
+# Only add IGNORE lines here for genuine false positives, WITH a written reason.
+#
+# The app is hardened to pass with NO ignores. Security controls:
+#   - CSP without 'unsafe-inline' (no inline scripts/handlers/styles; all via
+#     external JS event-delegation + CSS classes/CSSOM). object-src 'none',
+#     base-uri 'self', frame-ancestors 'none', form-action 'self'.
+#   - Session cookie Secure + HttpOnly + SameSite=Strict; anti-CSRF token on the
+#     login form; COOP/COEP/CORP set; Cache-Control no-store; Server banner off.
+#
+# (No rules are currently downgraded or ignored.)

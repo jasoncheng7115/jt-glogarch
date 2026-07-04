@@ -10,7 +10,7 @@ This checklist must pass before every release. Run `pytest` from the project roo
 
 ---
 
-## Automated Tests (157 tests)
+## Automated Tests (202 tests)
 
 ### Unit Tests
 
@@ -39,6 +39,8 @@ This checklist must pass before every release. Run `pytest` from the project roo
 | 21 | `test_health_endpoint.py` | 2 | Response structure (status/version/checks/issues), public path (no auth) |
 | 22 | `test_recent_fixes.py` | 11 | Notification timestamp local tz, test endpoint tz, retention default 3yr, Data Node detection/warning i18n/import modal/export mode, schedule OpenSearch display, config example retention, Discord/test endpoint correct args |
 | 23 | `test_opensearch_client.py` | 1 | `_doc` sort tiebreaker (not `_id` — circuit breaker fix) |
+| 25 | `test_config_writer.py` | 5 | Atomic config write (temp+`os.replace`), preserves untouched top-level keys, missing-file bootstrap, failure leaves original intact + no temp left, `reconcile_secret` keeps stored value when masked/empty |
+| 26 | `test_settings_api.py` | 10 | Fresh-install → `/setup` redirect, config endpoints require auth (401), setup password min-length, setup flow + gate closes (403 once configured), server secret masking + reconcile, delete reassigns default, OpenSearch save/mask, login with empty servers never 500, **upgrade** existing-servers skip wizard, **upgrade** partial edit preserves untouched fields + top-level keys |
 
 ### Integration Tests
 
@@ -109,7 +111,34 @@ Run these after all automated tests pass:
 
 - [ ] Copy `github/` to temp dir → `pip install` succeeds
 - [ ] `deploy/install.sh` references correct paths, systemd default = Yes
+- [ ] `deploy/install.sh` writes a minimal `config.yaml` with `servers: []` (triggers setup wizard)
 - [ ] `deploy/upgrade.sh` runs successfully (db-backup → git pull → install → restart → verify)
+- [ ] `deploy/upgrade.sh` never overwrites an existing `servers:` / `opensearch:` block
+
+### WebUI Connection Settings + Setup Wizard (v1.8.0) — Feature ↔ Test
+
+| Feature | Automated test | Manual check |
+|---|---|---|
+| Fresh install → guided setup | `test_settings_api::test_fresh_install_redirects_to_setup` | Open `https://host:8990/` on a `servers: []` config → lands on `/setup` |
+| Step 1 sets admin password + opens session | `test_setup_flow_then_gate_closes` | Wizard step 1 accepts ≥8-char password, then continues authenticated |
+| Setup is the only pre-auth write path, self-closing | `test_setup_flow_then_gate_closes` (403 after configured) | After finishing, `POST /api/setup/admin-password` → 403; `/setup` → `/login` |
+| Config endpoints require auth | `test_config_endpoints_require_auth` | Logged out, `/api/config/*` → 401 |
+| Add/edit/delete Graylog servers | `test_server_delete_reassigns_default` | Settings page: add, edit, delete, set default; test-connection button |
+| Secrets masked on GET, reconciled on save | `test_server_masking_and_secret_reconcile`, `test_opensearch_save_and_mask` | Save without changing a secret → `config.yaml` keeps the real value (no `***`) |
+| Global OpenSearch editable | `test_opensearch_save_and_mask` | Settings page: edit hosts/user/pass, test connection |
+| Live apply, no restart | (in-memory update asserted via subsequent GET) | Change a server → next export/import uses it without `systemctl restart` |
+| Login robust when unconfigured | `test_login_with_empty_servers_does_not_500` | `POST /login` on empty config never 500s |
+| **Upgrade**: existing servers skip wizard | `test_upgrade_existing_servers_skip_wizard` | Existing customer config → `/` → `/login` (not `/setup`) |
+| **Upgrade**: partial edit preserves fields | `test_upgrade_partial_edit_preserves_untouched_fields` | Edit only a server URL → token/user/pass/per-server OS + other top-level keys intact |
+
+### Security — OWASP ZAP DAST (must be 0 High / 0 Medium)
+
+- [ ] `scripts/zap-scan.sh` run against a live instance — **0 High, 0 Medium** alerts
+- [ ] Response carries `Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`
+- [ ] Session cookie is `Secure` + `HttpOnly` + `SameSite=Strict`
+- [ ] Non-static responses carry `Cache-Control: no-store`
+- [ ] `Server` response header is absent (uvicorn banner stripped)
+- [ ] Any accepted ZAP rule in `.zap/rules.tsv` has a written justification
 
 ### Test Results
 

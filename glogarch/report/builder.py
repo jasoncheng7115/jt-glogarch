@@ -1,0 +1,155 @@
+"""Assemble a report's HTML from structured content and render it to PDF.
+
+A report is: a `report` header dict (cover/branding/meta) + a list of `sections`.
+Each section is either an `image` (Phase 1 dashboard screenshot) or `charts`
+(Phase 2 widgets rendered as Chart.js charts / tables / single values).
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+from glogarch.report import renderer
+from glogarch.utils.logging import get_logger
+
+log = get_logger("report.builder")
+
+_TPL_DIR = Path(__file__).parent / "templates"
+_ASSETS = Path(__file__).parent / "assets"
+
+# Chart dataset palette (brand-forward, print-friendly).
+PALETTE = ["#6c63ff", "#29b6f6", "#4caf50", "#ff9800", "#ef5350", "#ab47bc",
+           "#26a69a", "#ec407a", "#8d6e63", "#78909c"]
+
+_I18N = {
+    "zh-TW": {"period": "期間", "generated": "產生時間", "author": "產生者", "server": "伺服器",
+              "toc": "目錄", "summary": "摘要", "no_capture": "（無法擷取儀表板畫面）",
+              "no_data": "（無資料）"},
+    "en": {"period": "Period", "generated": "Generated", "author": "Author", "server": "Server",
+           "toc": "Table of Contents", "summary": "Executive Summary", "no_capture": "(dashboard capture unavailable)",
+           "no_data": "(no data)"},
+}
+
+
+def _env() -> Environment:
+    return Environment(
+        loader=FileSystemLoader(str(_TPL_DIR)),
+        autoescape=select_autoescape(["html", "xml", "j2"]),
+    )
+
+
+def _chartjs_src() -> str:
+    return (_ASSETS / "chart.umd.min.js").read_text(encoding="utf-8")
+
+
+def build_html(report: dict, sections: list[dict]) -> str:
+    """Render the report HTML. Assigns canvas ids and collects Chart.js configs."""
+    lang = report.get("lang", "zh-TW")
+    charts = []
+    n = 0
+    for sec in sections:
+        if sec.get("type") == "charts":
+            for w in sec.get("widgets", []):
+                if w.get("kind") == "chart":
+                    n += 1
+                    w["canvas_id"] = f"chart{n}"
+                    charts.append({"canvas_id": w["canvas_id"], "config": w["config"]})
+    toc = [sec["title"] for sec in sections]
+    tpl = _env().get_template("report.html.j2")
+    return tpl.render(
+        report=report,
+        sections=sections,
+        toc=toc,
+        t=_I18N.get(lang, _I18N["zh-TW"]),
+        chartjs_src=_chartjs_src(),
+        charts_json=json.dumps(charts),
+    )
+
+
+def render_report_pdf(report: dict, sections: list[dict]) -> bytes:
+    html = build_html(report, sections)
+    return renderer.render_pdf_sync(
+        html,
+        report_title=report.get("title", ""),
+        header_text=report.get("header_text", ""),
+        generated_at=report.get("generated_at", ""),
+    )
+
+
+# --- Chart config helpers (reused by the Graylog data mapper) ---
+
+def bar_chart(labels, values, label="", horizontal=False):
+    return {
+        "type": "bar",
+        "data": {"labels": labels, "datasets": [{"label": label, "data": values,
+                 "backgroundColor": PALETTE[0], "borderRadius": 3}]},
+        "options": {"indexAxis": "y" if horizontal else "x", "responsive": True,
+                    "maintainAspectRatio": False,
+                    "plugins": {"legend": {"display": bool(label)}},
+                    "scales": {"y": {"beginAtZero": True}}},
+    }
+
+
+def line_chart(labels, series):
+    """series: list of {label, data}."""
+    ds = []
+    for i, s in enumerate(series):
+        c = PALETTE[i % len(PALETTE)]
+        ds.append({"label": s.get("label", ""), "data": s["data"], "borderColor": c,
+                   "backgroundColor": c + "22", "fill": True, "tension": 0.3,
+                   "pointRadius": 0, "borderWidth": 2})
+    return {"type": "line",
+            "data": {"labels": labels, "datasets": ds},
+            "options": {"responsive": True, "maintainAspectRatio": False,
+                        "plugins": {"legend": {"display": len(ds) > 1}},
+                        "scales": {"y": {"beginAtZero": True}}}}
+
+
+def pie_chart(labels, values):
+    return {"type": "doughnut",
+            "data": {"labels": labels, "datasets": [{"data": values,
+                     "backgroundColor": PALETTE}]},
+            "options": {"responsive": True, "maintainAspectRatio": False,
+                        "plugins": {"legend": {"position": "right"}}}}
+
+
+# --- Sample report (used for renderer verification / demo) ---
+
+def sample_report() -> tuple[dict, list[dict]]:
+    report = {
+        "title": "安全事件週報", "subtitle": "Graylog 日誌分析與封存摘要報告",
+        "kicker": "Graylog Open Archive", "beta": True, "lang": "zh-TW",
+        "period": "2026-06-26 ~ 2026-07-02", "generated_at": "2026-07-03 16:20 +08:00",
+        "author": "Jason Cheng（Jason Tools）", "server": "graylog-01 (192.168.1.10)",
+        "header_text": "安全事件週報 — 機密",
+        "summary": "本週共擷取 <b>567,146,364</b> 筆日誌，較上週成長 4.2%。偵測到 3 起需關注的登入異常，均已由 SOC 團隊處理完畢。防火牆拒絕流量維持穩定，無重大資安事件。",
+        "kpis": [{"value": "567M", "label": "日誌總數"}, {"value": "3", "label": "異常事件"},
+                 {"value": "99.98%", "label": "系統可用率"}, {"value": "1.27 TB", "label": "封存資料量"}],
+    }
+    sections = [
+        {"type": "charts", "title": "日誌流量趨勢", "description": "過去 7 天每日日誌接收量與拒絕流量。",
+         "widgets": [
+            {"kind": "chart", "title": "每日日誌量", "tall": True,
+             "config": line_chart(["週一", "週二", "週三", "週四", "週五", "週六", "週日"],
+                                   [{"label": "接收", "data": [72, 81, 78, 90, 95, 60, 58]},
+                                    {"label": "拒絕", "data": [12, 9, 14, 8, 11, 5, 4]}])},
+            {"kind": "chart", "title": "來源分布(Top 5)",
+             "config": bar_chart(["fw-core", "vpn-gw", "web-01", "ad-dc", "proxy"],
+                                  [4200, 3100, 2400, 1800, 900], horizontal=True)},
+         ]},
+        {"type": "charts", "title": "登入與威脅概況",
+         "widgets": [
+            {"kind": "chart", "title": "登入結果占比",
+             "config": pie_chart(["成功", "失敗", "鎖定"], [8420, 312, 18])},
+            {"kind": "single", "title": "本週登入失敗", "value": "312", "label": "次(較上週 -8%)"},
+            {"kind": "table", "title": "需關注的事件",
+             "columns": ["時間", "來源 IP", "事件", "狀態"],
+             "rows": [["06-28 03:14", "203.0.113.9", "多次登入失敗", "已封鎖"],
+                      ["06-30 22:41", "198.51.100.7", "非常規時段登入", "已確認"],
+                      ["07-01 11:02", "192.0.2.55", "權限變更", "已核准"]]},
+         ]},
+    ]
+    return report, sections
