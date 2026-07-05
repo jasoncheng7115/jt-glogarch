@@ -315,4 +315,7 @@ code.fp-hash { font-size: 11px; background: var(--bg-subtle, #f3f4f6); padding: 
 .fp-cmd { background: #1f2430; color: #e5e7eb; padding: 8px 12px; border-radius: 6px; font-size: 12px; overflow-x: auto; user-select: all; }
 
 /* Inline connection-test result line (Graylog servers table), like OpenSearch. */
-.test-result-line { margin-top: 10px; font-size: 13px; min-height: 18px; }
+/* Match the OpenSearch result line exactly: base font size (1rem), not the
+   table's 0.9em — so the Graylog per-row result reads the same size. */
+.test-result-line { font-size: 1rem; margin: 2px 0; }
+.srv-result-row td { padding: 4px 14px 8px; border-bottom: 1px solid var(--border); }

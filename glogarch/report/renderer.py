@@ -246,13 +246,19 @@ def _apply_watermark(pdf: bytes, wm: dict) -> bytes:
         # footprint — this guarantees every tile (and therefore every page) shows
         # the complete selected watermark text, never clipping any of it.
         lines = text.split("\n")
-        limit = W * 1.35 if angle else W * 0.95   # diagonal allows a longer line
+        # Keep the widest line well within the page so the WHOLE rotated chip
+        # (both lines) lands complete inside a tile — otherwise the long info
+        # line spans the page and every tile only shows a fragment. A 45° line of
+        # width w occupies w/√2 horizontally, so cap w so that footprint is ≤
+        # ~0.8·W (leaves room for the second line's height + tile spacing).
+        lines = [ln for ln in lines if ln.strip()] or lines
+        limit = (W * 0.8 * 1.414) if angle else (W * 0.9)   # ≈0.8·W after rotation
         def _fit(fs):
             f = ImageFont.truetype(fontfile, fs) if fontfile else ImageFont.load_default()
             return f, max((d0.textlength(ln, font=f) for ln in lines), default=1)
         font, widest = _fit(fontsize)
-        while fontsize > 14 and widest > limit:
-            fontsize -= 3
+        while fontsize > 11 and widest > limit:
+            fontsize -= 2
             font, widest = _fit(fontsize)
         # One text chip, then rotate + tile it across the page. Text may be two
         # lines (base + appended info) — measure/draw as multi-line, centred.

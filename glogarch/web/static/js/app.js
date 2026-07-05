@@ -253,14 +253,15 @@ async function loadDashboard() {
             window._defaultServerName = servers.items[0].name;
         }
         const tbody = document.querySelector('#servers-table tbody');
-        tbody.innerHTML = servers.items.map(s => `
+        tbody.innerHTML = servers.items.map((s, i) => `
             <tr>
                 <td>${esc(s.name)}</td>
                 <td>${esc(s.url)}</td>
                 <td>${s.connected ? statusBadge('completed') : statusBadge('failed')}</td>
                 <td>${s.version || '-'}${s.has_datanode ? ' <span class="u031">(Data Node)</span>' : ''}</td>
-                <td><button class="btn-sm btn-secondary" data-act="testGraylogServer" data-arg="${esc(s.name)}">${icon('refresh', 14)} ${t('btn_test_connection')}</button></td>
+                <td><button class="btn-sm btn-secondary" data-act="testGraylogServer" data-args="${esc(JSON.stringify([s.name, i]))}">${icon('refresh', 14)} ${t('btn_test_connection')}</button></td>
             </tr>
+            <tr class="srv-result-row hidden" id="srv-result-row-${i}"><td colspan="5"><div id="srv-result-${i}" class="test-result-line"></div></td></tr>
         `).join('');
     } catch (e) {
         console.error('Failed to load servers:', e);
@@ -3181,10 +3182,13 @@ function deleteServer(name) {
     });
 }
 
-async function testGraylogServer(name) {
-    // Inline result (like the OpenSearch panel), no popup. Prefer the dashboard
-    // result line; fall back to the settings one.
-    const el = document.getElementById('servers-result') || document.getElementById('config-servers-result');
+async function testGraylogServer(name, i) {
+    // Inline result shown in a sub-row directly under this server (like the
+    // OpenSearch panel shows its result inside its own box).
+    const row = (i !== undefined) ? document.getElementById('srv-result-row-' + i) : null;
+    const el = (i !== undefined) ? document.getElementById('srv-result-' + i)
+        : (document.getElementById('servers-result') || document.getElementById('config-servers-result'));
+    if (row) row.classList.remove('hidden');
     if (el) el.innerHTML = `<span class="u022">${esc(name)} — ${t('btn_test_connection')}…</span>`;
     const r = await fetchJSON(`${API}/config/servers/${encodeURIComponent(name)}/test`, { method: 'POST' });
     const html = (r && r.connected)

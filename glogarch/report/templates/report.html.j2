@@ -75,6 +75,13 @@
   table.heat th.heat-row, table.heat th.heat-corner { width: 19mm; }
   table.heat th.heat-row { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 8px; padding: 2px 6px 2px 2px; }
   table.heat th.heat-corner { background: #fff; border: none; }
+  /* Long column-category names in narrow columns → render vertical so they
+     don't overlap each other. */
+  table.heat th.col-hdr { writing-mode: vertical-rl; transform: rotate(180deg);
+     white-space: nowrap; vertical-align: bottom; text-align: left; height: 30mm;
+     padding: 2px 1px; }
+  /* Grouped-row separator: a stronger line where a new top-level key begins. */
+  table.data tr.grp-start td { border-top: 1.5px solid #c7ccd6; }
   table.heat td { padding: 4px 5px; border: 1px solid #fff; text-align: center; font-variant-numeric: tabular-nums; }
   table.heat.wide { font-size: 8px; }
   table.heat.wide th, table.heat.wide td { padding: 2px 3px; }
@@ -112,6 +119,7 @@
         <div>{{ t.generated }}: {{ report.generated_at }}</div>
         {% if report.author %}<div>{{ t.author }}: {{ report.author }}</div>{% endif %}
         {% if report.server %}<div>{{ t.server }}: {{ report.server }}</div>{% endif %}
+        {% if report.app_version %}<div>{{ t.system }}: jt-glogarch v{{ report.app_version }}</div>{% endif %}
       </div>
     </div>
   </div>
@@ -156,13 +164,13 @@
             {% if w.trend %}<div class="trend trend-{{ w.trend.cls }}">{{ w.trend.arrow }} {{ w.trend.delta }}{% if w.trend.pct %} / {{ w.trend.pct }}{% endif %}</div>{% endif %}</div>
         {% elif w.kind == 'table' %}
           <table class="data{% if w.columns|length > 6 %} wide{% endif %}"><thead><tr>{% for c in w.columns %}<th{% if w.numeric_from is defined and loop.index0 >= w.numeric_from %} class="num"{% endif %}>{{ c }}</th>{% endfor %}</tr></thead>
-          <tbody>{% for row in w.rows %}<tr>{% for cell in row %}<td{% if w.numeric_from is defined and loop.index0 >= w.numeric_from %} class="num"{% endif %}>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
+          <tbody>{% for row in w.rows %}{% set _cells = row.cells if row is mapping else row %}<tr{% if row is mapping and row.group and not loop.first %} class="grp-start"{% endif %}>{% for cell in _cells %}<td{% if w.numeric_from is defined and loop.index0 >= w.numeric_from %} class="num"{% endif %}>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
           {% if w.rows_note %}<div class="rows-note">{{ w.rows_note }}</div>{% endif %}
         {% elif w.kind == 'map' %}
           <div class="map-wrap">{{ w.svg | safe }}</div>
         {% elif w.kind == 'heatmap' %}
           <div class="heat-scroll"><table class="heat{% if w.wide %} wide{% endif %}">
-            <thead><tr><th class="heat-corner"></th>{% for c in w.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+            <thead><tr><th class="heat-corner"></th>{% for c in w.columns %}<th class="col-hdr">{{ c }}</th>{% endfor %}</tr></thead>
             <tbody>{% for row in w.rows %}<tr><th class="heat-row">{{ row.label }}</th>{% for cell in row.cells %}<td style="background:{{ cell.bg }};color:{{ cell.fg }}">{{ cell.text }}</td>{% endfor %}</tr>{% endfor %}</tbody>
           </table></div>
           <div class="heat-footer">

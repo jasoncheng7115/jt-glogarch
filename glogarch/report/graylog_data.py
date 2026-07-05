@@ -603,6 +603,27 @@ def _series_label(s):
     return s.get("function") or (s.get("config") or {}).get("name") or "count()"
 
 
+def _grouped_rows(raw, n_keys):
+    """Blank repeated leading row-pivot values (Graylog-style grouped rows) so a
+    sub-divided key like `192.168.1.1` shows once, with its sub-rows visibly
+    belonging to it; flag the first row of each top-level group for a separator.
+    `raw` is a list of full cell lists (the n_keys key columns come first)."""
+    out, prev = [], []
+    for cells in raw:
+        keys = cells[:n_keys]
+        disp = list(cells)
+        same = True
+        for i in range(n_keys):
+            if same and i < len(prev) and prev[i] == keys[i]:
+                disp[i] = ""          # same as the row above → blank (grouped)
+            else:
+                same = False
+        group = (not prev) or n_keys == 0 or keys[:1] != prev[:1]
+        out.append({"cells": disp, "group": group})
+        prev = keys
+    return out
+
+
 def _pivot_to_table(cfg, title, drows, col_pivots):
     """Render a Graylog table widget as a report table (columns + rows)."""
     row_pivots = cfg.get("row_pivots") or []
@@ -632,15 +653,15 @@ def _pivot_to_table(cfg, title, drows, col_pivots):
         pivot_cols = sorted(pivot_cols)[:12]
         colnames = (total_cols if cfg.get("rollup") else []) + pivot_cols
         columns = rp_fields + colnames
-        rows = []
+        raw = []
         for r in drows[:40]:
             vmap = {" / ".join(str(x) for x in (v.get("key") or [])): v.get("value")
                     for v in (r.get("values") or [])}
             cells = [str(x) for x in (r.get("key") or [])]
             cells += [(_fmt_metric(vmap[c]) if vmap.get(c) is not None else "") for c in colnames]
-            rows.append(cells)
-        return {"kind": "table", "title": title, "columns": columns, "rows": rows,
-                "numeric_from": len(rp_fields)}
+            raw.append(cells)
+        return {"kind": "table", "title": title, "columns": columns,
+                "rows": _grouped_rows(raw, len(rp_fields)), "numeric_from": len(rp_fields)}
     # simple table: row-pivot key columns + one column per series. Map each
     # value to its series by KEY (the last key element is the series function),
     # so a null metric (e.g. an empty latest(host_hostname)) leaves a BLANK cell
@@ -648,7 +669,7 @@ def _pivot_to_table(cfg, title, drows, col_pivots):
     series_labels = [_series_label(s) for s in series] or ["count()"]
     series_fns = [s.get("function") for s in series]
     columns = rp_fields + series_labels
-    rows = []
+    raw = []
     for r in drows[:40]:
         rvals = r.get("values") or []
         vmap = {}
@@ -664,9 +685,9 @@ def _pivot_to_table(cfg, title, drows, col_pivots):
             else:
                 val = ordered[i] if i < len(ordered) else None
             cells.append(_fmt_metric(val) if val is not None else "")
-        rows.append(cells)
-    return {"kind": "table", "title": title, "columns": columns, "rows": rows,
-            "numeric_from": len(rp_fields)}
+        raw.append(cells)
+    return {"kind": "table", "title": title, "columns": columns,
+            "rows": _grouped_rows(raw, len(rp_fields)), "numeric_from": len(rp_fields)}
 
 
 def _barmode(cfg: dict) -> str:
@@ -912,7 +933,9 @@ def _pivot_to_heatmap(cfg, title, drows, col_pivots, show_values=False):
     # 0 and max labels (mirrors Graylog's heatmap colourbar).
     stops = _COLORSCALES.get(scale) or _COLORSCALES["Viridis"]
     gradient = "linear-gradient(to right, " + ", ".join(f"rgb({r},{g},{b})" for r, g, b in stops) + ")"
-    return {"kind": "heatmap", "title": title, "columns": col_keys, "rows": rows_out,
+    # Truncate long category headers (they render vertically; keep them compact).
+    col_hdrs = [(c if len(c) <= 20 else c[:19] + "…") for c in col_keys]
+    return {"kind": "heatmap", "title": title, "columns": col_hdrs, "rows": rows_out,
             "wide": len(col_keys) > 8, "truncated": truncated,
             "legend_gradient": gradient, "legend_min": "0", "legend_max": _fmt_metric(mx)}
 

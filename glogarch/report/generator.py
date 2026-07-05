@@ -41,6 +41,7 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
         "generated_at": now.strftime("%Y-%m-%d %H:%M %z"),
         "server": cfg.get("server", ""),
         "summary": cfg.get("summary", ""),
+        "app_version": __import__("glogarch").__version__,
     }
 
     # Append the Graylog version to the server line, e.g. "log4 (Graylog 7.1.2)".
@@ -156,11 +157,26 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
             parts.append(" / ".join(n for n in names if n))
         if "recipients" in ap and cfg.get("recipients"):
             parts.append(", ".join(cfg.get("recipients")))
-        # At most TWO lines: the base text on line 1, and ALL appended fields
-        # combined on line 2 (a single wide line clips some text off the tile).
-        base_line = parts[0]
-        extra = "   ".join(p for p in parts[1:] if p)
-        text = base_line + ("\n" + extra if extra else "")
+        # Lay the items out over at most TWO BALANCED lines (each ~half the total
+        # width) so the whole rotated watermark chip fits on the page at a
+        # readable size — a single wide line spans the diagonal and every tile
+        # shows only a fragment. CJK glyphs count double toward width.
+        items = [p for p in parts if p]
+
+        def _w(s):
+            return sum(2 if ord(c) > 0x2E80 else 1 for c in s)
+
+        if len(items) <= 1:
+            text = items[0] if items else ""
+        else:
+            half = sum(_w(x) for x in items) / 2
+            line1, line2, acc = [], [], 0
+            for it in items:
+                if not line1 or (acc < half and len(line1) < len(items) - 1):
+                    line1.append(it); acc += _w(it)
+                else:
+                    line2.append(it)
+            text = "   ".join(line1) + ("\n" + "   ".join(line2) if line2 else "")
         watermark = {"text": text, "size": cfg.get("watermark_size", "large"),
                      "direction": cfg.get("watermark_direction", "diagonal"),
                      "opacity": float(cfg.get("watermark_opacity", 0.10) or 0.10)}
