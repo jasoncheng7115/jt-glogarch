@@ -173,3 +173,25 @@ committed with every GitHub push. It records: pass/fail status, version,
 timestamp, platform, full pytest output, and version check result.
 
 See the latest results: [TEST-RESULTS.md](TEST-RESULTS.md)
+
+## Security scan (larger releases)
+
+Every **larger version change** (minor/major, e.g. `1.11.0`, `2.0.0` — not routine
+patch releases unless they change the web surface) must pass an **OWASP ZAP** scan
+before it is considered done. **Fix every finding until there are zero High /
+Medium / Low risk alerts** (or suppress a false positive with a documented reason).
+
+```bash
+# Baseline (passive: spider + passive rules — no attack payloads, no data changes)
+docker run --rm -t zaproxy/zaproxy zap-baseline.py -t https://<host>:8990
+
+# Full active scan sends SQLi/XSS payloads and can create/modify data via the API —
+# run ONLY against a clean/scratch instance, with explicit approval.
+```
+
+The app already sets a strong header/cookie baseline via `SecurityHeadersMiddleware`
+(`glogarch/web/app.py`): strict CSP, HSTS, `X-Frame-Options: DENY`, `nosniff`,
+Referrer/Permissions-Policy, COOP/COEP, and `HttpOnly; SameSite=Strict; Secure`
+cookies — so most common ZAP header/cookie findings are pre-empted.
+
+Save each scan report under `zap/<YYYY-MM-DD>/` (JSON + summary). **Do NOT commit these to GitHub** (they contain scan-target hosts) — `zap/` is git-ignored.

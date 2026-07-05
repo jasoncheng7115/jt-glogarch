@@ -2,6 +2,27 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.10.10] - 2026-07-05
+
+### Fixed
+
+- **Job/report notes are language-neutral (English).** The Task Log / report-history
+  note for email delivery no longer shows hardcoded Chinese ("Email 已寄送") in the
+  English UI — stored operational text is now English ("Email sent" / "Email failed: …").
+- **Report TOC numbers align.** Table-of-contents item numbers are right-aligned in a
+  fixed-width column, so a two-digit number (10., 11., …) no longer shifts its title
+  out of line with the single-digit rows.
+
+### Changed
+
+- **Cover logo enlarged** from 46px to 72px height (aspect preserved).
+
+### Security
+
+- Passed an **OWASP ZAP baseline scan** of the web UI with **0 High / 0 Medium /
+  0 Low** findings (62 passive rules pass; remaining alerts are Informational
+  detection tags). Larger releases now require a clean ZAP scan — see `TESTING.md`.
+
 ## [1.10.9] - 2026-07-05
 
 ### PDF Reports (beta)

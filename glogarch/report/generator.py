@@ -255,7 +255,7 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
             result["emailed"] = True
         except Exception as e:
             result["email_error"] = sanitize(str(e))
-            hist_error = f"Email 寄送失敗：{result['email_error']}"
+            hist_error = f"Email delivery failed: {result['email_error']}"
             log.warning("Report email failed", error=result["email_error"])
 
     db.record_report_history(name, str(path), filename, len(pdf), "completed",

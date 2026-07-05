@@ -19,8 +19,8 @@
     background: var(--brand);
     color: #fff; height: 261mm; padding: 26mm 22mm; display: flex; flex-direction: column;
   }
-  .cover-logo { height: 46px; margin-bottom: 9mm; }
-  .cover-logo img { height: 46px; }
+  .cover-logo { height: 72px; margin-bottom: 9mm; }
+  .cover-logo img { height: 72px; }
   .cover-brand { display: flex; flex-direction: column; gap: 2.5mm; }
   .cover-kicker { font-size: 13px; letter-spacing: 4px; text-transform: uppercase; opacity: .85; display: inline-block; }
   .cover-spacer { flex: 1; }
@@ -36,7 +36,10 @@
   .desc { color: var(--muted); font-size: 11px; margin: 0 0 3mm; }
   .toc-title, .summary-title { font-size: 20px; font-weight: 800; margin: 10mm 0 4mm; padding-bottom: 3mm; border-bottom: 3px solid var(--brand); }
   .toc-item { display:flex; justify-content:space-between; padding: 3mm 0; border-bottom: 1px dotted var(--line); font-size: 13px; }
-  .toc-item .n { color: var(--brand); font-weight: 700; margin-right: 8px; }
+  .toc-item .n { color: var(--brand); font-weight: 700; margin-right: 10px;
+    display: inline-block; min-width: 30px; text-align: right;
+    flex: 0 0 auto; white-space: nowrap; }
+  .toc-item > span { display: flex; align-items: baseline; }
 
   .card { border: 1px solid var(--line); border-radius: 8px; padding: 6mm; margin: 3mm 0 6mm; page-break-inside: avoid; }
   .chart-wrap { position: relative; width: 100%; height: 62mm; }
@@ -67,7 +70,10 @@
 
   /* Heatmap grid (row-pivot × column-pivot, colour-graded cells) */
   .heat-scroll { width: 100%; overflow: hidden; }
-  table.heat { width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; }
+  /* width:auto (not 100%) so the value columns stay as narrow as their fixed
+     width instead of stretching to fill the page — a vertical header only needs
+     the font's thickness, so the grid can be compact. */
+  table.heat { width: auto; max-width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; }
   /* Keep the header row + first column as compact as possible so the coloured
      value cells get the most space. */
   table.heat th { background: #f3f4f6; font-weight: 600; padding: 2px 3px; border: 1px solid var(--line);
@@ -79,7 +85,7 @@
      don't overlap each other. */
   table.heat th.col-hdr { writing-mode: vertical-rl; transform: rotate(180deg);
      white-space: nowrap; vertical-align: bottom; text-align: left; height: 30mm;
-     padding: 2px 1px; }
+     width: 5.5mm; padding: 2px 0; }
   /* Grouped-row separator: a stronger line where a new top-level key begins. */
   table.data tr.grp-start td { border-top: 1.5px solid #c7ccd6; }
   /* Message preview (Graylog "Show message in new row"): the full message text
@@ -90,7 +96,7 @@
   table.data tr.msg-preview td { border-top: 0; padding-top: 0; padding-bottom: 6px;
     color: #1f6feb; font-family: "DejaVu Sans Mono", "Courier New", monospace;
     font-size: 8px; line-height: 1.35; white-space: pre-wrap; word-break: break-all; }
-  table.heat td { padding: 4px 5px; border: 1px solid #fff; text-align: center; font-variant-numeric: tabular-nums; }
+  table.heat td { padding: 4px 1px; border: 1px solid #fff; text-align: center; font-variant-numeric: tabular-nums; }
   table.heat.wide { font-size: 8px; }
   table.heat.wide th, table.heat.wide td { padding: 2px 3px; }
   /* One tidy caption line: colour scale on the left, truncation note beside it. */

@@ -2421,9 +2421,9 @@ async def generate_report_now(request: Request, name: str):
             _units = int((_res or {}).get("units", 0) or 0)
             _note = f"report={name}"
             if (_res or {}).get("email_error"):
-                _note += f" | ⚠ Email 寄送失敗：{_res['email_error']}"
+                _note += f" | ⚠ Email failed: {_res['email_error']}"
             elif (_res or {}).get("emailed"):
-                _note += " | Email 已寄送"
+                _note += " | Email sent"
             if job_id:
                 db.update_job(job_id, status=JobStatus.COMPLETED, completed_at=_dt.utcnow(),
                               progress_pct=100.0, messages_done=_units, messages_total=_units,

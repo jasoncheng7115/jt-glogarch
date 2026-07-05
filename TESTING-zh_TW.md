@@ -144,3 +144,23 @@ python3 -m pytest tests/test_integration.py -v
 輸出、版本檢查結果。
 
 最新結果：[TEST-RESULTS.md](TEST-RESULTS.md)
+
+## 安全掃描（較大版本異動）
+
+每次**較大版本異動**（minor／major，例如 `1.11.0`、`2.0.0`——例行 patch 除非動到 Web 介面否則不需）
+在視為完成前，都必須通過 **OWASP ZAP** 掃描。**所有 findings 都要修到「高／中／低」風險為零**
+（或以文件化理由抑制誤判）。
+
+```bash
+# Baseline（被動：spider ＋被動規則，不送攻擊 payload、不會改資料）
+docker run --rm -t zaproxy/zaproxy zap-baseline.py -t https://<host>:8990
+
+# Full 主動掃描會送 SQLi/XSS payload、可能透過 API 建立/修改資料——
+# 只在乾淨／測試實例、且經明確同意後才執行。
+```
+
+應用已透過 `SecurityHeadersMiddleware`（`glogarch/web/app.py`）設好完整的標頭/cookie 基線：
+嚴格 CSP、HSTS、`X-Frame-Options: DENY`、`nosniff`、Referrer/Permissions-Policy、COOP/COEP，
+以及 `HttpOnly; SameSite=Strict; Secure` cookie——因此 ZAP 最常見的標頭/cookie findings 已先擋掉。
+
+每次掃描報告存到 `zap/<YYYY-MM-DD>/`（JSON ＋摘要）。**不要 commit 到 GitHub**（含掃描目標主機）——`zap/` 已在 gitignore。
