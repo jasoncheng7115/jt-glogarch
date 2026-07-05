@@ -2,6 +2,26 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.10.12] - 2026-07-06
+
+### Fixed
+
+- **`install.sh` no longer silently aborts on non-interactive installs.** The
+  "Install systemd service?" prompt used `read` under `set -e`; when stdin is not
+  a terminal (`curl | bash`, `ssh 'bash …'`, redirected input) `read` hits EOF and
+  returns non-zero, which aborted the whole script right there — silently skipping
+  systemd unit install and enable. The prompt now runs only when stdin is a TTY and
+  defaults to installing the service otherwise.
+
+### Changed
+
+- **`install.sh` used as an upgrade now restarts a running service.** install.sh
+  detects at startup whether `jt-glogarch` is already active; if so, after
+  reinstalling it restarts the unit and verifies it came back up, so the newly
+  installed code actually takes effect (a package reinstall alone does not restart
+  the running process). Fresh installs are unchanged — they still print the
+  `systemctl enable --now jt-glogarch` hint.
+
 ## [1.10.11] - 2026-07-05
 
 ### PDF Reports (beta) — rebuild fidelity

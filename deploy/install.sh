@@ -14,6 +14,16 @@ DB_PATH="$INSTALL_DIR/jt-glogarch.db"
 echo "=== jt-glogarch Installer ==="
 echo ""
 
+# Detect whether we are running over an existing, already-running install
+# (i.e. install.sh is being used as an upgrade). If the service was active
+# before we touched anything, we must restart it afterwards so the new code
+# actually takes effect — reinstalling dist-packages does NOT restart the
+# running process on its own.
+WAS_ACTIVE=no
+if command -v systemctl &>/dev/null; then
+    systemctl is-active --quiet jt-glogarch 2>/dev/null && WAS_ACTIVE=yes
+fi
+
 # Check Python version
 if ! command -v python3 &>/dev/null; then
     echo "Error: python3 not found. Please install Python 3.10+"
@@ -196,13 +206,34 @@ echo "  $CONFIG_DIR  => $SERVICE_USER"
 # --- Install systemd service (optional) ---
 if [ -d /etc/systemd/system ]; then
     echo ""
-    read -p "Install systemd service? [Y/n] " -n 1 -r
-    echo
+    # Only prompt when stdin is an interactive terminal. Under a piped /
+    # non-interactive install (ssh 'bash ...', curl | bash, redirected stdin)
+    # `read` hits EOF and returns non-zero — which, with `set -e`, would abort
+    # the whole script right here and silently skip service install + restart.
+    # Default to installing the service in that case.
+    REPLY=Y
+    if [ -t 0 ]; then
+        read -p "Install systemd service? [Y/n] " -n 1 -r || true
+        echo
+    fi
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         cp "$INSTALL_DIR/deploy/jt-glogarch.service" /etc/systemd/system/
         systemctl daemon-reload
         echo "Service installed."
-        echo "  Enable:  systemctl enable --now jt-glogarch"
+        if [ "$WAS_ACTIVE" = "yes" ]; then
+            # install.sh was used as an upgrade over a running service —
+            # restart so the newly installed code actually takes effect.
+            echo "Existing service was running — restarting to load the new version..."
+            systemctl restart jt-glogarch
+            sleep 2
+            if systemctl is-active --quiet jt-glogarch; then
+                echo "  Service restarted (now running new version)."
+            else
+                echo "  WARNING: service failed to restart — check: journalctl -u jt-glogarch -n 50"
+            fi
+        else
+            echo "  Enable:  systemctl enable --now jt-glogarch"
+        fi
         echo "  Status:  systemctl status jt-glogarch"
         echo "  Logs:    journalctl -u jt-glogarch -f"
     fi

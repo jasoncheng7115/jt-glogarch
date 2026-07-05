@@ -2,6 +2,22 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.10.12] - 2026-07-06
+
+### 修正
+
+- **`install.sh` 在非互動安裝時不再無聲中止。** 「Install systemd service？」提示原本在
+  `set -e` 下使用 `read`；當 stdin 不是終端機時（`curl | bash`、`ssh 'bash …'`、導向輸入），
+  `read` 讀到 EOF 回傳非零值，導致整個指令碼在該處中止——無聲地跳過 systemd 服務單元的
+  安裝與啟用。此提示現在僅在 stdin 為 TTY 時才出現，非互動時預設安裝服務。
+
+### 變更
+
+- **以 `install.sh` 進行升級時，會重啟執行中的服務。** install.sh 於啟動時偵測
+  `jt-glogarch` 是否已在執行；若是，重新安裝完成後會重啟該服務單元並確認其恢復運作，
+  讓新安裝的程式碼確實生效（僅重裝套件並不會重啟執行中的行程）。全新安裝行為不變——
+  仍會印出 `systemctl enable --now jt-glogarch` 的提示。
+
 ## [1.10.11] - 2026-07-05
 
 ### 統計報表（beta）— rebuild 擬真
