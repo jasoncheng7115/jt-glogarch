@@ -661,6 +661,9 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
     drows = [r for r in rows if r.get("source") == "leaf"]
     if not drows:
         drows = rows
+    # Honour each row pivot's "Skip Empty Values" — drop rows whose skip-empty
+    # field value is blank (Graylog excludes them; mirror it).
+    drows = _skip_empty_rows(drows, row_pivots)
 
     # numeric single value: no row pivot (just a total)
     if viz == "numeric" or (not row_pivots):
@@ -704,9 +707,19 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
             top = sorted(zip(disp, values), key=lambda x: (x[1] or 0), reverse=True)[:8]
             return {"kind": "chart", "title": title,
                     "config": builder.pie_chart([l for l, _ in top], [v for _, v in top])}
-        if is_time and viz != "bar":
+        # Line / area = a trend or DISTRIBUTION curve — dispatch on the widget's
+        # visualization, not just on whether the pivot is time. A numeric values
+        # pivot (e.g. duration_us) must read left-to-right by its key, NOT be
+        # sorted-by-value and capped like a bar (that turned Graylog's area curve
+        # into 15 ranked bars).
+        if viz in ("line", "area") or (is_time and viz != "bar"):
+            if is_time:
+                d2, v2 = disp, values
+            else:
+                pr = sorted(zip(disp, values), key=lambda t: _numkey(t[0]))
+                d2 = [d for d, _ in pr]; v2 = [v for _, v in pr]
             return {"kind": "chart", "title": title, "tall": True, "unit": unit,
-                    "config": builder.line_chart(disp, [{"label": title, "data": values}], axis_type=axis)}
+                    "config": builder.line_chart(d2, [{"label": title, "data": v2}], axis_type=axis)}
         if is_time and viz == "bar":
             return {"kind": "chart", "title": title, "tall": True, "unit": unit,
                     "config": _bar_multi(disp, [{"label": title, "data": values}], _barmode(cfg), axis_type=axis)}
@@ -718,6 +731,7 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
                                             horizontal=bar_horizontal, axis_type=axis)}
 
     # column pivots -> multiple series (data keyed by raw rowkey, displayed via disp)
+    col_skip = any((cp.get("config") or {}).get("skip_empty_values") for cp in col_pivots)
     series_map = {}
     order = []
     for r in drows:
@@ -726,14 +740,20 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
                 continue
             k = v.get("key") or []
             colname = " / ".join(str(x) for x in k[:-1]) or (k[0] if k else "")
+            if col_skip and _is_empty_val(colname):   # honour column Skip Empty Values
+                continue
             if colname not in series_map:
                 series_map[colname] = {}
                 order.append(colname)
             series_map[colname][_rowkey(r)] = v.get("value")
-    series = [{"label": name, "data": [series_map[name].get(l, 0) for l in labels]} for name in order[:6]]
+    # Keep ALL column-pivot series (a stacked chart is only correct when every
+    # series is present, not just the first few — Graylog shows them all). Cap
+    # generously to avoid a pathological legend; the palette cycles like Graylog.
+    series = [{"label": name, "data": [series_map[name].get(l, 0) for l in labels]}
+              for name in order[:30]]
     if not any(any((v or 0) for v in s["data"]) for s in series):
         return {"kind": "empty", "title": title}
-    if is_time and viz != "bar":
+    if viz in ("line", "area") or (is_time and viz != "bar"):
         return {"kind": "chart", "title": title, "tall": True, "unit": unit,
                 "config": builder.line_chart(disp, series, axis_type=axis)}
     # bar: preserve Graylog's bar mode (grouped / stacked / overlay), incl. time bars
@@ -983,6 +1003,38 @@ def _rowkey(r):
     k = r.get("key") or []
     s = " / ".join(str(x) for x in k)
     return (s[:40] + "…") if len(s) > 41 else (s or "-")
+
+
+def _numkey(s):
+    """Sort key: numeric labels sort numerically (so a duration distribution reads
+    left-to-right), non-numeric labels sort after, lexically."""
+    try:
+        return (0, float(str(s).replace(",", "")))
+    except (ValueError, TypeError):
+        return (1, str(s))
+
+
+def _is_empty_val(v):
+    """A blank/empty pivot bucket, as Graylog's 'Skip Empty Values' would drop."""
+    return v is None or str(v).strip() in ("", "(Empty Value)", "(empty)")
+
+
+def _skip_empty_rows(drows, row_pivots):
+    """Drop rows whose value for a 'skip_empty_values' row pivot is blank."""
+    skip_pos, pos = [], 0
+    for rp in (row_pivots or []):
+        n = len(rp.get("fields") or []) or 1
+        if (rp.get("config") or {}).get("skip_empty_values"):
+            skip_pos.extend(range(pos, pos + n))
+        pos += n
+    if not skip_pos:
+        return drows
+    out = []
+    for r in drows:
+        k = r.get("key") or []
+        if not any(i < len(k) and _is_empty_val(k[i]) for i in skip_pos):
+            out.append(r)
+    return out
 
 
 def _first_value(r):

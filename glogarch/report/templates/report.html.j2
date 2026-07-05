@@ -19,8 +19,8 @@
     background: var(--brand);
     color: #fff; height: 261mm; padding: 26mm 22mm; display: flex; flex-direction: column;
   }
-  .cover-logo { height: 72px; margin-bottom: 9mm; }
-  .cover-logo img { height: 72px; }
+  .cover-logo { margin-bottom: 9mm; }
+  .cover-logo img { height: 72px; }   /* default; overridden inline by logo_height_px */
   .cover-brand { display: flex; flex-direction: column; gap: 2.5mm; }
   .cover-kicker { font-size: 13px; letter-spacing: 4px; text-transform: uppercase; opacity: .85; display: inline-block; }
   .cover-spacer { flex: 1; }
@@ -121,7 +121,7 @@
   <!-- Cover -->
   <div class="cover">
     <div class="cover-panel">
-      <div class="cover-logo">{% if report.logo_data_uri %}<img src="{{ report.logo_data_uri }}" alt="">{% endif %}</div>
+      <div class="cover-logo">{% if report.logo_data_uri %}<img src="{{ report.logo_data_uri }}" alt="" style="height:{{ report.logo_height_px | default(72) }}px">{% endif %}</div>
       <div class="cover-brand">
         <div class="cover-kicker">{{ report.kicker|default('Graylog Open Archive') }}</div>
       </div>

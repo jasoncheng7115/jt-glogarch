@@ -2,6 +2,23 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.10.11] - 2026-07-05
+
+### PDF Reports (beta) — rebuild fidelity
+
+- **Area/line charts render correctly.** A widget with `visualization: area`/`line`
+  is now drawn as a line/area chart dispatched on the visualization — not the
+  time-vs-value heuristic. A numeric values pivot (e.g. a `duration_us`
+  distribution) reads left-to-right by its key instead of being turned into 15
+  value-ranked bars.
+- **All stacked/grouped series are kept.** Column-pivot series were capped at 6,
+  silently dropping data from a stacked chart (and its legend). Raised to 30 so
+  the chart matches Graylog (palette cycles like Graylog).
+- **"Skip Empty Values" is honoured** on both row and column pivots — blank
+  buckets are dropped, matching the widget setting.
+- **Cover logo height is configurable** per report (`logo_height_px`, default 72),
+  with a field in the report editor.
+
 ## [1.10.10] - 2026-07-05
 
 ### Fixed

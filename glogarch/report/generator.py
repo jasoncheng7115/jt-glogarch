@@ -36,6 +36,7 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
         "lang": lang, "beta": True,
         "header_text": cfg.get("header_text", ""),
         "logo_data_uri": cfg.get("logo_data_uri", ""),
+        "logo_height_px": int(cfg.get("logo_height_px", 72) or 72),
         "header_logo_data_uri": cfg.get("header_logo_data_uri", ""),
         "period": cfg.get("period", ""),
         "generated_at": now.strftime("%Y-%m-%d %H:%M %z"),

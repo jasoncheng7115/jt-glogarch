@@ -3505,6 +3505,7 @@ async function openReportModal(name) {
         <select id="rp-lang" class="no-custom"><option value="zh-TW"${cfg.lang!=='en'?' selected':''}>繁體中文</option><option value="en"${cfg.lang==='en'?' selected':''}>English</option></select></div>
       <div class="form-group"><label>${t('reports_f_header')}</label><input type="text" id="rp-header" value="${esc(cfg.header_text||'')}" placeholder="機密"></div>
       ${_reportLogoField('rp-logo', cfg.logo_data_uri, 'logo-preview-cover', 'reports_f_logo', 'reports_logo_hint')}
+      <div class="form-group"><label>${t('reports_f_logo_size')}</label><input type="number" id="rp-logo-size" min="20" max="200" step="2" value="${esc(String(cfg.logo_height_px||72))}" style="max-width:120px"> <span class="text-muted fs-08">px</span></div>
       ${_reportLogoField('rp-hlogo', cfg.header_logo_data_uri, 'logo-preview-dark', 'reports_f_hlogo_dark', 'reports_hlogo_dark_hint')}
       ${_reportLogoField('rp-hlogo2', cfg.header_logo_light_data_uri, '', 'reports_f_hlogo_light', 'reports_hlogo_light_hint')}
       <div class="form-group"><label class="inline-check"><input type="checkbox" id="rp-archive" ${cfg.include_archive_summary===true?'checked':''}> ${t('reports_f_archive')}</label></div>
@@ -3794,6 +3795,7 @@ function _gatherReport() {
             align_midnight: ck('rp-align-midnight'),
             schedule_cron: v('rp-cron'),
             logo_data_uri: v('rp-logo'),
+            logo_height_px: Math.max(20, Math.min(200, parseInt(v('rp-logo-size'), 10) || 72)),
             header_logo_data_uri: v('rp-hlogo'),
             header_logo_light_data_uri: v('rp-hlogo2'),
             message_rows: isNaN(msgrows) ? 20 : msgrows,

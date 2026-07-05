@@ -2,6 +2,19 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.10.11] - 2026-07-05
+
+### 統計報表（beta）— rebuild 擬真
+
+- **面積／折線圖正確繪製。** `visualization: area`／`line` 的 widget 現在依視覺化類型
+  繪成折線／面積圖，而非用「時間 vs 數值」的猜測。數值型 row pivot（例如 `duration_us`
+  的分布）會依鍵值由小到大呈現，而不再被畫成 15 根依數值排序的長條。
+- **保留所有堆疊／群組 series。** column-pivot 的 series 先前被截斷為 6 個，等於默默
+  丟掉堆疊圖（與圖例）的資料。已放寬到 30，讓圖與 Graylog 一致（配色循環同 Graylog）。
+- **正確套用「Skip Empty Values」**（row 與 column pivot 皆然）——空值 bucket 會被排除，
+  與 widget 設定一致。
+- **封面 logo 高度可設定**（每份報表 `logo_height_px`，預設 72），報表編輯器有欄位可調。
+
 ## [1.10.10] - 2026-07-05
 
 ### 修正
