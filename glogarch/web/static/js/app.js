@@ -2448,7 +2448,11 @@ function initCustomSelects() {
             d.setAttribute('data-value', opt.value);
             d.addEventListener('click', () => {
                 sel.value = opt.value;
-                sel.dispatchEvent(new Event('change'));
+                // MUST bubble: the app's data-act-change handlers are delegated
+                // on `document`, so a non-bubbling change event never reaches
+                // them (that's why some selects needed `class="no-custom"` to
+                // work). Bubbling makes custom selects behave like native ones.
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
                 trigger.querySelector('span').textContent = opt.text;
                 optionsDiv.querySelectorAll('.custom-select-option').forEach(o => o.classList.remove('selected'));
                 d.classList.add('selected');

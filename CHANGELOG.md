@@ -2,6 +2,23 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.10.8] - 2026-07-05
+
+### Fixed
+
+- **Custom dropdowns didn't fire their change handlers.** The styled custom-select
+  widget dispatched a non-bubbling `change` event, so document-level delegated
+  handlers never ran — e.g. switching a schedule's export mode from OpenSearch to
+  Graylog API left the OpenSearch index panel (and hint text) showing. The widget
+  now dispatches a bubbling event, so every `data-act-change` select behaves like
+  a native one (this also removes the need for the `no-custom` workaround).
+
+### Changed
+
+- **Heap advice now recommends setting `-Xms` = `-Xmx`.** The connection-test hint
+  advises setting both the initial and max heap to the same value (JVM best
+  practice: pre-commit the whole heap, avoid dynamic-growth GC pauses).
+
 ## [1.10.7] - 2026-07-05
 
 ### Export safety

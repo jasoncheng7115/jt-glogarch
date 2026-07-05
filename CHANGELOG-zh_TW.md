@@ -2,6 +2,21 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.10.8] - 2026-07-05
+
+### 修正
+
+- **自訂下拉選單不會觸發其 change 處理函式。** 美化用的 custom-select 元件發出的是
+  「不冒泡」的 `change` 事件，導致掛在 document 上的委派處理函式從未執行——例如把排程的
+  匯出模式從 OpenSearch 切到 Graylog API 後，下方仍殘留 OpenSearch 的 Index 面板與說明
+  文字。現在改發冒泡事件，所有 `data-act-change` 下拉都跟原生 select 一樣運作（也不再需要
+  `no-custom` 這個 workaround）。
+
+### 變更
+
+- **heap 建議改為建議 `-Xms` = `-Xmx`。** 連線測試的提示改為建議把初始與最大 heap 設為
+  相同值（JVM 最佳實務：啟動即配置整個 heap，避免動態擴張造成的 GC 停頓）。
+
 ## [1.10.7] - 2026-07-05
 
 ### 匯出安全
