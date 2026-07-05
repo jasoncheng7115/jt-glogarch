@@ -75,6 +75,10 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
         mode = cfg.get("dashboard_mode", "rebuild")
         trs = int(cfg.get("time_range_seconds", 86400))
         maxw = int(cfg.get("max_widgets", 16))
+        # Snap-to-midnight only makes sense for whole-DAY windows (day/week/month).
+        # For a sub-day range (e.g. last 2 hours) ending at 00:00 is meaningless,
+        # so the option is ignored unless the range is a whole number of days.
+        align_midnight_eff = bool(cfg.get("align_midnight")) and trs % 86400 == 0
         web_user = cfg.get("graylog_web_username", "")
         web_pass = cfg.get("graylog_web_password", "")
         for dash in dashboards:
@@ -91,9 +95,17 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
                 if not (server and web_user and web_pass):
                     sec["capture_error"] = _t(lang, "no_capture")
                 else:
+                    # Apply the report's time window to the live dashboard too, so
+                    # the screenshot honours "時間範圍（小時）" and the snap-to-
+                    # midnight option (not just rebuild mode). Snap-to-midnight
+                    # ends the window at today 00:00; otherwise it ends now.
+                    from datetime import timedelta
+                    cap_to = (now.replace(hour=0, minute=0, second=0, microsecond=0)
+                              if align_midnight_eff else now)
+                    cap_from = cap_to - timedelta(seconds=trs)
                     png, reason = await graylog_data.capture_dashboard_png(
                         server, did, web_username=web_user, web_password=web_pass,
-                        time_range_seconds=trs)
+                        time_range_seconds=trs, abs_from=cap_from, abs_to=cap_to)
                     if png:
                         # A full dashboard capture is tall — slice it across pages.
                         sec["img_slices"] = graylog_data.slice_tall_png(png)
@@ -106,7 +118,7 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
                 # back `trs` seconds — so a Mon-05:00 run of a 1-day dashboard
                 # covers Sun 00:00 → Mon 00:00 instead of Sun 05:00 → Mon 05:00.
                 abs_from = abs_to = None
-                if cfg.get("align_midnight"):
+                if align_midnight_eff:
                     from datetime import timedelta
                     midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
                     abs_to = midnight.isoformat(timespec="milliseconds")
@@ -215,26 +227,32 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
     except Exception:
         pass
 
-    db.record_report_history(name, str(path), filename, len(pdf), "completed",
-                             triggered_by=triggered_by, sha256=sha256)
-    db.update_report_last_run(name)
-    log.info("Report generated", report=name, bytes=len(pdf), by=triggered_by)
-
-    # Email
     # "Data volume" for the job row = widgets rebuilt (+ captured dashboard pages).
     units = sum(len(s.get("widgets") or []) for s in sections if s.get("type") == "charts")
     units += sum(len(s.get("img_slices") or ([s["img_data_uri"]] if s.get("img_data_uri") else []))
                  for s in sections if s.get("type") == "image")
     result = {"ok": True, "file_path": str(path), "filename": filename, "bytes": len(pdf),
               "sha256": sha256, "units": units, "emailed": False}
+
+    # Email BEFORE recording history, so a delivery failure is not swallowed —
+    # it lands in the report-history row (and the caller surfaces it) instead of
+    # the PDF silently showing green while no mail ever arrives.
     recipients = cfg.get("recipients") or []
+    hist_error = None
     if recipients:
         try:
             _email_pdf(settings, recipients, report["title"], pdf, filename, lang)
             result["emailed"] = True
         except Exception as e:
-            log.warning("Report email failed", error=sanitize(str(e)))
             result["email_error"] = sanitize(str(e))
+            hist_error = f"Email 寄送失敗：{result['email_error']}"
+            log.warning("Report email failed", error=result["email_error"])
+
+    db.record_report_history(name, str(path), filename, len(pdf), "completed",
+                             error=hist_error, triggered_by=triggered_by, sha256=sha256)
+    db.update_report_last_run(name)
+    log.info("Report generated", report=name, bytes=len(pdf), by=triggered_by,
+             emailed=result["emailed"])
     return result
 
 

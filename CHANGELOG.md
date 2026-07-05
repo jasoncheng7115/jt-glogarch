@@ -2,6 +2,41 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.10.7] - 2026-07-05
+
+### Export safety
+
+- **Adaptive backpressure guard (API *and* OpenSearch-direct export).** A heavy export loads the same OpenSearch cluster Graylog indexes into; on busy or HDD-backed storage this starves ingestion and can wedge Graylog until it's restarted. The export now samples Graylog's own health on a **fixed ~15 s cadence** (per batch, decoupled from chunk size) — JVM heap %, disk journal (uncommitted entries), and the input/process/output ring buffers — and **pauses whenever any of them keeps climbing, resuming only once they drain**. JVM heap is **two-tier**: a soft tier (75 %, sustained) backs off well before the ceiling without tripping on a GC-sawtooth peak, and a hard tier (90 %) pauses immediately on an acute spike. It is **fail-safe**: if Graylog can't be read (the very moment it's in trouble) the export pauses instead of hammering it. Every pause is logged and the running job shows exactly which signal is overloaded. A connection-failure circuit breaker aborts a run that keeps failing. All thresholds are configurable under `export:` in `config.yaml`.
+  - *Fixes the prior guard's blind spots:* it only watched JVM heap at a near-ceiling 85 %, checked every 5 chunks (minutes apart), and — worst — returned "0 %" (healthy) when Graylog was unreachable, so it kept exporting into a frozen server.
+- **Graylog heap advice on connection test.** Testing a Graylog server now reports its current JVM heap (`-Xmx`) and a recommended minimum, so under-provisioned heaps are caught before they cause an export to stall.
+- **Email delivery failures are no longer silent.** A report whose PDF generated fine but whose email was rejected (e.g. an invalid *From* address) now records the SMTP error in the report history and the job note, instead of showing a green "completed".
+
+### PDF Reports (beta)
+
+- **String metric columns are left-aligned.** A metric like `latest(interface_name)` (value `WAN`) or a date column is no longer forced right-aligned; only genuinely numeric columns right-align, per Graylog.
+- **Snap-to-midnight only applies to whole-day ranges.** For a sub-day dashboard range (e.g. last 2 hours) ending at 00:00 is meaningless, so the option is ignored; the hint text now says so.
+
+### Fixed
+
+- **Schedule dialog export-mode race.** Switching the export mode from OpenSearch to Graylog API no longer leaves the OpenSearch index panel showing — a slower in-flight load for the other mode can't overwrite the panel after you switch.
+
+## [1.10.6] - 2026-07-05
+
+### Fixed
+
+- **Masked secret could be saved literally, breaking logins (important).** `_mask()` reveals the first/last 3 characters of a secret with asterisks in between, and the save path treats any value containing `***` as "unchanged, keep the stored secret". But a 7- or 8-character secret masked to only 1–2 asterisks (e.g. an 8-char admin password → `abc**xyz`), slipping past that check — so re-saving a report/server/notification settings could overwrite the real secret with the mask, producing "Invalid credentials" afterwards. Masks now always embed at least three asterisks, so every masked secret is reliably recognised and preserved on save. Any secret saved while the bug was present must be re-entered once.
+- **Report password field is now blank-on-edit.** Editing a report no longer echoes the (masked) stored password back into the field. It shows an empty field with a "leave blank to keep, type to change" hint — so the save rule is unambiguous and it is impossible to accidentally re-save a masked/partial value over the real password.
+
+### PDF Reports (beta)
+
+- **Date-typed metrics render as datetimes.** `min(timestamp)` / `max(timestamp)` (and any metric on a `date`-typed field) now show a formatted local datetime like Graylog (e.g. `2026-07-05 05:50:32.000`) instead of a raw epoch number.
+- **Message tables honour "Show message in new row" (message preview).** When a message-list widget has message preview enabled, the full message is now rendered on a second line under each row — matching the on-screen widget.
+- **Message-table timestamps show local time** in `YYYY-MM-DD HH:MM:SS.mmm` format instead of a raw ISO `…Z` string.
+- **Bar/line charts honour the widget's axis type** (`linear` / `logarithmic`) and bar mode (`group` / `stack` / `relative` / `overlay`).
+- **Screenshot mode now captures the WHOLE dashboard.** Graylog lazy-renders each widget's chart only while it is on screen, so a tall dashboard previously captured every off-screen widget as blank. The capture now grows the browser viewport tall enough to hold the entire grid at once, so every widget renders before the shot.
+- **Screenshot mode now honours the report's time range and snap-to-midnight.** The capture best-effort overrides the live dashboard's global time range to the report's window (previously screenshot mode always used the dashboard's own range). Falls back to the dashboard's range if the override can't be applied. (Note: widgets with their OWN explicit per-widget time range are kept by Graylog and are not affected by a global override.)
+- **Widget-aware page breaks for screenshot mode.** The tall dashboard capture is now split into pages at the GAPS between widget rows (detected from the image), so a widget is never cut in half across a page boundary. The section title now also shares its page with the first slice instead of sitting alone.
+
 ## [1.10.5] - 2026-07-05
 
 ### PDF Reports (beta)

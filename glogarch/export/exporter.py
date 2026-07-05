@@ -28,6 +28,7 @@ from glogarch.core.models import (
 from glogarch.graylog.client import GraylogClient
 from glogarch.graylog.search import GraylogSearch
 from glogarch.graylog.system import SystemMonitor
+from glogarch.export.health_guard import HealthGuard
 from glogarch.ratelimit.limiter import RateLimiter
 from glogarch import __version__
 from glogarch.utils.logging import get_logger
@@ -134,6 +135,10 @@ class Exporter:
 
             async with GraylogClient(self.server_config, self.rate_limiter) as client:
                 monitor = SystemMonitor(client)
+                # Adaptive backpressure guard: pauses the export whenever Graylog
+                # ingestion falls behind (heap high, or journal/buffers climbing)
+                # and resumes once it drains. Fail-safe if Graylog is unreachable.
+                guard = HealthGuard(monitor, self.export_config, progress_callback)
                 search = GraylogSearch(
                     client, monitor,
                     delay_between_requests_ms=self.export_config.delay_between_requests_ms,
@@ -214,6 +219,7 @@ class Exporter:
                                 search, stream_id, stream_name,
                                 chunk_from, chunk_to, chunk_idx, total_chunks,
                                 progress_callback, result, total_records, job_id,
+                                guard=guard,
                             )
                             result.chunks_exported += 1
                             result.messages_total += msgs_in_chunk
@@ -230,8 +236,9 @@ class Exporter:
                             #  - 25 in a row at ANY point (a cluster that goes RED
                             #    mid-run must not grind through thousands of failing
                             #    chunks for hours just because chunk 1 succeeded).
+                            conn_limit = getattr(self.export_config, "connection_failure_limit", 20)
                             if (consecutive_failures >= 10 and result.chunks_exported == 0) \
-                                    or consecutive_failures >= 25:
+                                    or consecutive_failures >= conn_limit:
                                 raise RuntimeError(
                                     f"Aborting export after {consecutive_failures} consecutive "
                                     f"chunk failures. Last error: {e}")
@@ -251,51 +258,17 @@ class Exporter:
                             if not has_space:
                                 raise RuntimeError("Disk space exhausted during export")
 
-                        # JVM memory guard — check every 5 chunks
-                        if (chunk_idx + 1) % 5 == 0 and monitor:
-                            mem_pct = await monitor.get_memory_percent()
-                            threshold = self.export_config.jvm_memory_threshold_pct
-                            if mem_pct > threshold:
-                                # Pause and wait for GC instead of stopping immediately
-                                jvm_waited = 0
-                                jvm_max_wait = 300  # max 5 minutes
-                                jvm_pause = 30      # check every 30 seconds
-                                log.warning("Graylog JVM heap high, pausing export",
-                                            mem_pct=f"{mem_pct:.1f}%", threshold=f"{threshold:.0f}%")
-                                if progress_callback:
-                                    progress_callback({
-                                        "phase": "jvm_wait",
-                                        "chunk_index": chunk_idx + 1,
-                                        "total_chunks": total_chunks,
-                                        "messages_done": result.messages_total,
-                                        "messages_total": total_records,
-                                        "pct": ((chunk_idx + 1) / total_chunks) * 100,
-                                        "detail": f"JVM heap {mem_pct:.0f}%, paused (waiting for GC)...",
-                                    })
-                                while jvm_waited < jvm_max_wait:
-                                    await asyncio.sleep(jvm_pause)
-                                    jvm_waited += jvm_pause
-                                    mem_pct = await monitor.get_memory_percent()
-                                    log.info("JVM heap check", mem_pct=f"{mem_pct:.1f}%",
-                                             waited=f"{jvm_waited}s")
-                                    if mem_pct <= threshold:
-                                        log.info("JVM heap recovered, resuming export",
-                                                 mem_pct=f"{mem_pct:.1f}%")
-                                        break
-                                else:
-                                    # 5 minutes and still high — stop
-                                    log.error("Graylog JVM heap still high after waiting, stopping",
-                                              mem_pct=f"{mem_pct:.1f}%", waited=f"{jvm_max_wait}s")
-                                    try:
-                                        from glogarch.notify.sender import notify_error
-                                        await notify_error("Export",
-                                            f"Graylog JVM heap {mem_pct:.0f}% after waiting {jvm_max_wait}s. "
-                                            f"Export stopped. Consider increasing Xmx or using OpenSearch mode.")
-                                    except Exception:
-                                        pass
-                                    raise RuntimeError(
-                                        f"Graylog JVM heap {mem_pct:.0f}% after waiting {jvm_max_wait//60} min. "
-                                        f"Export stopped. Consider increasing Xmx or using OpenSearch mode.")
+                        # Adaptive backpressure guard (every chunk): pause if
+                        # Graylog is falling behind on ingestion — JVM heap high,
+                        # or disk journal / ring buffers climbing — and resume once
+                        # they drain. Fail-safe: an unreachable Graylog pauses too.
+                        await guard.checkpoint({
+                            "chunk_index": chunk_idx + 1,
+                            "total_chunks": total_chunks,
+                            "messages_done": result.messages_total,
+                            "messages_total": total_records,
+                            "pct": ((chunk_idx + 1) / total_chunks) * 100 if total_chunks else 0,
+                        })
 
             # Update job status with skip + failure info. A chunk that raised is
             # NOT recorded as an archive, so it is retried on the next run (dedup
@@ -379,6 +352,7 @@ class Exporter:
         result: ExportResult,
         total_records: int = 0,
         job_id: str = "",
+        guard=None,
     ) -> int:
         """Export a single time chunk using streaming write. Returns message count.
 
@@ -441,6 +415,15 @@ class Exporter:
                 # Skip empty batches
                 if not batch:
                     continue
+
+                # Backpressure sampling happens on a fixed ~15s cadence here, so a
+                # long chunk is monitored throughout, not only at its boundary.
+                if guard is not None:
+                    await guard.checkpoint({
+                        "chunk_index": chunk_idx + 1, "total_chunks": total_chunks,
+                        "messages_done": result.messages_total,
+                        "messages_total": total_records,
+                    })
 
                 try:
                     writer.write_batch(batch)

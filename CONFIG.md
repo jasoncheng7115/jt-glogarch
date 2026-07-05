@@ -72,11 +72,76 @@ export:
   max_file_size_mb: 50                  # Auto-split if file exceeds this
   min_disk_space_mb: 500                # Stop export if disk below this
   delay_between_requests_ms: 5          # Delay between API requests (ms)
-  jvm_memory_threshold_pct: 85.0        # Stop if Graylog JVM heap exceeds this %
   query: "*"                            # Search query (default: all)
   streams: []                           # Limit to specific streams (empty = all)
   fields: []                            # Limit to specific fields (empty = all)
+
+  # --- Adaptive backpressure guard (see below) ---
+  jvm_memory_threshold_pct: 75.0        # heap SOFT tier: pause when SUSTAINED above this %
+  jvm_memory_hard_pct: 90.0             # heap HARD tier: pause immediately at/above this %
+  health_heap_sustained_samples: 2      # consecutive soft-over reads before pausing
+  health_guard_enabled: true            # Master switch for the guard
+  health_sample_interval_sec: 15        # FIXED wall-clock sampling cadence (not per-chunk!)
+  health_rise_samples: 3                # Consecutive climbs before a signal is "rising"
+  health_journal_min_delta: 200         # Min journal-entry growth/sample to count as rising
+  health_buffer_min_delta: 64           # Min ring-buffer growth/sample to count as rising
+  health_pause_interval_sec: 15         # How often to re-check while paused
+  health_max_pause_min: 30              # Stop the export if still high after this many minutes
+  health_resume_drain_ratio: 0.7        # Resume once a signal falls to <= peak * this
+  connection_failure_limit: 10          # Abort after this many consecutive connection failures
 ```
+
+### Adaptive backpressure guard
+
+A heavy export loads the **same** OpenSearch cluster Graylog indexes into. On a
+busy or HDD-backed cluster this can starve ingestion — the disk journal and ring
+buffers back up and Graylog stops collecting logs (worst case: it wedges until
+restarted). The guard samples Graylog's own health between chunks/batches and
+**pauses the export the moment ingestion falls behind, resuming once it drains**.
+
+**Applies to BOTH `export_mode: api` and `export_mode: opensearch`** — one guard,
+one set of thresholds (below). OpenSearch-direct still loads the cluster, so it
+watches the same Graylog signals.
+
+**Sampling is fixed wall-clock time** (`health_sample_interval_sec`, 15 s),
+*not* per chunk. The guard is checked on every batch in both modes but only
+actually reads Graylog every 15 s — so a long chunk is monitored throughout, and
+the trend thresholds below have meaningful reaction times (a chunk-only cadence
+could leave minutes between reads and make them useless).
+
+Signals and what makes each PAUSE the export:
+
+| Signal | Pauses when | Threshold (default) |
+|---|---|---|
+| JVM heap % (hard) | a single reading is `>=` the hard tier | `jvm_memory_hard_pct: 90` |
+| JVM heap % (soft) | **sustained** `>=` the soft tier for N reads | `jvm_memory_threshold_pct: 75` + `health_heap_sustained_samples: 2` |
+| disk journal (uncommitted entries) | it keeps **rising** | `health_rise_samples: 3` + `health_journal_min_delta: 200` |
+| input / process / output buffers | any keeps **rising** | `health_rise_samples: 3` + `health_buffer_min_delta: 64` |
+| Graylog unreachable | immediately (**fail-safe**) | — |
+
+- **Two-tier heap:** the soft tier (75 %) backs off well before the ceiling, but
+  only when heap stays high for `health_heap_sustained_samples` reads so a single
+  GC-sawtooth peak doesn't cause a needless pause; the hard tier (90 %) pauses on
+  one reading to catch an acute spike. Reaction: soft ≈ 2×15 s = 30 s, hard ≤ 15 s.
+- **"Rising"** means `health_rise_samples + 1` = **4 consecutive samples** (~60 s
+  at the 15 s cadence), each growing by at least the min-delta (journal ≥ 200
+  entries each → ≥ 600 net; buffers ≥ 64 each). This filters normal jitter and
+  only trips on a genuine backlog.
+- **While paused** it re-reads every `health_pause_interval_sec` (15 s).
+- **Resume** requires heap `<` threshold, nothing still rising, AND every
+  journal/buffer signal fallen to `<=` its pause-time peak × `health_resume_drain_ratio`
+  (0.7 → dropped ≥ 30 % from the peak). i.e. it must actually come back down, not
+  just stop climbing.
+- **Give up:** if load stays high for `health_max_pause_min` (30 min) the export
+  stops with an error and sends a notification.
+- **Circuit breaker:** `connection_failure_limit` (10) consecutive connection
+  failures aborts the run instead of hammering a dead server.
+- **Fail-safe:** if Graylog can't be read — exactly when it may be in trouble —
+  that counts as pressure and the export pauses (it does NOT treat "unreadable"
+  as healthy).
+
+Every pause is written to the system log and shown on the running job with the
+exact signal(s) that triggered it.
 
 ---
 

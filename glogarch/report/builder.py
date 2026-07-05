@@ -85,7 +85,17 @@ def render_report_pdf(report: dict, sections: list[dict]) -> bytes:
 
 # --- Chart config helpers (reused by the Graylog data mapper) ---
 
-def bar_chart(labels, values, label="", horizontal=False):
+def _value_axis(axis_type="linear"):
+    """The value axis (Chart.js) honouring Graylog's linear/logarithmic choice.
+    Log scales can't start at zero, so beginAtZero is linear-only."""
+    if axis_type == "logarithmic":
+        return {"type": "logarithmic"}
+    return {"beginAtZero": True}
+
+
+def bar_chart(labels, values, label="", horizontal=False, axis_type="linear"):
+    # The value axis is Y for vertical bars, X for horizontal bars.
+    val_axis = "x" if horizontal else "y"
     return {
         "type": "bar",
         "data": {"labels": labels, "datasets": [{"label": label, "data": values,
@@ -94,11 +104,11 @@ def bar_chart(labels, values, label="", horizontal=False):
                     "maintainAspectRatio": False,
                     "plugins": {"legend": {"display": bool(label), "position": "bottom",
                                            "labels": {"padding": 16, "boxWidth": 14, "boxHeight": 12}}},
-                    "scales": {"y": {"beginAtZero": True}}},
+                    "scales": {val_axis: _value_axis(axis_type)}},
     }
 
 
-def line_chart(labels, series):
+def line_chart(labels, series, axis_type="linear"):
     """series: list of {label, data}."""
     ds = []
     for i, s in enumerate(series):
@@ -111,7 +121,7 @@ def line_chart(labels, series):
             "options": {"responsive": True, "maintainAspectRatio": False,
                         "plugins": {"legend": {"display": len(ds) > 1, "position": "bottom",
                                                "labels": {"padding": 16, "boxWidth": 14, "boxHeight": 12}}},
-                        "scales": {"y": {"beginAtZero": True},
+                        "scales": {"y": _value_axis(axis_type),
                                    # Thin a dense time axis to ~12 horizontal ticks
                                    # instead of cramming every bucket at a 45° slant.
                                    "x": {"ticks": {"autoSkip": True, "maxTicksLimit": 12,

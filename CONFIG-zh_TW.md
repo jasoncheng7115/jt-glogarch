@@ -72,11 +72,66 @@ export:
   max_file_size_mb: 50                  # 單一檔案超過此大小自動分割
   min_disk_space_mb: 500                # 磁碟空間低於此值停止匯出
   delay_between_requests_ms: 5          # API 請求間隔（毫秒）
-  jvm_memory_threshold_pct: 85.0        # Graylog JVM heap 超過此 % 停止匯出
   query: "*"                            # 查詢條件（預設全部）
   streams: []                           # 限定串流（空 = 全部）
   fields: []                            # 限定欄位（空 = 全部）
+
+  # --- 自適應反壓守護（見下方說明） ---
+  jvm_memory_threshold_pct: 75.0        # heap 軟門檻：持續高於此 % 才暫停
+  jvm_memory_hard_pct: 90.0             # heap 硬上限：單次 >= 此 % 立即暫停
+  health_heap_sustained_samples: 2      # 軟門檻連續超過幾次才暫停
+  health_guard_enabled: true            # 守護總開關
+  health_sample_interval_sec: 15        # 固定取樣節奏（秒）——非每個 chunk！
+  health_rise_samples: 3                # 連續成長幾次才算「持續上升」
+  health_journal_min_delta: 200         # journal 每次成長 >= 此筆數才算上升
+  health_buffer_min_delta: 64           # buffer 每次成長 >= 此值才算上升
+  health_pause_interval_sec: 15         # 暫停時多久重讀一次
+  health_max_pause_min: 30              # 高負載持續超過此分鐘數即停止匯出
+  health_resume_drain_ratio: 0.7        # 訊號回落到 峰值 × 此比例 以下才恢復
+  connection_failure_limit: 10          # 連續連線失敗達此次數即中止
 ```
+
+### 自適應反壓守護
+
+大量匯出會對 Graylog 用來索引的**同一個** OpenSearch 叢集造成負載。在繁忙或 HDD
+儲存的叢集上，這會餓死 ingestion——disk journal 與環形緩衝區積壓、Graylog 停止
+收 log（最糟需重啟才能恢復）。守護會在每個 chunk／批次之間讀取 Graylog 自身的健康
+訊號，**一旦 ingestion 落後就暫停匯出，降下來才續跑**。
+
+**`export_mode: api` 與 `export_mode: opensearch` 皆適用**——同一個守護、同一組門檻
+（如下）。OS 直連一樣會壓叢集，所以照樣監看同一組 Graylog 訊號。
+
+**取樣是固定時間節奏**（`health_sample_interval_sec`，15 秒），**不是每個 chunk**。
+兩種模式都在每個 batch 檢查，但只每 15 秒真正讀一次 Graylog——所以再長的 chunk 也
+全程被監看，下面那些趨勢門檻的反應時間才有意義（若只在 chunk 邊界檢查，兩次讀之間可能
+隔好幾分鐘，門檻等於失效）。
+
+各訊號與「暫停」的條件：
+
+| 訊號 | 暫停條件 | 預設門檻 |
+|---|---|---|
+| JVM heap %（硬） | 單次讀到 `>=` 硬上限 | `jvm_memory_hard_pct: 90` |
+| JVM heap %（軟） | **持續** N 次 `>=` 軟門檻 | `jvm_memory_threshold_pct: 75` + `health_heap_sustained_samples: 2` |
+| disk journal（未提交筆數） | **持續上升** | `health_rise_samples: 3` + `health_journal_min_delta: 200` |
+| input／process／output buffer | 任一**持續上升** | `health_rise_samples: 3` + `health_buffer_min_delta: 64` |
+| 讀不到 Graylog | 立即暫停（**fail-safe**） | — |
+
+- **兩段式 heap**：軟門檻（75%）遠早於天花板就退載，但要連續 `health_heap_sustained_samples`
+  次都偏高才暫停，避免單一 GC 鋸齒尖峰誤觸；硬上限（90%）單次就暫停以抓突發飆高。
+  反應：軟 ≈ 2×15 秒 = 30 秒、硬 ≤ 15 秒。
+- **「持續上升」**＝ `health_rise_samples + 1` = **4 次連續讀數**（15 秒節奏下約 60 秒），
+  每次至少成長 min-delta（journal 每次 ≥ 200 筆 → 淨增 ≥ 600；buffer 每次 ≥ 64）。可濾掉
+  正常抖動，只在真正積壓時觸發。
+- **暫停中**每 `health_pause_interval_sec`（15 秒）重讀一次。
+- **恢復**需：heap `<` 門檻、沒有任何訊號在上升，且每個 journal／buffer 訊號都回落到
+  暫停期間峰值 × `health_resume_drain_ratio`（0.7 → 從峰值退 ≥ 30%）以下。也就是必須真的
+  降下來，不是只停止上升。
+- **放棄**：高負載持續 `health_max_pause_min`（30 分鐘）未降，匯出即以錯誤停止並發通知。
+- **斷路器**：`connection_failure_limit`（20）次連續連線失敗即中止，不再對死掉的伺服器猛打。
+- **fail-safe**：讀不到 Graylog（正是它可能出狀況的當下）視為有壓力並暫停，**不會**把
+  「讀不到」當成健康。
+
+每次暫停都會寫入系統記錄，並在執行中的作業上顯示是哪個訊號觸發。
 
 ---
 

@@ -20,6 +20,8 @@ from glogarch.core.models import (
 )
 from glogarch.export.exporter import ExportResult, _ensure_naive
 from glogarch.graylog.client import GraylogClient
+from glogarch.graylog.system import SystemMonitor
+from glogarch.export.health_guard import HealthGuard
 from glogarch.opensearch.client import OpenSearchClient
 from glogarch.ratelimit.limiter import RateLimiter
 from glogarch import __version__
@@ -103,6 +105,18 @@ class OpenSearchExporter:
 
             # Resolve index prefixes from Graylog API
             prefixes = await self._resolve_prefixes(index_prefix, index_set_ids)
+
+            # Backpressure guard — OS-direct export still loads the same OpenSearch
+            # cluster (especially on slow HDD storage), which can starve Graylog
+            # ingestion. Watch Graylog's journal/buffers and pause if they climb.
+            # The Graylog client is opened manually here and closed in `finally`.
+            _gl_client = GraylogClient(self.server_config, self.rate_limiter)
+            try:
+                await _gl_client.__aenter__()
+                guard = HealthGuard(SystemMonitor(_gl_client), self.export_config, progress_callback)
+            except Exception:
+                _gl_client = None
+                guard = HealthGuard(None, self.export_config, progress_callback)  # disabled
 
             async with OpenSearchClient(self.os_config) as os_client:
                 for prefix in prefixes:
@@ -249,6 +263,14 @@ class OpenSearchExporter:
                         if self._cancelled:
                             break
 
+                        # Pause here if Graylog ingestion is backing up.
+                        await guard.checkpoint({
+                            "phase": "exporting", "index": index_name,
+                            "messages_done": result.messages_total,
+                            "messages_total": total_docs,
+                            "pct": (idx_num / max(total_to_export, 1)) * 100,
+                        })
+
                         # Report start of index export
                         if progress_callback:
                             progress_callback({
@@ -267,7 +289,7 @@ class OpenSearchExporter:
                                 idx_from, idx_to,
                                 idx_num, total_to_export,
                                 progress_callback, result,
-                                job_id, total_docs,
+                                job_id, total_docs, guard=guard,
                             )
                             result.chunks_exported += 1
                             result.messages_total += msgs
@@ -334,6 +356,12 @@ class OpenSearchExporter:
             raise
         finally:
             _os_export_lock.pop(server_key, None)
+            _gl = locals().get("_gl_client")
+            if _gl is not None:
+                try:
+                    await _gl.__aexit__(None, None, None)
+                except Exception:
+                    pass
 
         return result
 
@@ -350,6 +378,7 @@ class OpenSearchExporter:
         result: ExportResult,
         job_id: str = "",
         total_docs: int = 0,
+        guard=None,
     ) -> int:
         """Export an OpenSearch index using single scan + split write by time.
 
@@ -441,6 +470,12 @@ class OpenSearchExporter:
             ):
                 if self._cancelled:
                     break
+                # Backpressure sampling on a fixed ~15s cadence, throughout the
+                # (potentially long) single-index scan — not only between indices.
+                if guard is not None:
+                    await guard.checkpoint({"phase": "exporting", "index": index_name,
+                                            "messages_done": result.messages_total,
+                                            "messages_total": total_docs})
                 if not batch:
                     # An empty batch is NOT end-of-stream — skip it and let the
                     # iterator's own StopIteration end the loop. Treating "empty

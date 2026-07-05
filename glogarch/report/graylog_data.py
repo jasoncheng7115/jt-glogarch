@@ -21,6 +21,37 @@ from glogarch.utils.logging import get_logger
 
 log = get_logger("report.graylog_data")
 
+# Max viewport height (CSS px) used when growing the window to render a whole
+# dashboard for a screenshot. Doubled by device_scale_factor=2, so 12000 → a
+# 24000px-tall image; large enough for very tall dashboards, bounded so an
+# extreme one can't exhaust memory.
+_MAX_CAPTURE_VIEWPORT = 12000
+
+# Declared capture width (CSS px). Headless Chromium renders at exactly this
+# width on EVERY host — independent of the machine's physical display — so the
+# capture is identical across dev and customer deployments. The report is
+# PORTRAIT A4 (~178mm content width), so a WIDER capture is scaled down MORE and
+# its text ends up SMALLER on the page; 1600 keeps a normal desktop layout while
+# leaving on-page text a touch larger than a wider grab would. At
+# device_scale_factor=2 that is ~3060px across A4 → ~440 DPI, well above the
+# 300 DPI that prints cleanly.
+_CAPTURE_WIDTH = 1600
+_CAPTURE_SCALE = 2
+
+_MONTH_NAMES = {m: i for i, m in enumerate(
+    ["January", "February", "March", "April", "May", "June", "July",
+     "August", "September", "October", "November", "December"], start=1)}
+
+
+def _parse_caption(text):
+    """react-day-picker month caption 'July 2026' -> (2026, 7); None if unknown."""
+    import re
+    m = re.search(r"([A-Za-z]+)\s+(\d{4})", text or "")
+    if not m:
+        return None
+    mo = _MONTH_NAMES.get(m.group(1))
+    return (int(m.group(2)), mo) if mo else None
+
 
 # --------------------------------------------------------------------------
 # Graylog dashboards
@@ -82,18 +113,23 @@ async def get_graylog_version(server) -> str:
 async def capture_dashboard_png(
     server, dashboard_id: str, *, web_username: str, web_password: str,
     time_range_seconds: int = 86400, wait_ms: int = 6000,
+    abs_from=None, abs_to=None,
 ) -> tuple[bytes | None, str]:
     """Log into the Graylog web UI with the given web credentials and screenshot
     a dashboard. Returns (PNG bytes, "") on success or (None, reason) on failure
-    so the caller can show WHY the capture failed instead of a generic note."""
+    so the caller can show WHY the capture failed instead of a generic note.
+
+    When abs_from/abs_to (datetimes) are given, the dashboard's global time range
+    is best-effort overridden to that absolute window before capture so the
+    screenshot honours the report's time-range / snap-to-midnight setting."""
     from playwright.async_api import async_playwright
     base = server.url.rstrip("/")
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
             ctx = await browser.new_context(ignore_https_errors=True,
-                                            viewport={"width": 1600, "height": 1000},
-                                            device_scale_factor=2)
+                                            viewport={"width": _CAPTURE_WIDTH, "height": 1000},
+                                            device_scale_factor=_CAPTURE_SCALE)
             page = await ctx.new_page()
             try:
                 user_sel = 'input[name="username"], input#username, input[placeholder*="sername"]'
@@ -134,23 +170,58 @@ async def capture_dashboard_png(
                     return None, "Dashboard did not finish loading after login (timed out)."
                 await page.wait_for_load_state("networkidle")
                 await page.wait_for_timeout(wait_ms)
-                # The dashboard widget grid is a react-grid-layout container. We
-                # screenshot ONLY that element so the Graylog top nav, the left
-                # sidebar and the query/time bar are excluded. Scroll first so
-                # every lazily-rendered widget is painted before capture.
+                # Apply the report's absolute time window to the LIVE dashboard so
+                # the screenshot matches the report's range / snap-to-midnight
+                # setting (best-effort; falls back to the dashboard's own range).
+                if abs_from is not None and abs_to is not None:
+                    ok = await _apply_absolute_override(page, abs_from, abs_to)
+                    if ok:
+                        await page.wait_for_timeout(3000)   # let widgets refetch
+                        try:
+                            await page.wait_for_load_state("networkidle", timeout=25000)
+                        except Exception:
+                            pass
+                # Graylog lazy-renders each widget's chart ONLY while it is inside
+                # the viewport (IntersectionObserver). With a normal-height viewport
+                # an element screenshot of the tall grid therefore captures every
+                # off-screen widget as BLANK. The reliable fix is to grow the
+                # viewport tall enough to hold the whole grid at once — then every
+                # widget is "in view", renders, and the single screenshot is
+                # complete. (Scrolling first still helps kick off data fetches.)
+                grid_sel = None
+                for sel in (".react-grid-layout", "[data-testid='dashboard']", ".widget-list"):
+                    if await page.query_selector(sel):
+                        grid_sel = sel
+                        break
                 await _autoscroll_dashboard(page)
+                grid_h = 0
+                if grid_sel:
+                    try:
+                        grid_h = await page.evaluate(
+                            "(s)=>{const g=document.querySelector(s);return g?g.scrollHeight:0;}", grid_sel)
+                    except Exception:
+                        grid_h = 0
+                if grid_h and grid_h > 900:
+                    # Cap so an enormous dashboard can't blow Chromium's max image
+                    # size (device_scale_factor=2 doubles the pixel height).
+                    tall = min(int(grid_h) + 400, _MAX_CAPTURE_VIEWPORT)
+                    if grid_h + 400 > _MAX_CAPTURE_VIEWPORT:
+                        log.warning("dashboard taller than capture cap; bottom may clip",
+                                    dashboard=dashboard_id, grid_h=grid_h, cap=_MAX_CAPTURE_VIEWPORT)
+                    try:
+                        await page.set_viewport_size({"width": _CAPTURE_WIDTH, "height": tall})
+                    except Exception:
+                        pass
+                    await page.evaluate("()=>window.scrollTo(0,0)")
+                    await page.wait_for_timeout(1500)
                 try:
-                    await page.wait_for_load_state("networkidle", timeout=20000)
+                    await page.wait_for_load_state("networkidle", timeout=25000)
                 except Exception:
                     pass
-                # Give every widget's chart a moment to finish drawing after its
-                # data lands (scrolling only triggers the fetch).
-                await page.wait_for_timeout(3500)
-                grid = None
-                for sel in (".react-grid-layout", "[data-testid='dashboard']", ".widget-list"):
-                    grid = await page.query_selector(sel)
-                    if grid:
-                        break
+                # Give every widget's chart a moment to finish drawing now that
+                # they are all on-screen.
+                await page.wait_for_timeout(4000)
+                grid = await page.query_selector(grid_sel) if grid_sel else None
                 if grid:
                     png = await grid.screenshot()
                 else:
@@ -163,6 +234,92 @@ async def capture_dashboard_png(
     except Exception as e:
         log.warning("capture_dashboard_png failed", dashboard=dashboard_id, error=str(e))
         return None, f"Capture error: {e}"
+
+
+async def _apply_absolute_override(page, dt_from, dt_to) -> bool:
+    """Best-effort: drive Graylog's global time-range picker to an ABSOLUTE
+    window (dt_from..dt_to) so a screenshot reflects the report's time range.
+
+    This automates Graylog's own React (react-day-picker) date picker, so it is
+    inherently version-sensitive — every step is guarded and ANY failure returns
+    False, in which case the caller just captures the dashboard's own range.
+    Requires TRUSTED events (Playwright .click()/.fill()); programmatic JS clicks
+    do not update the controlled React inputs. Assumes an English Graylog UI."""
+    import re as _re
+    try:
+        # A fresh browser context shows the global override as "No Override".
+        await page.get_by_text("No Override", exact=True).first.click(timeout=6000)
+        await page.wait_for_timeout(700)
+        await page.get_by_text("Absolute", exact=True).first.click(timeout=6000)
+        await page.wait_for_timeout(1000)
+        months = page.locator(".rdp-month")
+        if await months.count() < 1:
+            return False
+        to_idx = 1 if await months.count() > 1 else 0
+        prevs = page.locator(".rdp-button_previous")
+        nexts = page.locator(".rdp-button_next")
+
+        async def _goto_month(cal_idx, target):
+            # Navigate calendar cal_idx to target month by reading its caption and
+            # stepping prev/next; self-correcting, bounded so it can't spin.
+            for _ in range(24):
+                cap = (await months.nth(cal_idx).locator("[class*=caption]").first
+                       .inner_text()).strip()
+                cur = _parse_caption(cap)
+                if cur is None:
+                    return False
+                if cur == (target.year, target.month):
+                    return True
+                btn = prevs if (target.year, target.month) < cur else nexts
+                idx = cal_idx if await btn.count() > cal_idx else 0
+                if await btn.count() <= idx:
+                    return False
+                await btn.nth(idx).click()
+                await page.wait_for_timeout(220)
+            return False
+
+        async def _click_day(cal_idx, day):
+            btns = months.nth(cal_idx).locator("button.rdp-day_button")
+            for i in range(await btns.count()):
+                b = btns.nth(i)
+                if (await b.inner_text()).strip() != str(day):
+                    continue
+                cls = (await b.get_attribute("class")) or ""
+                outside = await b.evaluate(
+                    "e=>{const c=e.closest('td,[role=gridcell]');return (c&&c.className||'')+' '+(e.className||'');}")
+                if "outside" in cls or "outside" in (outside or ""):
+                    continue
+                await b.click()
+                return True
+            return False
+
+        if not await _goto_month(0, dt_from):
+            return False
+        if not await _goto_month(to_idx, dt_to):
+            return False
+        if not await _click_day(0, dt_from.day):
+            return False
+        if not await _click_day(to_idx, dt_to.day):
+            return False
+        # Six number inputs in DOM order: from H/M/S then to H/M/S.
+        nums = page.locator("input[type=number]")
+        if await nums.count() >= 6:
+            for i, v in enumerate([dt_from.hour, dt_from.minute, dt_from.second,
+                                   dt_to.hour, dt_to.minute, dt_to.second]):
+                await nums.nth(i).fill(str(v))
+        await page.wait_for_timeout(400)
+        upd = page.get_by_role("button", name=_re.compile("Update time range", _re.I))
+        if await upd.count() == 0 or await upd.first.is_disabled():
+            return False
+        await upd.first.click()
+        await page.wait_for_timeout(1500)
+        # Confirm it took: the global-override control no longer reads "No Override".
+        still_default = await page.get_by_text("No Override", exact=True).count()
+        return still_default == 0
+    except Exception as e:
+        log.warning("time-range override failed; using dashboard default range",
+                    error=str(e))
+        return False
 
 
 async def _autoscroll_dashboard(page):
@@ -221,16 +378,58 @@ def slice_tall_png(png: bytes, first_ratio: float = 1.28, rest_ratio: float = 1.
     rest_h = max(1, int(w * rest_ratio))
     if h <= int(first_h * 1.06):          # fits one page (with a little slack)
         return [png_to_data_uri(png)]
+    # Snap each page cut to a GAP between widget rows so no widget is split across
+    # pages. A gap is horizontally uniform (the dashboard background), whereas a
+    # row crossing a chart/table/text has a wide spread of pixel values. We
+    # measure per-row spread on a narrow grayscale strip (no numpy needed) and,
+    # for each target height, cut at the most-uniform row just above it.
+    row_spread = None
+    try:
+        COLS = 40
+        strip = list(im.convert("L").resize((COLS, h)).getdata())
+        row_spread = [0] * h
+        for r in range(h):
+            seg = strip[r * COLS:(r + 1) * COLS]
+            row_spread[r] = max(seg) - min(seg)
+    except Exception:
+        row_spread = None
+
+    def _snap(target, floor):
+        """Nearest clean (min-spread) cut row in (floor, target]; falls back to
+        target when spread data is unavailable."""
+        if not row_spread:
+            return min(target, h)
+        hi = min(target, h - 1)
+        lo = max(floor, target - int(w * 0.18))   # search window above target
+        if lo >= hi:
+            return min(target, h)
+        best_r, best_s = hi, row_spread[hi]
+        for r in range(hi, lo - 1, -1):
+            if row_spread[r] < best_s:
+                best_s, best_r = row_spread[r], r
+                if best_s == 0:
+                    break
+        return best_r
+
     slices = []
     y = 0
     first = True
     while y < h:
         ph = first_h if first else rest_h
-        part = im.crop((0, y, w, min(y + ph, h)))
+        target = y + ph
+        if target >= h:
+            cut = h
+        else:
+            cut = _snap(target, y + int(w * 0.35))   # keep slices from getting tiny
+            if cut <= y:
+                cut = min(target, h)
+        part = im.crop((0, y, w, min(cut, h)))
         buf = BytesIO()
         part.save(buf, format="PNG")
         slices.append(png_to_data_uri(buf.getvalue()))
-        y += ph
+        if cut >= h:
+            break
+        y = cut
         first = False
     return slices
 
@@ -268,6 +467,9 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
         async with httpx.AsyncClient(verify=server.verify_ssl, timeout=60.0) as c:
             view = (await c.get(f"{base}/api/views/{dashboard_id}", auth=auth, headers=hdr)).json()
             title = view.get("title") or dashboard_id
+            # Which fields are date-typed → so min/max/latest(<date field>) metrics
+            # render as datetimes, and message-list date columns format locally.
+            date_fields = await _fetch_date_fields(c, base, auth, hdr, time_range_seconds)
             sid = view.get("search_id")
             states = view.get("state") or {}
             if not sid or not states:
@@ -395,12 +597,13 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
             if w.get("type") == "messages":
                 if not res.get("messages"):
                     continue
-                widget = _messages_to_table(w.get("config") or {}, wt, res, message_rows, message_max_cols)
+                widget = _messages_to_table(w.get("config") or {}, wt, res, message_rows,
+                                            message_max_cols, date_fields=date_fields)
             else:
                 if not res.get("rows"):
                     continue
                 widget = _pivot_to_widget(w.get("config") or {}, wt, res, bar_horizontal=bar_horizontal,
-                                          heatmap_values=heatmap_values)
+                                          heatmap_values=heatmap_values, date_fields=date_fields)
             if widget:
                 eff = res.get("effective_timerange") or {}
                 es = _parse_ts(eff.get("from")) if eff.get("from") else None
@@ -443,7 +646,7 @@ def _widget_autotitle(w):
 
 
 def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool = False,
-                     heatmap_values: bool = False) -> dict | None:
+                     heatmap_values: bool = False, date_fields: set | None = None) -> dict | None:
     """Map a Graylog pivot result to one of our report widgets."""
     from glogarch.report import builder
     rows = res.get("rows") or []
@@ -452,6 +655,7 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
     col_pivots = cfg.get("column_pivots") or []
     is_time = bool(row_pivots) and (row_pivots[0].get("type") == "time")
     unit = _widget_unit(cfg)   # Graylog metric unit (e.g. size/bytes), or None
+    axis = _axis_type(cfg)     # 'linear' | 'logarithmic' (Graylog y-axis scale)
 
     # data rows only (drop rollup/total rows)
     drows = [r for r in rows if r.get("source") == "leaf"]
@@ -473,20 +677,20 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
 
     # A Graylog data table stays a table.
     if viz == "table":
-        return _pivot_to_table(cfg, title, drows, col_pivots)
+        return _pivot_to_table(cfg, title, drows, col_pivots, date_fields=date_fields)
     # A geo/world-map is drawn as a self-contained SVG bubble map (the row key is
     # a "lat,long" geolocation string, the value is the count → bubble size).
     if viz in ("map", "world_map"):
         m = _pivot_to_map(title, drows)
         if m:
             return m
-        return _pivot_to_table(cfg, title, drows, col_pivots)   # fallback if no coords
+        return _pivot_to_table(cfg, title, drows, col_pivots, date_fields=date_fields)   # fallback if no coords
     # A heatmap stays a heatmap: a colour-graded grid of row-pivot × column-pivot.
     if viz == "heatmap":
         h = _pivot_to_heatmap(cfg, title, drows, col_pivots, show_values=heatmap_values)
         if h:
             return h
-        return _pivot_to_table(cfg, title, drows, col_pivots)   # fallback if 1-D
+        return _pivot_to_table(cfg, title, drows, col_pivots, date_fields=date_fields)   # fallback if 1-D
 
     labels = [_rowkey(r) for r in drows]                       # keys (for lookups)
     disp = _time_axis_labels(drows) if is_time else labels     # display labels
@@ -502,16 +706,16 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
                     "config": builder.pie_chart([l for l, _ in top], [v for _, v in top])}
         if is_time and viz != "bar":
             return {"kind": "chart", "title": title, "tall": True, "unit": unit,
-                    "config": builder.line_chart(disp, [{"label": title, "data": values}])}
+                    "config": builder.line_chart(disp, [{"label": title, "data": values}], axis_type=axis)}
         if is_time and viz == "bar":
             return {"kind": "chart", "title": title, "tall": True, "unit": unit,
-                    "config": _bar_multi(disp, [{"label": title, "data": values}], _barmode(cfg))}
+                    "config": _bar_multi(disp, [{"label": title, "data": values}], _barmode(cfg), axis_type=axis)}
         # non-time bar (cap to top 15). Vertical by default to match Graylog;
         # the report can opt into horizontal for long category labels.
         top = sorted(zip(disp, values), key=lambda x: (x[1] or 0), reverse=True)[:15]
         return {"kind": "chart", "title": title, "unit": unit,
                 "config": builder.bar_chart([l for l, _ in top], [v for _, v in top],
-                                            horizontal=bar_horizontal)}
+                                            horizontal=bar_horizontal, axis_type=axis)}
 
     # column pivots -> multiple series (data keyed by raw rowkey, displayed via disp)
     series_map = {}
@@ -531,10 +735,10 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
         return {"kind": "empty", "title": title}
     if is_time and viz != "bar":
         return {"kind": "chart", "title": title, "tall": True, "unit": unit,
-                "config": builder.line_chart(disp, series)}
+                "config": builder.line_chart(disp, series, axis_type=axis)}
     # bar: preserve Graylog's bar mode (grouped / stacked / overlay), incl. time bars
     return {"kind": "chart", "title": title, "tall": bool(is_time), "unit": unit,
-            "config": _bar_multi(disp, series, _barmode(cfg))}
+            "config": _bar_multi(disp, series, _barmode(cfg), axis_type=axis)}
 
 
 def _parse_ts(ts):
@@ -624,8 +828,25 @@ def _grouped_rows(raw, n_keys):
     return out
 
 
-def _pivot_to_table(cfg, title, drows, col_pivots):
+def _col_alignments(raw, key_cols, ncols):
+    """Per-column alignment: right-align a metric column ONLY when every value in
+    it is a plain number. String metrics (e.g. latest(interface_name) → 'WAN')
+    and dates (latest(timestamp)) stay left-aligned like Graylog."""
+    import re
+    num = re.compile(r"-?[\d,]+(?:\.\d+)?$")
+    align = []
+    for c in range(ncols):
+        if c < key_cols:
+            align.append("text")
+            continue
+        vals = [row[c] for row in raw if c < len(row) and str(row[c]).strip() != ""]
+        align.append("num" if (vals and all(num.match(str(v)) for v in vals)) else "text")
+    return align
+
+
+def _pivot_to_table(cfg, title, drows, col_pivots, date_fields=None):
     """Render a Graylog table widget as a report table (columns + rows)."""
+    date_fields = date_fields or set()
     row_pivots = cfg.get("row_pivots") or []
     series = cfg.get("series") or []
     rp_fields = []
@@ -658,10 +879,14 @@ def _pivot_to_table(cfg, title, drows, col_pivots):
             vmap = {" / ".join(str(x) for x in (v.get("key") or [])): v.get("value")
                     for v in (r.get("values") or [])}
             cells = [str(x) for x in (r.get("key") or [])]
-            cells += [(_fmt_metric(vmap[c]) if vmap.get(c) is not None else "") for c in colnames]
+            # A column's metric fn is the last segment of its key (e.g.
+            # 'pivotval / min(timestamp)' -> 'min(timestamp)') → format dates.
+            cells += [(_fmt_metric_typed(vmap[c], c.rsplit(" / ", 1)[-1], date_fields)
+                       if vmap.get(c) is not None else "") for c in colnames]
             raw.append(cells)
         return {"kind": "table", "title": title, "columns": columns,
-                "rows": _grouped_rows(raw, len(rp_fields)), "numeric_from": len(rp_fields)}
+                "rows": _grouped_rows(raw, len(rp_fields)), "numeric_from": len(rp_fields),
+                "col_align": _col_alignments(raw, len(rp_fields), len(columns))}
     # simple table: row-pivot key columns + one column per series. Map each
     # value to its series by KEY (the last key element is the series function),
     # so a null metric (e.g. an empty latest(host_hostname)) leaves a BLANK cell
@@ -684,10 +909,11 @@ def _pivot_to_table(cfg, title, drows, col_pivots):
                 val = vmap[fn]
             else:
                 val = ordered[i] if i < len(ordered) else None
-            cells.append(_fmt_metric(val) if val is not None else "")
+            cells.append(_fmt_metric_typed(val, fn, date_fields) if val is not None else "")
         raw.append(cells)
     return {"kind": "table", "title": title, "columns": columns,
-            "rows": _grouped_rows(raw, len(rp_fields)), "numeric_from": len(rp_fields)}
+            "rows": _grouped_rows(raw, len(rp_fields)), "numeric_from": len(rp_fields),
+                "col_align": _col_alignments(raw, len(rp_fields), len(columns))}
 
 
 def _barmode(cfg: dict) -> str:
@@ -696,7 +922,23 @@ def _barmode(cfg: dict) -> str:
     return str(vc.get("barmode") or "group").lower()
 
 
-def _bar_multi(labels, series, barmode="group"):
+def _axis_type(cfg: dict) -> str:
+    """Graylog y-axis scale: 'linear' (default) or 'logarithmic'."""
+    vc = cfg.get("visualization_config") or {}
+    at = str(vc.get("axis_type") or "linear").lower()
+    return "logarithmic" if at.startswith("log") else "linear"
+
+
+def _y_scale(stacked: bool, axis_type: str) -> dict:
+    """Chart.js y-axis honouring Graylog's linear/logarithmic axis choice.
+    A logarithmic scale can't begin at zero, so beginAtZero only applies to
+    linear axes."""
+    if axis_type == "logarithmic":
+        return {"type": "logarithmic", "stacked": stacked}
+    return {"beginAtZero": True, "stacked": stacked}
+
+
+def _bar_multi(labels, series, barmode="group", axis_type="linear"):
     """Multi-series bar chart honouring Graylog's bar mode.
 
     - stack / relative -> stacked bars
@@ -734,7 +976,7 @@ def _bar_multi(labels, series, barmode="group"):
                         "scales": {"x": {"stacked": stacked,
                                          "ticks": {"autoSkip": True, "maxTicksLimit": 12,
                                                    "maxRotation": 0, "minRotation": 0}},
-                                   "y": {"beginAtZero": True, "stacked": stacked}}}}
+                                   "y": _y_scale(stacked, axis_type)}}}
 
 
 def _rowkey(r):
@@ -788,14 +1030,20 @@ def _compute_trend(cur, prev, preference="NEUTRAL"):
     return {"arrow": arrow, "delta": dtxt, "pct": ptxt, "cls": cls}
 
 
-def _messages_to_table(cfg, title, res, max_rows, max_cols=0):
+def _messages_to_table(cfg, title, res, max_rows, max_cols=0, date_fields=None):
     """Render a Graylog message-list widget as a table (its configured fields,
     capped at max_rows). max_rows<=0 means no cap. If max_cols>0 and the widget
     has more configured fields than that, the widget is skipped (returns None) —
-    wide message tables overflow the A4 page, so the report omits them."""
+    wide message tables overflow the A4 page, so the report omits them.
+
+    Honours the widget's `show_message_row` setting (Graylog's "Show message in
+    new row" / message preview): the full `message` field is rendered as a second
+    row under each entry, matching the on-screen widget."""
+    date_fields = date_fields or set()
     fields = cfg.get("fields") or ["timestamp", "source", "message"]
     if max_cols and max_cols > 0 and len(fields) > max_cols:
         return None
+    show_preview = bool(cfg.get("show_message_row"))
     msgs = res.get("messages") or []
     total = len(msgs)
     if max_rows and max_rows > 0:
@@ -806,8 +1054,16 @@ def _messages_to_table(cfg, title, res, max_rows, max_cols=0):
         cells = []
         for f in fields:
             v = doc.get(f, "")
-            cells.append(str(v) if v is not None else "")
-        rows.append(cells)
+            if v is not None and (f == "timestamp" or f in date_fields):
+                # Date column → local 'YYYY-MM-DD HH:MM:SS.mmm' like Graylog.
+                cells.append(_fmt_iso_local(v) or (str(v) if v != "" else ""))
+            else:
+                cells.append(str(v) if v is not None else "")
+        row = {"cells": cells}
+        if show_preview:
+            msg = doc.get("message")
+            row["preview"] = str(msg) if msg not in (None, "") else ""
+        rows.append(row)
     if not rows:
         return None
     out = {"kind": "table", "title": title, "columns": list(fields), "rows": rows}
@@ -996,6 +1252,69 @@ def _fmt_metric(v):
     if f == int(f):
         return f"{int(f):,}"
     return f"{f:,.2f}"
+
+
+def _metric_fn_field(fn):
+    """'min(timestamp)' -> ('min', 'timestamp'); 'count()' -> ('count', '')."""
+    import re
+    m = re.match(r"\s*([a-zA-Z_]+)\s*\(([^)]*)\)", fn or "")
+    if not m:
+        return (fn or "").strip().lower(), ""
+    return m.group(1).lower(), m.group(2).strip()
+
+
+def _fmt_date_value(v):
+    """Epoch-millis (Graylog date-metric result) -> local
+    'YYYY-MM-DD HH:MM:SS.mmm'. Returns None if it isn't a plausible epoch."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    secs = f / 1000.0 if abs(f) >= 1e11 else f   # ms (Graylog date metrics) vs s
+    try:
+        dt = datetime.fromtimestamp(secs)
+    except (OverflowError, OSError, ValueError):
+        return None
+    return dt.strftime("%Y-%m-%d %H:%M:%S") + f".{dt.microsecond // 1000:03d}"
+
+
+def _fmt_metric_typed(v, fn, date_fields):
+    """Format a metric value; when its aggregated field is a DATE type and the
+    function preserves the timestamp (min/max/avg/latest/…, not count/card),
+    render it as a datetime like Graylog does — not a raw epoch number."""
+    if v is not None and date_fields:
+        func, field = _metric_fn_field(fn or "")
+        if field and field in date_fields and func not in ("count", "card"):
+            s = _fmt_date_value(v)
+            if s is not None:
+                return s
+    return _fmt_metric(v)
+
+
+def _fmt_iso_local(v):
+    """Message-list date value ('2026-07-04T14:11:57.000Z') -> local
+    'YYYY-MM-DD HH:MM:SS.mmm' (matches Graylog's message table timestamps)."""
+    dt = _parse_ts(v)
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone()
+    return dt.strftime("%Y-%m-%d %H:%M:%S") + f".{dt.microsecond // 1000:03d}"
+
+
+async def _fetch_date_fields(c, base, auth, hdr, secs) -> set:
+    """Ask Graylog which fields are DATE-typed (POST /api/views/fields) so metric
+    values on those fields (e.g. min(timestamp)) render as datetimes. Best-effort:
+    an empty set on any failure just means raw-number formatting (prior behaviour)."""
+    try:
+        body = {"streams": [], "timerange": {"type": "relative", "range": int(secs or 86400)}}
+        r = await c.post(f"{base}/api/views/fields", auth=auth, headers=hdr, json=body)
+        data = r.json()
+        return {f.get("name") for f in data
+                if isinstance(f, dict) and (f.get("type") or {}).get("type") == "date"}
+    except Exception as e:
+        log.debug("date-field lookup failed", error=str(e))
+        return set()
 
 
 # --------------------------------------------------------------------------

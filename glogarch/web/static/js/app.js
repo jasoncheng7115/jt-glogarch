@@ -1390,6 +1390,7 @@ function onExportModeChange() {
     if (customGroup) customGroup.style.display = 'none';
     if (coverage) {
         coverage.style.display = 'block';
+        coverage.dataset.wantMode = mode;   // guard against async load races
         if (mode === 'opensearch') {
             loadOsCoverage(coverage);
         } else {
@@ -1399,9 +1400,11 @@ function onExportModeChange() {
 }
 
 async function loadApiCoverage(el) {
+    const _want = el.dataset.wantMode;
     el.innerHTML = `<span class="spinner-text">${t('loading')}...</span>`;
     try {
         const status = await fetchJSON(`${API}/status`);
+        if (el.dataset.wantMode !== _want) return;   // mode switched mid-fetch
         const stats = status.archive_stats || {};
         if (!stats.earliest || !stats.latest) {
             el.innerHTML = `<div class="coverage-box"><span class="u022">${t('log_no_data')}</span></div>`;
@@ -1456,6 +1459,7 @@ async function loadApiCoverage(el) {
 }
 
 async function loadOsCoverage(el) {
+    const _want = el.dataset.wantMode;
     el.innerHTML = `<span class="spinner-text">${t('loading')}...</span>`;
     try {
         // Use selected index set prefix if available
@@ -1464,6 +1468,7 @@ async function loadOsCoverage(el) {
         const prefix = selectedOpt?.getAttribute('data-prefix') || '';
         const qs = prefix ? `?prefix=${encodeURIComponent(prefix)}` : '';
         const osData = await fetchJSON(`${API}/opensearch/indices${qs}`);
+        if (el.dataset.wantMode !== _want) return;   // mode switched mid-fetch
         if (!osData.indices || osData.indices.length === 0) {
             el.innerHTML = `<div class="coverage-box"><span class="u018">${t('os_no_indices')}</span></div>`;
             return;
@@ -1846,6 +1851,9 @@ function onSchedModeChange() {
     if (daysGroup) daysGroup.style.display = mode === 'api' ? 'block' : 'none';
     if (coverage) {
         coverage.style.display = 'block';
+        // Stamp the wanted mode so a slower in-flight loader for the OTHER mode
+        // can't overwrite this panel after the user switches (async race).
+        coverage.dataset.wantMode = mode;
         if (mode === 'opensearch') {
             loadOsCoverage(coverage);
         } else {
@@ -3160,6 +3168,20 @@ async function saveServer() {
     loadSettingsPage();
 }
 
+// Render Graylog JVM heap sizing advice from a connection-test response.
+function _heapAdviceHtml(heap) {
+    if (!heap || !heap.heap_max_gb) return '';
+    const used = (heap.used_pct != null) ? `（${t('heap_used')} ${heap.used_pct}%）` : '';
+    let verdict, cls;
+    if (heap.level === 'low') { verdict = t('heap_low').replace('{n}', heap.recommended_min_gb); cls = 'status-failed'; }
+    else if (heap.level === 'ok') { verdict = t('heap_ok').replace('{n}', heap.recommended_min_gb); cls = 'u022'; }
+    else { verdict = t('heap_good'); cls = 'status-completed'; }
+    return `<div class="test-result-line" style="margin-top:4px">`
+        + `${t('heap_label')}: <b>${heap.heap_max_gb} GB</b>${used} — <span class="${cls}">${esc(verdict)}</span>`
+        + (heap.level !== 'good' ? `<br><span class="u022">${t('heap_hint')}</span>` : '')
+        + `</div>`;
+}
+
 async function testServerFromModal() {
     const body = _gatherServerBody();
     // Omit masked secrets so the backend falls back to the stored value.
@@ -3170,8 +3192,11 @@ async function testServerFromModal() {
     const r = await fetchJSON(`${API}/config/servers/test`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
-    if (r.connected) _setResult('server-modal-result', true, `${t('test_ok')} (${esc(r.version || '')})`);
-    else _setResult('server-modal-result', false, `${t('test_failed')}: ${esc(r.error || '')}`);
+    if (r.connected) {
+        _setResult('server-modal-result', true, `${t('test_ok')} (${esc(r.version || '')})`);
+        const box = document.getElementById('server-modal-result');
+        if (box && r.heap) box.insertAdjacentHTML('beforeend', _heapAdviceHtml(r.heap));
+    } else _setResult('server-modal-result', false, `${t('test_failed')}: ${esc(r.error || '')}`);
 }
 
 function deleteServer(name) {
@@ -3192,7 +3217,7 @@ async function testGraylogServer(name, i) {
     if (el) el.innerHTML = `<span class="u022">${esc(name)} — ${t('btn_test_connection')}…</span>`;
     const r = await fetchJSON(`${API}/config/servers/${encodeURIComponent(name)}/test`, { method: 'POST' });
     const html = (r && r.connected)
-        ? `<span class="status-completed">${t('test_connected')}</span> ${esc(name)} — Graylog ${esc(r.version || '')}`
+        ? `<span class="status-completed">${t('test_connected')}</span> ${esc(name)} — Graylog ${esc(r.version || '')}` + (r.heap ? _heapAdviceHtml(r.heap) : '')
         : `<span class="status-failed">${t('test_failed')}</span> ${esc(name)} — ${esc((r && r.error) || t('unknown_error'))}`;
     if (el) el.innerHTML = html;
     else showAlert(html.replace(/<[^>]+>/g, ''));
@@ -3440,7 +3465,15 @@ function renderReportHistory(items) {
 }
 
 function _reportSecret(id, val) {
-    return `<div class="secret-field"><input type="password" id="${id}" value="${esc(val||'')}" autocomplete="new-password"><button type="button" class="secret-toggle" data-act="toggleSecret" data-act-self tabindex="-1" title="Show/Hide">${icon('eye_closed')}</button></div>`;
+    // Blank-on-edit: never echo the stored secret (not even masked) back into the
+    // field. A non-empty `val` from the API means a password IS stored, so we show
+    // an empty field with a "leave blank = unchanged" hint. This makes the save
+    // rule unambiguous (empty → backend keeps the stored secret; typed → replaces)
+    // and makes it IMPOSSIBLE to accidentally save a masked/partial value — the
+    // exact trap that once overwrote a real password with its own mask.
+    const hasSecret = !!(val && String(val).length);
+    const ph = hasSecret ? t('secret_keep_hint') : '';
+    return `<div class="secret-field"><input type="password" id="${id}" value="" autocomplete="new-password" placeholder="${esc(ph)}"><button type="button" class="secret-toggle" data-act="toggleSecret" data-act-self tabindex="-1" title="Show/Hide">${icon('eye_closed')}</button></div>`;
 }
 
 async function openReportModal(name) {

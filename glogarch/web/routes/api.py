@@ -1689,7 +1689,12 @@ def _mask(val: str) -> str:
     """Mask sensitive strings for API responses. Show first/last 3 chars."""
     if not val or len(val) <= 6:
         return "***" if val else ""
-    return val[:3] + "*" * (len(val) - 6) + val[-3:]
+    # Always embed at least THREE asterisks so reconcile_secret() (which treats
+    # any value containing "***" as an unchanged mask) reliably recognises the
+    # masked value on save. A 7- or 8-char secret would otherwise mask to only
+    # 1-2 asterisks, slip past reconcile, and get persisted literally — silently
+    # replacing e.g. an 8-char admin password with "abc**xyz". (real-world bug)
+    return val[:3] + "*" * max(3, len(val) - 6) + val[-3:]
 
 
 @router.get("/notify/config")
@@ -2021,6 +2026,24 @@ def delete_config_server(request: Request, name: str):
     return {"status": "deleted", "name": name}
 
 
+async def _fetch_heap_advice(client, base_url: str, auth):
+    """After a successful Graylog connection, read its JVM heap and return sizing
+    advice for the UI (current -Xmx + a recommended minimum). Best-effort."""
+    from glogarch.graylog.system import heap_advice
+    try:
+        r = await client.get(f"{base_url.rstrip('/')}/api/system/jvm", auth=auth,
+                             headers={"Accept": "application/json"})
+        if r.status_code == 200:
+            j = r.json()
+            mx = (j.get("max_memory") or {}).get("bytes", 0)
+            used = (j.get("used_memory") or {}).get("bytes", 0)
+            pct = (used / mx * 100.0) if mx else None
+            return heap_advice(mx, pct)
+    except Exception:
+        pass
+    return None
+
+
 @router.post("/config/servers/test")
 async def test_config_server(request: Request):
     """Test a Graylog server connection from ad-hoc form values (no save).
@@ -2058,8 +2081,9 @@ async def test_config_server(request: Request):
                                     headers={"Accept": "application/json"})
             if resp.status_code == 200:
                 data = resp.json()
+                heap = await _fetch_heap_advice(client, url, auth)
                 return {"connected": True, "version": data.get("version"),
-                        "hostname": data.get("hostname")}
+                        "hostname": data.get("hostname"), "heap": heap}
             if resp.status_code in (401, 403):
                 return {"connected": False, "error": "Authentication failed (check token / credentials)"}
             return {"connected": False, "error": f"HTTP {resp.status_code}"}
@@ -2086,8 +2110,9 @@ async def test_saved_server(request: Request, name: str):
                                     headers={"Accept": "application/json"})
             if resp.status_code == 200:
                 data = resp.json()
+                heap = await _fetch_heap_advice(client, srv.url, auth)
                 return {"connected": True, "version": data.get("version"),
-                        "hostname": data.get("hostname")}
+                        "hostname": data.get("hostname"), "heap": heap}
             if resp.status_code in (401, 403):
                 return {"connected": False, "error": "Authentication failed (check token / credentials)"}
             return {"connected": False, "error": f"HTTP {resp.status_code}"}
@@ -2394,10 +2419,15 @@ async def generate_report_now(request: Request, name: str):
         try:
             _res = asyncio.run(generator.generate_report(db, settings, cfg, triggered_by="manual"))
             _units = int((_res or {}).get("units", 0) or 0)
+            _note = f"report={name}"
+            if (_res or {}).get("email_error"):
+                _note += f" | ⚠ Email 寄送失敗：{_res['email_error']}"
+            elif (_res or {}).get("emailed"):
+                _note += " | Email 已寄送"
             if job_id:
                 db.update_job(job_id, status=JobStatus.COMPLETED, completed_at=_dt.utcnow(),
                               progress_pct=100.0, messages_done=_units, messages_total=_units,
-                              error_message=f"report={name}")
+                              error_message=_note)
         except Exception as e:
             if job_id:
                 try:

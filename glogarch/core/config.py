@@ -40,7 +40,27 @@ class ExportConfig(BaseModel):
     batch_size: int = 1000
     min_disk_space_mb: int = 500
     delay_between_requests_ms: int = 5
-    jvm_memory_threshold_pct: float = 85.0  # Stop export if Graylog JVM heap exceeds this %
+    # JVM heap uses TWO tiers so we back off well before the ceiling without
+    # false-tripping on a momentary GC peak:
+    #   * soft (75%) pauses only when SUSTAINED (health_heap_sustained_samples)
+    #   * hard (90%) pauses immediately on a single reading (safety net)
+    jvm_memory_threshold_pct: float = 75.0  # soft: pause when sustained above this %
+    jvm_memory_hard_pct: float = 90.0       # hard: pause immediately at/above this %
+    health_heap_sustained_samples: int = 2  # consecutive soft-over reads before pausing
+    # --- Adaptive backpressure guard (applies to BOTH API and OpenSearch export) ---
+    # Pause the export whenever Graylog is falling behind on ingestion — JVM heap
+    # high, or the disk journal / process-output-input buffers keep climbing — and
+    # resume only once they drain. Protects log collection on any storage (incl.
+    # slow HDD) where a heavy export would otherwise starve indexing.
+    health_guard_enabled: bool = True
+    health_sample_interval_sec: int = 15    # FIXED wall-clock sampling cadence (not per-chunk)
+    health_rise_samples: int = 3            # consecutive climbs before "rising" trips
+    health_journal_min_delta: int = 200     # min journal-entry growth/sample to count
+    health_buffer_min_delta: int = 64       # min buffer growth/sample to count
+    health_pause_interval_sec: int = 15     # re-check cadence while paused
+    health_max_pause_min: int = 30          # give up (stop export) after this long paused
+    health_resume_drain_ratio: float = 0.7  # resume when signal <= peak * this
+    connection_failure_limit: int = 10      # consecutive connection failures → abort
 
 
 class ImportConfig(BaseModel):

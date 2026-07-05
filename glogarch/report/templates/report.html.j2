@@ -82,6 +82,11 @@
      padding: 2px 1px; }
   /* Grouped-row separator: a stronger line where a new top-level key begins. */
   table.data tr.grp-start td { border-top: 1.5px solid #c7ccd6; }
+  /* Message preview (Graylog "Show message in new row"): the full message text
+     spans all columns on a second line, in a muted blue monospace, wrapping. */
+  table.data tr.msg-preview td { border-top: 0; padding-top: 1px; padding-bottom: 6px;
+    color: #1f6feb; font-family: "DejaVu Sans Mono", "Courier New", monospace;
+    font-size: 8px; line-height: 1.35; white-space: pre-wrap; word-break: break-all; }
   table.heat td { padding: 4px 5px; border: 1px solid #fff; text-align: center; font-variant-numeric: tabular-nums; }
   table.heat.wide { font-size: 8px; }
   table.heat.wide th, table.heat.wide td { padding: 2px 3px; }
@@ -163,8 +168,8 @@
           <div class="single-value"><div class="v">{{ w.value }}</div>{% if w.label %}<div class="l">{{ w.label }}</div>{% endif %}
             {% if w.trend %}<div class="trend trend-{{ w.trend.cls }}">{{ w.trend.arrow }} {{ w.trend.delta }}{% if w.trend.pct %} / {{ w.trend.pct }}{% endif %}</div>{% endif %}</div>
         {% elif w.kind == 'table' %}
-          <table class="data{% if w.columns|length > 6 %} wide{% endif %}"><thead><tr>{% for c in w.columns %}<th{% if w.numeric_from is defined and loop.index0 >= w.numeric_from %} class="num"{% endif %}>{{ c }}</th>{% endfor %}</tr></thead>
-          <tbody>{% for row in w.rows %}{% set _cells = row.cells if row is mapping else row %}<tr{% if row is mapping and row.group and not loop.first %} class="grp-start"{% endif %}>{% for cell in _cells %}<td{% if w.numeric_from is defined and loop.index0 >= w.numeric_from %} class="num"{% endif %}>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
+          <table class="data{% if w.columns|length > 6 %} wide{% endif %}"><thead><tr>{% for c in w.columns %}<th{% if w.col_align and w.col_align[loop.index0] == 'num' %} class="num"{% elif w.col_align is not defined and w.numeric_from is defined and loop.index0 >= w.numeric_from %} class="num"{% endif %}>{{ c }}</th>{% endfor %}</tr></thead>
+          <tbody>{% for row in w.rows %}{% set _cells = row.cells if row is mapping else row %}<tr{% if row is mapping and row.group and not loop.first %} class="grp-start"{% endif %}>{% for cell in _cells %}<td{% if w.col_align and w.col_align[loop.index0] == 'num' %} class="num"{% elif w.col_align is not defined and w.numeric_from is defined and loop.index0 >= w.numeric_from %} class="num"{% endif %}>{{ cell }}</td>{% endfor %}</tr>{% if row is mapping and row.preview is defined and row.preview %}<tr class="msg-preview"><td colspan="{{ w.columns|length }}">{{ row.preview }}</td></tr>{% endif %}{% endfor %}</tbody></table>
           {% if w.rows_note %}<div class="rows-note">{{ w.rows_note }}</div>{% endif %}
         {% elif w.kind == 'map' %}
           <div class="map-wrap">{{ w.svg | safe }}</div>
