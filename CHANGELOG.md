@@ -2,6 +2,24 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.10.4] - 2026-07-05
+
+### Fixed — **critical: online upgrade could lose config/certs**
+
+- **`upgrade.sh` git-stash data loss.** When `git pull` needed to stash (any
+  local/untracked divergence), `git stash push -u` swept up the **untracked
+  `config.yaml`, `certs/`, `.session_secret`, and the DB** on installs without a
+  `.gitignore` (i.e. every install before 1.10.3) and did not restore them —
+  leaving the service on HTTP with default config. `upgrade.sh` now writes the
+  protective ignore rules **before** any git operation, so stash/clean can never
+  touch user data. **Recovery for an already-affected box:** the data is intact
+  in `git stash` — `cd /opt/jt-glogarch && git stash pop` (stop the service and
+  move the current DB aside first) restores it.
+- **Recommended upgrade command changed** to `curl -fsSL …/deploy/upgrade.sh |
+  sudo bash`, which runs the newest (fixed) script directly. This makes a big
+  jump such as 1.7.9 → latest a single, data-safe run — and installs the PDF
+  runtime deps in that one run. See the README "Upgrade" section.
+
 ## [1.10.3] - 2026-07-05
 
 ### Fixed — upgrade tooling (found during full .83 upgrade testing)

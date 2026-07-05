@@ -2,6 +2,13 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.10.4] - 2026-07-05
+
+### 修正 —— **重大：線上升級可能遺失 config／憑證**
+
+- **`upgrade.sh` 的 git stash 造成資料遺失。** 當 `git pull` 需要 stash（工作區有任何差異）時，`git stash push -u` 會把**未追蹤的 `config.yaml`、`certs/`、`.session_secret` 與 DB** 一併收進 stash —— 在沒有 `.gitignore` 的安裝（即 1.10.3 之前的所有安裝）上，這些檔案不會被還原，導致服務退回 HTTP、使用預設設定。現在 `upgrade.sh` 會在任何 git 操作**之前**先寫入保護用的忽略規則，stash／clean 就絕不會動到使用者資料。**已受影響主機的復原方式：** 資料仍完整保存在 git stash 中 —— `cd /opt/jt-glogarch && git stash pop` 即可還原（請先停服務、並把現有 DB 移到旁邊）。
+- **建議的升級指令改為** `curl -fsSL …/deploy/upgrade.sh | sudo bash`，直接執行最新（已修正）的腳本。如此即使大跨版（例如 1.7.9 → 最新）也是一次、且資料安全地完成 —— 並在該次執行內裝好 PDF 執行環境。詳見 README「升級」章節。
+
 ## [1.10.3] - 2026-07-05
 
 ### 修正 —— 升級工具（於 .83 完整升級測試時發現）

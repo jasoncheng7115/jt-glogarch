@@ -70,10 +70,21 @@ fi
 echo ""
 echo "[2/5] Pulling latest version..."
 cd "$INSTALL_DIR"
+# CRITICAL: guarantee user data is git-IGNORED *before* any git stash/clean/pull.
+# Installs from before v1.10.3 shipped no .gitignore, so config.yaml, certs/,
+# .session_secret and the DB were untracked — and `git stash -u` below would
+# sweep them away and never restore them (real data loss). Writing these rules
+# first makes stash/clean skip them. Idempotent; the pull later brings the
+# committed .gitignore too.
+for _pat in "config.yaml" "config.yaml.bak*" "*.db" "*.db-wal" "*.db-shm" \
+            ".session_secret" "certs/" ".playwright/" "reports/" "backups/"; do
+    grep -qxF "$_pat" "$INSTALL_DIR/.gitignore" 2>/dev/null || echo "$_pat" >> "$INSTALL_DIR/.gitignore"
+done
 # `set -e` would abort on a bare `git pull` failure (local edits to tracked
 # files, e.g. a hotfix, make pull refuse) leaving a half-upgraded box. Try a
 # clean pull; if it fails, auto-stash the local changes and retry so the
-# upgrade proceeds. config.yaml is gitignored, so user config is never touched.
+# upgrade proceeds. User data (config.yaml/certs/DB) is now gitignored above,
+# so `git stash -u` never touches it.
 if ! git pull --ff-only 2>/dev/null; then
     echo "  Local changes detected — stashing before pull..."
     git stash push -u -m "jt-glogarch upgrade auto-stash" >/dev/null 2>&1 || true

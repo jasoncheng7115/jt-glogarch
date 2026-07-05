@@ -1,4 +1,4 @@
-# jt-glogarch v1.10.3
+# jt-glogarch v1.10.4
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.10.3-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.10.4-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -369,25 +369,37 @@ in how the new code reaches the host.
 
 #### A. Online upgrade (host has internet)
 
+**Recommended — always runs the latest upgrade script (single run, any version):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-glogarch/main/deploy/upgrade.sh | sudo bash
+```
+
+This fetches and runs the **newest** `upgrade.sh` directly, so a big jump (e.g.
+1.7.9 → latest) installs the code **and** all runtime deps (incl. the PDF-report
+Chromium + CJK font) in **one** run — and it includes the current data-safety
+fixes. It then pulls the repo, snapshots `jt-glogarch.db` into
+`/var/backups/jt-glogarch/`, applies new config defaults, force-reinstalls the
+package, and restarts. Safe to run while jt-glogarch is active.
+
+<details><summary>Alternative: run the on-disk script</summary>
+
 ```bash
 sudo bash /opt/jt-glogarch/deploy/upgrade.sh
 ```
 
-Pulls the latest tag from this repo, takes an online SQLite snapshot of
-`jt-glogarch.db` into `/var/backups/jt-glogarch/` first, applies any new
-config defaults to `config.yaml`, force-reinstalls the Python package, and
-restarts the service. Safe to run while jt-glogarch is active — there is
-no data loss step.
+Works too, but note that on the **first** run this executes the *old* script
+already on your box:
 
-> **Upgrading to 1.10.x from an older version? Run `upgrade.sh` twice.**
-> The first run is still executing your *old* upgrade script, which pulls the
-> new code but predates the PDF-report dependency step. Run it a second time so
-> the now-updated script installs the PDF-report runtime deps (Chromium + a CJK
-> font). You can tell it worked when the second run prints
-> `=== PDF Reports runtime deps (Chromium + CJK font) ===`. Upgrades *between*
-> 1.10.x versions install everything in a single run. (The **offline** upgrade
-> below always installs everything in one run.) If you don't use PDF Reports,
-> the second run is optional.
+- If you're on **< 1.10.4**, prefer the `curl | sudo bash` form above — the old
+  script's git-stash step could disturb untracked files. From 1.10.4 the script
+  ignores `config.yaml` / `certs/` / the DB before any git operation.
+- If you're on **< 1.10.0**, run it a **second** time so the now-updated script
+  installs the PDF-report deps (look for
+  `=== PDF Reports runtime deps (Chromium + CJK font) ===`). Upgrades between
+  1.10.x versions install everything in a single run.
+
+</details>
 
 #### B. Offline / air-gapped upgrade (host has NO internet)
 
