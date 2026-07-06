@@ -87,6 +87,26 @@
 - [ ] `/openapi.json` 顯示正確版號
 - [ ] 部署到 .36 staging — health 回傳新版號
 
+### 歸檔往返 — 每次發布必跑
+
+對真實的 Graylog + OpenSearch 跑完整的端對端歸檔流程（需要 `GELF_PORT` 上有 GELF TCP
+input；使用 `/tmp` 下的暫時設定／資料庫，不影響正式服務）：
+
+```bash
+GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
+```
+
+- [ ] **[1] Graylog log 歸檔（API 模式）** — 匯出產生歸檔檔案
+- [ ] **[2] OpenSearch 歸檔（OpenSearch 直連模式）** — 匯出產生歸檔檔案（指令碼會先
+      cycle deflector 讓寫入中的索引封存；OpenSearch 直連匯出一律略過使用中的寫入索引）
+- [ ] **[3] 從歸檔以 GELF 匯回 Graylog TCP input** — 匯入回報 `Messages sent: N`
+      （N>0）且 **0 indexer failures**（合規通過）
+- [ ] 指令碼印出 `RESULT: ALL PASS`
+
+> 註：在 Asia/Taipei 系統上，重新匯入的訊息會比執行當下早約 8 小時（naive-Taipei 對 UTC
+> 的時間戳位移——見 CLAUDE.md「Restore / Re-import」）；指令碼以 24 小時範圍計數，並以
+> 匯入器自身的 0 indexer failures 對帳為準，而非最近 1 小時的計數。
+
 ### 行為稽核
 
 - [ ] `op_audit.enabled: true` — listener 在 port 8991 啟動，稽核頁面顯示「監聽中」

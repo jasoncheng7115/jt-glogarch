@@ -89,6 +89,28 @@ Run these after all automated tests pass:
 - [ ] `/openapi.json` shows correct version
 - [ ] Deploy to .36 staging — health returns new version
 
+### Archive Round-Trip — MANDATORY every release
+
+Run the real end-to-end archive pipeline against a live Graylog + OpenSearch
+(needs a GELF TCP input on `GELF_PORT`; uses throwaway `/tmp` configs/DBs):
+
+```bash
+GL_PASS='<graylog-admin-pw>' bash scripts/e2e-archive-test.sh
+```
+
+- [ ] **[1] Graylog log archiving (API mode)** — export produces an archive
+- [ ] **[2] OpenSearch archiving (OpenSearch-direct mode)** — export produces an
+      archive (the script cycles the deflector first so the seeded index seals;
+      OS-direct export always skips the active write index)
+- [ ] **[3] GELF import back into the Graylog TCP input** — importer reports
+      `Messages sent: N` (N>0) and **0 indexer failures** (compliance pass)
+- [ ] Script prints `RESULT: ALL PASS`
+
+> Note: re-imported messages land ~8h earlier than the run time on Asia/Taipei
+> systems (naive-Taipei-vs-UTC timestamp offset — see CLAUDE.md "Restore /
+> Re-import"); the script counts over a 24h window and trusts the importer's own
+> 0-indexer-failures reconciliation, not a last-1h count.
+
 ### Operation Audit
 
 - [ ] `op_audit.enabled: true` — listener starts on port 8991, audit page shows "Listening"
