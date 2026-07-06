@@ -630,6 +630,30 @@ async function batchImport() {
     // Override doImportSingle for batch
     window._batchImportIds = ids;
     applyI18n();
+    _autofillImportModal();
+}
+
+// Pre-fill the import dialog's target fields from the saved restore-target
+// defaults (系統設定 → 匯入預設目標). Only fills empty fields so it never
+// clobbers something the user already typed. Secrets come back masked; the
+// import endpoint substitutes the real stored secret for a masked value.
+async function _autofillImportModal() {
+    let c;
+    try { c = await fetchJSON(`${API}/config/import-defaults`); } catch (e) { return; }
+    if (!c || c.error) return;
+    const setIf = (id, val) => {
+        const el = document.getElementById(id);
+        if (!el || val === undefined || val === null || val === '') return;
+        if (!el.value) { el.value = val; if (el.dataset) el.dataset.userEdited = 'true'; }
+    };
+    setIf('modal-gelf-host', c.gelf_host);
+    setIf('modal-gelf-port', c.gelf_port ? String(c.gelf_port) : '');
+    const proto = document.getElementById('modal-gelf-protocol');
+    if (proto && c.gelf_protocol && !proto.value) proto.value = c.gelf_protocol;
+    setIf('modal-target-api-url', c.target_api_url);
+    setIf('modal-target-api-user', c.target_api_username);
+    if (c.has_token) setIf('modal-target-api-token', c.target_api_token);
+    if (c.has_password) setIf('modal-target-api-pass', c.target_api_password);
 }
 
 async function batchDelete() {
@@ -980,6 +1004,7 @@ function importSingle(archiveId) {
     document.getElementById('modal-import-result').innerHTML = '';
     modal.style.display = 'flex';
     applyI18n();
+    _autofillImportModal();
 }
 
 function closeImportModal() {
@@ -997,6 +1022,10 @@ function closeImportModal() {
     if (progressDiv) progressDiv.style.display = 'none';
     const controls = document.getElementById('import-controls');
     if (controls) controls.style.display = 'none';
+    // Reset the post-completion Close button so the next fresh open doesn't
+    // show a stale "done" state.
+    const doneBtn = document.getElementById('import-done-btn');
+    if (doneBtn) doneBtn.style.display = 'none';
     const resultEl = document.getElementById('modal-import-result');
     if (resultEl) resultEl.innerHTML = '';
     const form = document.getElementById('import-modal-form');
@@ -1172,6 +1201,9 @@ async function doImportSingle() {
         if (progressDiv) progressDiv.style.display = 'block';
         const controls = document.getElementById('import-controls');
         if (controls) controls.style.display = 'flex';
+        // Re-enable the cancel button (a previous run may have disabled it).
+        const cancelBtn0 = document.getElementById('import-cancel-btn');
+        if (cancelBtn0) { cancelBtn0.disabled = false; cancelBtn0.style.opacity = '1'; }
         // Hide GELF-only controls (pause + speed slider) when running bulk:
         // bulk has no inter-batch delay and pause is not honored by the bulk
         // loop, so the controls would just confuse the user.
@@ -1207,10 +1239,17 @@ async function doImportSingle() {
 async function cancelActiveImport() {
     if (!_activeImportJobId) return;
     if (!await customConfirm(t('confirm_cancel_import') || 'Cancel this import?')) return;
+    // Immediate feedback: cancellation may take a moment to take effect (the
+    // backend checks the cancel flag between preflight steps / message batches).
+    const resultEl = document.getElementById('modal-import-result');
+    if (resultEl) resultEl.innerHTML = `<span class="spinner-text">${t('import_cancelling')}</span>`;
+    const cancelBtn = document.getElementById('import-cancel-btn');
+    if (cancelBtn) { cancelBtn.disabled = true; cancelBtn.style.opacity = '0.5'; }
     try {
         await fetchJSON(`${API}/jobs/${_activeImportJobId}/cancel`, {method: 'POST'});
     } catch (e) {
         showAlert(t('error') + ': ' + (e && e.message ? e.message : e));
+        if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.style.opacity = '1'; }
     }
 }
 
@@ -3020,9 +3059,10 @@ function _secretField(id, val) {
 }
 
 async function loadSettingsPage() {
-    const [servers, os] = await Promise.all([
+    const [servers, os, imp] = await Promise.all([
         fetchJSON(`${API}/config/servers`),
         fetchJSON(`${API}/config/opensearch`),
+        fetchJSON(`${API}/config/import-defaults`),
     ]);
     _serversCache = servers.items || [];
     _osCache = os || {};
@@ -3031,8 +3071,64 @@ async function loadSettingsPage() {
     if (modeSel && servers.export_mode) modeSel.value = servers.export_mode;
     toggleMaxResultHint(modeSel ? modeSel.value : 'api');
     renderOpenSearchForm(os);
+    renderImportDefaultsForm(imp || {});
     renderAdminForm();
     applyI18n();
+}
+
+function renderImportDefaultsForm(c) {
+    const el = document.getElementById('settings-import-form');
+    if (!el) return;
+    el.innerHTML = `
+      <div class="form-group"><label>${t('settings_imp_gelf_host')}</label>
+        <input type="text" id="settings-imp-host" value="${esc(c.gelf_host || '')}" placeholder="192.168.1.10"></div>
+      <div class="u039">
+        <div class="form-group"><label>${t('settings_imp_gelf_port')}</label>
+          <input type="text" id="settings-imp-port" value="${esc(String(c.gelf_port || 32202))}"></div>
+        <div class="form-group"><label>${t('settings_imp_gelf_proto')}</label>
+          <select id="settings-imp-proto" class="no-custom u131">
+            <option value="tcp" ${(c.gelf_protocol || 'tcp') === 'tcp' ? 'selected' : ''}>TCP</option>
+            <option value="udp" ${c.gelf_protocol === 'udp' ? 'selected' : ''}>UDP</option>
+          </select></div>
+      </div>
+      <div class="form-group"><label>${t('settings_imp_api_url')}</label>
+        <input type="text" id="settings-imp-api-url" value="${esc(c.target_api_url || '')}" placeholder="http://192.168.1.10:9000"></div>
+      <div class="form-group"><label>${t('settings_imp_api_token')}</label>${_secretField('settings-imp-token', c.target_api_token)}</div>
+      <div class="form-group"><label>${t('settings_imp_api_user')}</label>
+        <input type="text" id="settings-imp-user" value="${esc(c.target_api_username || '')}" autocomplete="off"></div>
+      <div class="form-group"><label>${t('settings_imp_api_pass')}</label>${_secretField('settings-imp-pass', c.target_api_password)}</div>`;
+}
+
+function _gatherImportBody() {
+    return {
+        gelf_host: document.getElementById('settings-imp-host')?.value?.trim() || '',
+        gelf_port: document.getElementById('settings-imp-port')?.value?.trim() || '32202',
+        gelf_protocol: document.getElementById('settings-imp-proto')?.value || 'tcp',
+        target_api_url: document.getElementById('settings-imp-api-url')?.value?.trim() || '',
+        target_api_token: document.getElementById('settings-imp-token')?.value || '',
+        target_api_username: document.getElementById('settings-imp-user')?.value?.trim() || '',
+        target_api_password: document.getElementById('settings-imp-pass')?.value || '',
+    };
+}
+
+async function saveImportDefaults() {
+    const r = await fetchJSON(`${API}/config/import-defaults`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(_gatherImportBody()),
+    });
+    _setResult('settings-import-result', !r.error, r.error || t('settings_saved'));
+    if (!r.error) loadSettingsPage();
+}
+
+async function testImportDefaults() {
+    _setResult('settings-import-result', true, t('loading') + '...');
+    const r = await fetchJSON(`${API}/config/import-defaults/test`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(_gatherImportBody()),
+    });
+    if (r.connected) {
+        _setResult('settings-import-result', true, `${t('test_ok')} — Graylog ${esc(r.version || '')}`);
+    } else {
+        _setResult('settings-import-result', false, esc(r.error || t('test_failed')));
+    }
 }
 
 function renderServersTable(data) {

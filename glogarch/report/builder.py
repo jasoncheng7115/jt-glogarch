@@ -108,22 +108,64 @@ def bar_chart(labels, values, label="", horizontal=False, axis_type="linear"):
     }
 
 
-def line_chart(labels, series, axis_type="linear"):
-    """series: list of {label, data}."""
+def line_chart(labels, series, axis_type="linear", fill=False,
+               interpolation="linear", stacked=False):
+    """series: list of {label, data}.
+
+    fill=True → area chart (line = stroke only). interpolation: 'linear' (straight
+    segments, Graylog default), 'spline' (curved), 'step-after' (stepped).
+    stacked=True → cumulative stacked area (each series fills to the one below).
+    """
+    # A logarithmic y-axis cannot be stacked in Chart.js (Graylog has the same
+    # limitation) — drop stacking rather than render a broken chart.
+    if stacked and axis_type == "logarithmic":
+        stacked = False
+    tension = 0.3 if interpolation == "spline" else 0
+    stepped = "after" if interpolation in ("step-after", "step", "stepped") else False
     ds = []
     for i, s in enumerate(series):
         c = PALETTE[i % len(PALETTE)]
-        ds.append({"label": s.get("label", ""), "data": s["data"], "borderColor": c,
-                   "backgroundColor": c + "22", "fill": True, "tension": 0.3,
-                   "pointRadius": 0, "borderWidth": 2})
+        d = {"label": s.get("label", ""), "data": s["data"], "borderColor": c,
+             "backgroundColor": (c + "22") if fill else c,
+             "fill": (("origin" if i == 0 else "-1") if (fill and stacked) else fill),
+             "tension": tension, "pointRadius": 0, "borderWidth": 2}
+        if stepped:
+            d["stepped"] = stepped
+        ds.append(d)
+    xscale = {"ticks": {"autoSkip": True, "maxTicksLimit": 12,
+                        "maxRotation": 0, "minRotation": 0}}
+    yscale = _value_axis(axis_type)
+    if stacked:
+        xscale["stacked"] = True
+        yscale = dict(yscale); yscale["stacked"] = True
     return {"type": "line",
             "data": {"labels": labels, "datasets": ds},
             "options": {"responsive": True, "maintainAspectRatio": False,
                         "plugins": {"legend": {"display": len(ds) > 1, "position": "bottom",
-                                               "labels": {"padding": 16, "boxWidth": 14, "boxHeight": 12}}},
-                        "scales": {"y": _value_axis(axis_type),
+                                               "align": "start",
+                                               "labels": {"padding": 14, "boxWidth": 12, "boxHeight": 12}}},
+                        "scales": {"y": yscale,
                                    # Thin a dense time axis to ~12 horizontal ticks
                                    # instead of cramming every bucket at a 45° slant.
+                                   "x": xscale}}}
+
+
+def scatter_chart(labels, series, axis_type="linear"):
+    """Scatter: points only, no connecting line (Chart.js line + showLine:false
+    over a categorical x-axis). series: list of {label, data}."""
+    ds = []
+    for i, s in enumerate(series):
+        c = PALETTE[i % len(PALETTE)]
+        ds.append({"label": s.get("label", ""), "data": s["data"], "borderColor": c,
+                   "backgroundColor": c, "showLine": False, "fill": False,
+                   "pointRadius": 4, "borderWidth": 0})
+    return {"type": "line",
+            "data": {"labels": labels, "datasets": ds},
+            "options": {"responsive": True, "maintainAspectRatio": False,
+                        "plugins": {"legend": {"display": len(ds) > 1, "position": "bottom",
+                                               "align": "start",
+                                               "labels": {"padding": 14, "boxWidth": 12, "boxHeight": 12}}},
+                        "scales": {"y": _value_axis(axis_type),
                                    "x": {"ticks": {"autoSkip": True, "maxTicksLimit": 12,
                                                    "maxRotation": 0, "minRotation": 0}}}}}
 
@@ -155,8 +197,12 @@ def pie_chart(labels, values):
             "data": {"labels": labels, "datasets": [{"data": values,
                      "backgroundColor": PALETTE}]},
             "options": {"responsive": True, "maintainAspectRatio": False,
-                        "plugins": {"legend": {"position": "bottom",
-                                               "labels": {"padding": 16, "boxWidth": 14, "boxHeight": 12}}}}}
+                        # pctLabels: draw the percentage on each slice (see the
+                        # inline plugin in report.html.j2). Skips slices too thin
+                        # to fit the text, matching Graylog's "show if room".
+                        "plugins": {"pctLabels": True,
+                                    "legend": {"position": "bottom", "align": "start",
+                                               "labels": {"padding": 14, "boxWidth": 12, "boxHeight": 12}}}}}
 
 
 # --- Sample report (used for renderer verification / demo) ---

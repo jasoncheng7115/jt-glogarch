@@ -2,6 +2,55 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.11.0] - 2026-07-07
+
+### Import (restore) dialog
+
+- **Close / background / done buttons.** The import dialog now has a header ✕, a
+  "Close (keep running)" button while an import is in progress (the import keeps
+  running in the background; reopen from the sidebar running-job indicator), and
+  an explicit Close button once it finishes.
+- **Cancel is responsive.** Cancelling now takes effect during pre-flight too
+  (credential/health/mapping/cycle/wait steps), not only during the message send
+  loop — previously a cancel during pre-flight looked like it did nothing. The
+  job is recorded as *cancelled* (not failed), and the button gives immediate
+  "cancelling…" feedback.
+- **Pre-set restore target in Settings.** A new "Restore Target Defaults" block
+  in 系統設定 stores the GELF host/port/protocol + Graylog API URL + token (or
+  username/password). When set, opening the import dialog auto-fills these
+  fields so you don't retype the target every time; secrets stay server-side
+  (masked in the UI, substituted at import time).
+
+### PDF Reports (beta) — adversarial widget-fidelity pass
+
+A per-widget-type audit against Graylog drove a broad set of rendering fixes:
+
+- **Time charts are chronological and continuous.** Time-bucketed bar/line/area
+  widgets are sorted by time and zero-filled across the widget's full effective
+  range, so empty buckets show (data clustered at one end) exactly like Graylog
+  — instead of the sparse buckets being reordered/compressed.
+- **Empty widgets render empty.** An empty aggregation/table no longer emits a
+  phantom value (e.g. a stray "443") from a roll-up/total row; a non-count
+  single-number metric with no data shows "(no data)" rather than "0".
+- **Pie/doughnut:** percentage labels on slices (shown only where they fit),
+  top-N + "(Others)" so percentages match Graylog, left-aligned legend.
+- **Line vs area:** honour the widget's interpolation (linear/spline/step) and
+  fill; multi-series area now stacks like Graylog.
+- **Bars:** single-series bars keep Graylog's configured order (no value re-sort);
+  multi-series bars honour the horizontal toggle (time bars stay vertical).
+- **Data tables:** column-pivot columns keep Graylog's order (grouped by pivot
+  value, series order), not alphabetical.
+- **Message list:** the message column isn't duplicated when shown as a preview row.
+- **Heatmap:** reverse scale, empty-cell default fill, and z-min/z-max colour
+  normalisation are honoured.
+- **Single-number:** date-typed metrics render as datetimes; trend deltas format
+  in the widget's unit.
+- **Scatter** widgets render as points instead of falling back to a line/bar.
+- **Per-widget snap-to-midnight.** "Use each widget's own time range" and "snap
+  to 00:00" now work together: each widget keeps its own duration but its window
+  ends at today 00:00 (only whole-day durations snap; e.g. a "last 2 hours"
+  widget is left as-is).
+
 ## [1.10.13] - 2026-07-06
 
 ### Deployment — works behind a corporate TLS proxy / broken CA store

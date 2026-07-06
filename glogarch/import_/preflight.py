@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import gzip
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -68,6 +69,7 @@ class PreflightResult:
     rotated: bool = False
     duration_sec: float = 0.0
     aborted: bool = False
+    cancelled: bool = False   # aborted specifically because the user cancelled
     error: str = ""
     indexer_failures_baseline: int = 0
     # Capacity check
@@ -725,11 +727,14 @@ class PreflightChecker:
             )
 
     async def wait_for_index_ready(
-        self, index_set_id: str, timeout_sec: int = 30
+        self, index_set_id: str, timeout_sec: int = 30,
+        cancel_check: "Callable[[], bool] | None" = None,
     ) -> None:
         async with self._client() as c:
             deadline = asyncio.get_event_loop().time() + timeout_sec
             while asyncio.get_event_loop().time() < deadline:
+                if cancel_check and cancel_check():
+                    return  # user cancelled — stop polling, run() will return early
                 try:
                     r = await c.get(
                         f"{self.api_url}/api/system/indices/index_sets/{index_set_id}/stats"
@@ -980,6 +985,7 @@ class PreflightChecker:
         bulk_os_username: str | None = None,
         bulk_os_password: str | None = None,
         bulk_target_pattern: str | None = None,
+        cancel_check: "Callable[[], bool] | None" = None,
     ) -> PreflightResult:
         """Execute the full preflight pipeline.
 
@@ -994,7 +1000,22 @@ class PreflightChecker:
         start = time.time()
         result = PreflightResult()
 
+        def _cancelled() -> bool:
+            """User asked to cancel — mark the result and let run() return early.
+            Preflight makes several slow Graylog calls (health, capacity, apply
+            mappings, cycle deflector, wait for index) before the send loop, so
+            without these checkpoints a cancel during preflight looks dead."""
+            if cancel_check and cancel_check():
+                result.aborted = True
+                result.cancelled = True
+                result.error = "Cancelled by user during preflight"
+                log.info("Preflight cancelled by user")
+                return True
+            return False
+
         try:
+            if _cancelled():
+                return result
             # 1. Verify credentials
             ok, err = await self.verify_credentials()
             if not ok:
@@ -1002,6 +1023,8 @@ class PreflightChecker:
                 result.error = f"Graylog API credential check failed: {err}"
                 return result
 
+            if _cancelled():
+                return result
             # 2. Target health & GELF input check (cluster RED, input not running, etc.)
             health_errors, health_warnings = await self.check_target_health()
             if health_errors:
@@ -1029,6 +1052,8 @@ class PreflightChecker:
                 fields=result.fields_total, string_fields=result.fields_with_string,
             )
 
+            if _cancelled():
+                return result
             # 5. Find target index set
             index_set_id, title = await self.find_target_index_set()
             result.index_set_id = index_set_id
@@ -1204,22 +1229,28 @@ class PreflightChecker:
                 except Exception as e:
                     log.warning("Field limit template setup failed", error=str(e))
 
+                if _cancelled():
+                    return result
                 # 8. Apply mapping changes if needed
                 if to_keyword:
                     await self.apply_custom_mappings(index_set_id, to_keyword)
+                    if _cancelled():
+                        return result
                     # 9. Rotate index so the new mapping takes effect immediately
                     await self.cycle_index(index_set_id)
                     result.rotated = True
                     # 10. Wait for new index
-                    await self.wait_for_index_ready(index_set_id)
+                    await self.wait_for_index_ready(index_set_id, cancel_check=cancel_check)
                     log.info("Preflight: rotated index, ready to send")
                 else:
                     # No conflicts to fix, but still rotate so the new field-limit
                     # template takes effect on the next index.
                     await self.cycle_index(index_set_id)
                     result.rotated = True
-                    await self.wait_for_index_ready(index_set_id)
+                    await self.wait_for_index_ready(index_set_id, cancel_check=cancel_check)
                     log.info("Preflight: no mapping conflicts, rotated for fresh index")
+                if _cancelled():
+                    return result
 
         except Exception as e:
             result.aborted = True

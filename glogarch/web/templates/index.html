@@ -211,6 +211,7 @@
         <!-- Import Modal -->
         <div id="import-modal" class="modal-overlay u066">
             <div class="modal-card">
+                <button class="u134" data-act="closeImportModal" title="Close" data-i18n-title="btn_close">&times;</button>
                 <h3 data-i18n="page_import" data-icon="download">Import</h3>
                 <div id="import-modal-form">
                     <!-- Import Mode Selector -->
@@ -374,8 +375,12 @@
                         </span>
                         <!-- Cancel button — works for both modes. -->
                         <button class="btn-sm btn-danger" id="import-cancel-btn" data-act="cancelActiveImport" data-i18n="btn_cancel" data-icon="close">Cancel</button>
+                        <!-- Close but keep importing in the background. -->
+                        <button class="btn-sm btn-secondary" id="import-bg-close-btn" data-act="closeImportModal" data-i18n="btn_close_background" data-icon="close" title="" data-i18n-title="btn_close_background_hint">Close (keep running)</button>
                         <span class="u085" id="import-journal-badge"></span>
                     </div>
+                    <!-- Shown after the import finishes (import-controls is hidden). -->
+                    <button class="btn-primary" id="import-done-btn" data-act="closeImportModal" data-i18n="btn_close" data-icon="check" style="display:none;margin-top:10px">Close</button>
                 </div>
                 <div class="u105" id="modal-import-result"></div>
             </div>
@@ -816,6 +821,18 @@
                 <button class="btn-primary" data-act="saveOpenSearchConfig" data-i18n="btn_save" data-icon="shield">Save</button>
                 <button class="btn-secondary" data-act="testOpenSearchConfig" data-i18n="btn_test" data-icon="play">Test</button>
                 <span id="settings-os-result"></span>
+            </div>
+        </div>
+
+        <!-- Import (restore) default target -->
+        <div class="section">
+            <h2 data-i18n="settings_import_target" data-icon="download">Restore Target Defaults</h2>
+            <div class="text-muted fs-085 mb8" data-i18n="settings_import_target_desc"></div>
+            <div class="form-card" id="settings-import-form"></div>
+            <div class="u106">
+                <button class="btn-primary" data-act="saveImportDefaults" data-i18n="btn_save" data-icon="shield">Save</button>
+                <button class="btn-secondary" data-act="testImportDefaults" data-i18n="btn_test" data-icon="play">Test</button>
+                <span id="settings-import-result"></span>
             </div>
         </div>
 

@@ -82,10 +82,16 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
         # mutually exclusive with a report-wide window: when on, NO global time
         # override is applied, so a report-wide range / snap-to-midnight is ignored.
         use_dash_time = bool(cfg.get("use_dashboard_time", True))
-        # Snap-to-midnight only applies to a report-WIDE whole-day window (so it is
-        # off when per-widget times are used, and only for whole-day ranges).
-        align_midnight_eff = (bool(cfg.get("align_midnight")) and trs % 86400 == 0
-                              and not use_dash_time)
+        want_midnight = bool(cfg.get("align_midnight"))
+        # Report-WIDE snap-to-midnight: only when NOT using per-widget times, and
+        # only for a whole-day report window.
+        align_midnight_eff = want_midnight and trs % 86400 == 0 and not use_dash_time
+        # PER-WIDGET snap-to-midnight: when using each widget's own time range AND
+        # snap is on, keep every widget's own duration but end its window at today
+        # 00:00. Whether a given widget actually snaps is decided per widget in
+        # rebuild (only whole-day durations snap; e.g. a "last 2 hours" widget is
+        # left as-is).
+        snap_per_widget = want_midnight and use_dash_time
         web_user = cfg.get("graylog_web_username", "")
         web_pass = cfg.get("graylog_web_password", "")
         for dash in dashboards:
@@ -143,7 +149,8 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
                         bar_horizontal=bool(cfg.get("bar_horizontal", False)),
                         heatmap_values=bool(cfg.get("heatmap_values", False)),
                         use_dashboard_time=use_dash_time,
-                        abs_from=abs_from, abs_to=abs_to)
+                        abs_from=abs_from, abs_to=abs_to,
+                        snap_midnight=snap_per_widget)
                 if built:
                     sections.extend(built)
                 else:

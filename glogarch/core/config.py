@@ -69,6 +69,13 @@ class ImportConfig(BaseModel):
     gelf_protocol: str = "tcp"  # "udp" or "tcp"
     batch_size: int = 500
     delay_between_batches_ms: int = 100
+    # Default restore target (pre-filled into the import dialog so the operator
+    # doesn't retype it every time). All optional; the dialog still lets the
+    # user override per-import.
+    target_api_url: str = ""        # e.g. "http://192.168.1.10:9000"
+    target_api_token: str = ""      # API token (preferred)
+    target_api_username: str = ""   # or username + password
+    target_api_password: str = ""
 
 
 class RetentionConfig(BaseModel):

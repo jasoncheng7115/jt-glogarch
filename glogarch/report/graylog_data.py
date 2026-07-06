@@ -455,7 +455,8 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                                      heatmap_values: bool = False,
                                      use_dashboard_time: bool = True,
                                      abs_from: str | None = None,
-                                     abs_to: str | None = None) -> list[dict]:
+                                     abs_to: str | None = None,
+                                     snap_midnight: bool = False) -> list[dict]:
     """Return report `sections` reconstructed from a Graylog dashboard's widgets.
     Empty list on failure (caller degrades)."""
     auth = _basic_auth(server)
@@ -517,6 +518,41 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                 exec_body = {"global_override": {"timerange": {"type": "relative", "range": time_range_seconds}}}
             results = await _exec_and_wait(exec_body)
 
+            # Per-widget snap-to-midnight (used together with use_dashboard_time):
+            # keep each widget's OWN duration but move its window to end at today
+            # 00:00 local. Only whole-day durations snap — a "last 2 hours" widget
+            # is left exactly as configured. We re-execute the search once per
+            # distinct whole-day duration (an absolute [midnight-D, midnight]
+            # window) and copy those results over the base ones.
+            if snap_midnight and use_dashboard_time and not (abs_from and abs_to) and results:
+                from datetime import datetime, timezone, timedelta
+                midnight_utc = (datetime.now().astimezone()
+                                .replace(hour=0, minute=0, second=0, microsecond=0)
+                                .astimezone(timezone.utc))
+                fmt = "%Y-%m-%dT%H:%M:%S.000Z"
+                dur_of = {}   # (state_id, search_type_id) -> duration seconds
+                for st_id, st in results.items():
+                    for stype_id, sres in ((st.get("search_types") or {}).items()):
+                        eff = sres.get("effective_timerange") or {}
+                        f, t = _parse_ts(eff.get("from")), _parse_ts(eff.get("to"))
+                        if f and t and t > f:
+                            dur_of[(st_id, stype_id)] = round((t - f).total_seconds())
+                day_durs = sorted({d for d in dur_of.values() if d > 0 and d % 86400 == 0})
+                for d in day_durs:
+                    body = {"global_override": {"timerange": {"type": "absolute",
+                            "from": (midnight_utc - timedelta(seconds=d)).strftime(fmt),
+                            "to": midnight_utc.strftime(fmt)}}}
+                    try:
+                        snapped = await _exec_and_wait(body)
+                    except Exception:
+                        continue
+                    for (st_id, stype_id), dd in dur_of.items():
+                        if dd != d:
+                            continue
+                        src = ((snapped.get(st_id) or {}).get("search_types") or {}).get(stype_id)
+                        if src is not None:
+                            results.setdefault(st_id, {}).setdefault("search_types", {})[stype_id] = src
+
             # Trend: numeric widgets with `trend` enabled compare the current
             # value with the immediately preceding equal-length window. The main
             # execute returns only the current period, so query the previous
@@ -549,7 +585,9 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                         pst = ((pres.get(state_id) or {}).get("search_types")) or {}
                         pr = next((pst[s] for s in wmap if s in pst), None)
                         if pr is not None:
-                            trend_prev[wid] = _numeric_of(pr)
+                            _tf, _tfld = _metric_fn_field(
+                                ((wc.get("series") or [{}])[0] or {}).get("function") or "count()")
+                            trend_prev[wid] = _numeric_of(pr, (_tf == "count" and not _tfld))
                     except Exception:
                         pass
     except Exception as e:
@@ -611,8 +649,13 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                 widget["range_label"] = _range_label(time_range_seconds, lang, start=es, end=ee)
                 # Attach a trend badge to single-value widgets that enable it.
                 if widget.get("kind") == "single" and wid in trend_prev:
-                    pref = ((w.get("config") or {}).get("visualization_config") or {}).get("trend_preference", "NEUTRAL")
-                    widget["trend"] = _compute_trend(_numeric_of(res), trend_prev[wid], pref)
+                    _wcfg = w.get("config") or {}
+                    pref = (_wcfg.get("visualization_config") or {}).get("trend_preference", "NEUTRAL")
+                    _cf, _cfld = _metric_fn_field(
+                        ((_wcfg.get("series") or [{}])[0] or {}).get("function") or "count()")
+                    widget["trend"] = _compute_trend(
+                        _numeric_of(res, (_cf == "count" and not _cfld)),
+                        trend_prev[wid], pref, unit=_widget_unit(_wcfg))
                 tab_widgets.append(widget)
                 total += 1
         if tab_widgets:
@@ -657,26 +700,58 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
     unit = _widget_unit(cfg)   # Graylog metric unit (e.g. size/bytes), or None
     axis = _axis_type(cfg)     # 'linear' | 'logarithmic' (Graylog y-axis scale)
 
-    # data rows only (drop rollup/total rows)
-    drows = [r for r in rows if r.get("source") == "leaf"]
-    if not drows:
-        drows = rows
-    # Honour each row pivot's "Skip Empty Values" — drop rows whose skip-empty
-    # field value is blank (Graylog excludes them; mirror it).
-    drows = _skip_empty_rows(drows, row_pivots)
+    # A single-number/metric widget legitimately reads the rollup/total row;
+    # every other widget (table, chart, heatmap, map) must use ONLY leaf data
+    # rows. If there are no leaf rows the widget is genuinely EMPTY — do not
+    # fall back to the rollup/total/non-leaf rows, or a table turns a stray
+    # total into a phantom row (real bug: an empty external-IP table rendered
+    # a bogus "443").
+    is_numeric = (viz == "numeric") or (not row_pivots)
+    leaf_rows = [r for r in rows if r.get("source") == "leaf"]
+    drows = leaf_rows if leaf_rows else (rows if is_numeric else [])
+    if is_time:
+        # A time axis is ALWAYS chronological and continuous. Graylog returns
+        # only the buckets that have data (sparse) but renders them on a
+        # continuous timeline; if we plot the sparse rows in Graylog's returned
+        # order (which may be sorted by the widget's sort = value/desc) and
+        # evenly spaced, the temporal shape comes out reversed/compressed.
+        # So: sort by bucket time and zero-fill the missing interval buckets.
+        # Never apply "skip empty values" to a time pivot — empty buckets are
+        # real zeros that must be shown.
+        drows = _normalize_time_rows(drows, res.get("effective_timerange") or {}, cfg)
+    elif not is_numeric:
+        # Honour each row pivot's "Skip Empty Values" — drop rows whose
+        # skip-empty field value is blank (values pivots only).
+        drows = _skip_empty_rows(drows, row_pivots)
+
+    # Non-numeric widget with no leaf data → render an explicit "(no data)"
+    # note instead of a phantom row/value.
+    if not is_numeric and not drows:
+        return {"kind": "empty", "title": title}
 
     # numeric single value: no row pivot (just a total)
     if viz == "numeric" or (not row_pivots):
         val = None
-        # prefer the grand total
-        tot = res.get("total")
+        tot = res.get("total")   # search doc count — equals the metric ONLY for count()
         if drows:
             vv = drows[0].get("values") or []
             if vv:
                 val = vv[0].get("value")
+        func, field = _metric_fn_field(
+            ((cfg.get("series") or [{}])[0] or {}).get("function") or "count()")
+        is_count = (func == "count" and not field)
+        if val is None and is_count:
+            val = tot   # doc-count total is only a valid fallback for bare count()
         if val is None:
-            val = tot
-        return {"kind": "single", "title": title, "value": _fmt_unit(val, unit), "label": ""}
+            # A non-count metric with no value is genuinely empty — show
+            # "(no data)", never a phantom doc-count / "0" (real "443" bug).
+            return {"kind": "empty", "title": title}
+        # Date-typed metric (min/max/latest/avg on a date field) → local datetime,
+        # like the table path; otherwise format with the widget's unit.
+        typed = _fmt_metric_typed(val, (func + "(" + field + ")") if field else (func + "()"),
+                                  date_fields or set())
+        value = typed if typed != _fmt_metric(val) else _fmt_unit(val, unit)
+        return {"kind": "single", "title": title, "value": value, "label": ""}
 
     # A Graylog data table stays a table.
     if viz == "table":
@@ -704,28 +779,43 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
         if not any((v or 0) for v in values):
             return {"kind": "empty", "title": title}
         if viz == "pie":
-            top = sorted(zip(disp, values), key=lambda x: (x[1] or 0), reverse=True)[:8]
+            ranked = sorted(zip(disp, values), key=lambda x: (x[1] or 0), reverse=True)
+            top = ranked[:8]
+            # Aggregate the remainder into one "(Others)" slice so the grand total
+            # (and thus every on-slice percentage) matches Graylog instead of
+            # silently dropping slices and inflating the shown percentages.
+            rest = sum((v or 0) for _, v in ranked[8:])
+            plabels = [l for l, _ in top]
+            pvalues = [v for _, v in top]
+            if rest > 0:
+                plabels.append("(Others)")
+                pvalues.append(rest)
             return {"kind": "chart", "title": title,
-                    "config": builder.pie_chart([l for l, _ in top], [v for _, v in top])}
+                    "config": builder.pie_chart(plabels, pvalues)}
         # Line / area = a trend or DISTRIBUTION curve — dispatch on the widget's
         # visualization, not just on whether the pivot is time. A numeric values
         # pivot (e.g. duration_us) must read left-to-right by its key, NOT be
         # sorted-by-value and capped like a bar (that turned Graylog's area curve
         # into 15 ranked bars).
-        if viz in ("line", "area") or (is_time and viz != "bar"):
+        if viz == "scatter" or viz in ("line", "area") or (is_time and viz != "bar"):
             if is_time:
                 d2, v2 = disp, values
             else:
                 pr = sorted(zip(disp, values), key=lambda t: _numkey(t[0]))
                 d2 = [d for d, _ in pr]; v2 = [v for _, v in pr]
-            return {"kind": "chart", "title": title, "tall": True, "unit": unit,
-                    "config": builder.line_chart(d2, [{"label": title, "data": v2}], axis_type=axis)}
+            if viz == "scatter":
+                chart_cfg = builder.scatter_chart(d2, [{"label": title, "data": v2}], axis_type=axis)
+            else:
+                chart_cfg = builder.line_chart(d2, [{"label": title, "data": v2}], axis_type=axis,
+                                               fill=(viz == "area"), interpolation=_interpolation(cfg))
+            return {"kind": "chart", "title": title, "tall": True, "unit": unit, "config": chart_cfg}
         if is_time and viz == "bar":
             return {"kind": "chart", "title": title, "tall": True, "unit": unit,
                     "config": _bar_multi(disp, [{"label": title, "data": values}], _barmode(cfg), axis_type=axis)}
-        # non-time bar (cap to top 15). Vertical by default to match Graylog;
-        # the report can opt into horizontal for long category labels.
-        top = sorted(zip(disp, values), key=lambda x: (x[1] or 0), reverse=True)[:15]
+        # non-time bar (cap to top 15). Preserve Graylog's returned row order
+        # (already the widget's configured sort + limit) instead of re-sorting by
+        # value desc — re-sorting reordered bars away from what Graylog shows.
+        top = list(zip(disp, values))[:15]
         return {"kind": "chart", "title": title, "unit": unit,
                 "config": builder.bar_chart([l for l, _ in top], [v for _, v in top],
                                             horizontal=bar_horizontal, axis_type=axis)}
@@ -753,12 +843,19 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
               for name in order[:30]]
     if not any(any((v or 0) for v in s["data"]) for s in series):
         return {"kind": "empty", "title": title}
+    if viz == "scatter":
+        return {"kind": "chart", "title": title, "tall": True, "unit": unit,
+                "config": builder.scatter_chart(disp, series, axis_type=axis)}
     if viz in ("line", "area") or (is_time and viz != "bar"):
         return {"kind": "chart", "title": title, "tall": True, "unit": unit,
-                "config": builder.line_chart(disp, series, axis_type=axis)}
-    # bar: preserve Graylog's bar mode (grouped / stacked / overlay), incl. time bars
+                "config": builder.line_chart(disp, series, axis_type=axis,
+                                             fill=(viz == "area"), interpolation=_interpolation(cfg),
+                                             stacked=(viz == "area"))}
+    # bar: preserve Graylog's bar mode (grouped / stacked / overlay). A time bar
+    # must stay vertical/chronological, so only a categorical bar may go horizontal.
     return {"kind": "chart", "title": title, "tall": bool(is_time), "unit": unit,
-            "config": _bar_multi(disp, series, _barmode(cfg), axis_type=axis)}
+            "config": _bar_multi(disp, series, _barmode(cfg), axis_type=axis,
+                                 horizontal=(bar_horizontal and not is_time))}
 
 
 def _parse_ts(ts):
@@ -768,6 +865,108 @@ def _parse_ts(ts):
         return datetime.fromisoformat(s.replace("Z", "+00:00"))
     except (ValueError, TypeError):
         return None
+
+
+def _interval_from_cfg(cfg):
+    """An EXPLICIT timeunit interval from a time row-pivot config → timedelta.
+    Returns None for 'auto' (never guess) or when absent/unknown."""
+    from datetime import timedelta
+    try:
+        rp = (cfg.get("row_pivots") or [])[0]
+        iv = (rp.get("config") or {}).get("interval") or {}
+    except (IndexError, AttributeError, TypeError):
+        return None
+    if iv.get("type") != "timeunit":
+        return None
+    val = iv.get("value")
+    if not isinstance(val, (int, float)) or val <= 0:
+        return None
+    unit_secs = {"seconds": 1, "minutes": 60, "hours": 3600, "days": 86400,
+                 "weeks": 604800, "months": 2592000, "years": 31536000}
+    s = unit_secs.get(str(iv.get("unit") or "").lower())
+    return timedelta(seconds=val * s) if s else None
+
+
+def _normalize_time_rows(drows, eff=None, cfg=None):
+    """Make a time-bucketed pivot render like Graylog's continuous time axis.
+
+    Graylog returns only the buckets that contain data (sparse) and may return
+    them in the widget's sort order (e.g. by metric value, descending). Plotting
+    those sparse rows in returned order and evenly spaced makes the temporal
+    shape wrong (reversed / compressed). Here we:
+      1. sort the rows chronologically by their bucket timestamp,
+      2. zero-fill the missing interval buckets, and
+      3. extend the fill to the widget's FULL effective time range (`eff`) so
+         the leading/trailing empty buckets appear (data clustered at one end),
+         exactly like Graylog — not just the span between first and last data.
+    """
+    from datetime import timedelta, timezone
+    parsed = []
+    any_naive = False
+    for r in drows:
+        dt = _parse_ts((r.get("key") or [""])[0])
+        if dt is None:
+            continue
+        if dt.tzinfo is None:
+            any_naive = True
+        parsed.append((dt, r))
+    if not parsed:
+        return drows
+    parsed.sort(key=lambda x: x[0])
+
+    # Interval (step): smallest positive gap, else the widget's explicit interval.
+    step = None
+    if len(parsed) >= 2:
+        deltas = [d for d in (parsed[i + 1][0] - parsed[i][0]
+                              for i in range(len(parsed) - 1)) if d.total_seconds() > 0]
+        if deltas:
+            step = min(deltas)
+    if step is None:
+        step = _interval_from_cfg(cfg)
+    if step is None or step.total_seconds() <= 0:
+        return [r for _, r in parsed]   # can't fill safely → just the sorted data
+
+    # Effective-range bounds (UTC). Usable ONLY when both parse, all buckets are
+    # tz-aware (mixing naive + aware would raise), and to > from. Otherwise fall
+    # back to filling just the data span (never let cross-source math raise).
+    t_from = _parse_ts((eff or {}).get("from"))
+    t_to = _parse_ts((eff or {}).get("to"))
+    use_bounds = (t_from is not None and t_to is not None
+                  and not any_naive and t_to > t_from)
+    if use_bounds:
+        import math
+        t_from = t_from.astimezone(timezone.utc)
+        t_to = t_to.astimezone(timezone.utc)
+        first = parsed[0][0]
+        k = math.floor((first - t_from).total_seconds() / step.total_seconds())
+        start, end = first - step * k, t_to
+    else:
+        start, end = parsed[0][0], parsed[-1][0]
+
+    n = int((end - start).total_seconds() / step.total_seconds())
+    if n < 0 or n > 2000:   # don't explode; fall back to the data span
+        start, end = parsed[0][0], parsed[-1][0]
+        n = int((end - start).total_seconds() / step.total_seconds())
+        if n < 0 or n > 2000:
+            return [r for _, r in parsed]
+
+    def _zero_bucket(dt):
+        return {"key": [dt.isoformat()], "source": "leaf",
+                "values": [{"key": [], "value": 0, "source": "leaf"}]}
+
+    out = []
+    i = 0
+    cur = start
+    tol = step.total_seconds() / 2.0
+    while cur <= end + timedelta(seconds=tol):
+        if i < len(parsed) and abs((parsed[i][0] - cur).total_seconds()) <= tol:
+            out.append(parsed[i][1]); i += 1
+        else:
+            out.append(_zero_bucket(cur))
+        cur = cur + step
+    while i < len(parsed):   # safety: never drop a real bucket
+        out.append(parsed[i][1]); i += 1
+    return out
 
 
 def _time_axis_labels(drows):
@@ -891,7 +1090,25 @@ def _pivot_to_table(cfg, title, drows, col_pivots, date_fields=None):
                         pivot_cols.append(cn)
                 elif len(k) == 1 and cn not in total_cols:   # rollup grand total
                     total_cols.append(cn)
-        pivot_cols = sorted(pivot_cols)[:12]
+        # Preserve Graylog's column order: distinct pivot values in first-seen
+        # order (that IS the widget's configured sort/limit), and within each
+        # pivot value the metric columns in the widget's series order — NOT
+        # alphabetical (sorting reordered columns away from Graylog).
+        series_fns = [s.get("function") for s in (cfg.get("series") or [])]
+
+        def _metric_rank(cn):
+            m = cn.rpartition(" / ")[2]
+            return series_fns.index(m) if m in series_fns else len(series_fns)
+
+        colval_order, by_val = [], {}
+        for cn in pivot_cols:
+            val = cn.rpartition(" / ")[0] or cn
+            if val not in by_val:
+                by_val[val] = []
+                colval_order.append(val)
+            by_val[val].append(cn)
+        pivot_cols = [cn for val in colval_order
+                      for cn in sorted(by_val[val], key=_metric_rank)][:12]
         colnames = (total_cols if cfg.get("rollup") else []) + pivot_cols
         columns = rp_fields + colnames
         raw = []
@@ -942,6 +1159,12 @@ def _barmode(cfg: dict) -> str:
     return str(vc.get("barmode") or "group").lower()
 
 
+def _interpolation(cfg: dict) -> str:
+    """Graylog line/area interpolation: 'linear' (default) | 'spline' | 'step-after'."""
+    vc = cfg.get("visualization_config") or {}
+    return str(vc.get("interpolation") or "linear").lower()
+
+
 def _axis_type(cfg: dict) -> str:
     """Graylog y-axis scale: 'linear' (default) or 'logarithmic'."""
     vc = cfg.get("visualization_config") or {}
@@ -958,7 +1181,7 @@ def _y_scale(stacked: bool, axis_type: str) -> dict:
     return {"beginAtZero": True, "stacked": stacked}
 
 
-def _bar_multi(labels, series, barmode="group", axis_type="linear"):
+def _bar_multi(labels, series, barmode="group", axis_type="linear", horizontal=False):
     """Multi-series bar chart honouring Graylog's bar mode.
 
     - stack / relative -> stacked bars
@@ -989,14 +1212,22 @@ def _bar_multi(labels, series, barmode="group", axis_type="linear"):
         else:
             d["backgroundColor"] = c
         datasets.append(d)
+    cat_scale = {"stacked": stacked,
+                 "ticks": {"autoSkip": True, "maxTicksLimit": 12,
+                           "maxRotation": 0, "minRotation": 0}}
+    val_scale = _y_scale(stacked, axis_type)
+    # Horizontal: category axis = y, value axis = x (Chart.js indexAxis='y').
+    scales = ({"y": cat_scale, "x": val_scale} if horizontal
+              else {"x": cat_scale, "y": val_scale})
+    options = {"responsive": True, "maintainAspectRatio": False,
+               "plugins": {"legend": {"display": len(datasets) > 1, "position": "bottom",
+                                      "align": "start",   # left-align rows like Graylog (not centred/ragged)
+                                      "labels": {"padding": 14, "boxWidth": 12, "boxHeight": 12}}},
+               "scales": scales}
+    if horizontal:
+        options["indexAxis"] = "y"
     return {"type": "bar", "data": {"labels": labels, "datasets": datasets},
-            "options": {"responsive": True, "maintainAspectRatio": False,
-                        "plugins": {"legend": {"display": len(datasets) > 1, "position": "bottom",
-                                               "labels": {"padding": 16, "boxWidth": 14, "boxHeight": 12}}},
-                        "scales": {"x": {"stacked": stacked,
-                                         "ticks": {"autoSkip": True, "maxTicksLimit": 12,
-                                                   "maxRotation": 0, "minRotation": 0}},
-                                   "y": _y_scale(stacked, axis_type)}}}
+            "options": options}
 
 
 def _rowkey(r):
@@ -1045,16 +1276,18 @@ def _first_value(r):
     return 0
 
 
-def _numeric_of(res):
-    """The single scalar value from a numeric widget's pivot result."""
+def _numeric_of(res, is_count=True):
+    """The single scalar value from a numeric widget's pivot result. The search
+    doc-count `total` is a valid fallback ONLY for a bare count() metric — for
+    any other metric it is a phantom value that would corrupt the trend badge."""
     for r in (res.get("rows") or []):
         for v in (r.get("values") or []):
             if v.get("value") is not None:
                 return v.get("value")
-    return res.get("total")
+    return res.get("total") if is_count else None
 
 
-def _compute_trend(cur, prev, preference="NEUTRAL"):
+def _compute_trend(cur, prev, preference="NEUTRAL", *, unit=None):
     """Trend badge vs the previous period. `preference` (Graylog's
     trend_preference) decides colour: an increase is 'good' (green) when HIGHER
     is preferred, 'bad' (red) when LOWER is preferred, neutral otherwise."""
@@ -1077,7 +1310,7 @@ def _compute_trend(cur, prev, preference="NEUTRAL"):
         cls = "neutral"
     arrow = "▲" if up else ("▼" if down else "＝")
     sign = "+" if up else ("" if delta == 0 else "-")
-    dtxt = f"{sign}{_fmt_metric(abs(delta))}"
+    dtxt = f"{sign}{_fmt_unit(abs(delta), unit)}"
     ptxt = (f"{sign}{abs(pct):.1f}%") if pct is not None else ""
     return {"arrow": arrow, "delta": dtxt, "pct": ptxt, "cls": cls}
 
@@ -1096,6 +1329,9 @@ def _messages_to_table(cfg, title, res, max_rows, max_cols=0, date_fields=None):
     if max_cols and max_cols > 0 and len(fields) > max_cols:
         return None
     show_preview = bool(cfg.get("show_message_row"))
+    # When the message renders on its own preview row, don't ALSO keep it as a
+    # column — Graylog shows the message once, not duplicated.
+    cols = [f for f in fields if not (show_preview and f == "message")]
     msgs = res.get("messages") or []
     total = len(msgs)
     if max_rows and max_rows > 0:
@@ -1104,7 +1340,7 @@ def _messages_to_table(cfg, title, res, max_rows, max_cols=0, date_fields=None):
     for m in msgs:
         doc = m.get("message") or m
         cells = []
-        for f in fields:
+        for f in cols:
             v = doc.get(f, "")
             if v is not None and (f == "timestamp" or f in date_fields):
                 # Date column → local 'YYYY-MM-DD HH:MM:SS.mmm' like Graylog.
@@ -1118,7 +1354,7 @@ def _messages_to_table(cfg, title, res, max_rows, max_cols=0, date_fields=None):
         rows.append(row)
     if not rows:
         return None
-    out = {"kind": "table", "title": title, "columns": list(fields), "rows": rows}
+    out = {"kind": "table", "title": title, "columns": list(cols), "rows": rows}
     # When a row cap actually truncated the widget, note it bottom-right.
     if max_rows and max_rows > 0 and total > max_rows:
         out["rows_note"] = f"僅顯示前 {max_rows:,} 筆"
@@ -1176,12 +1412,18 @@ def _scale_rgb(ratio, stops):
     return tuple(round(a[j] + (b[j] - a[j]) * f) for j in range(3))
 
 
-def _heat_color(val, mx, scale="Viridis"):
+def _heat_color(val, lo, hi, scale="Viridis", rev=False):
     """Cell background from the widget's colour scale + a readable text colour.
-    Empty cell = no fill."""
-    if val is None or mx <= 0:
+    Value normalised over [lo, hi]; `rev` inverts the scale (Graylog
+    reversescale). Empty cell = no fill."""
+    if val is None:
         return "transparent", "#9ca3af"
-    ratio = max(0.0, min(1.0, (val or 0) / mx))
+    if hi <= lo:
+        ratio = 0.5           # all cells equal → mid-scale, not a broken 0/÷
+    else:
+        ratio = max(0.0, min(1.0, (val - lo) / (hi - lo)))
+    if rev:
+        ratio = 1.0 - ratio
     stops = _COLORSCALES.get(scale) or _COLORSCALES["Viridis"]
     r, g, b = _scale_rgb(ratio, stops)
     # Perceived luminance → pick black/white text for contrast.
@@ -1228,24 +1470,47 @@ def _pivot_to_heatmap(cfg, title, drows, col_pivots, show_values=False):
     row_labels = sorted(row_labels, key=lambda rl: -row_total[rl])[:MAX_ROWS]
     vals = [matrix[rl].get(c) for rl in row_labels for c in col_keys if matrix[rl].get(c) is not None]
     mx = max(vals) if vals else 0
+    mn = min(vals) if vals else 0
+    vc = cfg.get("visualization_config") or {}
+    rev = bool(vc.get("reverse_scale"))
+    # Empty-cell default fill: Graylog can paint blank cells with the smallest
+    # value or an explicit default rather than leaving them transparent.
+    if vc.get("use_smallest_as_default"):
+        default_fill = min(vals) if vals else None
+    else:
+        default_fill = vc.get("default_value")
+    if isinstance(default_fill, (int, float)):
+        mx, mn = max(mx, default_fill), min(mn, default_fill)
+    # Colour normalisation range: data min..max (auto) or the widget's z_min/z_max.
+    if vc.get("auto_scale", True):
+        lo, hi = mn, mx
+    else:
+        lo = vc.get("z_min") if isinstance(vc.get("z_min"), (int, float)) else mn
+        hi = vc.get("z_max") if isinstance(vc.get("z_max"), (int, float)) else mx
     rows_out = []
     for rl in row_labels:
         cells = []
         for c in col_keys:
             val = matrix[rl].get(c)
-            bg, fg = _heat_color(val, mx, scale)
+            if val is None and default_fill is not None:
+                val = default_fill
+            bg, fg = _heat_color(val, lo, hi, scale, rev)
             txt = _fmt_metric(val) if (show_values and val is not None) else ""
             cells.append({"text": txt, "bg": bg, "fg": fg})
         rows_out.append({"label": rl, "cells": cells})
-    # Colour-scale legend: a CSS gradient from the scale's low→high stops with
-    # 0 and max labels (mirrors Graylog's heatmap colourbar).
+    # Colour-scale legend: a CSS gradient mirroring Graylog's colourbar. When the
+    # scale is reversed, reverse the gradient AND swap the min/max end labels so
+    # each end's colour matches the value under it.
     stops = _COLORSCALES.get(scale) or _COLORSCALES["Viridis"]
-    gradient = "linear-gradient(to right, " + ", ".join(f"rgb({r},{g},{b})" for r, g, b in stops) + ")"
+    stops_leg = list(reversed(stops)) if rev else stops
+    gradient = "linear-gradient(to right, " + ", ".join(f"rgb({r},{g},{b})" for r, g, b in stops_leg) + ")"
+    lmin, lmax = ((_fmt_metric(hi), _fmt_metric(lo)) if rev
+                  else (_fmt_metric(lo), _fmt_metric(hi)))
     # Truncate long category headers (they render vertically; keep them compact).
     col_hdrs = [(c if len(c) <= 20 else c[:19] + "…") for c in col_keys]
     return {"kind": "heatmap", "title": title, "columns": col_hdrs, "rows": rows_out,
             "wide": len(col_keys) > 8, "truncated": truncated,
-            "legend_gradient": gradient, "legend_min": "0", "legend_max": _fmt_metric(mx)}
+            "legend_gradient": gradient, "legend_min": lmin, "legend_max": lmax}
 
 
 def _widget_unit(cfg):
@@ -1291,6 +1556,11 @@ def _fmt_unit(v, unit):
         return _fmt_size(f)
     if ut == "percent":
         return f"{f:.1f}%"
+    # Any other Graylog unit (e.g. a custom abbrev) → append the abbrev so the
+    # number isn't shown bare. No speculative time/duration humanising.
+    abbrev = unit.get("abbrev")
+    if abbrev:
+        return f"{_fmt_metric(v)} {abbrev}"
     return _fmt_metric(v)
 
 

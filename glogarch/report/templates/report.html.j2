@@ -219,6 +219,53 @@
       if (unit.unit_type === 'percent') return v.toFixed(1) + '%';
       return v;
     }
+    // Draw percentage labels on pie/doughnut slices (like Graylog). Opt-in via
+    // options.plugins.pctLabels=true. Only labels slices with room for the text
+    // so thin slices don't overlap ("show if room").
+    const pctLabelsPlugin = {
+      id: 'pctLabels',
+      afterDatasetsDraw(chart, args, opts) {
+        if (!opts) return;
+        const type = chart.config.type;
+        if (type !== 'pie' && type !== 'doughnut') return;
+        const ds = chart.data.datasets[0]; if (!ds) return;
+        const vals = ds.data.map(v => Number(v) || 0);
+        const total = vals.reduce((a, b) => a + b, 0);
+        if (!total) return;
+        const meta = chart.getDatasetMeta(0);
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.font = '600 11px ' + Chart.defaults.font.family;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        meta.data.forEach((arc, i) => {
+          const pct = vals[i] / total * 100;
+          if (!isFinite(pct) || pct <= 0) return;
+          const label = parseFloat(pct.toPrecision(3)) + '%';
+          // Geometric fit test: the label must physically fit inside the slice —
+          // its chord width at the ring mid-radius, and the ring thickness (this
+          // is a doughnut). Skips slices with no room, matching Graylog.
+          const pr = arc.getProps(['innerRadius', 'outerRadius', 'startAngle', 'endAngle'], true);
+          const sweep = Math.abs(pr.endAngle - pr.startAngle);
+          const midR = (pr.innerRadius + pr.outerRadius) / 2;
+          // Horizontal room at the label position: for a slice ≥180° there is
+          // effectively unlimited room; otherwise it's the chord across the arc
+          // at the ring mid-radius. (Using the raw endpoint chord alone wrongly
+          // reports ~0 for a near-full slice.)
+          const room = sweep >= Math.PI ? Infinity : 2 * midR * Math.sin(sweep / 2);
+          const tw = ctx.measureText(label).width, th = 11;
+          if (room < tw + 4 || (pr.outerRadius - pr.innerRadius) < th + 2) return;
+          const p = arc.getCenterPoint();
+          ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+          ctx.strokeText(label, p.x, p.y);
+          ctx.fillStyle = '#fff';
+          ctx.fillText(label, p.x, p.y);
+        });
+        ctx.restore();
+      }
+    };
+    Chart.register(pctLabelsPlugin);
+
     const CHARTS = {{ charts_json|safe }};
     for (const c of CHARTS) {
       const el = document.getElementById(c.canvas_id);

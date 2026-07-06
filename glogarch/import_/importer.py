@@ -245,6 +245,14 @@ class Importer:
             # === Preflight: detect & fix mapping conflicts BEFORE any GELF send ===
             preflight_result: PreflightResult | None = None
             if self.preflight is not None:
+                if fc.cancelled:
+                    log.info("Import cancelled by user before preflight")
+                    self.db.update_job(
+                        job_id, status=JobStatus.CANCELLED,
+                        error_message="Cancelled by user",
+                        completed_at=datetime.utcnow(),
+                    )
+                    return result
                 if progress_callback:
                     progress_callback({
                         "phase": "preflight",
@@ -270,8 +278,17 @@ class Importer:
                     pf_kwargs["bulk_os_password"] = self.bulk_importer.os_password
                     pf_kwargs["bulk_target_pattern"] = self.bulk_importer.target_index_pattern
                 preflight_result = await self.preflight.run(
-                    self.db, pf_ids, **pf_kwargs,
+                    self.db, pf_ids, cancel_check=lambda: fc.cancelled, **pf_kwargs,
                 )
+                # User cancelled during preflight — mark CANCELLED, not FAILED.
+                if preflight_result.cancelled or fc.cancelled:
+                    log.info("Import cancelled by user during preflight")
+                    self.db.update_job(
+                        job_id, status=JobStatus.CANCELLED,
+                        error_message="Cancelled by user",
+                        completed_at=datetime.utcnow(),
+                    )
+                    return result
                 if preflight_result.aborted:
                     err = f"Preflight aborted: {preflight_result.error}"
                     log.error(err)

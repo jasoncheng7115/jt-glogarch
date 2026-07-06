@@ -302,6 +302,20 @@ async def trigger_import(request: Request, background_tasks: BackgroundTasks):
     target_api_username = (body.get("target_api_username") or "").strip()
     target_api_password = body.get("target_api_password") or ""
 
+    # Fall back to the pre-configured restore-target defaults when a field is
+    # empty or still holds the masked placeholder ("***") that the settings
+    # auto-fill puts in the secret inputs. This lets the operator save the
+    # target once (in 系統設定) and not retype the URL/token every import.
+    _ic = settings.import_config
+    if not target_api_url:
+        target_api_url = (_ic.target_api_url or "").strip()
+    if (not target_api_token) or ("***" in target_api_token):
+        target_api_token = (_ic.target_api_token or "").strip()
+    if (not target_api_password) or ("***" in target_api_password):
+        target_api_password = _ic.target_api_password or ""
+    if not target_api_username:
+        target_api_username = (_ic.target_api_username or "").strip()
+
     if not target_api_url:
         return JSONResponse(
             {"error": "target_api_url is required (compliance: zero indexer failures)"},
@@ -2177,6 +2191,103 @@ async def save_config_general(request: Request):
         update_config(_config_path(request), lambda cfg: cfg.update(updates))
     _audit(request, "config_general_saved", str(updates))
     return {"status": "saved", **updates}
+
+
+@router.get("/config/import-defaults")
+def get_config_import_defaults(request: Request):
+    """Default restore target for the import dialog (secrets masked).
+
+    The import modal reads this on open and pre-fills the target fields so the
+    operator doesn't retype the Graylog host/API URL/token every time.
+    """
+    ic = _settings(request).import_config
+    return {
+        "gelf_host": ic.gelf_host or "",
+        "gelf_port": ic.gelf_port,
+        "gelf_protocol": ic.gelf_protocol or "tcp",
+        "target_api_url": ic.target_api_url or "",
+        "target_api_token": _mask(ic.target_api_token or ""),
+        "target_api_username": ic.target_api_username or "",
+        "target_api_password": _mask(ic.target_api_password or ""),
+        # Flags so the modal knows a secret default exists even though it's
+        # masked (used to decide whether to show the masked placeholder).
+        "has_token": bool(ic.target_api_token),
+        "has_password": bool(ic.target_api_password),
+    }
+
+
+@router.post("/config/import-defaults")
+async def save_config_import_defaults(request: Request):
+    """Save the default restore target (secrets reconciled if masked)."""
+    body = await request.json()
+    settings = _settings(request)
+    from glogarch.core.config_writer import update_config, reconcile_secret
+    ic = settings.import_config
+    # Non-secret fields: take provided value, else keep current.
+    if "gelf_host" in body:
+        ic.gelf_host = (body.get("gelf_host") or "").strip() or "localhost"
+    if body.get("gelf_port"):
+        try:
+            ic.gelf_port = int(body["gelf_port"])
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "gelf_port must be an integer"}, status_code=400)
+    if body.get("gelf_protocol") in ("tcp", "udp"):
+        ic.gelf_protocol = body["gelf_protocol"]
+    if "target_api_url" in body:
+        ic.target_api_url = (body.get("target_api_url") or "").strip()
+    if "target_api_username" in body:
+        ic.target_api_username = (body.get("target_api_username") or "").strip()
+    # Secrets: reconcile so a masked/empty value keeps the stored secret.
+    ic.target_api_token = reconcile_secret(body.get("target_api_token"), ic.target_api_token) or ""
+    ic.target_api_password = reconcile_secret(body.get("target_api_password"), ic.target_api_password) or ""
+
+    # Persist the whole 'import' section (alias of import_config) atomically.
+    section = ic.model_dump()
+    update_config(_config_path(request),
+                  lambda cfg: cfg.update({"import": section}))
+    _audit(request, "config_import_defaults_saved",
+           f"api_url={ic.target_api_url} host={ic.gelf_host}")
+    return {"status": "saved"}
+
+
+@router.post("/config/import-defaults/test")
+async def test_config_import_defaults(request: Request):
+    """Test the restore-target Graylog API from form values (secrets reconciled
+    against the stored defaults so a masked field still tests)."""
+    import httpx
+    from glogarch.utils.sanitize import sanitize
+    from glogarch.utils.netguard import ssrf_block_reason
+    from glogarch.core.config_writer import reconcile_secret
+    body = await request.json()
+    ic = _settings(request).import_config
+    url = (body.get("target_api_url") or "").strip() or (ic.target_api_url or "")
+    if not url:
+        return JSONResponse({"error": "target_api_url is required"}, status_code=400)
+    _reason = ssrf_block_reason(url)
+    if _reason:
+        return JSONResponse({"connected": False, "error": _reason}, status_code=400)
+    token = reconcile_secret(body.get("target_api_token"), ic.target_api_token) or ""
+    username = (body.get("target_api_username") or "").strip() or (ic.target_api_username or "")
+    password = reconcile_secret(body.get("target_api_password"), ic.target_api_password) or ""
+    if token:
+        auth = httpx.BasicAuth(token, "token")
+    elif username and password:
+        auth = httpx.BasicAuth(username, password)
+    else:
+        return JSONResponse({"connected": False, "error": "Provide a token or username + password"}, status_code=400)
+    try:
+        async with httpx.AsyncClient(verify=False, timeout=10.0) as client:
+            resp = await client.get(f"{url.rstrip('/')}/api/system", auth=auth,
+                                    headers={"Accept": "application/json"})
+            if resp.status_code == 200:
+                data = resp.json()
+                return {"connected": True, "version": data.get("version"),
+                        "hostname": data.get("hostname")}
+            if resp.status_code in (401, 403):
+                return {"connected": False, "error": "Authentication failed (check token / credentials)"}
+            return {"connected": False, "error": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"connected": False, "error": sanitize(str(e))}
 
 
 @router.post("/config/admin-password")
