@@ -2,6 +2,28 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.12.0] - 2026-07-07
+
+### 新增——選用的歸檔防竄改（HMAC，需自行啟用）
+
+新增一層**選用**的完整性機制（預設關閉），能偵測「蓄意竄改」而非僅「損毀」。裸 SHA256
+只能偵測相對於已存值的變動——能同時改「歸檔檔案 + DB 裡的 checksum」的人就能偽造一組
+對得起來的假值。此功能加上**帶秘鑰的 HMAC-SHA256**:沒有秘鑰就無法對竄改後的內容算出
+正確 MAC,因此就算同時改檔案與 DB 也過不了驗證。
+
+- **金鑰來源**(可插拔):環境變數 `JT_HMAC_KEY`(base64／hex)優先,否則用
+  `integrity.hmac_key_file`(預設 `/opt/jt-glogarch/.hmac_key`,權限 0600)。若要連 root／
+  服務帳號都防,請勿把金鑰檔留在機器上——僅在封存／驗證時以環境變數提供,並把 ledger
+  存到機器外。
+- **獨立雜湊清單(ledger)**:每個封存歸檔的 `(路徑, sha256, hmac, 大小, 封存時間)` 會寫入
+  `integrity_ledger` 表;`glogarch integrity-manifest` 可匯出到機器外保存,即使 root 把
+  檔案與 DB 全改了,仍能拿機外副本對帳揪出。
+- **驗證會偵測竄改**:`glogarch verify`(與排程驗證)會回報獨立的 **`TAMPERED`** 狀態
+  (HMAC 不符),與 `CORRUPTED`(SHA256)區分,UI 顯示紅色徽章並發送通知。
+- **新增 CLI**:`integrity-init`(產生金鑰)、`integrity-seal`(封存既有歸檔——僅能證明
+  「從現在起」未被動,無法回溯證明過去)、`integrity-manifest`(匯出 ledger)。
+- 關閉時**完全 no-op**——維持現有行為(僅 SHA256),不受影響。
+
 ## [1.11.1] - 2026-07-07
 
 ### 變更

@@ -2,6 +2,33 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.12.0] - 2026-07-07
+
+### Added — optional archive tamper-evidence (HMAC), opt-in
+
+A new **optional** integrity layer (default OFF) that detects deliberate
+tampering, not just corruption. Plain SHA256 only catches change relative to the
+stored value — anyone who can edit both the archive file AND the DB checksum can
+forge a consistent pair. This adds a **keyed HMAC-SHA256**: without the secret
+key an attacker cannot produce a valid MAC for altered content, so editing the
+file + DB no longer passes verification.
+
+- **Key handling** (pluggable): env `JT_HMAC_KEY` (base64/hex) takes precedence,
+  else `integrity.hmac_key_file` (default `/opt/jt-glogarch/.hmac_key`, mode
+  0600). For protection even against a root/service attacker, don't store the key
+  file — supply it via env only at seal/verify time and keep the ledger off-box.
+- **Independent ledger**: each sealed archive's `(path, sha256, hmac, size,
+  sealed_at)` is recorded in an `integrity_ledger` table; `glogarch
+  integrity-manifest` exports it for off-box safekeeping so a privileged attacker
+  who rewrites both the files and the DB can still be caught against the copy.
+- **Verify detects tampering**: `glogarch verify` (and scheduled verify) reports
+  a distinct **`TAMPERED`** status (keyed HMAC mismatch) separate from
+  `CORRUPTED` (SHA256), with a red badge in the UI and a notification.
+- **New CLI**: `integrity-init` (generate the key), `integrity-seal` (seal
+  existing archives — attests from now on, can't prove the past),
+  `integrity-manifest` (export the ledger).
+- Fully **no-op when disabled** — existing behaviour (SHA256 only) is unchanged.
+
 ## [1.11.1] - 2026-07-07
 
 ### Changed

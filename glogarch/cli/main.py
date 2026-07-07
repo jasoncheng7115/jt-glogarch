@@ -116,7 +116,7 @@ def _export_api(settings, server_config, db, dt_from, dt_to, stream, index_set, 
     """Export via Graylog REST API."""
     from glogarch.export.exporter import Exporter, _ensure_naive
 
-    exporter = Exporter(server_config, settings.export, settings.rate_limit, db)
+    exporter = Exporter(server_config, settings.export, settings.rate_limit, db, integrity=settings.integrity)
 
     if resume:
         rp = exporter.get_resume_point(stream[0] if stream else None)
@@ -195,7 +195,7 @@ def _export_opensearch(settings, server_config, db, dt_from, dt_to, index_set, r
 
     exporter = OpenSearchExporter(
         server_config, os_config, settings.export,
-        settings.rate_limit, db,
+        settings.rate_limit, db, integrity=settings.integrity,
     )
 
     if resume:
@@ -603,7 +603,7 @@ def verify(server: str | None, workers: int):
 
     settings = get_settings()
     db = _get_db()
-    verifier = Verifier(settings.export, db)
+    verifier = Verifier(settings.export, db, integrity=settings.integrity)
 
     with Progress(
         SpinnerColumn(),
@@ -629,6 +629,10 @@ def verify(server: str | None, workers: int):
     console.print(f"[bold]Verification Report[/bold]")
     console.print(f"  Total checked: {result.total_checked}")
     console.print(f"  [green]Valid:[/green] {result.valid}")
+    if getattr(result, "tampered", None):
+        console.print(f"  [bold red]TAMPERED (HMAC mismatch):[/bold red] {len(result.tampered)}")
+        for f in result.tampered:
+            console.print(f"    - {f}")
     if result.corrupted:
         console.print(f"  [red]Corrupted:[/red] {len(result.corrupted)}")
         for f in result.corrupted:
@@ -642,6 +646,82 @@ def verify(server: str | None, workers: int):
         for f in result.orphan_files:
             console.print(f"    - {f}")
 
+    db.close()
+
+
+@cli.command("integrity-init")
+def integrity_init():
+    """Generate the HMAC key for archive tamper-evidence (optional feature).
+
+    Writes a new random key to `integrity.hmac_key_file` (mode 0600). Refuses to
+    overwrite an existing key. After this, set `integrity.enabled: true` in
+    config.yaml so new archives are sealed."""
+    from glogarch.integrity import generate_key_file
+    settings = get_settings()
+    path = settings.integrity.hmac_key_file
+    try:
+        generate_key_file(path)
+    except FileExistsError:
+        console.print(f"[yellow]Key already exists at {path} — not overwriting.[/yellow]")
+        console.print("Delete it only if you accept that every already-sealed archive becomes unverifiable.")
+        return
+    console.print(f"[green]✔ HMAC key written to {path} (mode 0600).[/green]")
+    console.print("[bold]BACK IT UP OFF-BOX.[/bold] Losing the key means HMAC verification can't run "
+                  "(you'd fall back to SHA256 only).")
+    console.print("Next: set [cyan]integrity.enabled: true[/cyan] in config.yaml, then "
+                  "[cyan]glogarch integrity-seal[/cyan] to seal existing archives.")
+    console.print("For root-proof protection, do NOT keep the key file on this host — instead pass "
+                  "it via the [cyan]JT_HMAC_KEY[/cyan] env var at seal/verify time.")
+
+
+@cli.command("integrity-seal")
+@click.option("--server", "-s", default=None, help="Only seal archives from this server")
+def integrity_seal(server: str | None):
+    """Seal existing archives that don't yet have an HMAC (compute + ledger).
+
+    Note: sealing an already-tampered file only attests it from now on — it can't
+    prove the past."""
+    from glogarch.core.models import ArchiveStatus
+    from glogarch.integrity import load_hmac_key, seal_archive
+    settings = get_settings()
+    if not settings.integrity.enabled:
+        console.print("[yellow]integrity.enabled is false — set it true in config.yaml first.[/yellow]")
+        return
+    key = load_hmac_key(settings.integrity)
+    if not key:
+        console.print("[red]No HMAC key available. Run 'glogarch integrity-init' or set JT_HMAC_KEY.[/red]")
+        return
+    db = _get_db()
+    archives = db.list_archives(server=server, status=ArchiveStatus.COMPLETED)
+    sealed = skipped = 0
+    for a in archives:
+        if a.hmac_sha256:
+            skipped += 1
+            continue
+        if seal_archive(settings.integrity, db, a, key=key):
+            sealed += 1
+    console.print(f"[green]Sealed {sealed}[/green] archive(s); {skipped} already sealed.")
+    db.close()
+
+
+@cli.command("integrity-manifest")
+@click.option("--output", "-o", default=None, help="Write manifest to this file (default: stdout)")
+def integrity_manifest(output: str | None):
+    """Export the integrity ledger (hashes + HMACs) for OFF-BOX safekeeping.
+
+    Keep this manifest somewhere the archive host can't reach; comparing against
+    it later catches a privileged attacker who rewrote both the files and the DB."""
+    import json as _json
+    db = _get_db()
+    entries = db.list_ledger()
+    manifest = {"entries": entries, "count": len(entries)}
+    text = _json.dumps(manifest, indent=2, ensure_ascii=False)
+    if output:
+        with open(output, "w", encoding="utf-8") as f:
+            f.write(text + "\n")
+        console.print(f"[green]Wrote {len(entries)} ledger entries to {output}[/green]")
+    else:
+        console.print(text)
     db.close()
 
 

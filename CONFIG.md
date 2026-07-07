@@ -209,6 +209,39 @@ retention:
 
 ---
 
+## integrity — Archive Tamper-Evidence (optional, default OFF)
+
+Adds a **keyed HMAC-SHA256** on top of the plain SHA256 so that editing an
+archive file *and* its DB checksum can no longer forge a valid integrity value
+— only someone with the secret key can. Off by default; enable per deployment.
+
+```yaml
+integrity:
+  enabled: false                          # opt-in; when true, new archives are HMAC-sealed
+  hmac_key_file: /opt/jt-glogarch/.hmac_key   # 0600; used unless JT_HMAC_KEY env is set
+  ledger_enabled: true                    # record each seal in the integrity_ledger table
+```
+
+Setup:
+
+```bash
+glogarch integrity-init            # generate the key file (back it up off-box!)
+# set integrity.enabled: true in config.yaml, then:
+glogarch integrity-seal            # seal existing archives (attests from now on)
+glogarch verify                    # reports TAMPERED (HMAC mismatch) vs CORRUPTED (SHA256)
+glogarch integrity-manifest -o /safe/off-box/manifest.json   # keep a copy off the archive host
+```
+
+- **Key precedence:** env `JT_HMAC_KEY` (base64/hex) > `hmac_key_file`.
+- **Root-proof mode:** don't store the key file — supply `JT_HMAC_KEY` only at
+  seal/verify time and keep the manifest off-box. Then even a root/service
+  attacker who rewrites the files + DB is caught against the external copy.
+- **Honest limit:** sealing an already-tampered archive only attests it from
+  that point on; it cannot prove the past. Losing the key means HMAC checks fall
+  back to SHA256 only.
+
+---
+
 ## rate_limit — Rate Limiting
 
 ```yaml

@@ -63,10 +63,12 @@ class Exporter:
         export_config: ExportConfig,
         rate_limit_config: RateLimitConfig,
         db: ArchiveDB,
+        integrity=None,
     ):
         self.server_config = server_config
         self.export_config = export_config
         self.db = db
+        self.integrity = integrity   # IntegrityConfig or None (optional sealing)
         self.storage = ArchiveStorage(export_config)
         self.rate_limiter = RateLimiter(rate_limit_config)
         self._cancelled = False
@@ -496,7 +498,13 @@ class Exporter:
                 status=ArchiveStatus.COMPLETED,
                 field_schema=field_schema_json,
             )
-            self.db.record_archive(record)
+            record.id = self.db.record_archive(record)
+            # Optional tamper-evidence sealing (no-op unless integrity enabled).
+            try:
+                from glogarch.integrity import seal_archive
+                seal_archive(self.integrity, self.db, record)
+            except Exception:
+                pass
             result.original_bytes += original_bytes
             result.compressed_bytes += file_size
         except Exception as e:

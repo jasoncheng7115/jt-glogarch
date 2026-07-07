@@ -20,6 +20,7 @@ class VerifyResult:
         self.total_checked: int = 0
         self.valid: int = 0
         self.corrupted: list[str] = []
+        self.tampered: list[str] = []          # HMAC (keyed) mismatch — anti-tamper
         self.missing_files: list[str] = []   # DB record exists, file missing
         self.orphan_files: list[str] = []     # File exists, no DB record
         self.errors: list[str] = []
@@ -28,9 +29,10 @@ class VerifyResult:
 class Verifier:
     """Verifies archive file integrity and DB consistency."""
 
-    def __init__(self, export_config: ExportConfig, db: ArchiveDB):
+    def __init__(self, export_config: ExportConfig, db: ArchiveDB, integrity=None):
         self.storage = ArchiveStorage(export_config)
         self.db = db
+        self.integrity = integrity   # IntegrityConfig or None (optional HMAC check)
 
     def verify_all(
         self,
@@ -59,6 +61,18 @@ class Verifier:
             if not file_path.exists():
                 return ("missing", archive, "")
             is_valid, actual = verify_file(file_path, archive.checksum_sha256)
+            # Keyed HMAC tamper check (only when the archive is sealed AND a key
+            # is available). A 'tampered' verdict outranks a SHA256 result: an
+            # attacker who also rewrote the DB checksum passes SHA256 but the
+            # keyed HMAC still fails.
+            if archive.hmac_sha256:
+                try:
+                    from glogarch.integrity import verify_archive_integrity
+                    verdict, _ = verify_archive_integrity(self.integrity, archive)
+                    if verdict == "tampered":
+                        return ("tampered", archive, actual)
+                except Exception:
+                    pass
             return ("valid" if is_valid else "corrupted", archive, actual)
 
         if workers > 1:
@@ -84,6 +98,10 @@ class Verifier:
                         self.db.update_archive_status(archive.id, ArchiveStatus.MISSING)
                     elif status == "valid":
                         result.valid += 1
+                    elif status == "tampered":
+                        result.tampered.append(archive.file_path)
+                        log.error("TAMPERED archive (HMAC mismatch)", archive_id=archive.id, path=archive.file_path)
+                        self.db.update_archive_status(archive.id, ArchiveStatus.TAMPERED)
                     else:
                         result.corrupted.append(archive.file_path)
                         log.error("Corrupted file", archive_id=archive.id, path=archive.file_path,
@@ -106,6 +124,10 @@ class Verifier:
                     self.db.update_archive_status(archive.id, ArchiveStatus.MISSING)
                 elif status == "valid":
                     result.valid += 1
+                elif status == "tampered":
+                    result.tampered.append(archive.file_path)
+                    log.error("TAMPERED archive (HMAC mismatch)", archive_id=archive.id, path=archive.file_path)
+                    self.db.update_archive_status(archive.id, ArchiveStatus.TAMPERED)
                 else:
                     result.corrupted.append(archive.file_path)
                     log.error("Corrupted file", archive_id=archive.id, path=archive.file_path,
@@ -124,18 +146,22 @@ class Verifier:
                  total=result.total_checked,
                  valid=result.valid,
                  corrupted=len(result.corrupted),
+                 tampered=len(result.tampered),
                  missing=len(result.missing_files),
                  orphans=len(result.orphan_files))
 
-        if result.corrupted or result.missing_files:
+        if result.corrupted or result.missing_files or result.tampered:
             try:
                 import asyncio
                 from glogarch.notify.sender import notify_verify_failed
+                # Tampered archives are an integrity/security event — surface them
+                # distinctly in the same alert (prefixed) so they can't be missed.
+                _failed = result.corrupted + [f"[TAMPERED] {p}" for p in result.tampered]
                 try:
                     loop = asyncio.get_running_loop()
-                    loop.create_task(notify_verify_failed(result.corrupted, result.missing_files))
+                    loop.create_task(notify_verify_failed(_failed, result.missing_files))
                 except RuntimeError:
-                    asyncio.run(notify_verify_failed(result.corrupted, result.missing_files))
+                    asyncio.run(notify_verify_failed(_failed, result.missing_files))
             except Exception:
                 pass
 
@@ -151,6 +177,16 @@ class Verifier:
             return False, f"File missing: {archive.file_path}"
 
         is_valid, actual = verify_file(archive.file_path, archive.checksum_sha256)
+        # Keyed HMAC tamper check (sealed archives only).
+        if archive.hmac_sha256:
+            try:
+                from glogarch.integrity import verify_archive_integrity
+                verdict, _ = verify_archive_integrity(self.integrity, archive)
+                if verdict == "tampered":
+                    self.db.update_archive_status(archive.id, ArchiveStatus.TAMPERED)
+                    return False, "TAMPERED: keyed HMAC mismatch (file and/or DB checksum was altered)"
+            except Exception:
+                pass
         if is_valid:
             return True, f"OK (SHA256: {actual[:16]}...)"
         return False, f"Corrupted: expected {archive.checksum_sha256[:16]}... got {actual[:16]}..."

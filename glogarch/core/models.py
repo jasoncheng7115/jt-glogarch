@@ -16,6 +16,7 @@ class ArchiveStatus(str, Enum):
     IMPORTING = "importing"
     CORRUPTED = "corrupted"
     MISSING = "missing"
+    TAMPERED = "tampered"   # HMAC (keyed) mismatch — integrity/anti-tamper check
 
 
 class JobType(str, Enum):
@@ -48,6 +49,10 @@ class ArchiveRecord(BaseModel):
     part_number: int = 1
     total_parts: int = 1
     checksum_sha256: str = ""
+    # Optional keyed HMAC-SHA256 (tamper-evidence). None unless integrity sealing
+    # is enabled. Verified with the secret key — an attacker who edits the file
+    # and the DB checksum still can't forge this without the key.
+    hmac_sha256: str | None = None
     status: ArchiveStatus = ArchiveStatus.COMPLETED
     created_at: datetime = Field(default_factory=datetime.utcnow)
     deleted_at: datetime | None = None

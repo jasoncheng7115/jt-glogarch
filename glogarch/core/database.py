@@ -232,6 +232,24 @@ class ArchiveDB:
             conn.execute("ALTER TABLE archives ADD COLUMN original_size_bytes INTEGER NOT NULL DEFAULT 0")
         if "field_schema" not in existing_arc:
             conn.execute("ALTER TABLE archives ADD COLUMN field_schema TEXT")
+        # Optional tamper-evidence HMAC (v1.12+) — nullable, only set when the
+        # integrity feature is enabled.
+        if "hmac_sha256" not in existing_arc:
+            conn.execute("ALTER TABLE archives ADD COLUMN hmac_sha256 TEXT")
+        # Independent integrity ledger (append-only in practice): a record of each
+        # sealed archive's hashes, so a copy kept off-box can catch a privileged
+        # attacker who rewrites both the archive files and the archives table.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS integrity_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                archive_id INTEGER,
+                file_path TEXT NOT NULL,
+                sha256 TEXT NOT NULL,
+                hmac_sha256 TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL DEFAULT 0,
+                sealed_at TEXT NOT NULL
+            )
+        """)
         # api_audit: target_name column (v1.7.1+)
         try:
             existing_audit = {row[1] for row in conn.execute("PRAGMA table_info(api_audit)").fetchall()}
@@ -355,6 +373,45 @@ class ArchiveDB:
             except Exception:
                 self._rollback_safely()
                 raise
+
+    # --- Integrity (optional tamper-evidence) ---
+
+    def set_archive_hmac(self, archive_id: int, hmac_sha256: str) -> None:
+        """Store the keyed HMAC for an archive (integrity sealing)."""
+        with self._lock:
+            try:
+                self.conn.execute(
+                    "UPDATE archives SET hmac_sha256 = ? WHERE id = ?",
+                    (hmac_sha256, archive_id),
+                )
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def add_ledger_entry(self, archive_id, file_path: str, sha256: str,
+                         hmac_sha256: str, size_bytes: int, sealed_at: str) -> None:
+        """Append an integrity-ledger record (independent hash provenance)."""
+        with self._lock:
+            try:
+                self.conn.execute(
+                    """INSERT INTO integrity_ledger
+                       (archive_id, file_path, sha256, hmac_sha256, size_bytes, sealed_at)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (archive_id, file_path, sha256, hmac_sha256, size_bytes, sealed_at),
+                )
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def list_ledger(self) -> list[dict]:
+        """All integrity-ledger entries, oldest first (for off-box manifest export)."""
+        rows = self.conn.execute(
+            """SELECT archive_id, file_path, sha256, hmac_sha256, size_bytes, sealed_at
+               FROM integrity_ledger ORDER BY id"""
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def find_archive(
         self,
@@ -1107,6 +1164,7 @@ class ArchiveDB:
             part_number=row["part_number"],
             total_parts=row["total_parts"],
             checksum_sha256=row["checksum_sha256"],
+            hmac_sha256=(row["hmac_sha256"] if "hmac_sha256" in row.keys() else None),
             status=ArchiveStatus(row["status"]),
             created_at=_str_to_dt(row["created_at"]),  # type: ignore
             deleted_at=_str_to_dt(row["deleted_at"]),

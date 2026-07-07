@@ -191,7 +191,7 @@ class ArchiveScheduler:
             from glogarch.opensearch.exporter import OpenSearchExporter
             exporter = OpenSearchExporter(
                 server_config, os_config, self.settings.export,
-                self.settings.rate_limit, self.db,
+                self.settings.rate_limit, self.db, integrity=self.settings.integrity,
             )
             # OpenSearch: no resume point — rely on per-chunk dedup to avoid gaps
             log.info("OpenSearch mode: using full range with per-chunk dedup")
@@ -200,7 +200,7 @@ class ArchiveScheduler:
         else:
             exporter = Exporter(
                 server_config, self.settings.export,
-                self.settings.rate_limit, self.db,
+                self.settings.rate_limit, self.db, integrity=self.settings.integrity,
             )
 
             # Pass first stream_id for stream-aware resume point
@@ -266,7 +266,7 @@ class ArchiveScheduler:
         job_id = self._create_run_job(JobType.VERIFY, f"scheduled:verify:{schedule_name}")
         try:
             from glogarch.verify.verifier import Verifier
-            verifier = Verifier(self.settings.export, self.db)
+            verifier = Verifier(self.settings.export, self.db, integrity=self.settings.integrity)
             result = verifier.verify_all()
             log.info("Scheduled verify completed",
                      total=result.total_checked,

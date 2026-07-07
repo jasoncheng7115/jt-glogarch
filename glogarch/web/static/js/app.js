@@ -171,10 +171,12 @@ function statusBadge(status, errorMessage) {
         deleted: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 9L18 20.35C17.84 21.3 17.01 22 16.04 22H7.96C6.99 22 6.16 21.3 6 20.35L4 9"/><path d="M21 6H15.38M3 6H8.63M8.63 6V4C8.63 2.9 9.52 2 10.63 2H13.38C14.48 2 15.38 2.9 15.38 4V6M8.63 6H15.38"/></svg>',
         corrupted: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f44336" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>',
         missing: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ff9800" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>',
+        tampered: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d32f2f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="9.5" y1="9.5" x2="14.5" y2="14.5"/><line x1="14.5" y1="9.5" x2="9.5" y2="14.5"/></svg>',
     };
     const labels = {
         corrupted: t('status_corrupted'),
         missing: t('status_missing'),
+        tampered: t('status_tampered'),
         completed_with_failures: t('status_completed_with_failures'),
     };
     // A "completed" job with a non-empty error_message that mentions

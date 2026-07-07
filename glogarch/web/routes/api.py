@@ -235,7 +235,7 @@ async def trigger_export(request: Request, background_tasks: BackgroundTasks):
 
         os_exporter = OpenSearchExporter(
             server_config, os_config, settings.export,
-            settings.rate_limit, db,
+            settings.rate_limit, db, integrity=settings.integrity,
         )
         # OpenSearch: no resume point — rely on per-chunk dedup to avoid gaps
 
@@ -256,7 +256,7 @@ async def trigger_export(request: Request, background_tasks: BackgroundTasks):
                 )
     else:
         from glogarch.export.exporter import _ensure_naive
-        exporter = Exporter(server_config, settings.export, settings.rate_limit, db)
+        exporter = Exporter(server_config, settings.export, settings.rate_limit, db, integrity=settings.integrity)
 
         if resume:
             rp = exporter.get_resume_point(streams[0] if streams else None)
@@ -559,7 +559,7 @@ def trigger_cleanup(request: Request, days: int | None = None, dry_run: bool = F
 def trigger_verify(request: Request, server: str | None = None):
     settings = _settings(request)
     db = _db(request)
-    verifier = Verifier(settings.export, db)
+    verifier = Verifier(settings.export, db, integrity=settings.integrity)
     result = verifier.verify_all(server=server)
     return {
         "total_checked": result.total_checked,
@@ -849,7 +849,7 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
                                      started_at=datetime.utcnow()))
         except Exception:
             job_id = ""
-        verifier = Verifier(settings.export, db)
+        verifier = Verifier(settings.export, db, integrity=settings.integrity)
         try:
             result = verifier.verify_all()
             note = (f"{result.valid} valid, {len(result.corrupted)} corrupted, "
@@ -915,7 +915,7 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
         from glogarch.opensearch.exporter import OpenSearchExporter
         os_exporter = OpenSearchExporter(
             server_config, os_config, settings.export,
-            settings.rate_limit, db,
+            settings.rate_limit, db, integrity=settings.integrity,
         )
         # OpenSearch mode: do NOT use resume point to skip indices.
         # Rely on per-chunk dedup instead, to avoid missing gaps.
@@ -941,7 +941,7 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
                 except Exception:
                     pass
     else:
-        exporter = Exporter(server_config, settings.export, settings.rate_limit, db)
+        exporter = Exporter(server_config, settings.export, settings.rate_limit, db, integrity=settings.integrity)
         first_stream = stream_ids[0] if stream_ids else None
         rp = exporter.get_resume_point(stream_id=first_stream)
         if rp:

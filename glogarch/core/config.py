@@ -78,6 +78,22 @@ class ImportConfig(BaseModel):
     target_api_password: str = ""
 
 
+class IntegrityConfig(BaseModel):
+    """Optional tamper-evidence for archives (default OFF — opt-in per customer).
+
+    When enabled, each archive is sealed with an HMAC-SHA256 (keyed) in addition
+    to the plain SHA256, and an independent ledger entry is recorded. Without the
+    key an attacker who edits both the archive file AND the DB checksum still
+    can't forge a valid HMAC. The key comes from env `JT_HMAC_KEY` (base64/hex)
+    if set, otherwise from `hmac_key_file`. For root-proof protection, do NOT
+    store the key file — supply it via env only at seal/verify time and keep the
+    ledger off-box.
+    """
+    enabled: bool = False
+    hmac_key_file: str = "/opt/jt-glogarch/.hmac_key"
+    ledger_enabled: bool = True
+
+
 class RetentionConfig(BaseModel):
     enabled: bool = True
     retention_days: int = 1095
@@ -182,6 +198,7 @@ class Settings(BaseModel):
     opensearch: OpenSearchConfig = Field(default_factory=OpenSearchConfig)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
+    integrity: IntegrityConfig = Field(default_factory=IntegrityConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
     op_audit: ApiAuditConfig = Field(default_factory=ApiAuditConfig)

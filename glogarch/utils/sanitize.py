@@ -23,6 +23,9 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # token=..., api_token=..., access_token=...
     (re.compile(r"(?i)\b([a-z_]*token|api[_-]?key|apikey)\s*[=:]\s*([^\s&,;\"']+)"),
      r"\1=***REDACTED***"),
+    # JT_HMAC_KEY=... (integrity signing key must never land in a log/DB)
+    (re.compile(r"(?i)\b(JT_HMAC_KEY|hmac[_-]?key)\s*[=:]\s*([^\s&,;\"']+)"),
+     r"\1=***REDACTED***"),
     # JSON style: "password": "xxx"
     (re.compile(r"(?i)(\"(?:password|passwd|pwd|secret|[a-z_]*token|api[_-]?key|apikey)\"\s*:\s*\")([^\"]+)(\")"),
      r"\1***REDACTED***\3"),
