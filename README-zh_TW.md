@@ -96,11 +96,45 @@ Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
 - **串流寫入** — 不會將所有訊息載入記憶體
 - 自動分檔（預設 50MB）
 - SHA256 完整性驗證（含 `.sha256` 附檔，支援 `--workers N` 平行驗證）
+- **選用的防竄改機制** — 帶秘鑰 HMAC-SHA256 + 機外雜湊清單，能偵測「蓄意竄改」而非僅「損毀」（見下方）
 - 排程定期 SHA256 重新檢查
 - 保留天數自動清理（含寫入中檔案保護，避免清理與匯出競態）
 - 從磁碟重新掃描歸檔（偵測殘留檔案 / 遺失檔案）
 - **DB 備份** — `glogarch db-backup` 線上快照，支援自動清理舊備份
 - **DB 重建** — `glogarch db-rebuild` 從歸檔檔案重建 metadata DB（災難復原用）
+
+
+### 歸檔防竄改（選用，自 v1.12.0）
+
+預設每個歸檔都帶 **SHA256**（可偵測損毀）。你可以另外啟用**帶秘鑰的 HMAC-SHA256**，讓
+「同時能改歸檔檔案**與**資料庫」的內部人也無法蒙混——裸 SHA256 擋不住（他只要把兩邊都
+改成相符即可）。**預設關閉**，只有需要的部署才啟用。
+
+```yaml
+# config.yaml
+integrity:
+  enabled: true
+  hmac_key_file: /opt/jt-glogarch/.hmac_key   # 或以 JT_HMAC_KEY 環境變數提供金鑰
+  ledger_enabled: true
+```
+
+```bash
+sudo -u jt-glogarch glogarch integrity-init      # 產生秘鑰——請備份到「機器外」
+# 在 config.yaml 設 integrity.enabled: true，然後：
+sudo -u jt-glogarch glogarch integrity-seal      # 封存既有歸檔（僅證明「從現在起」未被動）
+sudo -u jt-glogarch glogarch verify              # 會回報 TAMPERED（HMAC 不符）與 CORRUPTED（SHA256）之別
+sudo -u jt-glogarch glogarch integrity-manifest -o /機器外/manifest.json   # 把雜湊清單存到主機以外
+```
+
+- **金鑰優先序：** 環境變數 `JT_HMAC_KEY`（base64／hex）> `hmac_key_file`（權限 0600）。
+- **防 root 模式：** 不要把金鑰檔留在機器上——僅在封存／驗證時以 `JT_HMAC_KEY` 提供，並把
+  manifest 存到機器外；如此即使 root／服務帳號把檔案與 DB 全改了，也能拿機外副本揪出。
+- **`verify`**（與排程驗證）會把「已封存但 HMAC 不再相符」的歸檔標為 **`TAMPERED`**
+  （紅色徽章 + 🚨 通知），與 `CORRUPTED`（SHA256）區分。
+- **誠實界線：** 對已被竄改的舊檔補封，只能證明「從現在起」未被動，無法回溯證明過去；
+  遺失金鑰則退回僅 SHA256。
+
+詳見 [CONFIG-zh_TW.md](CONFIG-zh_TW.md) 的 `integrity` 段落。
 
 
 ### 匯入(還原)
@@ -1139,8 +1173,11 @@ glogarch --help
 | `glogarch export` | 手動匯出 (`--mode api|opensearch --days 180`) |
 | `glogarch import` | 匯入歸檔 (`--archive-id N --target-host HOST`) |
 | `glogarch list` | 列出歸檔（支援篩選） |
-| `glogarch verify` | 驗證所有歸檔的 SHA256 |
+| `glogarch verify` | 驗證所有歸檔——SHA256，並在啟用防竄改時加驗帶秘鑰 HMAC（會回報 `TAMPERED`） |
 | `glogarch cleanup` | 移除過期歸檔 |
+| `glogarch integrity-init` | 產生防竄改用的 HMAC 金鑰（選用功能） |
+| `glogarch integrity-seal` | 為既有歸檔補上 HMAC 封存（計算 + 寫入 ledger） |
+| `glogarch integrity-manifest` | 匯出完整性 ledger（雜湊清單）以存到機器外 |
 | `glogarch status` | 顯示系統狀態 |
 | `glogarch schedule` | 管理排程作業 |
 | `glogarch config` | 印出設定範本 |

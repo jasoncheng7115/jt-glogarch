@@ -97,11 +97,49 @@ and can restore them back into any Graylog instance via GELF (UDP / TCP).
 - **Streaming write** — never holds all messages in memory
 - Auto file splitting at configurable size (default 50MB)
 - SHA256 integrity verification with `.sha256` sidecar files (`--workers N` for parallel)
+- **Optional tamper-evidence** — keyed HMAC-SHA256 + off-box ledger detects deliberate tampering, not just corruption (see below)
 - Scheduled SHA256 re-verification
 - Retention-based auto-cleanup (with write-in-progress race guard)
 - Rescan archives from disk (detect orphan / missing files)
 - **DB backup** — `glogarch db-backup` online snapshot with auto-prune
 - **DB rebuild** — `glogarch db-rebuild` reconstruct metadata DB from archive files (disaster recovery)
+
+
+### Archive Tamper-Evidence (optional, since v1.12.0)
+
+By default every archive carries a **SHA256** (detects corruption). You can
+optionally enable a **keyed HMAC-SHA256** so tampering is detectable even against
+an insider who can edit *both* the archive file **and** the database — plain
+SHA256 can't (they'd just update both to match). **Off by default**; enable it
+only where you need it.
+
+```yaml
+# config.yaml
+integrity:
+  enabled: true
+  hmac_key_file: /opt/jt-glogarch/.hmac_key   # or supply the key via the JT_HMAC_KEY env var
+  ledger_enabled: true
+```
+
+```bash
+sudo -u jt-glogarch glogarch integrity-init      # generate the secret key — BACK IT UP OFF-BOX
+# set integrity.enabled: true in config.yaml, then:
+sudo -u jt-glogarch glogarch integrity-seal      # seal existing archives (attests from now on)
+sudo -u jt-glogarch glogarch verify              # reports TAMPERED (HMAC mismatch) vs CORRUPTED (SHA256)
+sudo -u jt-glogarch glogarch integrity-manifest -o /off-box/manifest.json   # keep a hash ledger off the host
+```
+
+- **Key precedence:** env `JT_HMAC_KEY` (base64/hex) > `hmac_key_file` (mode 0600).
+- **Root-proof mode:** don't store the key file — pass `JT_HMAC_KEY` only at
+  seal/verify time and keep the manifest off-box; then even a root/service-user
+  attacker who rewrites the files + DB is caught against the external copy.
+- **`verify`** (and scheduled verify) flags a sealed archive whose keyed HMAC no
+  longer matches as **`TAMPERED`** (red badge + a 🚨 notification), distinct from
+  `CORRUPTED` (SHA256).
+- **Honest limit:** sealing an already-tampered file only attests it *from now on*
+  — it can't prove the past. Losing the key falls back to SHA256 only.
+
+See [CONFIG.md](CONFIG.md) → `integrity` for full details.
 
 
 ### Import (Restore)
@@ -1208,8 +1246,11 @@ glogarch --help
 | `glogarch export` | Manual export (`--mode api|opensearch --days 180`) |
 | `glogarch import` | Import archives (`--archive-id N --target-host HOST`) |
 | `glogarch list` | List archives with filters |
-| `glogarch verify` | Verify SHA256 of all archives |
+| `glogarch verify` | Verify all archives — SHA256, plus keyed HMAC (reports `TAMPERED`) when integrity is enabled |
 | `glogarch cleanup` | Remove expired archives |
+| `glogarch integrity-init` | Generate the HMAC key for tamper-evidence (optional feature) |
+| `glogarch integrity-seal` | Seal existing archives with an HMAC (compute + ledger) |
+| `glogarch integrity-manifest` | Export the integrity ledger (hashes) for off-box safekeeping |
 | `glogarch status` | Show system status |
 | `glogarch schedule` | Manage scheduled jobs |
 | `glogarch config` | Print a config template |
