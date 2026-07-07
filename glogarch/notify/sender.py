@@ -274,6 +274,7 @@ _MSG = {
                         "Checked: {total}"),
         "verify_fail": "❌ Verification Failed",
         "corrupted": "Corrupted: {n}",
+        "tampered": "🚨 TAMPERED (HMAC mismatch): {n}",
         "missing": "Missing: {n}",
         "error_title": "❌ {op} Error",
         "errors": "Errors: {n}",
@@ -308,6 +309,7 @@ _MSG = {
                         "總檢查: {total}"),
         "verify_fail": "❌ 驗證失敗",
         "corrupted": "損毀: {n}",
+        "tampered": "🚨 遭竄改（HMAC 不符）: {n}",
         "missing": "遺失: {n}",
         "error_title": "❌ {op} 失敗",
         "errors": "錯誤: {n}",
@@ -400,8 +402,11 @@ async def notify_cleanup_complete(deleted: int, freed_bytes: int):
     )
 
 
-async def notify_verify_failed(corrupted: list[str], missing: list[str]):
+async def notify_verify_failed(corrupted: list[str], missing: list[str],
+                               tampered: list[str] | None = None):
     lines = []
+    if tampered:
+        lines.append(_t("tampered", n=len(tampered)))   # security event — listed first
     if corrupted:
         lines.append(_t("corrupted", n=len(corrupted)))
     if missing:

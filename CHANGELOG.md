@@ -2,6 +2,19 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.12.1] - 2026-07-07
+
+### Fixed
+
+- **Tampered archives are labelled distinctly in notifications.** A `TAMPERED`
+  (keyed HMAC mismatch) result was reported as generic "Corrupted" in the
+  verify-failed alert — underselling a security event. It now has its own line
+  (`🚨 TAMPERED (HMAC mismatch): N`), listed first, separate from `Corrupted` and
+  `Missing`.
+- **Tests can no longer send real notifications.** An autouse test fixture mutes
+  the high-level `notify_*` senders, so a test run (e.g. the integrity/verify
+  tests) can never fire an actual Telegram/Discord/etc. alert.
+
 ## [1.12.0] - 2026-07-07
 
 ### Added — optional archive tamper-evidence (HMAC), opt-in

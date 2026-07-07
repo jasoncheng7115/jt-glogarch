@@ -154,14 +154,15 @@ class Verifier:
             try:
                 import asyncio
                 from glogarch.notify.sender import notify_verify_failed
-                # Tampered archives are an integrity/security event — surface them
-                # distinctly in the same alert (prefixed) so they can't be missed.
-                _failed = result.corrupted + [f"[TAMPERED] {p}" for p in result.tampered]
+                # Tampered archives are an integrity/security event — reported as
+                # their OWN category (not lumped in with "corrupted").
                 try:
                     loop = asyncio.get_running_loop()
-                    loop.create_task(notify_verify_failed(_failed, result.missing_files))
+                    loop.create_task(notify_verify_failed(
+                        result.corrupted, result.missing_files, tampered=result.tampered))
                 except RuntimeError:
-                    asyncio.run(notify_verify_failed(_failed, result.missing_files))
+                    asyncio.run(notify_verify_failed(
+                        result.corrupted, result.missing_files, tampered=result.tampered))
             except Exception:
                 pass
 
