@@ -2,6 +2,14 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.12.2] - 2026-07-08
+
+### Fixed
+
+- **Report email field labels align** — the zh-TW report-delivery email labels
+  (報表 / 產製時間 / 檔案) are now all four characters wide (報表名稱 / 產製時間 /
+  檔案名稱) so they line up cleanly.
+
 ## [1.12.1] - 2026-07-07
 
 ### Fixed

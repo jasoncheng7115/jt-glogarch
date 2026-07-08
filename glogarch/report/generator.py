@@ -309,7 +309,7 @@ def _email_pdf(settings, recipients, subject_title, pdf: bytes, filename: str, l
     mb = len(pdf) / (1024 * 1024)
     size = f"{mb:.2f} MB" if mb >= 1 else f"{len(pdf) / 1024:.0f} KB"
     L = ({"intro": "jt-glogarch 已為您產生下列報表，PDF 檔案已附於本信。",
-          "report": "報表", "generated": "產製時間", "file": "檔案",
+          "report": "報表名稱", "generated": "產製時間", "file": "檔案名稱",
           "footer": "本信由 jt-glogarch 自動寄送"}
          if lang == "zh-TW" else
          {"intro": "jt-glogarch has generated the following report. The PDF is attached.",
