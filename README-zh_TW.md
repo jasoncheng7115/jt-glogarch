@@ -1,4 +1,4 @@
-# jt-glogarch v1.12.2
+# jt-glogarch v1.12.3
 
 **語言**: [English](README.md) | **繁體中文**  
 **網站**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.12.2-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.12.3-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -1208,6 +1208,33 @@ sudo -u jt-glogarch glogarch import \
 
 
 ## 疑難排解 / 常見問題
+
+
+### OS 升級後服務起不來 — `ModuleNotFoundError: No module named 'glogarch'`
+
+OS 大版本升級（例如 **Ubuntu 22.04 → 24.04**）會換掉系統 Python（3.10 → 3.12）。套件
+是**按 Python 版本分目錄**安裝的,舊安裝被留在舊版本下,服務就找不到 `glogarch`。這不是
+本工具特有的問題,任何 pip 安裝的程式都會這樣。**解法:重跑安裝程式**,它會在新 Python
+下重裝:
+
+```bash
+sudo bash /opt/jt-glogarch/deploy/install.sh
+```
+
+（在 24.04 上,若 pip 因 Debian 管理的相依套件如 PyYAML 而中止,安裝程式會自動改用
+`--ignore-installed` 重試。）
+
+
+### 連不到 Graylog — 怎麼登入／設定管理員密碼?
+
+初次啟動、尚未設定任何伺服器時,開啟 Web UI 會導向**初次設定精靈**,第一步就是設定緊急
+本機管理員密碼（`localadmin` 帳號）。你也可以手動產生雜湊:
+
+```bash
+sudo -u jt-glogarch glogarch hash-password   # 把雜湊填入 config.yaml → web.localadmin_password_hash
+```
+
+之後即使 Graylog 離線,也能用帳號 `localadmin` 登入。
 
 
 ### 寫入 `/data/graylog-archives/` 出現「Permission denied」

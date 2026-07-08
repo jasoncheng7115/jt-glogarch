@@ -122,8 +122,33 @@ async function setupSkip() {
 
 function setupBack() { if (step > 1) { step--; render(); } }
 
+// Add a show/hide reveal toggle to every password field (API token, passwords),
+// matching the main settings page — so you can confirm a pasted token is complete.
+function addRevealToggles() {
+    document.querySelectorAll('.setup-card input[type=password]').forEach(inp => {
+        if (inp.closest('.secret-field')) return;
+        const wrap = document.createElement('div');
+        wrap.className = 'secret-field';
+        inp.parentNode.insertBefore(wrap, inp);
+        wrap.appendChild(inp);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'secret-toggle';
+        btn.tabIndex = -1;
+        btn.title = 'Show/Hide';
+        btn.innerHTML = icon('eye_closed');
+        btn.addEventListener('click', () => {
+            const reveal = inp.type === 'password';
+            inp.type = reveal ? 'text' : 'password';
+            btn.innerHTML = icon(reveal ? 'eye' : 'eye_closed');
+        });
+        wrap.appendChild(btn);
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     applyI18n();
+    addRevealToggles();
     $('btn-next').addEventListener('click', setupNext);
     $('btn-back').addEventListener('click', setupBack);
     $('btn-skip').addEventListener('click', setupSkip);

@@ -107,7 +107,15 @@ echo "Installing jt-glogarch and dependencies..."
 $PIP install $PIP_TLS_OPTS $PIP_FLAGS --no-build-isolation --no-cache-dir --force-reinstall --no-deps "$INSTALL_DIR"
 # Install runtime deps + the [report] extra (Playwright) so PDF Reports work
 # out of the box. Bracket-extra syntax requires the path quoted.
-$PIP install $PIP_TLS_OPTS $PIP_FLAGS --no-build-isolation --no-cache-dir "$INSTALL_DIR"[report]
+# On Ubuntu 24.04 (and after an OS/Python major upgrade, e.g. 22.04→24.04), pip
+# can ABORT here with "Cannot uninstall <pkg>, RECORD file not found. …installed
+# by debian." when a dependency (e.g. PyYAML) is a distro-managed package it wants
+# to upgrade. Retry with --ignore-installed, which installs fresh copies without
+# touching the Debian ones.
+if ! $PIP install $PIP_TLS_OPTS $PIP_FLAGS --no-build-isolation --no-cache-dir "$INSTALL_DIR"[report]; then
+    echo "  (deps install hit a distro-managed package — retrying with --ignore-installed)"
+    $PIP install $PIP_TLS_OPTS $PIP_FLAGS --ignore-installed --no-build-isolation --no-cache-dir "$INSTALL_DIR"[report]
+fi
 echo ""
 echo "Python packages installed OK"
 

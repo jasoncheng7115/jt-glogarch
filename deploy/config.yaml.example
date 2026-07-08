@@ -9,7 +9,7 @@
 # the global `opensearch:` block below is used as fallback.
 servers:
   - name: graylog-main
-    url: "http://192.168.1.132:9000"
+    url: "http://192.168.1.10:9000"
     auth_token: "your-api-token-here"
     # username: admin
     # password: admin
@@ -17,8 +17,8 @@ servers:
     # Optional per-server OpenSearch cluster (hosts = failover NODES of ONE cluster):
     # opensearch:
     #   hosts:
-    #     - "http://192.168.1.132:9200"
-    #     - "http://192.168.1.127:9200"
+    #     - "http://192.168.1.10:9200"
+    #     - "http://192.168.1.11:9200"
     #   username: admin
     #   password: your-opensearch-password
     #   verify_ssl: false
@@ -66,8 +66,8 @@ import:
 # to archive separate clusters, give each its own server entry above.
 opensearch:
   hosts:
-    - "http://192.168.1.132:9200"
-    - "http://192.168.1.127:9200"
+    - "http://192.168.1.10:9200"
+    - "http://192.168.1.11:9200"
   username: admin
   password: your-opensearch-password
   verify_ssl: false

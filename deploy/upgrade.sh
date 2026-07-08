@@ -188,7 +188,17 @@ echo "[3/5] Installing..."
 pip install $PIP_TLS_OPTS $PIP_FLAGS --no-build-isolation --no-cache-dir --force-reinstall --no-deps "$INSTALL_DIR" 2>&1 | tail -1
 # Pull in the [report] extra (Playwright) — an existing install predating PDF
 # Reports won't have it; upgrades must. Deps-only, cheap when already satisfied.
-pip install $PIP_TLS_OPTS $PIP_FLAGS --no-build-isolation --no-cache-dir "$INSTALL_DIR"[report] 2>&1 | tail -1
+# On Ubuntu 24.04 / after an OS-Python major upgrade, pip can ABORT with "Cannot
+# uninstall <pkg>, RECORD file not found …installed by debian" when a dependency
+# is distro-managed. Retry with --ignore-installed (installs fresh, leaves the
+# Debian copies alone). This is also the recovery path after 22.04→24.04, where
+# the old deps live under the previous Python and must be reinstalled.
+if pip install $PIP_TLS_OPTS $PIP_FLAGS --no-build-isolation --no-cache-dir "$INSTALL_DIR"[report] > /tmp/jt-report-pip.log 2>&1; then
+    tail -1 /tmp/jt-report-pip.log
+else
+    echo "  (deps install hit a distro-managed package — retrying with --ignore-installed)"
+    pip install $PIP_TLS_OPTS $PIP_FLAGS --ignore-installed --no-build-isolation --no-cache-dir "$INSTALL_DIR"[report] 2>&1 | tail -1
+fi
 # Chromium browser + CJK font (best-effort; re-runnable — skips if present).
 if [ -f "$INSTALL_DIR/deploy/report-deps.sh" ]; then
     source "$INSTALL_DIR/deploy/report-deps.sh"

@@ -2,6 +2,23 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.12.3] - 2026-07-08
+
+### 修正
+
+- **config 頂層鍵留空／被註解時,服務不再崩潰。** YAML 裡 `servers:`（或任一頂層鍵）留空
+  會解析成 `null`,較新版 pydantic 對型別欄位不接受 null（`Input should be a valid
+  list`）。`load_settings` 現在會把值為 null 的頂層鍵丟掉,改用模型預設（例如 `servers`
+  → `[]`）。這也讓「剛複製範例檔」的情況能順利進入初次設定精靈。
+- **OS／Python 大版本升級後的復原（例如 Ubuntu 22.04 → 24.04）。** 系統 Python 從 3.10
+  變 3.12 後,原本裝好的套件留在舊版本下,服務會以 `ModuleNotFoundError: No module named
+  'glogarch'` 失敗。`install.sh` / `upgrade.sh` 現在會在 pip 因發行版管理的套件而中止時
+  （`Cannot uninstall <pkg>, RECORD file not found …installed by debian`）自動改用
+  `--ignore-installed` 重試,讓重跑安裝程式能在新 Python 下乾淨重裝。
+- **設定精靈的密鑰欄位加上顯示／隱藏切換。** 初次設定精靈的 API 權杖／密碼欄位原本只是遮罩
+  輸入、無法顯示,貼上長權杖時無法確認是否完整。現在與主設定頁一樣有眼睛切換鈕。
+- **範例設定改用佔位 IP**（不含真實主機位址）,且其 `servers:` 為合法清單。
+
 ## [1.12.2] - 2026-07-08
 
 ### 修正

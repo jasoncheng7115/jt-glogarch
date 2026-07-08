@@ -2,6 +2,30 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.12.3] - 2026-07-08
+
+### Fixed
+
+- **Service no longer crashes on a config with an empty/commented-out top-level
+  key.** A `servers:` (or any top-level key) left empty in YAML parses to `null`,
+  which the newer pydantic rejects for a typed field (`Input should be a valid
+  list`). `load_settings` now drops `null` top-level keys so the model applies its
+  default (e.g. `servers` → `[]`). This also unblocks the first-run setup wizard on
+  a freshly-copied example config.
+- **Recovery after an OS/Python major upgrade (e.g. Ubuntu 22.04 → 24.04).** When
+  the system Python changes (3.10 → 3.12), previously-installed packages live under
+  the old version and the service fails with `ModuleNotFoundError: No module named
+  'glogarch'`. `install.sh` / `upgrade.sh` now retry the dependency install with
+  `--ignore-installed` when pip aborts on a distro-managed package (`Cannot
+  uninstall <pkg>, RECORD file not found …installed by debian`), so re-running the
+  installer cleanly reinstalls under the new Python.
+- **Setup wizard secret fields now have a show/hide toggle.** The API token /
+  password fields in the first-run wizard were plain masked inputs with no way to
+  reveal them — you couldn't confirm a pasted token was complete. They now have the
+  same eye toggle as the main settings page.
+- **Example config uses placeholder IPs** (no real host addresses), and its
+  `servers:` entry is a valid list.
+
 ## [1.12.2] - 2026-07-08
 
 ### Fixed

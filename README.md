@@ -1,4 +1,4 @@
-# jt-glogarch v1.12.2
+# jt-glogarch v1.12.3
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.12.2-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.12.3-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -1312,6 +1312,35 @@ sudo -u jt-glogarch glogarch -c /opt/jt-glogarch/config.yaml import \
 
 
 ## Troubleshooting / FAQ
+
+
+### Service won't start after an OS upgrade — `ModuleNotFoundError: No module named 'glogarch'`
+
+An OS major upgrade (e.g. **Ubuntu 22.04 → 24.04**) changes the system Python
+(3.10 → 3.12). Packages are installed per-Python-version, so the old install is
+left behind and the service can't import `glogarch`. This affects any
+pip-installed app, not just this one. **Fix: re-run the installer** — it
+reinstalls under the new Python:
+
+```bash
+sudo bash /opt/jt-glogarch/deploy/install.sh
+```
+
+(On 24.04 the installer auto-retries with `--ignore-installed` if pip aborts on a
+Debian-managed dependency such as PyYAML.)
+
+
+### Can't reach Graylog — how do I log in / set an admin password?
+
+On first run with no servers configured, opening the Web UI redirects to the
+**setup wizard**, whose first step sets the emergency local admin password (the
+`localadmin` account). You can also generate the hash manually:
+
+```bash
+sudo -u jt-glogarch glogarch hash-password   # put the hash in config.yaml → web.localadmin_password_hash
+```
+
+Then log in with username `localadmin` even when Graylog is offline.
 
 
 ### "Permission denied" when writing to `/data/graylog-archives/`

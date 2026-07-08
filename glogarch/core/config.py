@@ -266,6 +266,11 @@ def load_settings(config_path: str | Path | None = None) -> Settings:
                 data["op_audit"] = data.pop("api_audit")
             elif "api_audit" in data:
                 data.pop("api_audit")
+            # A top-level key that is present but empty in YAML (e.g. `servers:`
+            # with every entry commented out) parses to None. Newer pydantic
+            # rejects None for a typed field — so drop None-valued top-level keys
+            # and let the model apply its default (e.g. servers → []).
+            data = {k: v for k, v in data.items() if v is not None}
             _settings = Settings(**data)
             _settings._config_path = str(p.resolve())
             return _settings
