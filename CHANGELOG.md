@@ -2,6 +2,15 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.12.6] - 2026-07-09
+
+### Fixed
+
+- **Buttons use SVG icons, not emoji/text symbols.** The audit pagination
+  buttons (`←`/`→`) and the copy-confirmation checkmark (`✓`) were literal Unicode
+  characters; they now use the same SVG icon set as the rest of the app (added a
+  `check` icon).
+
 ## [1.12.5] - 2026-07-09
 
 ### Setup wizard

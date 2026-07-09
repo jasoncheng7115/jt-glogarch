@@ -2874,9 +2874,9 @@ async function loadAuditData(page) {
         const pag = document.getElementById('audit-pagination');
         if (pag && totalPages > 1) {
             let html = '';
-            if (_auditPage > 1) html += `<button class="btn-sm btn-secondary" data-act="loadAuditData" data-args="[${_auditPage-1}]">←</button>`;
+            if (_auditPage > 1) html += `<button class="btn-sm btn-secondary" data-act="loadAuditData" data-args="[${_auditPage-1}]">${icon('arrow_left')}</button>`;
             html += `<span class="u100">${_auditPage} / ${totalPages} (${data.total})</span>`;
-            if (_auditPage < totalPages) html += `<button class="btn-sm btn-secondary" data-act="loadAuditData" data-args="[${_auditPage+1}]">→</button>`;
+            if (_auditPage < totalPages) html += `<button class="btn-sm btn-secondary" data-act="loadAuditData" data-args="[${_auditPage+1}]">${icon('arrow_right')}</button>`;
             pag.innerHTML = html;
         } else if (pag) {
             pag.innerHTML = data.total ? `<span class="u022">${data.total} ${t('unit_records')}</span>` : '';
@@ -3520,7 +3520,7 @@ function copyAuditBody(btn) {
     const src = document.getElementById('audit-body-raw');
     if (!src) return;
     navigator.clipboard.writeText(src.textContent).then(() => {
-        btn.innerHTML = '✓';
+        btn.innerHTML = icon('check');
         setTimeout(() => { btn.innerHTML = t('btn_copy'); }, 1500);
     });
 }
