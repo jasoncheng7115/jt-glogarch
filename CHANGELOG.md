@@ -2,6 +2,23 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.12.5] - 2026-07-09
+
+### Setup wizard
+
+- **Auth-method dropdown text is no longer clipped.** The native `<select>` was
+  cutting off the tops of CJK glyphs (`API 權杖`); it now has an explicit height
+  and line-height.
+- **Buttons show icons** (Test / Back / Next) like the rest of the app.
+- **No pre-created config.yaml.** A fresh install no longer writes a bootstrap
+  config; with no config file the app loads defaults, launches the setup wizard,
+  and writes `/opt/jt-glogarch/config.yaml` when you save. Missing config keys
+  fall back to defaults.
+
+### Changed
+
+- **zh-TW terminology: 日誌 → 記錄** across the UI, sample report, and docs.
+
 ## [1.12.4] - 2026-07-09
 
 ### Fixed

@@ -18,7 +18,9 @@ function render() {
     }
     $('btn-back').classList.toggle('hidden', !(step > 1 && step < TOTAL));
     $('btn-skip').classList.toggle('hidden', step !== 3);
-    $('btn-next').textContent = (step === TOTAL) ? t('setup_finish') : t('setup_next');
+    // innerHTML (not textContent) so the leading icon survives the re-render.
+    $('btn-next').innerHTML = icon(step === TOTAL ? 'login' : 'arrow_right') + ' ' +
+        ((step === TOTAL) ? t('setup_finish') : t('setup_next'));
     $('setup-progress').textContent = `${t('setup_step')} ${Math.min(step, TOTAL)} ${t('setup_of')} ${TOTAL}`;
     showError('');
 }
@@ -155,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('s2-auth').addEventListener('change', s2ToggleAuth);
     $('s2-test').addEventListener('click', testServer);
     $('s3-test').addEventListener('click', testOs);
-    const ls = $('lang-select'); if (ls) { ls.value = getLang(); ls.addEventListener('change', e => setLang(e.target.value)); }
+    const ls = $('lang-select'); if (ls) { ls.value = getLang(); ls.addEventListener('change', e => { setLang(e.target.value); render(); }); }
     const tt = $('theme-toggle'); if (tt) tt.addEventListener('click', toggleTheme);
     render();
 });

@@ -348,7 +348,7 @@ def _email_pdf(settings, recipients, subject_title, pdf: bytes, filename: str, l
 
 def _default_summary(lang, kpis):
     if lang == "zh-TW":
-        return "本報表由 jt-glogarch 自動產生，涵蓋日誌封存、作業與操作稽核之概況統計。"
+        return "本報表由 jt-glogarch 自動產生，涵蓋記錄封存、作業與操作稽核之概況統計。"
     return "This report is generated automatically by jt-glogarch, summarising log archiving, jobs, and operation audit activity."
 
 

@@ -45,6 +45,10 @@ body.auth.auth-top { align-items:flex-start; padding:40px 16px; box-sizing:borde
     width:100%; padding:10px 14px; border:1px solid var(--border); border-radius:6px;
     background:var(--input-bg); color:var(--text); font-size:0.95em; box-sizing:border-box; font-family:inherit;
 }
+/* Native <select>: with vertical padding + normal line-height the browser clips
+   the top of taller CJK glyphs (權杖 → the tops get cut). Give it an explicit
+   height + line-height and drop the vertical padding so the value isn't clipped. */
+.setup-card select { height:42px; line-height:1.5; padding-top:0; padding-bottom:0; }
 .setup-card .check { display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:0.9em; color:var(--text-label); }
 .setup-actions { display:flex; gap:10px; align-items:center; margin-top:22px; }
 .setup-actions .spacer { flex:1; }

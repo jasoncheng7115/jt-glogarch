@@ -209,19 +209,19 @@ def pie_chart(labels, values):
 
 def sample_report() -> tuple[dict, list[dict]]:
     report = {
-        "title": "安全事件週報", "subtitle": "Graylog 日誌分析與封存摘要報告",
+        "title": "安全事件週報", "subtitle": "Graylog 記錄分析與封存摘要報告",
         "kicker": "Graylog Open Archive", "beta": True, "lang": "zh-TW",
         "period": "2026-06-26 ~ 2026-07-02", "generated_at": "2026-07-03 16:20 +08:00",
         "author": "Jason Cheng（Jason Tools）", "server": "graylog-01 (192.168.1.10)",
         "header_text": "安全事件週報 — 機密",
-        "summary": "本週共擷取 <b>567,146,364</b> 筆日誌，較上週成長 4.2%。偵測到 3 起需關注的登入異常，均已由 SOC 團隊處理完畢。防火牆拒絕流量維持穩定，無重大資安事件。",
-        "kpis": [{"value": "567M", "label": "日誌總數"}, {"value": "3", "label": "異常事件"},
+        "summary": "本週共擷取 <b>567,146,364</b> 筆記錄，較上週成長 4.2%。偵測到 3 起需關注的登入異常，均已由 SOC 團隊處理完畢。防火牆拒絕流量維持穩定，無重大資安事件。",
+        "kpis": [{"value": "567M", "label": "記錄總數"}, {"value": "3", "label": "異常事件"},
                  {"value": "99.98%", "label": "系統可用率"}, {"value": "1.27 TB", "label": "封存資料量"}],
     }
     sections = [
-        {"type": "charts", "title": "日誌流量趨勢", "description": "過去 7 天每日日誌接收量與拒絕流量。",
+        {"type": "charts", "title": "記錄流量趨勢", "description": "過去 7 天每日記錄接收量與拒絕流量。",
          "widgets": [
-            {"kind": "chart", "title": "每日日誌量", "tall": True,
+            {"kind": "chart", "title": "每日記錄量", "tall": True,
              "config": line_chart(["週一", "週二", "週三", "週四", "週五", "週六", "週日"],
                                    [{"label": "接收", "data": [72, 81, 78, 90, 95, 60, 58]},
                                     {"label": "拒絕", "data": [12, 9, 14, 8, 11, 5, 4]}])},
