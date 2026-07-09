@@ -829,9 +829,11 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
             if v.get("source") not in ("col-leaf", "leaf"):
                 continue
             k = v.get("key") or []
-            colname = " / ".join(str(x) for x in k[:-1]) or (k[0] if k else "")
-            if col_skip and _is_empty_val(colname):   # honour column Skip Empty Values
-                continue
+            colname = " / ".join(str(x) for x in k[:-1]) or (str(k[0]) if k else "")
+            if _is_empty_val(colname):
+                if col_skip:
+                    continue                 # honour column "Skip Empty Values"
+                colname = "(Empty Value)"    # else label it like Graylog, not a blank legend swatch
             if colname not in series_map:
                 series_map[colname] = {}
                 order.append(colname)
@@ -1116,6 +1118,11 @@ def _pivot_to_table(cfg, title, drows, col_pivots, date_fields=None):
             vmap = {" / ".join(str(x) for x in (v.get("key") or [])): v.get("value")
                     for v in (r.get("values") or [])}
             cells = [str(x) for x in (r.get("key") or [])]
+            # A null/empty trailing row-pivot value can be dropped from the row
+            # key, leaving fewer key cells than row-pivot columns — which shifts
+            # every metric value one column to the left. Pad to len(rp_fields).
+            while len(cells) < len(rp_fields):
+                cells.append("")
             # A column's metric fn is the last segment of its key (e.g.
             # 'pivotval / min(timestamp)' -> 'min(timestamp)') → format dates.
             cells += [(_fmt_metric_typed(vmap[c], c.rsplit(" / ", 1)[-1], date_fields)
@@ -1141,6 +1148,10 @@ def _pivot_to_table(cfg, title, drows, col_pivots, date_fields=None):
                 vmap[str(k[-1])] = v.get("value")
         ordered = [v.get("value") for v in rvals]   # positional fallback
         cells = [str(x) for x in (r.get("key") or [])]
+        # Pad a short row key (a null/empty trailing row-pivot value gets dropped
+        # from the key) so metric values don't shift left into a pivot column.
+        while len(cells) < len(rp_fields):
+            cells.append("")
         for i, fn in enumerate(series_fns or [None]):
             if fn is not None and fn in vmap:
                 val = vmap[fn]

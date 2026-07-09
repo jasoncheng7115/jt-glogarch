@@ -2326,14 +2326,14 @@ async def setup_admin_password(request: Request):
     """First-run ONLY: set the localadmin password and open an authenticated
     session so the rest of the wizard can use the normal /api/config/* endpoints.
 
-    Hard-gated: rejected (403) once any server is configured OR a password
-    already exists — this is the sole pre-auth write path and it closes the
-    instant setup progresses."""
+    Hard-gated: rejected (403) once any server is configured — this is the sole
+    pre-auth write path and it closes the instant setup progresses. While still
+    unconfigured the password MAY be (re)set: a user who set it but abandoned the
+    wizard before adding a server would otherwise be deadlocked — the wizard
+    reopens at step 1 (still unconfigured) but couldn't re-submit the password."""
     settings = _settings(request)
     if not _is_unconfigured(settings):
         return JSONResponse({"error": "Setup already completed"}, status_code=403)
-    if settings.web.localadmin_password_hash:
-        return JSONResponse({"error": "Admin password already set"}, status_code=403)
     body = await request.json()
     pw = body.get("password", "") or ""
     if len(pw) < 8:

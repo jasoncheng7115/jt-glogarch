@@ -2,6 +2,29 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.12.4] - 2026-07-09
+
+### Fixed
+
+- **Setup wizard no longer deadlocks after setting the password but abandoning
+  the wizard.** If you set the admin password but closed the wizard before adding
+  a server, reopening it returned to step 1 (still unconfigured) but rejected the
+  password with `Admin password already set` (403) — an inescapable loop. While
+  still unconfigured the password may now be re-submitted; the hard 403 gate still
+  closes the moment a server is configured.
+
+### Fixed (PDF Reports)
+
+- **Empty-value chart series no longer shows a blank legend entry.** A column-pivot
+  series whose value is empty rendered as a colour swatch with no text; it is now
+  labelled `(Empty Value)` like Graylog (still dropped when the pivot's "Skip Empty
+  Values" is on).
+- **Data-table columns stay aligned when a row-pivot value is null.** A null
+  trailing row-pivot value (e.g. an empty `source`) is dropped from Graylog's row
+  key, which shifted every metric value one column to the left (the count landed in
+  the `source` column). The row key is now padded to the number of row-pivot
+  columns, so values line up with their headers.
+
 ## [1.12.3] - 2026-07-08
 
 ### Fixed
