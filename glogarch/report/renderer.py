@@ -194,6 +194,7 @@ def _add_toc_page_numbers(pdf: bytes, toc_titles: list, brand_color: str) -> byt
             return pdf
         right = doc[toc_page].rect.width - 16 * _MM
         rgb = _hex_to_rgb01(brand_color)
+        outline = []
         for t in titles:
             # 2) Section start page = first page AFTER the TOC that shows the header.
             start = None
@@ -213,6 +214,18 @@ def _add_toc_page_numbers(pdf: bytes, toc_titles: list, brand_color: str) -> byt
             num = str(start)
             twid = fitz.get_text_length(num, fontname="helv", fontsize=11)
             doc[toc_page].insert_text((right - twid, r.y1 - 2), num, fontsize=11, color=rgb)
+            # 4) Make the whole entry line (title → the page number on the right) a
+            #    clickable GOTO link that jumps to the section's first page, and add
+            #    a PDF outline bookmark so the viewer's sidebar navigation works too.
+            link_rect = fitz.Rect(r.x0 - 6 * _MM, r.y0 - 1, right + 2, r.y1 + 2)
+            doc[toc_page].insert_link({"kind": fitz.LINK_GOTO, "from": link_rect,
+                                       "page": start - 1, "to": fitz.Point(0, 0)})
+            outline.append([1, t, start])
+        if outline:
+            try:
+                doc.set_toc(outline)
+            except Exception:
+                pass
         out = doc.tobytes(garbage=4, deflate=True)
         doc.close()
         return out

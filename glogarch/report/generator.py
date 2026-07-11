@@ -53,7 +53,10 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
             if _srv:
                 _ver = await graylog_data.get_graylog_version(_srv)
                 if _ver:
-                    report["server"] = f"{_srv_name}（Graylog {_ver}）" if lang == "zh-TW" else f"{_srv_name} (Graylog {_ver})"
+                    # Half-width parens with a leading space around the version —
+                    # it's a version string (Latin), so half-width reads better and
+                    # is what the user asked for, in both languages.
+                    report["server"] = f"{_srv_name} (Graylog {_ver})"
         except Exception:
             pass
 

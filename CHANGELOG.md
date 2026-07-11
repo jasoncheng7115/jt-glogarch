@@ -2,6 +2,32 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.4] - 2026-07-11
+
+### Fixed
+
+- **Report time-series charts rendered with an empty left half (real root
+  cause).** The bug was a grid-alignment error, not the effective-range ratio the
+  1.13.2 clamp targeted: when a widget's first data bucket rounds a little BEFORE
+  `eff_from` (bucket boundaries vs the query's odd-second start — the *common*
+  case, even at ratio 1.0), the alignment index went negative and the fill grid
+  started one bucket *after* the first data bucket. The fill loop then matched
+  nothing and dumped every real bucket at the end, so a 24h chart became a 48h
+  axis with all data shoved to the right. Fixed by clamping the alignment index to
+  ≥0 so the grid never starts past the first data bucket. Verified end-to-end: the
+  firewall "事件趨勢" chart now fills the full 24h like Graylog.
+
+### Added
+
+- **Clickable table of contents.** Each TOC entry (title → its page number) is now
+  a GOTO link that jumps to the section, and the PDF gets outline bookmarks for
+  the viewer's sidebar navigation.
+
+### Changed
+
+- **Cover "產製來源" Graylog version uses half-width parens with a leading space**
+  in both languages, e.g. `log4 (Graylog 7.1.2)`.
+
 ## [1.13.3] - 2026-07-11
 
 ### Fixed

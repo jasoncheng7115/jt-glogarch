@@ -974,7 +974,14 @@ def _normalize_time_rows(drows, eff=None, cfg=None):
         if data_span <= 0 or eff_span > data_span * 3.0:
             start, end = first - step, last + step
         else:
-            k = math.floor((first - t_from).total_seconds() / step.total_seconds())
+            # Align the grid start to eff_from but NEVER past the first data
+            # bucket: when the first bucket rounds slightly before eff_from
+            # (bucket boundaries vs the query's odd-second start), floor() goes
+            # negative and start = first + step lands one bucket AFTER the data —
+            # then the fill loop matches nothing and dumps all real buckets at the
+            # end, leaving the whole left half empty. Clamp k to >= 0 so
+            # start <= first.
+            k = max(0, math.floor((first - t_from).total_seconds() / step.total_seconds()))
             start, end = first - step * k, t_to
     else:
         start, end = parsed[0][0], parsed[-1][0]
