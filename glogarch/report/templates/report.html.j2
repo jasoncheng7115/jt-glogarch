@@ -42,8 +42,9 @@
   .toc-item > span { display: flex; align-items: baseline; }
 
   .card { border: 1px solid var(--line); border-radius: 8px; padding: 6mm; margin: 3mm 0 6mm; page-break-inside: avoid; }
-  .chart-wrap { position: relative; width: 100%; height: 62mm; }
-  .chart-wrap.tall { height: 78mm; }
+  .chart-wrap { position: relative; width: 100%; height: auto; min-height: 62mm; }
+  .chart-wrap.tall { min-height: 78mm; }
+  .chart-wrap.legend-heavy { min-height: 110mm; }
   .map-wrap { width: 100%; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; line-height: 0; }
   .map-wrap svg { width: 100%; height: auto; display: block; }
   .single-value { text-align:center; padding: 8mm 0; }
@@ -192,7 +193,7 @@
             {% if w.truncated %}<span class="heat-note">· {{ t.heat_truncated|default('僅顯示數值最高的列與欄') }}</span>{% endif %}
           </div>
         {% elif w.kind == 'chart' %}
-          <div class="chart-wrap{% if w.tall %} tall{% endif %}"><canvas id="{{ w.canvas_id }}"></canvas></div>
+          <div class="chart-wrap{% if w.tall %} tall{% endif %}{% if w.legend_heavy %} legend-heavy{% endif %}"><canvas id="{{ w.canvas_id }}"></canvas></div>
         {% else %}
           <div class="empty">{{ t.no_data }}</div>
         {% endif %}
@@ -240,7 +241,7 @@
         ctx.textBaseline = 'middle';
         meta.data.forEach((arc, i) => {
           const pct = vals[i] / total * 100;
-          if (!isFinite(pct) || pct <= 0) return;
+          if (!isFinite(pct)) return;   // render 0% too (Graylog shows zero-value slices)
           const label = parseFloat(pct.toPrecision(3)) + '%';
           // Geometric fit test: the label must physically fit inside the slice —
           // its chord width at the ring mid-radius, and the ring thickness (this
@@ -266,10 +267,31 @@
     };
     Chart.register(pctLabelsPlugin);
 
+    // Time-axis day-boundary labels arrive as "HH:MM\nMM-DD"; Chart.js renders a
+    // string with \n on one line, but a ticks.callback returning an ARRAY renders
+    // multi-line. Use a real function so `this` is the scale (getLabelForValue);
+    // wrap any existing callback so non-time labels pass through untouched.
+    function _multilineTicks(orig) {
+      return function (val, index, ticks) {
+        const v = orig ? orig.call(this, val, index, ticks) : this.getLabelForValue(val);
+        return (typeof v === 'string' && v.includes('\n')) ? v.split('\n') : v;
+      };
+    }
+
     const CHARTS = {{ charts_json|safe }};
     for (const c of CHARTS) {
       const el = document.getElementById(c.canvas_id);
       if (!el) continue;
+      // Multi-line category-axis labels (time pivots with a day boundary).
+      // Pie/doughnut have no axes; a horizontal bar's category axis is 'y'.
+      if (c.config.type !== 'pie' && c.config.type !== 'doughnut') {
+        const o = c.config.options = c.config.options || {};
+        const s = o.scales = o.scales || {};
+        const catAxis = (c.config.type === 'bar' && o.indexAxis === 'y') ? 'y' : 'x';
+        s[catAxis] = s[catAxis] || {};
+        s[catAxis].ticks = s[catAxis].ticks || {};
+        s[catAxis].ticks.callback = _multilineTicks(s[catAxis].ticks.callback);
+      }
       // Format the value axis with the widget's Graylog unit (bytes → GB, …).
       if (c.unit) {
         const o = c.config.options = c.config.options || {};

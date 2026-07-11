@@ -2,6 +2,37 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.1] - 2026-07-11
+
+### Fixed (PDF report fidelity — widget-by-widget audit)
+
+- **Legend no longer clipped.** Chart cards use `min-height` (not a fixed height)
+  and a taller `.legend-heavy` tier for charts with >15 series, so a stacked
+  chart's full legend renders instead of the last rows being cut off.
+- **Heatmap fills the page.** Row/column caps raised from 15/20 to 26/30
+  (page-fit) so the grid isn't left half-empty when there's room and data.
+- **Heatmap colour scales.** Added the missing Graylog/Plotly scales (Cividis,
+  Greys, Reds, YlGnBu, Earth, Picnic, Rainbow, Blackbody) so a widget's chosen
+  `color_scale` renders faithfully instead of silently falling back to Viridis;
+  an unrecognised scale is now logged. Empty heatmap columns honour the widget's
+  "Skip Empty Values" (or render as "(Empty Value)").
+- **Bar mode mirrored on single-series non-time bars** (reads the widget's
+  `barmode` like multi-series bars already did).
+- **Scatter keeps Graylog's row order** (no longer numerically re-sorted).
+- **Empty pivot values labelled "(Empty Value)"** in pie/bar/line and table
+  column headers, matching Graylog.
+- **Tables:** column-pivot cap raised 12 → 30; a "showing first N" note when rows
+  are truncated; message-list columns now get numeric/date-aware alignment and a
+  localized truncation note; date-typed metrics render even when the date-field
+  set is empty; message timestamps fall back to epoch parsing.
+- **Time-axis day-boundary labels** render on two lines (time over date) like
+  Graylog, via a Chart.js multi-line tick callback.
+- **Geo map:** distinct bubble sizes when all counts are zero; skipped
+  coordinates are logged.
+- Diagnostic logging added for the "time bar left-half-empty" case (a legit
+  wide-range widget can be 5× its data span, so no blind axis clamp was shipped —
+  a precise fix follows from live data).
+
 ## [1.13.0] - 2026-07-11
 
 ### Changed

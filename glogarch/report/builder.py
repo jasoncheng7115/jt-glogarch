@@ -183,10 +183,13 @@ def geo_map(points):
     mx = max((c for _, _, c in points), default=1) or 1
     bubbles = []
     # Draw largest bubbles first so smaller ones stay visible on top.
-    for lat, lon, count in sorted(points, key=lambda p: -p[2]):
+    for i, (lat, lon, count) in enumerate(sorted(points, key=lambda p: -p[2])):
         x = lon + 180.0        # equirectangular: viewBox is 0..360 x 0..180
         y = 90.0 - lat
-        r = 1.0 + 7.0 * math.sqrt(max(count, 0) / mx)
+        if mx == 1 and count == 0:
+            r = 0.8 + 0.3 * (i % 3)     # all-zero counts → vary slightly so points stay distinct
+        else:
+            r = 1.0 + 7.0 * math.sqrt(max(count, 0) / mx)
         bubbles.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{r:.2f}" '
                        f'fill="#636efa" fill-opacity="0.55" stroke="#ffffff" stroke-width="0.35"/>')
     return base.replace("</svg>", "".join(bubbles) + "</svg>")

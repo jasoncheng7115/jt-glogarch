@@ -636,7 +636,7 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                 if not res.get("messages"):
                     continue
                 widget = _messages_to_table(w.get("config") or {}, wt, res, message_rows,
-                                            message_max_cols, date_fields=date_fields)
+                                            message_max_cols, date_fields=date_fields, lang=lang)
             else:
                 if not res.get("rows"):
                     continue
@@ -772,6 +772,11 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
 
     labels = [_rowkey(r) for r in drows]                       # keys (for lookups)
     disp = _time_axis_labels(drows) if is_time else labels     # display labels
+    # Non-time row-pivot empties render as "-" via _rowkey(); relabel to Graylog's
+    # "(Empty Value)" convention. DISPLAY copy only — `labels` stays the lookup key
+    # for series_map, and time labels (formatted) are untouched.
+    if not is_time:
+        disp = ["(Empty Value)" if d == "-" else d for d in disp]
 
     if not col_pivots:
         values = [_first_value(r) for r in drows]
@@ -800,6 +805,8 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
         if viz == "scatter" or viz in ("line", "area") or (is_time and viz != "bar"):
             if is_time:
                 d2, v2 = disp, values
+            elif viz == "scatter":
+                d2, v2 = disp, values          # scatter: keep Graylog's row order
             else:
                 pr = sorted(zip(disp, values), key=lambda t: _numkey(t[0]))
                 d2 = [d for d, _ in pr]; v2 = [v for _, v in pr]
@@ -817,8 +824,8 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
         # value desc — re-sorting reordered bars away from what Graylog shows.
         top = list(zip(disp, values))[:15]
         return {"kind": "chart", "title": title, "unit": unit,
-                "config": builder.bar_chart([l for l, _ in top], [v for _, v in top],
-                                            horizontal=bar_horizontal, axis_type=axis)}
+                "config": _bar_multi([l for l, _ in top], [{"label": title, "data": [v for _, v in top]}],
+                                     _barmode(cfg), axis_type=axis, horizontal=bar_horizontal)}
 
     # column pivots -> multiple series (data keyed by raw rowkey, displayed via disp)
     col_skip = any((cp.get("config") or {}).get("skip_empty_values") for cp in col_pivots)
@@ -845,17 +852,20 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
               for name in order[:30]]
     if not any(any((v or 0) for v in s["data"]) for s in series):
         return {"kind": "empty", "title": title}
+    # A many-series legend (Chart.js renders it on-canvas) needs a taller card so
+    # the last rows aren't clipped — flag it for the .legend-heavy CSS tier.
+    legend_heavy = len(series) > 15
     if viz == "scatter":
-        return {"kind": "chart", "title": title, "tall": True, "unit": unit,
+        return {"kind": "chart", "title": title, "tall": True, "unit": unit, "legend_heavy": legend_heavy,
                 "config": builder.scatter_chart(disp, series, axis_type=axis)}
     if viz in ("line", "area") or (is_time and viz != "bar"):
-        return {"kind": "chart", "title": title, "tall": True, "unit": unit,
+        return {"kind": "chart", "title": title, "tall": True, "unit": unit, "legend_heavy": legend_heavy,
                 "config": builder.line_chart(disp, series, axis_type=axis,
                                              fill=(viz == "area"), interpolation=_interpolation(cfg),
                                              stacked=(viz == "area"))}
     # bar: preserve Graylog's bar mode (grouped / stacked / overlay). A time bar
     # must stay vertical/chronological, so only a categorical bar may go horizontal.
-    return {"kind": "chart", "title": title, "tall": bool(is_time), "unit": unit,
+    return {"kind": "chart", "title": title, "tall": bool(is_time), "unit": unit, "legend_heavy": legend_heavy,
             "config": _bar_multi(disp, series, _barmode(cfg), axis_type=axis,
                                  horizontal=(bar_horizontal and not is_time))}
 
@@ -940,6 +950,20 @@ def _normalize_time_rows(drows, eff=None, cfg=None):
         t_from = t_from.astimezone(timezone.utc)
         t_to = t_to.astimezone(timezone.utc)
         first = parsed[0][0]
+        last = parsed[-1][0]
+        # DIAGNOSTIC (issue #3, time-bar left-empty): the effective_timerange can
+        # come back much wider than the actual data window, filling the left half
+        # of the axis with empty buckets. Log the spans so we can size a correct
+        # guard from real values before clamping (no blind heuristic).
+        data_span = (last - first).total_seconds()
+        eff_span = (t_to - t_from).total_seconds()
+        if eff_span > 0 and data_span >= 0:
+            log.info("time-bucket fill spans",
+                     eff_from=t_from.isoformat(), eff_to=t_to.isoformat(),
+                     data_first=first.isoformat(), data_last=last.isoformat(),
+                     eff_span_s=round(eff_span), data_span_s=round(data_span),
+                     ratio=round(eff_span / data_span, 2) if data_span > 0 else None,
+                     step_s=round(step.total_seconds()))
         k = math.floor((first - t_from).total_seconds() / step.total_seconds())
         start, end = first - step * k, t_to
     else:
@@ -987,7 +1011,7 @@ def _time_axis_labels(drows):
         hm = dt.strftime("%H:%M")
         day = dt.strftime("%m-%d")
         if day != prev_day:
-            out.append([hm, day])   # two-line label at a day boundary
+            out.append(hm + "\n" + day)   # two-line label; JS ticks callback splits on \n
             prev_day = day
         else:
             out.append(hm)
@@ -1068,6 +1092,7 @@ def _col_alignments(raw, key_cols, ncols):
 def _pivot_to_table(cfg, title, drows, col_pivots, date_fields=None):
     """Render a Graylog table widget as a report table (columns + rows)."""
     date_fields = date_fields or set()
+    total_rows = len(drows)          # for the "showing first N" truncation note
     row_pivots = cfg.get("row_pivots") or []
     series = cfg.get("series") or []
     rp_fields = []
@@ -1104,13 +1129,17 @@ def _pivot_to_table(cfg, title, drows, col_pivots, date_fields=None):
 
         colval_order, by_val = [], {}
         for cn in pivot_cols:
-            val = cn.rpartition(" / ")[0] or cn
+            val = cn.rpartition(" / ")[0]
+            if not val or _is_empty_val(val):
+                val = "(Empty Value)"     # label empty column-pivot like Graylog
             if val not in by_val:
                 by_val[val] = []
                 colval_order.append(val)
             by_val[val].append(cn)
+        # Cap at 30 column-pivot values (matches the 30-series chart cap) instead
+        # of 12 — Graylog renders far more; 30 fills the A4 width without blowing it.
         pivot_cols = [cn for val in colval_order
-                      for cn in sorted(by_val[val], key=_metric_rank)][:12]
+                      for cn in sorted(by_val[val], key=_metric_rank)][:30]
         colnames = (total_cols if cfg.get("rollup") else []) + pivot_cols
         columns = rp_fields + colnames
         raw = []
@@ -1128,9 +1157,12 @@ def _pivot_to_table(cfg, title, drows, col_pivots, date_fields=None):
             cells += [(_fmt_metric_typed(vmap[c], c.rsplit(" / ", 1)[-1], date_fields)
                        if vmap.get(c) is not None else "") for c in colnames]
             raw.append(cells)
-        return {"kind": "table", "title": title, "columns": columns,
-                "rows": _grouped_rows(raw, len(rp_fields)), "numeric_from": len(rp_fields),
-                "col_align": _col_alignments(raw, len(rp_fields), len(columns))}
+        out = {"kind": "table", "title": title, "columns": columns,
+               "rows": _grouped_rows(raw, len(rp_fields)), "numeric_from": len(rp_fields),
+               "col_align": _col_alignments(raw, len(rp_fields), len(columns))}
+        if total_rows > 40:
+            out["rows_note"] = "僅顯示前 40 筆"
+        return out
     # simple table: row-pivot key columns + one column per series. Map each
     # value to its series by KEY (the last key element is the series function),
     # so a null metric (e.g. an empty latest(host_hostname)) leaves a BLANK cell
@@ -1159,9 +1191,12 @@ def _pivot_to_table(cfg, title, drows, col_pivots, date_fields=None):
                 val = ordered[i] if i < len(ordered) else None
             cells.append(_fmt_metric_typed(val, fn, date_fields) if val is not None else "")
         raw.append(cells)
-    return {"kind": "table", "title": title, "columns": columns,
-            "rows": _grouped_rows(raw, len(rp_fields)), "numeric_from": len(rp_fields),
-                "col_align": _col_alignments(raw, len(rp_fields), len(columns))}
+    out = {"kind": "table", "title": title, "columns": columns,
+           "rows": _grouped_rows(raw, len(rp_fields)), "numeric_from": len(rp_fields),
+           "col_align": _col_alignments(raw, len(rp_fields), len(columns))}
+    if total_rows > 40:
+        out["rows_note"] = "僅顯示前 40 筆"
+    return out
 
 
 def _barmode(cfg: dict) -> str:
@@ -1326,7 +1361,7 @@ def _compute_trend(cur, prev, preference="NEUTRAL", *, unit=None):
     return {"arrow": arrow, "delta": dtxt, "pct": ptxt, "cls": cls}
 
 
-def _messages_to_table(cfg, title, res, max_rows, max_cols=0, date_fields=None):
+def _messages_to_table(cfg, title, res, max_rows, max_cols=0, date_fields=None, lang="zh-TW"):
     """Render a Graylog message-list widget as a table (its configured fields,
     capped at max_rows). max_rows<=0 means no cap. If max_cols>0 and the widget
     has more configured fields than that, the widget is skipped (returns None) —
@@ -1348,16 +1383,19 @@ def _messages_to_table(cfg, title, res, max_rows, max_cols=0, date_fields=None):
     if max_rows and max_rows > 0:
         msgs = msgs[:max_rows]
     rows = []
+    raw = []
     for m in msgs:
         doc = m.get("message") or m
         cells = []
         for f in cols:
             v = doc.get(f, "")
             if v is not None and (f == "timestamp" or f in date_fields):
-                # Date column → local 'YYYY-MM-DD HH:MM:SS.mmm' like Graylog.
-                cells.append(_fmt_iso_local(v) or (str(v) if v != "" else ""))
+                # Date column → local 'YYYY-MM-DD HH:MM:SS.mmm' like Graylog;
+                # fall back to epoch-millis/seconds parsing before a raw string.
+                cells.append(_fmt_iso_local(v) or _fmt_date_value(v) or (str(v) if v != "" else ""))
             else:
                 cells.append(str(v) if v is not None else "")
+        raw.append(cells)
         row = {"cells": cells}
         if show_preview:
             msg = doc.get("message")
@@ -1365,10 +1403,14 @@ def _messages_to_table(cfg, title, res, max_rows, max_cols=0, date_fields=None):
         rows.append(row)
     if not rows:
         return None
-    out = {"kind": "table", "title": title, "columns": list(cols), "rows": rows}
+    # A message list has no row-pivot key columns → right-align only columns whose
+    # every value is numeric; formatted dates (hyphens/colons) stay left-aligned.
+    out = {"kind": "table", "title": title, "columns": list(cols), "rows": rows,
+           "col_align": _col_alignments(raw, 0, len(cols))}
     # When a row cap actually truncated the widget, note it bottom-right.
     if max_rows and max_rows > 0 and total > max_rows:
-        out["rows_note"] = f"僅顯示前 {max_rows:,} 筆"
+        out["rows_note"] = (f"僅顯示前 {max_rows:,} 筆" if lang == "zh-TW"
+                            else f"Showing first {max_rows:,} of {total:,} rows")
     return out
 
 
@@ -1376,17 +1418,25 @@ def _pivot_to_map(title, drows):
     """Build a bubble world-map widget from a geo pivot (row key = 'lat,long')."""
     from glogarch.report import builder
     points = []
+    skipped = 0
     for r in drows:
         k = r.get("key") or []
         if not k:
+            skipped += 1
             continue
         try:
             parts = str(k[0]).split(",")
             lat = float(parts[0]); lon = float(parts[1])
         except (ValueError, IndexError):
+            skipped += 1
             continue
         if -90 <= lat <= 90 and -180 <= lon <= 180:
             points.append((lat, lon, _first_value(r) or 0))
+        else:
+            skipped += 1
+    if skipped:
+        log.debug("geo map skipped coordinates", widget=title,
+                  valid=len(points), skipped=skipped)
     if not points:
         return None
     return {"kind": "map", "title": title, "svg": builder.geo_map(points)}
@@ -1406,6 +1456,14 @@ _COLORSCALES = {
     "Jet": [(0, 0, 131), (0, 128, 255), (0, 255, 128), (255, 255, 0), (255, 0, 0)],
     "Bluered": [(0, 0, 255), (128, 0, 128), (255, 0, 0)],
     "Electric": [(0, 0, 0), (30, 0, 100), (120, 0, 100), (230, 200, 0), (255, 255, 255)],
+    "Cividis": [(0, 32, 76), (0, 67, 88), (89, 91, 97), (165, 146, 110), (255, 233, 69)],
+    "Greys": [(255, 255, 255), (189, 189, 189), (115, 115, 115), (37, 37, 37), (0, 0, 0)],
+    "Reds": [(255, 245, 240), (252, 187, 161), (251, 106, 74), (203, 24, 29), (103, 0, 13)],
+    "YlGnBu": [(255, 255, 217), (199, 233, 180), (65, 182, 196), (34, 94, 168), (8, 29, 88)],
+    "Earth": [(0, 0, 130), (0, 180, 180), (0, 160, 0), (230, 220, 50), (180, 60, 10)],
+    "Picnic": [(0, 0, 255), (150, 150, 255), (255, 255, 255), (255, 150, 150), (255, 0, 0)],
+    "Rainbow": [(150, 0, 90), (0, 0, 200), (0, 220, 220), (0, 200, 0), (255, 255, 0), (255, 0, 0)],
+    "Blackbody": [(0, 0, 0), (230, 0, 0), (230, 210, 0), (255, 255, 255), (160, 200, 255)],
 }
 
 
@@ -1463,8 +1521,11 @@ def _pivot_to_heatmap(cfg, title, drows, col_pivots, show_values=False):
                 continue
             k = v.get("key") or []
             colname = " / ".join(str(x) for x in k[:-1]) or (str(k[0]) if k else "")
-            if colname == "":
-                continue
+            col_skip = any((cp.get("config") or {}).get("skip_empty_values") for cp in col_pivots)
+            if _is_empty_val(colname):
+                if col_skip:
+                    continue                 # honour column "Skip Empty Values"
+                colname = "(Empty Value)"    # else label it like Graylog
             if colname not in col_keys:
                 col_keys.append(colname)
             matrix[rl][colname] = v.get("value")
@@ -1473,7 +1534,10 @@ def _pivot_to_heatmap(cfg, title, drows, col_pivots, show_values=False):
     # A4 can't scroll like Graylog's heatmap: a column pivot such as "dest port"
     # can have hundreds of values → an unreadable smear. Cap to the busiest rows
     # and columns (by total), matching what a reader actually cares about.
-    MAX_COLS, MAX_ROWS = 15, 20
+    # Fill the page instead of leaving whitespace: an A4 content row of ~5.5mm
+    # columns holds ~26, and a page ~30 short heatmap rows. (Was 15/20, which
+    # under-filled the grid vs Graylog even when there was room + data.)
+    MAX_COLS, MAX_ROWS = 26, 30
     col_total = {c: sum((matrix[rl].get(c) or 0) for rl in row_labels) for c in col_keys}
     row_total = {rl: sum((matrix[rl].get(c) or 0) for c in col_keys) for rl in row_labels}
     truncated = len(col_keys) > MAX_COLS or len(row_labels) > MAX_ROWS
@@ -1512,7 +1576,11 @@ def _pivot_to_heatmap(cfg, title, drows, col_pivots, show_values=False):
     # Colour-scale legend: a CSS gradient mirroring Graylog's colourbar. When the
     # scale is reversed, reverse the gradient AND swap the min/max end labels so
     # each end's colour matches the value under it.
-    stops = _COLORSCALES.get(scale) or _COLORSCALES["Viridis"]
+    if scale not in _COLORSCALES:
+        log.warning("heatmap color scale not recognized; using Viridis",
+                    requested_scale=scale, widget_title=title,
+                    available=list(_COLORSCALES.keys()))
+    stops = _COLORSCALES.get(scale, _COLORSCALES["Viridis"])
     stops_leg = list(reversed(stops)) if rev else stops
     gradient = "linear-gradient(to right, " + ", ".join(f"rgb({r},{g},{b})" for r, g, b in stops_leg) + ")"
     lmin, lmax = ((_fmt_metric(hi), _fmt_metric(lo)) if rev
@@ -1615,7 +1683,7 @@ def _fmt_metric_typed(v, fn, date_fields):
     """Format a metric value; when its aggregated field is a DATE type and the
     function preserves the timestamp (min/max/avg/latest/…, not count/card),
     render it as a datetime like Graylog does — not a raw epoch number."""
-    if v is not None and date_fields:
+    if v is not None and date_fields is not None:
         func, field = _metric_fn_field(fn or "")
         if field and field in date_fields and func not in ("count", "card"):
             s = _fmt_date_value(v)
