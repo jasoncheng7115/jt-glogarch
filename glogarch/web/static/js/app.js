@@ -73,12 +73,14 @@ function showReportFingerprint(arg) {
     const [hash, filename] = String(arg).split('|');
     const fn = filename || 'report.pdf';
     const body = `<div class="fp-modal">
-        <div class="fp-row"><span class="fp-label">${t('reports_fp_sha256')}</span>
+        <div class="fp-label">${t('reports_fp_sha256')}</div>
+        <div class="fp-hashbox">
           <code class="fp-full" id="fp-full-hash">${esc(hash)}</code>
-          <button type="button" class="btn-sm btn-secondary" data-act="copyText" data-arg="${esc(hash)}">${icon('copy',14)}</button></div>
+          <button type="button" class="fp-copy btn-sm btn-secondary" data-act="copyText" data-arg="${esc(hash)}">${icon('copy',14)}</button>
+        </div>
         <div class="fp-hint">${t('reports_fp_hint')}</div>
         <pre class="fp-cmd">sha256sum ${esc(fn)}</pre>
-        <div class="fp-hint fs-08">${t('reports_fp_note')}</div>
+        <div class="fp-note">${t('reports_fp_note')}</div>
       </div>`;
     showConfirm(icon('shield') + ' ' + t('reports_verify_title'), body, null);
 }

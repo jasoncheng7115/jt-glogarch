@@ -2,6 +2,15 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.8] - 2026-07-11
+
+### Changed
+
+- **"Verify report integrity" dialog restyled.** The SHA-256 label now sits on
+  its own line above the hash, the hash renders in a bordered box with the copy
+  button pinned to the right, and the hint / command / note are evenly spaced —
+  instead of the label, wrapping hash, and orphaned copy button crowding one row.
+
 ## [1.13.7] - 2026-07-11
 
 ### Fixed
