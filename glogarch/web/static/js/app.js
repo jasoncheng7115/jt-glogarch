@@ -2708,45 +2708,49 @@ async function checkRunningJobs() {
         const running = (data.items || []).filter(j => j.status === 'running' && j.progress_pct < 100);
         const el = document.getElementById('sidebar-job-status');
         const text = document.getElementById('sidebar-job-text');
-        if (el && text) {
-            if (running.length > 0) {
-                el.classList.remove('hidden');
-                el.style.display = 'block';
-                el.style.cursor = 'pointer';
-                el.title = t('reopen_running_job') || 'Click to reopen';
-                // For an active import on this page → reopen the import modal.
-                // Otherwise navigate to /jobs.
-                el.onclick = () => {
-                    const j = running[0];
-                    if (j.job_type === 'import' && _activeImportJobId === j.id &&
-                        document.getElementById('import-modal')) {
-                        reopenActiveImportModal();
-                    } else {
-                        window.location.href = '/jobs';
-                    }
-                };
-                const j = running[0];
-                const pct = j.progress_pct?.toFixed(0) || 0;
-                const msgs = j.messages_done ? formatNumber(j.messages_done) : '0';
-                const total = j.messages_total ? formatNumber(j.messages_total) : '?';
-                const elapsed = formatElapsed(j.started_at);
-                const detail = j.current_detail || j.phase || '';
-                const statusLine = detail && !j.messages_done ? esc(detail) : `${msgs} / ${total}`;
-                text.innerHTML = `
-                    <div class="job-detail-full u044">
-                        <span>${j.job_type} <strong>${pct}%</strong> · ${elapsed}</span>
-                        <div class="progress-bar u099"><div class="progress-fill" data-style="width:${pct}%"></div></div>
-                        <span class="u091">${statusLine}</span>
-                    </div>
-                    <div class="job-detail-mini u067" title="${j.job_type} ${pct}% ${msgs} ${elapsed}">
-                        <strong>${pct}%</strong>
-                        <div class="progress-bar u098"><div class="progress-fill" data-style="width:${pct}%"></div></div>
-                    </div>`;
-            } else {
-                el.classList.add('hidden');
-                el.style.display = 'none';
-            }
+        if (!el || !text) return;
+        if (running.length === 0) {
+            el.classList.add('hidden');
+            el.style.display = 'none';
+            return;
         }
+        el.classList.remove('hidden');
+        el.style.display = 'block';
+        el.style.cursor = 'pointer';
+        el.title = t('reopen_running_job') || 'Click to reopen';
+        // Clicking reopens an active import modal on this page, else goes to /jobs.
+        el.onclick = () => {
+            const imp = running.find(j => j.job_type === 'import' && _activeImportJobId === j.id);
+            if (imp && document.getElementById('import-modal')) reopenActiveImportModal();
+            else window.location.href = '/jobs';
+        };
+        // Render EVERY running job (export + report can run at once). A report job
+        // has no incremental progress (0% until it finishes) → show an
+        // indeterminate "running" bar rather than a stuck 0%.
+        const isIndet = (j) => j.job_type === 'report' || (j.progress_pct == null && !j.messages_total);
+        text.innerHTML = running.map(j => {
+            const indet = isIndet(j);
+            const pct = j.progress_pct != null ? Number(j.progress_pct).toFixed(0) : 0;
+            const elapsed = formatElapsed(j.started_at);
+            const msgs = j.messages_done ? formatNumber(j.messages_done) : '0';
+            const total = j.messages_total ? formatNumber(j.messages_total) : '?';
+            const detail = j.current_detail || j.phase || '';
+            const statusLine = indet ? (t('job_running') || 'Running…')
+                                     : (detail && !j.messages_done ? esc(detail) : `${msgs} / ${total}`);
+            const head = indet ? esc(j.job_type) : `${esc(j.job_type)} <strong>${pct}%</strong>`;
+            const bar = indet ? `<div class="progress-fill indet"></div>`
+                              : `<div class="progress-fill" data-style="width:${pct}%"></div>`;
+            return `
+                <div class="job-detail-full u044">
+                    <span>${head} · ${elapsed}</span>
+                    <div class="progress-bar u099">${bar}</div>
+                    <span class="u091">${statusLine}</span>
+                </div>
+                <div class="job-detail-mini u067" title="${esc(j.job_type)} ${indet ? '' : pct + '%'} ${elapsed}">
+                    <strong>${indet ? '···' : pct + '%'}</strong>
+                    <div class="progress-bar u098">${bar}</div>
+                </div>`;
+        }).join('');
     } catch (e) {}
 }
 

@@ -2,6 +2,27 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.5] - 2026-07-11
+
+### Fixed (report fidelity + UI)
+
+- **World map: stray horizontal lines removed.** The bundled world SVG is one
+  concatenated path containing two full-width, ~1px-thin *filled* strips
+  (digitization artifacts at ~71°N and ~16°S) that rendered as lines across the
+  whole map. They're now stripped by geometry at load time; country borders kept.
+- **Wide message-list widgets are no longer dropped from the report.** A message
+  list with more fields than `message_max_cols` (UI default 8) used to be omitted
+  entirely; it now renders truncated to the first N columns with a "N more
+  column(s)" note, so the block always appears like on the dashboard.
+- **Pie/doughnut on-slice % labels pick black or white per slice** by luminance
+  (threshold 150), matching Graylog, instead of always white.
+- **Table column headers get a clear separator line** under the header row (was a
+  near-invisible light border), matching Graylog.
+- **Sidebar live progress shows every running job.** With an export and a report
+  running at once, both now appear (previously only the most recent). A report has
+  no incremental progress, so it shows an indeterminate "running" bar instead of a
+  stuck 0%.
+
 ## [1.13.4] - 2026-07-11
 
 ### Fixed

@@ -1377,6 +1377,18 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
     width: 0%;
 }
 
+/* Indeterminate bar for jobs with no incremental progress (e.g. report
+   generation): a sliding segment instead of a stuck 0% width. */
+.progress-fill.indet {
+    width: 40%;
+    transition: none;
+    animation: indet-slide 1.2s ease-in-out infinite;
+}
+@keyframes indet-slide {
+    0%   { margin-left: -40%; }
+    100% { margin-left: 100%; }
+}
+
 .progress-text {
     color: var(--text-muted);
     font-size: 0.9em;

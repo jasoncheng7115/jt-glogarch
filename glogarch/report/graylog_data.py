@@ -1389,8 +1389,14 @@ def _messages_to_table(cfg, title, res, max_rows, max_cols=0, date_fields=None, 
     row under each entry, matching the on-screen widget."""
     date_fields = date_fields or set()
     fields = cfg.get("fields") or ["timestamp", "source", "message"]
+    # A wide message list used to be DROPPED entirely (return None) when it had
+    # more fields than max_cols — silently removing the whole widget from the
+    # report. Instead keep the block and truncate to the first max_cols fields
+    # (noted at the bottom), so it always appears like it does on the dashboard.
+    cols_omitted = 0
     if max_cols and max_cols > 0 and len(fields) > max_cols:
-        return None
+        cols_omitted = len(fields) - max_cols
+        fields = fields[:max_cols]
     show_preview = bool(cfg.get("show_message_row"))
     # When the message renders on its own preview row, don't ALSO keep it as a
     # column — Graylog shows the message once, not duplicated.
@@ -1424,10 +1430,16 @@ def _messages_to_table(cfg, title, res, max_rows, max_cols=0, date_fields=None, 
     # every value is numeric; formatted dates (hyphens/colons) stay left-aligned.
     out = {"kind": "table", "title": title, "columns": list(cols), "rows": rows,
            "col_align": _col_alignments(raw, 0, len(cols))}
-    # When a row cap actually truncated the widget, note it bottom-right.
+    # Note row and/or column truncation bottom-right.
+    notes = []
     if max_rows and max_rows > 0 and total > max_rows:
-        out["rows_note"] = (f"僅顯示前 {max_rows:,} 筆" if lang == "zh-TW"
-                            else f"Showing first {max_rows:,} of {total:,} rows")
+        notes.append(f"僅顯示前 {max_rows:,} 筆" if lang == "zh-TW"
+                     else f"first {max_rows:,} of {total:,} rows")
+    if cols_omitted:
+        notes.append(f"省略 {cols_omitted} 欄" if lang == "zh-TW"
+                     else f"{cols_omitted} more column(s)")
+    if notes:
+        out["rows_note"] = ("、".join(notes) if lang == "zh-TW" else " · ".join(notes))
     return out
 
 

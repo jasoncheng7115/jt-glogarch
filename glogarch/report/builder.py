@@ -170,16 +170,43 @@ def scatter_chart(labels, series, axis_type="linear"):
                                                    "maxRotation": 0, "minRotation": 0}}}}}
 
 
+def _strip_full_width_bands(svg: str) -> str:
+    """Remove any land sub-path that spans nearly the full map width but is
+    vertically paper-thin — those are digitization artifacts that render as stray
+    horizontal lines across the whole world map. Geometry-based so it survives
+    asset tweaks."""
+    import re
+    m = re.search(r'(<path[^>]*\bd=")([^"]+)(")', svg)
+    if not m:
+        return svg
+    subs = [s for s in re.split(r'(?=[Mm])', m.group(2)) if s.strip()]
+    kept = []
+    for sp in subs:
+        nums = re.findall(r'-?\d+\.?\d*', sp)
+        xs = [float(a) for a in nums[0::2]]
+        ys = [float(a) for a in nums[1::2]]
+        if xs and ys and (max(xs) - min(xs)) > 300 and (max(ys) - min(ys)) < 3:
+            continue                       # full-width thin strip → artifact, drop
+        kept.append(sp)
+    return svg[:m.start(2)] + "".join(kept) + svg[m.end(2):]
+
+
 def geo_map(points):
     """points: list of (lat, lon, count). Returns a self-contained equirectangular
     SVG world map with count-sized bubbles (no map tiles / no network — renders
     offline in the PDF)."""
     import math
     base = (_ASSETS / "worldmap.svg").read_text(encoding="utf-8")
+    # The land layer is ONE concatenated path that contains two full-width, ~1px
+    # thin FILLED strips (digitization artifacts at ~71°N and ~16°S) — they render
+    # as stray horizontal lines across the whole map. Drop any sub-path that spans
+    # nearly the full width yet is vertically paper-thin.
+    base = _strip_full_width_bands(base)
     # Recolour the baked-in ocean/land to a clean, modern flat-map palette:
     # a soft near-white ocean and light blue-grey land with a subtle coastline.
     base = base.replace('fill="#cfe6f2"', 'fill="#f2f5fa"')                       # ocean
-    base = base.replace('fill="#e9e7dd"', 'fill="#d4dbe6" stroke="#c2cbd9" stroke-width="0.12"')  # land
+    base = base.replace('fill="#e9e7dd"', 'fill="#d4dbe6"')                       # land fill
+    base = base.replace('stroke="#b9b9ad"', 'stroke="#c2cbd9"')                   # subtle borders
     mx = max((c for _, _, c in points), default=1) or 1
     bubbles = []
     # Draw largest bubbles first so smaller ones stay visible on top.
