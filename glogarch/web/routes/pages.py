@@ -74,7 +74,27 @@ async def login_submit(request: Request):
     settings = request.app.state.settings
     graylog_ok = False
 
-    # 1. Try Graylog API authentication against EACH configured server, default
+    # 1. Local admin account. Set in the setup wizard (step 1, "Administrator
+    #    Password"), this is a FIRST-CLASS login that always works — independent
+    #    of whether Graylog is reachable. Check it up front so the reserved
+    #    "localadmin" username is never forwarded to Graylog. (Previously this
+    #    was an emergency-only fallback that only fired when EVERY Graylog was
+    #    unreachable — so a user who set the wizard password could never log in
+    #    with it while Graylog was up.)
+    if username == "localadmin" and settings.web.localadmin_password_hash:
+        import hashlib
+        if hashlib.sha256(password.encode()).hexdigest() == settings.web.localadmin_password_hash:
+            request.session["authenticated"] = True
+            request.session["username"] = "localadmin"
+            request.session["emergency_mode"] = True
+            _audit(request, "login_success", "User: localadmin (local admin)")
+            return RedirectResponse(url="/", status_code=303)
+        # Wrong password for the reserved local account — never forward it to
+        # Graylog (it isn't a Graylog user); reject directly.
+        _audit(request, "login_failed", "User: localadmin")
+        return RedirectResponse(url="/login?error=auth_failed", status_code=303)
+
+    # 2. Try Graylog API authentication against EACH configured server, default
     #    first. With multiple Graylog clusters the account may exist on any of
     #    them, so the first server that accepts the credentials wins. (Fresh
     #    install with no servers → this loop is empty and we fall through to the
@@ -108,18 +128,6 @@ async def login_submit(request: Request):
         except Exception:
             # This server is unreachable — try the next one.
             continue
-
-    # 2. Fallback: local emergency admin (only when Graylog is unreachable)
-    if not graylog_ok:
-        pw_hash = settings.web.localadmin_password_hash
-        if pw_hash and username == "localadmin":
-            import hashlib
-            if hashlib.sha256(password.encode()).hexdigest() == pw_hash:
-                request.session["authenticated"] = True
-                request.session["username"] = "localadmin"
-                request.session["emergency_mode"] = True
-                _audit(request, "login_success", "User: localadmin (emergency, Graylog offline)")
-                return RedirectResponse(url="/", status_code=303)
 
     _audit(request, "login_failed", f"User: {username}")
 

@@ -2,6 +2,20 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.12.10] - 2026-07-11
+
+### Fixed
+
+- **`localadmin` could not log in while Graylog was reachable.** The setup
+  wizard makes the local admin password a mandatory first step, but login
+  treated `localadmin` as an emergency-only account that was accepted *only*
+  when every configured Graylog server was unreachable — so once a Graylog was
+  configured and up, the wizard password was silently rejected. The local admin
+  is now a first-class login: it is checked **before** Graylog and works
+  regardless of Graylog reachability, and the reserved `localadmin` username is
+  never forwarded to Graylog (a wrong password fails directly instead of being
+  proxied).
+
 ## [1.12.9] - 2026-07-11
 
 ### Fixed
