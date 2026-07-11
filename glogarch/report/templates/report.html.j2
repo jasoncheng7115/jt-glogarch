@@ -64,7 +64,8 @@
      message-table max-columns setting guards against pathologically wide
      tables; word-break lets long cell values wrap instead of overflowing. */
   table.data { width:100%; border-collapse: collapse; font-size: 11px; table-layout: auto; }
-  table.data th { background: #f3f4f6; text-align:left; padding: 5px 8px; border-bottom: 2px solid #8a92a0; font-weight:700; }
+  table.data th { background: #f3f4f6; text-align:left; padding: 5px 8px; border-bottom: 1.5px solid #b6bcc7; border-right: 1px solid #ccd1da; font-weight:700; }
+  table.data th:last-child { border-right: none; }
   table.data td { padding: 5px 8px; border-bottom: 1px solid var(--line); }
   table.data th, table.data td { overflow-wrap: anywhere; word-break: break-word; }
   table.data tr:nth-child(even) td { background:#fafafa; }

@@ -2,6 +2,14 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.7] - 2026-07-11
+
+### Fixed
+
+- **Table column headers now have vertical dividers between them** (like
+  Graylog). 1.13.6 added the horizontal header/body line by mistake; this adds
+  the actually-requested vertical separators between adjacent column headers.
+
 ## [1.13.6] - 2026-07-11
 
 ### Fixed
