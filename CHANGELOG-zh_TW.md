@@ -2,6 +2,16 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.13.3] - 2026-07-11
+
+### 修正
+
+- **PDF 報表在記憶體吃緊的主機上可能導致渲染程序崩潰。** 1.13.1 的圖例修正把
+  `.chart-wrap` 設為 `height:auto; min-height`,但在 Chart.js `maintainAspectRatio:false`
+  下,canvas 與容器會互相撐大形成迴圈,直到無頭 Chromium 因記憶體耗盡而崩潰
+  （`Page.set_content: Page crashed`）。已改回**固定高度**;多序列圖例仍以較高的固定
+  層級（`.legend-heavy`,110mm）完整呈現,不再有尺寸迴圈。已對實際儀表板端到端驗證。
+
 ## [1.13.2] - 2026-07-11
 
 ### 修正

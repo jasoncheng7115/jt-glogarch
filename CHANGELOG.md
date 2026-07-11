@@ -2,6 +2,19 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.3] - 2026-07-11
+
+### Fixed
+
+- **PDF report renderer could crash on memory-constrained hosts.** The 1.13.1
+  legend fix set `.chart-wrap` to `height:auto; min-height` — but with Chart.js
+  `maintainAspectRatio:false` that makes the canvas and its container grow each
+  other in a loop until the headless Chromium renderer OOM-crashes
+  (`Page.set_content: Page crashed`). Reverted to **definite** heights; the
+  many-series legend still gets a taller definite tier (`.legend-heavy`, 110mm),
+  so legends render in full without the sizing loop. Verified end-to-end against
+  a live dashboard.
+
 ## [1.13.2] - 2026-07-11
 
 ### Fixed
