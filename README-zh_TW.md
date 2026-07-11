@@ -1227,14 +1227,54 @@ sudo bash /opt/jt-glogarch/deploy/install.sh
 
 ### 連不到 Graylog — 怎麼登入／設定管理員密碼?
 
-初次啟動、尚未設定任何伺服器時,開啟 Web UI 會導向**初次設定精靈**,第一步就是設定緊急
-本機管理員密碼（`localadmin` 帳號）。你也可以手動產生雜湊:
+初次啟動、尚未設定任何伺服器時,開啟 Web UI 會導向**初次設定精靈**。精靈順序為
+① Graylog 伺服器 → ② OpenSearch（選填）→ ③ 封存路徑 → ④ **備用管理帳號** → ⑤ 完成;
+最後一步設定的本機管理員密碼即 `localadmin` 帳號。你也可以手動產生雜湊:
 
 ```bash
 sudo -u jt-glogarch glogarch hash-password   # 把雜湊填入 config.yaml → web.localadmin_password_hash
 ```
 
-之後即使 Graylog 離線,也能用帳號 `localadmin` 登入。
+平常請以 Graylog 帳號登入;即使 Graylog 離線,也能用帳號 `localadmin` 登入。
+
+
+### 如何回復出廠值（重新初始化）
+
+先分清楚三樣東西,它們**互相獨立**:
+
+| 項目 | 位置 | 內容 |
+| --- | --- | --- |
+| 設定 | `/opt/jt-glogarch/config.yaml` | 連線、排程、通知、`localadmin` 密碼、路徑 |
+| 資料庫 | `/opt/jt-glogarch/jt-glogarch.db` | 歸檔記錄、作業歷程、稽核 |
+| 歸檔檔案 | `/data/graylog-archives/` | 實際的記錄檔（真正的資料） |
+
+**只清設定、保留歸檔（最常見）**:
+
+```bash
+sudo systemctl stop jt-glogarch
+sudo mv /opt/jt-glogarch/config.yaml /opt/jt-glogarch/config.yaml.bak   # 備份後移除
+sudo systemctl start jt-glogarch
+```
+
+重啟後 `servers` 為空 → 自動導向初始化精靈,即回到初始狀態。注意:
+
+- **一定要重啟服務才生效** —— 設定啟動時快取在記憶體,只刪檔不重啟不會有變化（這常讓人以為「刪了沒用」）。
+- 搜尋順序為 `/opt/jt-glogarch/config.yaml` →（找不到才）`~/.jt-glogarch/config.yaml` → `/etc/jt-glogarch/config.yaml`;若別處還有一份會載入那份,一併移除。
+- 歸檔**檔案完全不受影響**。但預設資料庫路徑（`glogarch.db`）與原設定可能不同,歸檔清單會**看起來是空的** —— 舊資料庫與檔案其實都還在。精靈中把封存路徑設回原本的位置後,執行下列指令從磁碟重建資料庫,清單即回復:
+
+  ```bash
+  sudo -u jt-glogarch glogarch db-rebuild
+  ```
+
+**完全清除（連同已歸檔資料一起刪,不可復原）**:
+
+```bash
+sudo systemctl stop jt-glogarch
+sudo rm -f /opt/jt-glogarch/config.yaml
+sudo rm -f /opt/jt-glogarch/jt-glogarch.db /opt/jt-glogarch/glogarch.db*   # 歸檔記錄、作業歷程、稽核
+sudo rm -rf /data/graylog-archives/*                                       # ⚠ 這會刪除已歸檔的記錄檔本身！
+sudo systemctl start jt-glogarch
+```
 
 
 ### 寫入 `/data/graylog-archives/` 出現「Permission denied」

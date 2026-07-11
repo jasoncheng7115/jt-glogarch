@@ -1333,14 +1333,63 @@ Debian-managed dependency such as PyYAML.)
 ### Can't reach Graylog — how do I log in / set an admin password?
 
 On first run with no servers configured, opening the Web UI redirects to the
-**setup wizard**, whose first step sets the emergency local admin password (the
-`localadmin` account). You can also generate the hash manually:
+**setup wizard**. Its order is ① Graylog server → ② OpenSearch (optional) →
+③ archive path → ④ **backup admin account** → ⑤ done; the local admin password
+you set in the last step is the `localadmin` account. You can also generate the
+hash manually:
 
 ```bash
 sudo -u jt-glogarch glogarch hash-password   # put the hash in config.yaml → web.localadmin_password_hash
 ```
 
-Then log in with username `localadmin` even when Graylog is offline.
+You normally sign in with your Graylog account; `localadmin` works even when
+Graylog is offline.
+
+
+### How do I factory-reset (re-initialize)?
+
+Three things are stored **independently** — know which you're clearing:
+
+| Item | Location | Contents |
+| --- | --- | --- |
+| Settings | `/opt/jt-glogarch/config.yaml` | connections, schedules, notifications, `localadmin` password, paths |
+| Database | `/opt/jt-glogarch/jt-glogarch.db` | archive records, job history, audit |
+| Archive files | `/data/graylog-archives/` | the actual log files (the real data) |
+
+**Reset settings only, keep archives (most common):**
+
+```bash
+sudo systemctl stop jt-glogarch
+sudo mv /opt/jt-glogarch/config.yaml /opt/jt-glogarch/config.yaml.bak   # back up, then remove
+sudo systemctl start jt-glogarch
+```
+
+On restart `servers` is empty → the Web UI redirects to the setup wizard (initial
+state). Notes:
+
+- **You must restart the service** — settings are cached in memory at startup, so
+  deleting the file without a restart does nothing (this is why it can look like
+  "deleting config.yaml had no effect").
+- Search order is `/opt/jt-glogarch/config.yaml` → (else) `~/.jt-glogarch/config.yaml`
+  → `/etc/jt-glogarch/config.yaml`; if another copy exists it loads that — remove it too.
+- Your archive **files are untouched**. But the default DB path (`glogarch.db`)
+  may differ from your original, so the archive list can **look empty** — the old
+  DB and files are still there. After setting the archive path back in the wizard,
+  rebuild the DB from disk and the list returns:
+
+  ```bash
+  sudo -u jt-glogarch glogarch db-rebuild
+  ```
+
+**Full wipe (also deletes archived data — irreversible):**
+
+```bash
+sudo systemctl stop jt-glogarch
+sudo rm -f /opt/jt-glogarch/config.yaml
+sudo rm -f /opt/jt-glogarch/jt-glogarch.db /opt/jt-glogarch/glogarch.db*   # archive records, job history, audit
+sudo rm -rf /data/graylog-archives/*                                       # ⚠ this deletes the archived log files themselves!
+sudo systemctl start jt-glogarch
+```
 
 
 ### "Permission denied" when writing to `/data/graylog-archives/`
