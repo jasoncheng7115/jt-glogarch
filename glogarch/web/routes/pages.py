@@ -37,9 +37,19 @@ _VALID_LOGIN_ERRORS = {"auth_failed", "graylog_offline_with_local", "graylog_off
 
 @router.get("/setup", response_class=HTMLResponse)
 def setup_page(request: Request):
-    """First-run setup wizard. Only reachable while unconfigured; once a
-    Graylog server exists it redirects to the normal login."""
-    if not _is_unconfigured(request):
+    """First-run setup wizard.
+
+    The local admin password is the LAST step, so steps 1-3 (Graylog /
+    OpenSearch / archive path) must write config BEFORE any password
+    authenticates the session. We grant a pre-auth `setup_mode` session here —
+    the sole place it is issued, and only on a still-unconfigured box. The
+    APIAuthMiddleware honours it for the wizard's config endpoints; the admin-
+    password step clears it. `setup_mode` also keeps the wizard reachable on a
+    mid-wizard reload after step 1 has written the Graylog server (which flips
+    _is_unconfigured to False)."""
+    if _is_unconfigured(request):
+        request.session["setup_mode"] = True
+    elif not request.session.get("setup_mode"):
         return RedirectResponse(url="/login", status_code=303)
     return _render("setup.html", request)
 

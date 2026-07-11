@@ -8,8 +8,8 @@ const $ = id => document.getElementById(id);
 function showError(msg) { const e = $('setup-error'); e.textContent = msg; e.classList.toggle('hidden', !msg); }
 function busy(on) { $('setup-busy').textContent = on ? (t('setup_saving') || 'Saving...') : ''; $('btn-next').disabled = on; }
 
-// Step 3's OpenSearch host example follows the Graylog host entered in step 2
-// (same host/FQDN, port 9200) — deployments usually co-locate them.
+// The OpenSearch host example (step 2) follows the Graylog host entered in
+// step 1 (same host/FQDN, port 9200) — deployments usually co-locate them.
 function osHostPlaceholderFromGraylog() {
     const ta = $('s3-hosts');
     if (!ta) return;
@@ -30,11 +30,11 @@ function render() {
         dots[i].className = 'dot' + (i + 1 < step ? ' done' : (i + 1 === step ? ' active' : ''));
     }
     $('btn-back').classList.toggle('hidden', !(step > 1 && step < TOTAL));
-    $('btn-skip').classList.toggle('hidden', step !== 3);
+    $('btn-skip').classList.toggle('hidden', step !== 2);   // only OpenSearch is skippable
     // innerHTML (not textContent) so the leading icon survives the re-render.
     $('btn-next').innerHTML = icon(step === TOTAL ? 'login' : 'arrow_right') + ' ' +
         ((step === TOTAL) ? t('setup_finish') : t('setup_next'));
-    osHostPlaceholderFromGraylog();   // step 3 example follows the step-2 Graylog host
+    osHostPlaceholderFromGraylog();   // OpenSearch (step 2) example follows the step-1 Graylog host
     $('setup-progress').textContent = `${t('setup_step')} ${Math.min(step, TOTAL)} ${t('setup_of')} ${TOTAL}`;
     showError('');
 }
@@ -91,22 +91,14 @@ async function testOs() {
 
 async function setupNext() {
     showError('');
-    if (step === 1) {
-        const p = $('s1-pass').value, p2 = $('s1-pass2').value;
-        if (p.length < 8) return showError(t('setup_pass_short'));
-        if (p !== p2) return showError(t('setup_pass_mismatch'));
-        busy(true);
-        const r = await api('/setup/admin-password', { password: p });
-        busy(false);
-        if (r.error) return showError(r.error);
-    } else if (step === 2) {
+    if (step === 1) {                         // Graylog server
         const b = serverBody();
         if (!b.name || !b.url) return showError(t('settings_srv_name') + ' / ' + t('settings_srv_url'));
         busy(true);
         const r = await api('/config/servers', b);
         busy(false);
         if (r.error) return showError(r.error);
-    } else if (step === 3) {
+    } else if (step === 2) {                  // OpenSearch (optional — Skip bypasses)
         const b = osBody();
         if (!b.hosts.length) return showError(t('settings_os_hosts'));
         busy(true);
@@ -114,7 +106,7 @@ async function setupNext() {
         if (!r.error) await api('/config/general', { export_mode: 'opensearch' });
         busy(false);
         if (r.error) return showError(r.error);
-    } else if (step === 4) {
+    } else if (step === 3) {                  // Archive path
         const path = $('s4-path').value.trim();
         if (path && path !== '/data/graylog-archives') {
             busy(true);
@@ -122,6 +114,14 @@ async function setupNext() {
             busy(false);
             if (r.error) return showError(r.error);
         }
+    } else if (step === 4) {                  // Backup admin password (last input)
+        const p = $('s1-pass').value, p2 = $('s1-pass2').value;
+        if (p.length < 8) return showError(t('setup_pass_short'));
+        if (p !== p2) return showError(t('setup_pass_mismatch'));
+        busy(true);
+        const r = await api('/setup/admin-password', { password: p });
+        busy(false);
+        if (r.error) return showError(r.error);
     } else if (step === 5) {
         window.location.href = '/';
         return;
@@ -131,7 +131,8 @@ async function setupNext() {
 }
 
 async function setupSkip() {
-    if (step === 3) { await api('/config/general', { export_mode: 'api' }); }
+    // Only the OpenSearch step (2) is skippable → fall back to Graylog API mode.
+    if (step === 2) { await api('/config/general', { export_mode: 'api' }); }
     step++;
     render();
 }

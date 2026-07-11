@@ -93,9 +93,26 @@ class APIAuthMiddleware(BaseHTTPMiddleware):
         "/api/setup/admin-password",
     }
 
+    # Endpoints the first-run wizard writes to BEFORE the local admin password
+    # (its LAST step) authenticates the session. Allowed only while a setup
+    # session is active — `session.setup_mode`, granted solely by GET /setup on a
+    # still-unconfigured box and cleared once the admin password is set. On a
+    # configured box no setup_mode is ever issued, so these stay auth-only.
+    SETUP_API_PATHS = {
+        "/api/config/servers",
+        "/api/config/servers/test",
+        "/api/config/opensearch",
+        "/api/config/general",
+        "/api/opensearch/test",
+        "/api/settings/archive-path",
+    }
+
     async def dispatch(self, request: Request, call_next):
-        if request.url.path.startswith("/api/") and request.url.path not in self.PUBLIC_API_PATHS:
-            if not request.session.get("authenticated", False):
+        path = request.url.path
+        if path.startswith("/api/") and path not in self.PUBLIC_API_PATHS:
+            authed = request.session.get("authenticated", False)
+            setup_ok = request.session.get("setup_mode", False) and path in self.SETUP_API_PATHS
+            if not authed and not setup_ok:
                 return JSONResponse({"error": "Not authenticated"}, status_code=401)
         return await call_next(request)
 

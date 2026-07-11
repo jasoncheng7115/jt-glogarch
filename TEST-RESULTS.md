@@ -3,17 +3,17 @@
 | Item | Value |
 |---|---|
 | **Status** | ✅ ALL PASSED |
-| **Version** | v1.12.10 |
-| **Date** | 2026-07-11 03:19:58 UTC |
+| **Version** | v1.13.0 |
+| **Date** | 2026-07-11 04:29:23 UTC |
 | **Platform** | Python 3.10.12 / Linux 5.15.0-179-generic x86_64 |
-| **Results** | 256 passed  / 1 skipped in 34.71s |
+| **Results** | 258 passed  / 1 skipped in 27.84s |
 | **Version Check** | ✅ OK |
 
 ## Test Output
 
 ```
 ============================= test session starts ==============================
-collecting ... collected 257 items
+collecting ... collected 259 items
 
 tests/test_api_error_handling.py::test_index_sets_catches_401 PASSED
 tests/test_api_error_handling.py::test_streams_catches_401 PASSED
@@ -45,15 +45,15 @@ tests/test_audit.py::test_is_noise_prepare_preview PASSED
 tests/test_audit.py::test_is_noise_non_api PASSED
 tests/test_audit.py::test_is_noise_whitelisted PASSED
 tests/test_audit.py::test_is_noise_unlisted PASSED
-tests/test_audit.py::test_cleanup_uses_audit_retention 2026-07-11 11:20:01 [info     ] No archives to clean up        retention_days=1095
-2026-07-11 11:20:01 [info     ] Cleaned audit records          deleted=1 retention_days=180
-2026-07-11 11:20:01 [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
-2026-07-11 11:20:01 [info     ] No archives to clean up        retention_days=1095
-2026-07-11 11:20:01 [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
+tests/test_audit.py::test_cleanup_uses_audit_retention 2026-07-11 12:29:26 [info     ] No archives to clean up        retention_days=1095
+2026-07-11 12:29:26 [info     ] Cleaned audit records          deleted=1 retention_days=180
+2026-07-11 12:29:26 [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
+2026-07-11 12:29:26 [info     ] No archives to clean up        retention_days=1095
+2026-07-11 12:29:26 [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
 PASSED
-tests/test_audit.py::test_cleanup_audit_no_config 2026-07-11 11:20:01 [info     ] No archives to clean up        retention_days=1095
-2026-07-11 11:20:01 [info     ] Cleaned audit records          deleted=1 retention_days=180
-2026-07-11 11:20:01 [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
+tests/test_audit.py::test_cleanup_audit_no_config 2026-07-11 12:29:26 [info     ] No archives to clean up        retention_days=1095
+2026-07-11 12:29:26 [info     ] Cleaned audit records          deleted=1 retention_days=180
+2026-07-11 12:29:26 [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
 PASSED
 tests/test_bulk_import.py::test_reserved_fields_stripped PASSED
 tests/test_bulk_import.py::test_index_name_is_deflector PASSED
@@ -88,37 +88,37 @@ tests/test_database_datetime.py::test_utc_aware_roundtrip PASSED
 tests/test_database_datetime.py::test_non_utc_aware_roundtrip PASSED
 tests/test_database_datetime.py::test_none_passthrough PASSED
 tests/test_database_datetime.py::test_str_to_dt_with_offset PASSED
-tests/test_db_rebuild.py::test_rebuild_dry_run 2026-07-11T03:20:06.770101Z [info     ] Would insert                   path=/tmp/tmpgunh0l_e/archives/server1/2026/01/test.json.gz server=test time_from=2026-01-01T00:00:00Z
+tests/test_db_rebuild.py::test_rebuild_dry_run 2026-07-11T04:29:30.537847Z [info     ] Would insert                   path=/tmp/tmptv67pzf_/archives/server1/2026/01/test.json.gz server=test time_from=2026-01-01T00:00:00Z
 PASSED
 tests/test_db_rebuild.py::test_rebuild_actual PASSED
 tests/test_db_rebuild.py::test_rebuild_skip_existing PASSED
 tests/test_db_rebuild.py::test_backup_db PASSED
 tests/test_db_rebuild.py::test_prune_backups PASSED
-tests/test_export_pagination.py::test_deep_pagination_no_same_ms_loss_or_dup 2026-07-11T03:20:07.933943Z [info     ] Total messages to fetch        total=6
-2026-07-11T03:20:07.934914Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=4 new_from='2024-01-01 00:00:00.003000' old_from='2024-01-01 00:00:00'
+tests/test_export_pagination.py::test_deep_pagination_no_same_ms_loss_or_dup 2026-07-11T04:29:31.371422Z [info     ] Total messages to fetch        total=6
+2026-07-11T04:29:31.372919Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=4 new_from='2024-01-01 00:00:00.003000' old_from='2024-01-01 00:00:00'
 PASSED
-tests/test_export_pagination.py::test_deep_pagination_multiple_windows 2026-07-11T03:20:07.939005Z [info     ] Total messages to fetch        total=30
-2026-07-11T03:20:07.941750Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=6 new_from='2024-01-01 00:00:00.005000' old_from='2024-01-01 00:00:00'
-2026-07-11T03:20:07.944413Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=11 new_from='2024-01-01 00:00:00.010000' old_from='2024-01-01 00:00:00.005000'
-2026-07-11T03:20:07.945911Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=16 new_from='2024-01-01 00:00:00.015000' old_from='2024-01-01 00:00:00.010000'
-2026-07-11T03:20:07.947081Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=21 new_from='2024-01-01 00:00:00.020000' old_from='2024-01-01 00:00:00.015000'
-2026-07-11T03:20:07.949682Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=26 new_from='2024-01-01 00:00:00.025000' old_from='2024-01-01 00:00:00.020000'
+tests/test_export_pagination.py::test_deep_pagination_multiple_windows 2026-07-11T04:29:31.380598Z [info     ] Total messages to fetch        total=30
+2026-07-11T04:29:31.384042Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=6 new_from='2024-01-01 00:00:00.005000' old_from='2024-01-01 00:00:00'
+2026-07-11T04:29:31.387520Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=11 new_from='2024-01-01 00:00:00.010000' old_from='2024-01-01 00:00:00.005000'
+2026-07-11T04:29:31.390826Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=16 new_from='2024-01-01 00:00:00.015000' old_from='2024-01-01 00:00:00.010000'
+2026-07-11T04:29:31.393551Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=21 new_from='2024-01-01 00:00:00.020000' old_from='2024-01-01 00:00:00.015000'
+2026-07-11T04:29:31.396068Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=26 new_from='2024-01-01 00:00:00.025000' old_from='2024-01-01 00:00:00.020000'
 PASSED
-tests/test_export_pagination.py::test_pagination_raises_on_unsplittable_ms 2026-07-11T03:20:07.955768Z [info     ] Total messages to fetch        total=10
+tests/test_export_pagination.py::test_pagination_raises_on_unsplittable_ms 2026-07-11T04:29:31.402122Z [info     ] Total messages to fetch        total=10
 PASSED
 tests/test_export_pagination.py::test_fmt_ts_millisecond_precision PASSED
 tests/test_export_pagination.py::test_parse_timestamp_robust_fallback PASSED
-tests/test_export_pagination.py::test_transient_5xx_fails_over_to_next_host 2026-07-11T03:20:07.973236Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=1 status=503 wait=1
-2026-07-11T03:20:07.975980Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=2 status=503 wait=2
-2026-07-11T03:20:07.977961Z [warning  ] Transient errors exhausted, failing over to next host host=http://host0:9200 status=503
-2026-07-11T03:20:07.980151Z [info     ] Failover to host               host=http://host1:9200
+tests/test_export_pagination.py::test_transient_5xx_fails_over_to_next_host 2026-07-11T04:29:31.425040Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=1 status=503 wait=1
+2026-07-11T04:29:31.429058Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=2 status=503 wait=2
+2026-07-11T04:29:31.431221Z [warning  ] Transient errors exhausted, failing over to next host host=http://host0:9200 status=503
+2026-07-11T04:29:31.433383Z [info     ] Failover to host               host=http://host1:9200
 PASSED
-tests/test_export_pagination.py::test_all_hosts_transient_raises 2026-07-11T03:20:07.989527Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=1 status=503 wait=1
-2026-07-11T03:20:07.991785Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=2 status=503 wait=2
-2026-07-11T03:20:07.992200Z [warning  ] Transient errors exhausted, failing over to next host host=http://host0:9200 status=503
-2026-07-11T03:20:07.992435Z [warning  ] Transient error, retrying      host=http://host1:9200 retry=1 status=503 wait=1
-2026-07-11T03:20:07.992689Z [warning  ] Transient error, retrying      host=http://host1:9200 retry=2 status=503 wait=2
-2026-07-11T03:20:07.992932Z [warning  ] Transient errors exhausted, failing over to next host host=http://host1:9200 status=503
+tests/test_export_pagination.py::test_all_hosts_transient_raises 2026-07-11T04:29:31.443491Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=1 status=503 wait=1
+2026-07-11T04:29:31.445666Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=2 status=503 wait=2
+2026-07-11T04:29:31.446067Z [warning  ] Transient errors exhausted, failing over to next host host=http://host0:9200 status=503
+2026-07-11T04:29:31.446370Z [warning  ] Transient error, retrying      host=http://host1:9200 retry=1 status=503 wait=1
+2026-07-11T04:29:31.446636Z [warning  ] Transient error, retrying      host=http://host1:9200 retry=2 status=503 wait=2
+2026-07-11T04:29:31.446895Z [warning  ] Transient errors exhausted, failing over to next host host=http://host1:9200 status=503
 PASSED
 tests/test_export_pagination.py::test_non_transient_4xx_raises_immediately PASSED
 tests/test_export_pagination.py::test_iter_index_docs_no_stale_total_early_stop PASSED
@@ -143,11 +143,11 @@ tests/test_health_guard.py::test_heap_hard_tier_trips_immediately PASSED
 tests/test_health_guard.py::test_heap_soft_tier_needs_sustained PASSED
 tests/test_health_guard.py::test_heap_soft_streak_resets_on_dip PASSED
 tests/test_health_guard.py::test_tripped_on_rising_journal PASSED
-tests/test_health_guard.py::test_pause_then_resume 2026-07-11T03:20:08.382005Z [warning  ] export paused — Graylog backpressure signals=['JVM heap 95%（超過硬上限 90%）']
-2026-07-11T03:20:08.382333Z [info     ] export resumed — backpressure cleared waited_sec=1
+tests/test_health_guard.py::test_pause_then_resume 2026-07-11T04:29:31.814944Z [warning  ] export paused — Graylog backpressure signals=['JVM heap 95%（超過硬上限 90%）']
+2026-07-11T04:29:31.815190Z [info     ] export resumed — backpressure cleared waited_sec=1
 PASSED
-tests/test_health_guard.py::test_pause_times_out_and_raises 2026-07-11T03:20:08.386031Z [warning  ] export paused — Graylog backpressure signals=['JVM heap 99%（超過硬上限 90%）']
-2026-07-11T03:20:08.386264Z [error    ] export stopped — backpressure did not clear signals=['JVM heap 99%（超過硬上限 90%）'] waited_sec=60
+tests/test_health_guard.py::test_pause_times_out_and_raises 2026-07-11T04:29:31.818942Z [warning  ] export paused — Graylog backpressure signals=['JVM heap 99%（超過硬上限 90%）']
+2026-07-11T04:29:31.819218Z [error    ] export stopped — backpressure did not clear signals=['JVM heap 99%（超過硬上限 90%）'] waited_sec=60
 PASSED
 tests/test_import_lock.py::test_claim_success PASSED
 tests/test_import_lock.py::test_claim_conflict PASSED
@@ -158,7 +158,7 @@ tests/test_integration.py::test_cross_conflict_actual_os_mapping PASSED
 tests/test_integration.py::test_field_schema_zlib_in_preflight PASSED
 tests/test_integration.py::test_timezone_dedup_correctness PASSED
 tests/test_integration.py::test_timezone_retention_correctness PASSED
-tests/test_integration.py::test_archive_write_read_integrity 2026-07-11T03:20:10.536337Z [info     ] Archive written                messages=50 path=/tmp/tmpq5q59__b/test/stream1/2026/01/01/test_stream1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.00
+tests/test_integration.py::test_archive_write_read_integrity 2026-07-11T04:29:33.294660Z [info     ] Archive written                messages=50 path=/tmp/tmpuv1sf6zl/test/stream1/2026/01/01/test_stream1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.00
 PASSED
 tests/test_integration.py::test_coverage_ratio_timezone PASSED
 tests/test_integrity.py::test_key_gen_and_load_roundtrip PASSED
@@ -169,9 +169,9 @@ tests/test_integrity.py::test_seal_writes_hmac_and_ledger PASSED
 tests/test_integrity.py::test_verify_ok_when_untouched PASSED
 tests/test_integrity.py::test_tamper_detected_even_if_db_checksum_rewritten PASSED
 tests/test_integrity.py::test_verify_skip_when_not_sealed PASSED
-tests/test_integrity.py::test_verifier_flags_tampered 2026-07-11T03:20:12.540912Z [info     ] Verification started           total_archives=1
-2026-07-11T03:20:12.542562Z [error    ] TAMPERED archive (HMAC mismatch) archive_id=1 path=/tmp/pytest-of-root/pytest-111/test_verifier_flags_tampered0/a.json.gz
-2026-07-11T03:20:12.553427Z [info     ] Verification completed         corrupted=0 missing=0 orphans=0 tampered=1 total=1 valid=0
+tests/test_integrity.py::test_verifier_flags_tampered 2026-07-11T04:29:34.485901Z [info     ] Verification started           total_archives=1
+2026-07-11T04:29:34.487452Z [error    ] TAMPERED archive (HMAC mismatch) archive_id=1 path=/tmp/pytest-of-root/pytest-115/test_verifier_flags_tampered0/a.json.gz
+2026-07-11T04:29:34.503507Z [info     ] Verification completed         corrupted=0 missing=0 orphans=0 tampered=1 total=1 valid=0
 PASSED
 tests/test_integrity.py::test_notify_tampered_line_is_distinct PASSED
 tests/test_local_admin.py::test_default_hash_is_empty PASSED
@@ -280,8 +280,10 @@ tests/test_sensitive_notify_body.py::test_no_target_omits_brackets PASSED
 tests/test_sensitive_notify_body.py::test_truncates_after_five_groups PASSED
 tests/test_settings_api.py::test_fresh_install_redirects_to_setup PASSED
 tests/test_settings_api.py::test_config_endpoints_require_auth PASSED
+tests/test_settings_api.py::test_admin_password_requires_setup_session PASSED
 tests/test_settings_api.py::test_setup_admin_password_short_rejected PASSED
 tests/test_settings_api.py::test_setup_flow_then_gate_closes PASSED
+tests/test_settings_api.py::test_wizard_reorder_config_written_before_admin_password PASSED
 tests/test_settings_api.py::test_server_masking_and_secret_reconcile PASSED
 tests/test_settings_api.py::test_server_delete_reassigns_default PASSED
 tests/test_settings_api.py::test_opensearch_save_and_mask PASSED
@@ -292,7 +294,7 @@ tests/test_settings_api.py::test_upgrade_existing_servers_skip_wizard PASSED
 tests/test_settings_api.py::test_upgrade_partial_edit_preserves_untouched_fields PASSED
 tests/test_startup_recovery.py::test_recover_stuck_importing PASSED
 tests/test_startup_recovery.py::test_recover_stuck_importing_noop_when_clean PASSED
-tests/test_storage_ownership.py::test_fix_dir_ownership_as_root 2026-07-11T03:20:33.075328Z [warning  ] Fixing directory ownership     new_owner=jt-glogarch path=/tmp/tmpaiu1af2p/archives/log4
+tests/test_storage_ownership.py::test_fix_dir_ownership_as_root 2026-07-11T04:29:51.705676Z [warning  ] Fixing directory ownership     new_owner=jt-glogarch path=/tmp/tmpglu3rpuj/archives/log4
 PASSED
 tests/test_storage_ownership.py::test_fix_dir_ownership_not_root SKIPPED
 tests/test_storage_ownership.py::test_fix_only_under_base_path PASSED
@@ -310,12 +312,12 @@ tests/test_upgrade_script.py::test_upgrade_script_adds_retention_days PASSED
 tests/test_upgrade_script.py::test_upgrade_script_op_audit_has_retention_days PASSED
 tests/test_upgrade_script.py::test_readme_git_clone_has_sudo PASSED
 
-======================= 256 passed, 1 skipped in 34.71s ========================
+======================= 258 passed, 1 skipped in 27.84s ========================
 ```
 
 ## Version Check
 
 ```
-Canonical version: 1.12.10
-OK: version '1.12.10' has exactly one source of truth.
+Canonical version: 1.13.0
+OK: version '1.13.0' has exactly one source of truth.
 ```

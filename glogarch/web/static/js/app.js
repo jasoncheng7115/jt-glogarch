@@ -3643,7 +3643,10 @@ async function openReportModal(name) {
         if (r) { cfg = r.config || {}; cfg.__name = r.name; cfg.__id = r.id; cfg.__enabled = r.enabled; existing = true; }
     }
     document.getElementById('report-modal-title').innerHTML = icon('log') + ' ' + esc(existing ? t('reports_edit') : t('reports_add'));
-    const serverOpts = _reportServers.map(s => `<option value="${esc(s.name)}"${cfg.server===s.name?' selected':''}>${esc(s.name)}</option>`).join('');
+    // Default the Graylog server: if the report has none saved and exactly one
+    // server is configured, pre-select it (and auto-load its dashboards below).
+    const _rpServer = cfg.server || (_reportServers.length === 1 ? _reportServers[0].name : '');
+    const serverOpts = _reportServers.map(s => `<option value="${esc(s.name)}"${_rpServer===s.name?' selected':''}>${esc(s.name)}</option>`).join('');
     // Max-widget picker: "全部" (0 = unlimited) is the default.
     const _mwVal = String((cfg.max_widgets === undefined || cfg.max_widgets === null) ? 0 : cfg.max_widgets);
     let _mwList = ['0', '10', '20', '30', '50'];
@@ -3741,7 +3744,7 @@ async function openReportModal(name) {
     reportToggleMode(cfg.dashboard_mode || 'rebuild');
     reportCronInit(cfg.schedule_cron || '');
     _wireLogoDnD();
-    if (cfg.server) reportLoadDashboards(cfg.server);
+    if (_rpServer) reportLoadDashboards(_rpServer);
 }
 
 // Cron picker: presets fill the (advanced) text field; text field stays the

@@ -21,18 +21,13 @@
 
         <div id="setup-error" class="setup-error hidden"></div>
 
-        <!-- Step 1: admin password -->
-        <div class="setup-step" data-step="1">
-            <div class="step-title"><span data-i18n="setup_s1_title">Administrator Password</span></div>
-            <div class="step-desc" data-i18n="setup_s1_desc"></div>
-            <div class="form-group"><label data-i18n="settings_admin_pass">New Password</label>
-                <input type="password" id="s1-pass" autocomplete="new-password"></div>
-            <div class="form-group"><label data-i18n="setup_confirm_pass">Confirm Password</label>
-                <input type="password" id="s1-pass2" autocomplete="new-password"></div>
-        </div>
+        <!-- NOTE: field-id prefixes (s1=admin, s2=graylog, s3=opensearch,
+             s4=path) and the setup_sN i18n keys are CONTENT-based and stay
+             fixed; only data-step reflects the display ORDER. The local admin
+             account is the LAST input step (see auth bootstrap in pages.py). -->
 
-        <!-- Step 2: Graylog server -->
-        <div class="setup-step hidden" data-step="2">
+        <!-- Step 1: Graylog server -->
+        <div class="setup-step" data-step="1">
             <div class="step-title"><span data-i18n="setup_s2_title">Graylog Server</span></div>
             <div class="step-desc" data-i18n="setup_s2_desc"></div>
             <div class="form-group"><label data-i18n="settings_srv_name">Name</label>
@@ -55,8 +50,8 @@
             <div id="s2-result" class="setup-result"></div>
         </div>
 
-        <!-- Step 3: OpenSearch (optional) -->
-        <div class="setup-step hidden" data-step="3">
+        <!-- Step 2: OpenSearch (optional) -->
+        <div class="setup-step hidden" data-step="2">
             <div class="step-title"><span data-i18n="setup_s3_title">OpenSearch (optional)</span></div>
             <div class="step-desc" data-i18n="setup_s3_desc"></div>
             <div class="form-group"><label data-i18n="settings_os_hosts">OpenSearch Hosts (one per line)</label>
@@ -70,13 +65,23 @@
             <div id="s3-result" class="setup-result"></div>
         </div>
 
-        <!-- Step 4: archive path -->
-        <div class="setup-step hidden" data-step="4">
+        <!-- Step 3: archive path -->
+        <div class="setup-step hidden" data-step="3">
             <div class="step-title"><span data-i18n="setup_s4_title">Archive Storage</span></div>
             <div class="step-desc" data-i18n="setup_s4_desc"></div>
             <div class="form-group"><label data-i18n="setup_archive_path">Archive directory</label>
                 <input type="text" id="s4-path" value="/data/graylog-archives"></div>
             <div id="s4-result" class="setup-result"></div>
+        </div>
+
+        <!-- Step 4: local admin password (backup account, LAST input step) -->
+        <div class="setup-step hidden" data-step="4">
+            <div class="step-title"><span data-i18n="setup_s1_title">Backup Admin Account</span></div>
+            <div class="step-desc" data-i18n="setup_s1_desc"></div>
+            <div class="form-group"><label data-i18n="settings_admin_pass">New Password</label>
+                <input type="password" id="s1-pass" autocomplete="new-password"></div>
+            <div class="form-group"><label data-i18n="setup_confirm_pass">Confirm Password</label>
+                <input type="password" id="s1-pass2" autocomplete="new-password"></div>
         </div>
 
         <!-- Step 5: done -->

@@ -2326,28 +2326,32 @@ async def setup_admin_password(request: Request):
     """First-run ONLY: set the localadmin password and open an authenticated
     session so the rest of the wizard can use the normal /api/config/* endpoints.
 
-    Hard-gated: rejected (403) once any server is configured — this is the sole
-    pre-auth write path and it closes the instant setup progresses. While still
-    unconfigured the password MAY be (re)set: a user who set it but abandoned the
-    wizard before adding a server would otherwise be deadlocked — the wizard
-    reopens at step 1 (still unconfigured) but couldn't re-submit the password."""
-    settings = _settings(request)
-    if not _is_unconfigured(settings):
+    Gated on the pre-auth setup session (`session.setup_mode`), granted only by
+    GET /setup on a still-unconfigured box — so on a configured box (no
+    setup_mode obtainable) this returns 403. The local admin password is the
+    LAST wizard step, so by the time it runs a Graylog server already exists;
+    gating on _is_unconfigured (servers empty) would wrongly reject it, hence the
+    setup_mode gate. On success we authenticate the session AND clear setup_mode,
+    closing the pre-auth window."""
+    if not request.session.get("setup_mode"):
         return JSONResponse({"error": "Setup already completed"}, status_code=403)
     body = await request.json()
     pw = body.get("password", "") or ""
     if len(pw) < 8:
         return JSONResponse({"error": "Password must be at least 8 characters"}, status_code=400)
+    settings = _settings(request)
     import hashlib
     h = hashlib.sha256(pw.encode()).hexdigest()
     settings.web.localadmin_password_hash = h
     from glogarch.core.config_writer import update_config
     update_config(_config_path(request),
                   lambda cfg: cfg.setdefault("web", {}).update({"localadmin_password_hash": h}))
-    # Open an authenticated (emergency) session for the remaining wizard steps.
+    # Password set (the wizard's last input) → authenticate as the local admin
+    # and close the pre-auth setup window.
     request.session["authenticated"] = True
     request.session["username"] = "localadmin"
     request.session["emergency_mode"] = True
+    request.session.pop("setup_mode", None)
     _audit(request, "setup_admin_password", "First-run admin password set")
     return {"status": "ok"}
 

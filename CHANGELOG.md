@@ -2,6 +2,28 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.0] - 2026-07-11
+
+### Changed
+
+- **Setup wizard reordered — the local admin account is now the LAST step.**
+  New order: (1) Graylog server, (2) OpenSearch (optional), (3) archive path,
+  (4) backup admin account, (5) done. The admin step is reframed as a *backup*
+  login (you normally sign in with your Graylog account; `localadmin` works even
+  when Graylog is unreachable). Because the password is no longer first, steps
+  1-3 write config under a pre-auth **setup session** (`setup_mode`, granted by
+  `GET /setup` on a still-unconfigured box and honoured by the auth middleware
+  only for the wizard's config endpoints); the admin-password step authenticates
+  the session and closes it. Mid-wizard reloads, session loss (falls back to
+  Graylog login), and existing-install upgrades (never see the wizard) all
+  handled.
+
+### Added
+
+- **New report: single Graylog server is pre-selected.** When adding a report
+  and only one Graylog server is configured, it is chosen by default and its
+  dashboards load immediately (no more starting on a blank "-").
+
 ## [1.12.10] - 2026-07-11
 
 ### Fixed
