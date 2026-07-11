@@ -2740,7 +2740,8 @@ async function checkRunningJobs() {
             const head = indet ? esc(j.job_type) : `${esc(j.job_type)} <strong>${pct}%</strong>`;
             const bar = indet ? `<div class="progress-fill indet"></div>`
                               : `<div class="progress-fill" data-style="width:${pct}%"></div>`;
-            return `
+            // Wrap each job so consecutive jobs get a separator (see .sb-job CSS).
+            return `<div class="sb-job">
                 <div class="job-detail-full u044">
                     <span>${head} · ${elapsed}</span>
                     <div class="progress-bar u099">${bar}</div>
@@ -2749,7 +2750,8 @@ async function checkRunningJobs() {
                 <div class="job-detail-mini u067" title="${esc(j.job_type)} ${indet ? '' : pct + '%'} ${elapsed}">
                     <strong>${indet ? '···' : pct + '%'}</strong>
                     <div class="progress-bar u098">${bar}</div>
-                </div>`;
+                </div>
+            </div>`;
         }).join('');
     } catch (e) {}
 }

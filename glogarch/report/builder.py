@@ -171,24 +171,59 @@ def scatter_chart(labels, series, axis_type="linear"):
 
 
 def _strip_full_width_bands(svg: str) -> str:
-    """Remove any land sub-path that spans nearly the full map width but is
-    vertically paper-thin — those are digitization artifacts that render as stray
-    horizontal lines across the whole world map. Geometry-based so it survives
-    asset tweaks."""
+    """Clean digitization artifacts from the bundled world-map path: it contains
+    spurious full-width horizontal segments (drawn as stray lines/bands across the
+    whole map). Two cases, both geometry-based so the asset can be swapped freely:
+
+      1. A whole sub-path that is a full-width, paper-thin strip → drop it.
+      2. A full-width horizontal RUN inside a real land sub-path (e.g. one woven
+         into Russia's outline) → drop just those points AND split the sub-path
+         there (a fresh moveto) so no reconnection line is drawn across the gap.
+
+    The map's real bottom edge (Antarctica at y>150) is left untouched."""
     import re
     m = re.search(r'(<path[^>]*\bd=")([^"]+)(")', svg)
     if not m:
         return svg
-    subs = [s for s in re.split(r'(?=[Mm])', m.group(2)) if s.strip()]
-    kept = []
-    for sp in subs:
-        nums = re.findall(r'-?\d+\.?\d*', sp)
-        xs = [float(a) for a in nums[0::2]]
-        ys = [float(a) for a in nums[1::2]]
-        if xs and ys and (max(xs) - min(xs)) > 300 and (max(ys) - min(ys)) < 3:
-            continue                       # full-width thin strip → artifact, drop
-        kept.append(sp)
-    return svg[:m.start(2)] + "".join(kept) + svg[m.end(2):]
+
+    def _pts(sp):
+        n = [float(x) for x in re.findall(r'-?\d+\.?\d*', sp)]
+        return list(zip(n[0::2], n[1::2]))
+
+    pieces = []
+    for sp in [s for s in re.split(r'(?=[Mm])', m.group(2)) if s.strip()]:
+        pts = _pts(sp)
+        if not pts:
+            continue
+        xr = max(p[0] for p in pts) - min(p[0] for p in pts)
+        yr = max(p[1] for p in pts) - min(p[1] for p in pts)
+        if xr > 300 and yr < 3:
+            continue                              # (1) whole thin strip → drop
+        # (2) flag long horizontal runs (y nearly constant, x sweeps > 120) that
+        #     aren't the real Antarctic bottom edge.
+        drop = [False] * len(pts)
+        i = 0
+        while i < len(pts):
+            j = i + 1
+            while j < len(pts) and abs(pts[j][1] - pts[i][1]) < 1.5:
+                j += 1
+            seg = pts[i:j]
+            if (j - i) >= 3 and (max(p[0] for p in seg) - min(p[0] for p in seg)) > 120 and pts[i][1] < 150:
+                for k in range(i, j):
+                    drop[k] = True
+            i = j if j > i + 1 else i + 1
+        # Emit each contiguous KEPT run as its own sub-path (pen lifts at gaps).
+        run = []
+        for k, p in enumerate(pts):
+            if drop[k]:
+                if len(run) >= 3:
+                    pieces.append("M" + " L".join(f"{x},{y}" for x, y in run) + "Z")
+                run = []
+            else:
+                run.append(p)
+        if len(run) >= 3:
+            pieces.append("M" + " L".join(f"{x},{y}" for x, y in run) + "Z")
+    return svg[:m.start(2)] + "".join(pieces) + svg[m.end(2):]
 
 
 def geo_map(points):

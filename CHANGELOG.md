@@ -2,6 +2,22 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.6] - 2026-07-11
+
+### Fixed
+
+- **World map: the remaining northern band is gone.** Beyond the two thin strips
+  removed in 1.13.5, the bundled map path had a full-width horizontal run *woven
+  into Russia's outline* that filled as a band across the top. The cleaner now
+  drops such interior horizontal runs and **splits the sub-path at the gap** (pen
+  lifts, no reconnection line) — so the band disappears while Russia and every
+  other landmass stay intact.
+- **Table column-header separator is now clearly visible** (darker 2px grey; the
+  previous line was too faint to read).
+- **Sidebar live-progress: a separator line between concurrent jobs.** With an
+  export and a report running at once the two entries were stacked flush together
+  and hard to tell apart; consecutive jobs now have a divider.
+
 ## [1.13.5] - 2026-07-11
 
 ### Fixed (report fidelity + UI)
