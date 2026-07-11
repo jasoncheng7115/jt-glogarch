@@ -362,11 +362,16 @@ async def _autoscroll_dashboard(page):
         pass
 
 
-def slice_tall_png(png: bytes, first_ratio: float = 1.28, rest_ratio: float = 1.42) -> list[str]:
+def slice_tall_png(png: bytes, first_ratio: float = 1.15, rest_ratio: float = 1.42) -> list[str]:
     """Split a tall dashboard screenshot into page-sized data-URIs. The FIRST
     slice is shorter (first_ratio) because it shares its page with the section
     title + description; later slices sit on their own page (rest_ratio). Ratios
-    are height:width vs the A4 content width (~178mm). Returns [data-uri, ...]."""
+    are height:width vs the A4 content width (~178mm). Returns [data-uri, ...].
+
+    first_ratio was 1.28 — measured too tall: a first slice (~643pt) + the title
+    block + the .shot margins tipped just over one A4 page, so the slice broke to
+    the next page and orphaned the title on a near-empty page. 1.15 leaves a safe
+    margin so the title + first slice share the page."""
     from io import BytesIO
     try:
         from PIL import Image

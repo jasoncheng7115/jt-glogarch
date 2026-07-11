@@ -2,6 +2,16 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.9] - 2026-07-11
+
+### Fixed
+
+- **Screenshot mode: no more near-empty page before a dashboard capture.** The
+  first screenshot slice (`slice_tall_png` first_ratio) was measured too tall
+  (~643pt) — the section title + slice + margins tipped just over one A4 page, so
+  the slice broke to the next page and left the title alone on a near-empty page.
+  Reduced first_ratio 1.28 → 1.15 so the title and first slice share the page.
+
 ## [1.13.8] - 2026-07-11
 
 ### Changed
