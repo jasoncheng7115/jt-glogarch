@@ -958,14 +958,24 @@ def _normalize_time_rows(drows, eff=None, cfg=None):
         data_span = (last - first).total_seconds()
         eff_span = (t_to - t_from).total_seconds()
         if eff_span > 0 and data_span >= 0:
-            log.info("time-bucket fill spans",
-                     eff_from=t_from.isoformat(), eff_to=t_to.isoformat(),
-                     data_first=first.isoformat(), data_last=last.isoformat(),
-                     eff_span_s=round(eff_span), data_span_s=round(data_span),
-                     ratio=round(eff_span / data_span, 2) if data_span > 0 else None,
-                     step_s=round(step.total_seconds()))
-        k = math.floor((first - t_from).total_seconds() / step.total_seconds())
-        start, end = first - step * k, t_to
+            log.debug("time-bucket fill spans",
+                      eff_from=t_from.isoformat(), eff_to=t_to.isoformat(),
+                      data_first=first.isoformat(), data_last=last.isoformat(),
+                      eff_span_s=round(eff_span), data_span_s=round(data_span),
+                      ratio=round(eff_span / data_span, 2) if data_span > 0 else None,
+                      step_s=round(step.total_seconds()))
+        # Issue #3 (time-bar left-empty): when effective_timerange is far wider
+        # than the actual data, Graylog auto-ranges its own axis to the data
+        # extent rather than padding the full query window. Filling to t_from..t_to
+        # would leave the chart mostly empty. Confirmed on live dashboards: normal
+        # widgets show eff≈data (ratio ~1.0-1.16) while a sparse widget hit 19.2.
+        # So clamp to the data extent + one bucket of margin when eff >3x data (or
+        # the data is a single bucket). Interior empty buckets still render.
+        if data_span <= 0 or eff_span > data_span * 3.0:
+            start, end = first - step, last + step
+        else:
+            k = math.floor((first - t_from).total_seconds() / step.total_seconds())
+            start, end = first - step * k, t_to
     else:
         start, end = parsed[0][0], parsed[-1][0]
 

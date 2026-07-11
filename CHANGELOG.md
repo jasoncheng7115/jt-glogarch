@@ -2,6 +2,19 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.2] - 2026-07-11
+
+### Fixed
+
+- **Time bar no longer renders half-empty (issue #3).** When a widget's
+  `effective_timerange` is far wider than its actual data (confirmed on live
+  dashboards: normal widgets show eff≈data, but a sparse widget hit 19× its data
+  span), the report filled the whole window with empty buckets while Graylog
+  auto-ranges its axis to the data extent. The time-bucket fill now clamps to the
+  data extent (+ one bucket margin) when the effective range exceeds 3× the data
+  span; normal widgets (ratio ~1) are unaffected and interior empty buckets still
+  render.
+
 ## [1.13.1] - 2026-07-11
 
 ### Fixed (PDF report fidelity — widget-by-widget audit)
