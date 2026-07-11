@@ -2710,6 +2710,7 @@ async function checkRunningJobs() {
         const text = document.getElementById('sidebar-job-text');
         if (el && text) {
             if (running.length > 0) {
+                el.classList.remove('hidden');
                 el.style.display = 'block';
                 el.style.cursor = 'pointer';
                 el.title = t('reopen_running_job') || 'Click to reopen';
@@ -2742,6 +2743,7 @@ async function checkRunningJobs() {
                         <div class="progress-bar u098"><div class="progress-fill" data-style="width:${pct}%"></div></div>
                     </div>`;
             } else {
+                el.classList.add('hidden');
                 el.style.display = 'none';
             }
         }

@@ -2,6 +2,17 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.12.9] - 2026-07-11
+
+### Fixed
+
+- **Sidebar live-progress indicator never appeared during a running
+  export/import.** The element ships with the `hidden` class
+  (`display:none !important`), but `checkRunningJobs()` only set an inline
+  `display:block`, which cannot override an `!important` rule — so the indicator
+  above the language switcher stayed invisible. It now toggles the `hidden`
+  class directly.
+
 ## [1.12.8] - 2026-07-10
 
 ### Fixed
