@@ -2,6 +2,16 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.12] - 2026-07-12
+
+### Fixed
+
+- **Full-width punctuation in Traditional-Chinese docs & UI strings.** Half-width
+  commas / semicolons / colons that sat next to Chinese characters (in the zh-TW
+  CHANGELOG, README, CONFIG, TESTING, AUDIT docs, the docs site, and i18n.js UI
+  strings) are now full-width per the project convention. Digit-grouping commas
+  (e.g. `1,234`) and punctuation inside code spans/blocks are left as-is.
+
 ## [1.13.11] - 2026-07-12
 
 ### Changed

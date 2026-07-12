@@ -1,6 +1,6 @@
 # jt-glogarch 設定參考
 
-**語言**: [English](CONFIG.md) | **繁體中文**
+**語言**： [English](CONFIG.md) | **繁體中文**
 
 設定檔位於 `/opt/jt-glogarch/config.yaml`，檔案擁有者必須是 `jt-glogarch`。
 
@@ -201,8 +201,8 @@ retention:
 
 ## integrity — 歸檔防竄改（選用，預設關閉）
 
-在裸 SHA256 之上加一層**帶秘鑰的 HMAC-SHA256**,讓「同時改歸檔檔案與 DB checksum」也無法
-偽造出正確的完整性值——只有握有秘鑰的人才算得出來。預設關閉,依部署需求啟用。
+在裸 SHA256 之上加一層**帶秘鑰的 HMAC-SHA256**，讓「同時改歸檔檔案與 DB checksum」也無法
+偽造出正確的完整性值——只有握有秘鑰的人才算得出來。預設關閉，依部署需求啟用。
 
 ```yaml
 integrity:
@@ -211,7 +211,7 @@ integrity:
   ledger_enabled: true                    # 每次封存寫入 integrity_ledger 表
 ```
 
-設定步驟:
+設定步驟：
 
 ```bash
 glogarch integrity-init            # 產生金鑰檔（請備份到機器外！）
@@ -221,10 +221,10 @@ glogarch verify                    # 會回報 TAMPERED（HMAC 不符）與 CORR
 glogarch integrity-manifest -o /安全/機器外/manifest.json   # 把清單存到歸檔主機以外
 ```
 
-- **金鑰優先序:** 環境變數 `JT_HMAC_KEY`（base64／hex）> `hmac_key_file`。
-- **防 root 模式:** 不要把金鑰檔留在機器上——僅在封存／驗證時以 `JT_HMAC_KEY` 提供,並把
-  manifest 存到機器外。這樣即使 root／服務帳號把檔案與 DB 全改了,也能用機外副本揪出。
-- **誠實界線:** 對已被竄改的舊檔補封,只能證明「從現在起」未被動,無法回溯證明過去。遺失
+- **金鑰優先序：** 環境變數 `JT_HMAC_KEY`（base64／hex）> `hmac_key_file`。
+- **防 root 模式：** 不要把金鑰檔留在機器上——僅在封存／驗證時以 `JT_HMAC_KEY` 提供，並把
+  manifest 存到機器外。這樣即使 root／服務帳號把檔案與 DB 全改了，也能用機外副本揪出。
+- **誠實界線：** 對已被竄改的舊檔補封，只能證明「從現在起」未被動，無法回溯證明過去。遺失
   金鑰則 HMAC 檢查退回僅 SHA256。
 
 ---

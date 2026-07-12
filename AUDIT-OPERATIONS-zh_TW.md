@@ -1,6 +1,6 @@
 # jt-glogarch 行為稽核 — 追蹤的操作清單
 
-**語言**: [English](AUDIT-OPERATIONS.md) | **繁體中文**
+**語言**： [English](AUDIT-OPERATIONS.md) | **繁體中文**
 
 jt-glogarch 的行為稽核透過 nginx 反向代理的 syslog 記錄 Graylog API 操作。
 僅記錄有意義的使用者操作，背景輪詢、狀態檢查、靜態資源等自動篩除。
@@ -132,7 +132,7 @@ jt-glogarch 的行為稽核透過 nginx 反向代理的 syslog 記錄 Graylog AP
 
 | 認證方式 | 帳號解析方法 |
 |----------|-------------|
-| **Basic Auth**（帳號:密碼） | 從 `Authorization` header 取得 |
+| **Basic Auth**（帳號：密碼） | 從 `Authorization` header 取得 |
 | **Token Auth**（token:token） | 透過 Graylog Users API 解析（逐使用者 token 端點） |
 | **Session Auth**（Authorization header） | Session ID 透過 Graylog Sessions API 解析 |
 | **Session Cookie**（瀏覽器，`$cookie_authentication`） | 從 cookie 擷取 Session ID，透過 API 解析 |

@@ -1,6 +1,6 @@
 # jt-glogarch 測試清單
 
-**語言**: [English](TESTING.md) | **繁體中文**
+**語言**： [English](TESTING.md) | **繁體中文**
 
 每次發版前必須全數通過。在專案根目錄執行：
 
