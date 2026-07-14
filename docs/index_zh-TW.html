@@ -39,6 +39,7 @@
     <a href="#features">功能</a>
     <a href="#audit">行為稽核</a>
     <a href="#screenshots">畫面</a>
+    <a href="#reports">報表</a>
     <a href="https://github.com/jasoncheng7115/jt-glogarch" target="_blank" rel="noopener">GitHub</a>
     <a href="index.html" class="lang">English</a>
   </div>
@@ -283,6 +284,21 @@ sudo systemctl enable --now jt-glogarch</code></pre>
   </div>
 </section>
 
+<section id="reports">
+  <h2>它產出什麼</h2>
+  <p class="subhead">直接從 Graylog 儀表板產生品牌化的多頁 PDF 報表，兩種模式。點一下就能翻閱整份報告。</p>
+  <div class="shots">
+    <button class="shot" type="button" data-lightbox="reports/wazuh_rebuild_zhtw_full.png" data-tall>
+      <img class="ss-img" src="reports/wazuh_rebuild_zhtw.png" alt="重現版報表" loading="lazy">
+      <div class="label">重現版<small>小工具重建為原生品牌化圖表——世界地圖、甜甜圈、趨勢</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="reports/wazuh_screenshot_zhtw_full.png" data-tall>
+      <img class="ss-img" src="reports/wazuh_screenshot_zhtw.png" alt="截圖版報表" loading="lazy">
+      <div class="label">截圖版<small>像素級忠實擷取實際儀表板——每個頁籤、含世界地圖</small></div>
+    </button>
+  </div>
+</section>
+
 <footer>
   <div class="row">
     <a href="https://github.com/jasoncheng7115/jt-glogarch">GitHub</a>
@@ -333,10 +349,10 @@ sudo systemctl enable --now jt-glogarch</code></pre>
     if (!lb) return;
     const lbImg = lb.querySelector('.lightbox-img');
     const closeBtn = lb.querySelector('.lightbox-close');
-    const open = (src) => { lbImg.src = src; lb.hidden = false; document.body.style.overflow = 'hidden'; };
-    const close = () => { lb.hidden = true; lbImg.src = ''; document.body.style.overflow = ''; };
+    const open = (src, tall) => { lbImg.src = src; lb.classList.toggle('tall', !!tall); lb.hidden = false; document.body.style.overflow = 'hidden'; };
+    const close = () => { lb.hidden = true; lbImg.src = ''; lb.classList.remove('tall'); document.body.style.overflow = ''; };
     document.querySelectorAll('.shot[data-lightbox]').forEach(btn => {
-      btn.addEventListener('click', () => open(btn.dataset.lightbox));
+      btn.addEventListener('click', () => open(btn.dataset.lightbox, btn.hasAttribute('data-tall')));
     });
     closeBtn.addEventListener('click', close);
     lb.addEventListener('click', e => { if (e.target === lb) close(); });

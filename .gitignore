@@ -14,6 +14,9 @@ certs/
 # Generated report output
 reports/
 backups/
+# ...but DO ship the docs Pages sample-report gallery images
+!docs/reports/
+!docs/reports/**
 
 # Python build / cache artefacts
 __pycache__/

@@ -34,6 +34,7 @@
     <a href="#features">Features</a>
     <a href="#audit">Audit</a>
     <a href="#screenshots">Screenshots</a>
+    <a href="#reports">Reports</a>
     <a href="https://github.com/jasoncheng7115/jt-glogarch" target="_blank" rel="noopener">GitHub</a>
     <a href="index_zh-TW.html" class="lang">繁體中文</a>
   </div>
@@ -284,6 +285,21 @@ sudo systemctl enable --now jt-glogarch</code></pre>
   </div>
 </section>
 
+<section id="reports">
+  <h2>See what it produces</h2>
+  <p class="subhead">Branded, multi-page PDF reports straight from your Graylog dashboards — two ways. Click a report to page through the whole thing.</p>
+  <div class="shots">
+    <button class="shot" type="button" data-lightbox="reports/wazuh_rebuild_en_full.png" data-tall>
+      <img class="ss-img" src="reports/wazuh_rebuild_en.png" alt="Rebuild-mode report" loading="lazy">
+      <div class="label">Rebuild mode<small>Widgets redrawn as native branded charts — world maps, donuts, trends</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="reports/wazuh_screenshot_en_full.png" data-tall>
+      <img class="ss-img" src="reports/wazuh_screenshot_en.png" alt="Screenshot-mode report" loading="lazy">
+      <div class="label">Screenshot mode<small>Pixel-faithful capture of the live dashboard — every tab, world map included</small></div>
+    </button>
+  </div>
+</section>
+
 <footer>
   <div class="row">
     <a href="https://github.com/jasoncheng7115/jt-glogarch">GitHub</a>
@@ -324,18 +340,20 @@ sudo systemctl enable --now jt-glogarch</code></pre>
     if (!lb) return;
     const lbImg = lb.querySelector('.lightbox-img');
     const closeBtn = lb.querySelector('.lightbox-close');
-    const open = (src) => {
+    const open = (src, tall) => {
       lbImg.src = src;
+      lb.classList.toggle('tall', !!tall);
       lb.hidden = false;
       document.body.style.overflow = 'hidden';
     };
     const close = () => {
       lb.hidden = true;
       lbImg.src = '';
+      lb.classList.remove('tall');
       document.body.style.overflow = '';
     };
     document.querySelectorAll('.shot[data-lightbox]').forEach(btn => {
-      btn.addEventListener('click', () => open(btn.dataset.lightbox));
+      btn.addEventListener('click', () => open(btn.dataset.lightbox, btn.hasAttribute('data-tall')));
     });
     closeBtn.addEventListener('click', close);
     lb.addEventListener('click', e => { if (e.target === lb) close(); });

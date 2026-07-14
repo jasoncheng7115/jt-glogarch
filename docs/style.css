@@ -769,6 +769,19 @@ footer .row { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap
   background: rgba(255, 255, 255, 0.18);
   transform: scale(1.05);
 }
+/* Tall variant — a full multi-page report preview scrolls vertically instead of
+   shrinking to fit the viewport height. */
+.lightbox.tall {
+  align-items: flex-start;
+  overflow-y: auto;
+  cursor: default;
+  padding: 32px 24px;
+}
+.lightbox.tall .lightbox-img {
+  max-height: none;
+  width: min(1000px, 94vw);
+  height: auto;
+}
 
 /* ─── Promise chips (hero) ─────────────────────────────────────────────── */
 .promise-chips {
