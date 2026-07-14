@@ -14,7 +14,7 @@ The reference below is for manual editing and automated deployments.
 ```yaml
 servers:
   - name: log4                          # Custom name (used for archive directory)
-    url: "http://192.168.1.132:9000"    # Graylog REST API URL
+    url: "http://192.168.1.10:9000"    # Graylog REST API URL
     auth_token: "your-api-token"        # API Token (recommended)
     # username: admin                   # Or username/password (pick one)
     # password: admin
@@ -34,13 +34,13 @@ Each server may carry its **own** OpenSearch cluster via a per-server `opensearc
 ```yaml
 servers:
   - name: graylog-main
-    url: "http://192.168.1.132:9000"
+    url: "http://192.168.1.10:9000"
     auth_token: "TOKEN_A"
     verify_ssl: false
     opensearch:                         # cluster behind THIS server
       hosts:
-        - "http://192.168.1.132:9200"
-        - "http://192.168.1.127:9200"   # failover NODES of the SAME cluster
+        - "http://192.168.1.10:9200"
+        - "http://192.168.1.11:9200"   # failover NODES of the SAME cluster
       username: admin
       password: "OS_PASSWORD_A"
       verify_ssl: false
@@ -165,8 +165,8 @@ import:
 ```yaml
 opensearch:
   hosts:                                # Failover NODES of ONE cluster
-    - "http://192.168.1.132:9200"       # (NOT separate clusters)
-    - "http://192.168.1.127:9200"
+    - "http://192.168.1.10:9200"       # (NOT separate clusters)
+    - "http://192.168.1.11:9200"
   username: admin
   password: "your-password"
   verify_ssl: false

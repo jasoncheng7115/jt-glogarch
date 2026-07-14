@@ -14,7 +14,7 @@
 ```yaml
 servers:
   - name: log4                          # 自訂名稱（用於歸檔目錄分類）
-    url: "http://192.168.1.132:9000"    # Graylog REST API URL
+    url: "http://192.168.1.10:9000"    # Graylog REST API URL
     auth_token: "your-api-token"        # API Token（建議）
     # username: admin                   # 或帳號密碼（二擇一）
     # password: admin
@@ -34,13 +34,13 @@ default_server: log4                    # 預設使用的伺服器
 ```yaml
 servers:
   - name: graylog-main
-    url: "http://192.168.1.132:9000"
+    url: "http://192.168.1.10:9000"
     auth_token: "TOKEN_A"
     verify_ssl: false
     opensearch:                         # 此伺服器背後的叢集
       hosts:
-        - "http://192.168.1.132:9200"
-        - "http://192.168.1.127:9200"   # 「同一個叢集」的容錯節點
+        - "http://192.168.1.10:9200"
+        - "http://192.168.1.11:9200"   # 「同一個叢集」的容錯節點
       username: admin
       password: "OS_PASSWORD_A"
       verify_ssl: false
@@ -155,8 +155,8 @@ import:
 ```yaml
 opensearch:
   hosts:                                # 「同一個叢集」的容錯節點
-    - "http://192.168.1.132:9200"       # （並非多個叢集）
-    - "http://192.168.1.127:9200"
+    - "http://192.168.1.10:9200"       # （並非多個叢集）
+    - "http://192.168.1.11:9200"
   username: admin
   password: "your-password"
   verify_ssl: false

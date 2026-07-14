@@ -727,13 +727,13 @@ jt-glogarch can archive **multiple Graylog servers**, each with its **own OpenSe
 servers:
   # Server A — with its own OpenSearch cluster (for OpenSearch-mode export).
   - name: graylog-main
-    url: "http://192.168.1.132:9000"
+    url: "http://192.168.1.10:9000"
     auth_token: "TOKEN_A"
     verify_ssl: false
     opensearch:                       # per-server cluster; `hosts` are
       hosts:                          # failover NODES of THIS one cluster
-        - "http://192.168.1.132:9200"
-        - "http://192.168.1.127:9200"
+        - "http://192.168.1.10:9200"
+        - "http://192.168.1.11:9200"
       username: admin
       password: "OS_PASSWORD_A"
       verify_ssl: false
@@ -755,7 +755,7 @@ default_server: graylog-main
 # Global fallback — used by any server WITHOUT its own `opensearch:` block.
 opensearch:
   hosts:
-    - "http://192.168.1.132:9200"
+    - "http://192.168.1.10:9200"
   username: admin
   password: "OS_PASSWORD_A"
   verify_ssl: false
@@ -1106,7 +1106,7 @@ archives via checkboxes. Click **Batch Import**.
 ### Step 2 — Configure GELF Target
 
 ```
-GELF Host:    192.168.1.132
+GELF Host:    192.168.1.10
 Port:         32202   ← Default for TCP. Switches to 32201 if you select UDP.
 Protocol:     TCP   ← Default. Reliable, has backpressure
               UDP   ← Faster but can drop messages on buffer overflow
@@ -1148,7 +1148,7 @@ This is **mandatory** since v1.3.0. The same credentials are used for preflight,
 journal monitoring, and post-import reconciliation.
 
 ```
-Graylog API URL:  http://192.168.1.132:9000
+Graylog API URL:  http://192.168.1.10:9000
 API Token:        YOUR_TOKEN          ← either Token...
    — OR —
 Username:         admin               ← ...or Username + Password
@@ -1271,7 +1271,7 @@ sudo -u jt-glogarch glogarch export \
 ```bash
 sudo -u jt-glogarch glogarch -c /opt/jt-glogarch/config.yaml import \
   --archive-id 42 \
-  --target-api-url http://192.168.1.83:9000 \
+  --target-api-url http://192.168.1.20:9000 \
   --target-api-username admin \
   --target-api-password 'YOUR_PASSWORD' \
   --target test-restore
@@ -1282,7 +1282,7 @@ sudo -u jt-glogarch glogarch -c /opt/jt-glogarch/config.yaml import \
 sudo -u jt-glogarch glogarch -c /opt/jt-glogarch/config.yaml import \
   --archive-id 42 \
   --mode bulk \
-  --target-api-url http://192.168.1.83:9000 \
+  --target-api-url http://192.168.1.20:9000 \
   --target-api-username admin \
   --target-api-password 'YOUR_PASSWORD' \
   --target-index-pattern jt_restored \
@@ -1299,7 +1299,7 @@ to override.
 sudo -u jt-glogarch glogarch -c /opt/jt-glogarch/config.yaml import \
   --from 2026-04-07 --to 2026-04-09 \
   --mode bulk \
-  --target-api-url http://192.168.1.83:9000 \
+  --target-api-url http://192.168.1.20:9000 \
   --target-api-username admin \
   --target-api-password 'YOUR_PASSWORD' \
   --target full-restore

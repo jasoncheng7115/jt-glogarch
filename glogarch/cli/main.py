@@ -188,7 +188,7 @@ def _export_opensearch(settings, server_config, db, dt_from, dt_to, index_set, r
         console.print("[red]Error: opensearch.hosts not configured in config.yaml[/red]")
         console.print("Please add opensearch connection settings (global or per-server):")
         console.print("  opensearch:")
-        console.print("    hosts: [\"http://192.168.1.127:9200\"]")
+        console.print("    hosts: [\"http://192.168.1.11:9200\"]")
         console.print("    username: admin")
         console.print("    password: your-password")
         return
@@ -365,7 +365,7 @@ def streams(server: str | None):
                    "or 'bulk' (direct OpenSearch _bulk write, 5-10x faster, "
                    "skips Graylog processing rules)")
 @click.option("--target-api-url", default=None,
-              help="Target Graylog API URL (e.g. http://192.168.1.83:9000) — REQUIRED for compliance pipeline")
+              help="Target Graylog API URL (e.g. http://192.168.1.20:9000) — REQUIRED for compliance pipeline")
 @click.option("--target-api-token", default=None, help="Target Graylog API token")
 @click.option("--target-api-username", default=None, help="Target Graylog username (alternative to token)")
 @click.option("--target-api-password", default=None, help="Target Graylog password")
@@ -927,7 +927,7 @@ def config(output: str):
 # The Web UI export/schedule dialogs let you pick which server to archive.
 servers:
   - name: graylog-main
-    url: "http://192.168.1.132:9000"
+    url: "http://192.168.1.10:9000"
     # Use either auth_token or username/password
     # auth_token: "your-api-token-here"
     username: admin
@@ -937,7 +937,7 @@ servers:
     # export. `hosts` are failover NODES of this one cluster. Omit to use
     # the global `opensearch:` block below as fallback.
     opensearch:
-      hosts: ["http://192.168.1.132:9200", "http://192.168.1.127:9200"]
+      hosts: ["http://192.168.1.10:9200", "http://192.168.1.11:9200"]
       username: admin
       password: your-os-password
       verify_ssl: false
@@ -963,7 +963,7 @@ export_mode: api
 # Global OpenSearch fallback — used for any server WITHOUT its own
 # `opensearch:` block above. Single cluster; `hosts` are failover nodes.
 opensearch:
-  hosts: ["http://192.168.1.132:9200", "http://192.168.1.127:9200"]
+  hosts: ["http://192.168.1.10:9200", "http://192.168.1.11:9200"]
   username: admin
   password: your-os-password
   verify_ssl: false

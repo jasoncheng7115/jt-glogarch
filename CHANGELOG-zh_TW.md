@@ -751,7 +751,7 @@ jt-glogarch 所有重要變更皆記錄於此檔案。
 
 ### 修正 — 匯入完成通知一律顯示「耗時：0s」
 
-- Telegram / Discord / Slack / Teams / Nextcloud Talk / Email 各通道的「匯入完成」通知，不論實際跑多久，永遠都顯示 `耗時: 0s` / `Duration: 0s`。在 192.168.1.83 的實機批次測試中，連續匯入五筆規模 502 / 26,221 / 31,769 / 131,944 / 373,258 的歸檔，實際耗時 12 / 14 / 18 / 32 / 102 秒，但每一筆通知都印 `0s`。
+- Telegram / Discord / Slack / Teams / Nextcloud Talk / Email 各通道的「匯入完成」通知，不論實際跑多久，永遠都顯示 `耗時: 0s` / `Duration: 0s`。在 192.168.1.20 的實機批次測試中，連續匯入五筆規模 502 / 26,221 / 31,769 / 131,944 / 373,258 的歸檔，實際耗時 12 / 14 / 18 / 32 / 102 秒，但每一筆通知都印 `0s`。
 - 成因：`notify_import_complete(...)` 函式有 `duration_seconds: float = 0` 參數，但 `glogarch/import_/importer.py` 內兩個呼叫點（Bulk 路徑與 GELF 路徑）都沒有計算、也沒有傳。`Importer.run()` 完全沒有起始時間紀錄。匯出端早就有此計時（`ExportResult.duration_seconds` 在呼叫 `notify_export_complete(...)` 前正確被設定），匯入端漏做。
 - 修法：在 `Importer.run()` 開頭記 `_start_time = time.time()`，於 `ImportResult` 加 `duration_seconds: float`，於兩個 `notify_import_complete(...)` 呼叫點前計算 `result.duration_seconds = time.time() - _start_time` 並一併傳入。完全比照匯出端的既有模式。通知文案模板未改 — `{duration}` 預留位置一直都對，只是過去每次都吃到 `0`。
 

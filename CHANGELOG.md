@@ -878,7 +878,7 @@ A full audit of both export paths for customers upgrading from 1.7.9. Every find
 
 ### Fixed — Import-complete notification always reported `Duration: 0s`
 
-- Telegram/Discord/Slack/Teams/Nextcloud Talk/Email "import complete" messages always showed `Duration: 0s` / `耗時: 0s`, regardless of the actual run length. A real-world batch test on 192.168.1.83 imported five archives of 502 / 26,221 / 31,769 / 131,944 / 373,258 records taking 12 / 14 / 18 / 32 / 102 seconds respectively — every notification still said `0s`.
+- Telegram/Discord/Slack/Teams/Nextcloud Talk/Email "import complete" messages always showed `Duration: 0s` / `耗時: 0s`, regardless of the actual run length. A real-world batch test on 192.168.1.20 imported five archives of 502 / 26,221 / 31,769 / 131,944 / 373,258 records taking 12 / 14 / 18 / 32 / 102 seconds respectively — every notification still said `0s`.
 - Root cause: `notify_import_complete(...)` accepts `duration_seconds: float = 0`, but neither call site in `glogarch/import_/importer.py` (Bulk-mode path and GELF-mode path) ever measured or passed it. The `Importer.run()` method had no start-time bookkeeping. The export side already does this correctly (`ExportResult.duration_seconds` is set right before `notify_export_complete(...)`); the import side never received the same treatment.
 - Fix: record `_start_time = time.time()` at the top of `Importer.run()`, add `duration_seconds: float` to `ImportResult`, compute `result.duration_seconds = time.time() - _start_time` immediately before each `notify_import_complete(...)` call, and pass it through. Mirrors the existing exporter pattern. No template / message format change — the existing `{duration}` placeholder was already correct, just always receiving `0`.
 

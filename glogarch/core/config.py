@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 
 class OpenSearchConfig(BaseModel):
-    hosts: list[str] = Field(default_factory=list)  # e.g. ["http://192.168.1.127:9200"]
+    hosts: list[str] = Field(default_factory=list)  # e.g. ["http://192.168.1.11:9200"]
     username: str | None = None
     password: str | None = None
     verify_ssl: bool = False
