@@ -111,10 +111,10 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
                 if not dtabs and dash.get("tab"):
                     dtabs = [dash.get("tab")]   # legacy single-tab config
             if mode == "screenshot":
-                sec = {"type": "image", "title": dtitle or did,
-                       "description": _t(lang, "native"), "img_data_uri": None}
                 if not (server and web_user and web_pass):
-                    sec["capture_error"] = _t(lang, "no_capture")
+                    sections.append({"type": "image", "title": dtitle or did,
+                                     "description": _t(lang, "native"),
+                                     "capture_error": _t(lang, "no_capture")})
                 else:
                     # Time window for the capture. When the report uses each
                     # widget's OWN time range, apply NO override — let the live
@@ -128,16 +128,30 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
                         cap_to = (now.replace(hour=0, minute=0, second=0, microsecond=0)
                                   if align_midnight_eff else now)
                         cap_from = cap_to - timedelta(seconds=trs)
-                    png, reason, row_bounds = await graylog_data.capture_dashboard_png(
+                    # One capture per dashboard tab (state). dtabs = selected tab
+                    # state_ids, or None/empty = every tab.
+                    captures, reason = await graylog_data.capture_dashboard_png(
                         server, did, web_username=web_user, web_password=web_pass,
-                        time_range_seconds=trs, abs_from=cap_from, abs_to=cap_to)
-                    if png:
-                        # A full dashboard capture is tall — slice it across pages,
-                        # cutting on widget-row boundaries so no widget is split.
-                        sec["img_slices"] = graylog_data.slice_tall_png(png, row_boundaries=row_bounds)
+                        time_range_seconds=trs, abs_from=cap_from, abs_to=cap_to,
+                        tabs=(dtabs or None))
+                    if captures:
+                        multi = len(captures) > 1
+                        for cap in captures:
+                            ttl = cap.get("title") or ""
+                            sec_title = (f"{dtitle or did}｜{ttl}" if (multi and ttl)
+                                         else (dtitle or did))
+                            # A full dashboard capture is tall — slice it across
+                            # pages, cutting on widget-row boundaries so no widget
+                            # is split.
+                            sections.append({
+                                "type": "image", "title": sec_title,
+                                "description": _t(lang, "native"),
+                                "img_slices": graylog_data.slice_tall_png(
+                                    cap["png"], row_boundaries=cap.get("boundaries"))})
                     else:
-                        sec["capture_error"] = reason or _t(lang, "no_capture")
-                sections.append(sec)
+                        sections.append({"type": "image", "title": dtitle or did,
+                                         "description": _t(lang, "native"),
+                                         "capture_error": reason or _t(lang, "no_capture")})
             else:  # rebuild
                 built = []
                 # Snap-to-midnight: end the window at today's local 00:00 and go

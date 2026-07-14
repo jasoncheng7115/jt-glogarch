@@ -137,15 +137,21 @@ _ROW_BOUNDARY_JS = """(g)=>{
 async def capture_dashboard_png(
     server, dashboard_id: str, *, web_username: str, web_password: str,
     time_range_seconds: int = 86400, wait_ms: int = 6000,
-    abs_from=None, abs_to=None,
-) -> tuple[bytes | None, str, list]:
+    abs_from=None, abs_to=None, tabs=None,
+) -> tuple[list, str]:
     """Log into the Graylog web UI with the given web credentials and screenshot
-    a dashboard. Returns (PNG bytes, "") on success or (None, reason) on failure
-    so the caller can show WHY the capture failed instead of a generic note.
+    a dashboard — ONE image per tab (Graylog dashboard "state"). Returns
+    ``(captures, "")`` on success where each capture is
+    ``{"png": bytes, "title": tab_title, "boundaries": [...]}``; returns
+    ``([], reason)`` on failure so the caller can show WHY the capture failed.
+
+    ``tabs`` is a list of state_ids to capture (in that order); when None/empty
+    every tab on the dashboard is captured in its on-screen order. A dashboard
+    with no tab bar yields a single capture with an empty title.
 
     When abs_from/abs_to (datetimes) are given, the dashboard's global time range
-    is best-effort overridden to that absolute window before capture so the
-    screenshot honours the report's time-range / snap-to-midnight setting."""
+    is best-effort overridden ONCE (the override spans all tabs) before capture so
+    the screenshots honour the report's time-range / snap-to-midnight setting."""
     from playwright.async_api import async_playwright
     base = server.url.rstrip("/")
     try:
@@ -197,6 +203,7 @@ async def capture_dashboard_png(
                 # Apply the report's absolute time window to the LIVE dashboard so
                 # the screenshot matches the report's range / snap-to-midnight
                 # setting (best-effort; falls back to the dashboard's own range).
+                # The global override spans every tab, so we apply it ONCE here.
                 if abs_from is not None and abs_to is not None:
                     ok = await _apply_absolute_override(page, abs_from, abs_to)
                     if ok:
@@ -205,67 +212,158 @@ async def capture_dashboard_png(
                             await page.wait_for_load_state("networkidle", timeout=25000)
                         except Exception:
                             pass
-                # Graylog lazy-renders each widget's chart ONLY while it is inside
-                # the viewport (IntersectionObserver). With a normal-height viewport
-                # an element screenshot of the tall grid therefore captures every
-                # off-screen widget as BLANK. The reliable fix is to grow the
-                # viewport tall enough to hold the whole grid at once — then every
-                # widget is "in view", renders, and the single screenshot is
-                # complete. (Scrolling first still helps kick off data fetches.)
-                grid_sel = None
-                for sel in (".react-grid-layout", "[data-testid='dashboard']", ".widget-list"):
-                    if await page.query_selector(sel):
-                        grid_sel = sel
-                        break
-                await _autoscroll_dashboard(page)
-                grid_h = 0
-                if grid_sel:
-                    try:
-                        grid_h = await page.evaluate(
-                            "(s)=>{const g=document.querySelector(s);return g?g.scrollHeight:0;}", grid_sel)
-                    except Exception:
-                        grid_h = 0
-                if grid_h and grid_h > 900:
-                    # Cap so an enormous dashboard can't blow Chromium's max image
-                    # size (device_scale_factor=2 doubles the pixel height).
-                    tall = min(int(grid_h) + 400, _MAX_CAPTURE_VIEWPORT)
-                    if grid_h + 400 > _MAX_CAPTURE_VIEWPORT:
-                        log.warning("dashboard taller than capture cap; bottom may clip",
-                                    dashboard=dashboard_id, grid_h=grid_h, cap=_MAX_CAPTURE_VIEWPORT)
-                    try:
-                        await page.set_viewport_size({"width": _CAPTURE_WIDTH, "height": tall})
-                    except Exception:
-                        pass
-                    await page.evaluate("()=>window.scrollTo(0,0)")
-                    await page.wait_for_timeout(1500)
+                # Enumerate the dashboard's tabs (state_id + title) in on-screen
+                # order. A dashboard with a single query has no tab bar → empty list.
+                all_tabs = []
                 try:
-                    await page.wait_for_load_state("networkidle", timeout=25000)
+                    all_tabs = await page.evaluate(_TAB_LIST_JS) or []
                 except Exception:
-                    pass
-                # Give every widget's chart a moment to finish drawing now that
-                # they are all on-screen.
-                await page.wait_for_timeout(4000)
-                grid = await page.query_selector(grid_sel) if grid_sel else None
-                # Read the pixel gaps BETWEEN widget rows from the rendered grid so
-                # the tall screenshot can be sliced on widget-row boundaries (never
-                # mid-widget). Returned as fractions of the grid height.
-                boundaries = []
-                if grid:
-                    try:
-                        boundaries = await page.evaluate(_ROW_BOUNDARY_JS, grid) or []
-                    except Exception:
-                        boundaries = []
-                    png = await grid.screenshot()
+                    all_tabs = []
+                want = [t for t in (tabs or []) if t]
+                if want:
+                    # Only the requested tabs, preserving the caller's order.
+                    by_id = {t["id"]: t for t in all_tabs}
+                    targets = [by_id[s] for s in want if s in by_id]
+                elif all_tabs:
+                    targets = all_tabs
                 else:
-                    png = await page.screenshot(full_page=True)
-                if not png:
-                    return None, "Screenshot produced no image.", []
-                return png, "", boundaries
+                    targets = [{"id": None, "title": ""}]   # single-tab / no nav bar
+                captures = []
+                for tab in targets:
+                    if tab["id"] is not None:
+                        if not await _activate_tab(page, tab["id"]):
+                            log.warning("could not switch to dashboard tab; skipping",
+                                        dashboard=dashboard_id, tab=tab.get("title"))
+                            continue
+                        await page.wait_for_timeout(1500)   # let the tab mount
+                        try:
+                            await page.wait_for_load_state("networkidle", timeout=25000)
+                        except Exception:
+                            pass
+                    png, reason, boundaries = await _shoot_current_grid(page, dashboard_id)
+                    if png:
+                        captures.append({"png": png, "title": tab.get("title") or "",
+                                         "boundaries": boundaries})
+                    else:
+                        log.warning("tab capture produced no image", dashboard=dashboard_id,
+                                    tab=tab.get("title"), reason=reason)
+                if not captures:
+                    return [], "Screenshot produced no image."
+                return captures, ""
             finally:
                 await browser.close()
     except Exception as e:
         log.warning("capture_dashboard_png failed", dashboard=dashboard_id, error=str(e))
-        return None, f"Capture error: {e}", []
+        return [], f"Capture error: {e}"
+
+
+# Read the dashboard's tab bar (Graylog renders it as <ul id="dashboard-tabs">).
+# Each tab is an <a data-tab-id="<state_id>"> whose title span carries an
+# aria-label. Overflowed tabs stay in the DOM (class "hidden") so they are still
+# enumerated here; the trailing "add"/"more" controls have no data-tab-id.
+_TAB_LIST_JS = """() => {
+  const nav = document.querySelector('#dashboard-tabs');
+  if(!nav) return [];
+  const seen = new Set(), out = [];
+  for(const a of nav.querySelectorAll('a[data-tab-id]')){
+    const id = a.getAttribute('data-tab-id');
+    if(!id || seen.has(id)) continue; seen.add(id);
+    const sp = a.querySelector('[data-testid="query-tab"]');
+    const title = sp ? (sp.getAttribute('aria-label') || sp.textContent || '') : '';
+    out.push({id, title: title.trim()});
+  }
+  return out;
+}"""
+
+
+async def _activate_tab(page, state_id) -> bool:
+    """Switch the dashboard to the tab whose data-tab-id == state_id. Clicks the
+    tab in the nav bar; if it overflowed into Graylog's "More Dashboard Pages"
+    dropdown, opens that first and clicks the entry there (also carries
+    data-tab-id, rendered in a portal outside #dashboard-tabs)."""
+    sel = f'#dashboard-tabs a[data-tab-id="{state_id}"]'
+    try:
+        el = page.locator(sel).first
+        if await el.count() and await el.is_visible():
+            await el.click()
+            return True
+    except Exception:
+        pass
+    try:
+        await page.click('.query-tabs-more-li button', timeout=3000)
+        await page.wait_for_timeout(400)
+        links = page.locator(f'a[data-tab-id="{state_id}"]')
+        for i in range(await links.count()):
+            if await links.nth(i).is_visible():
+                await links.nth(i).click()
+                return True
+    except Exception:
+        pass
+    return False
+
+
+async def _shoot_current_grid(page, dashboard_id):
+    """Autoscroll + grow the viewport so every lazily-mounted widget renders, then
+    screenshot the CURRENT dashboard grid (the active tab). Graylog lazy-renders
+    each widget's chart only while it is inside the viewport (IntersectionObserver),
+    so a normal-height element screenshot of a tall grid captures off-screen widgets
+    as BLANK — growing the viewport to the whole grid height fixes that. Returns
+    (png, reason, boundaries); boundaries are widget-row cut points (fractions of
+    grid height) for slice_tall_png."""
+    try:
+        await page.set_viewport_size({"width": _CAPTURE_WIDTH, "height": 1000})
+    except Exception:
+        pass
+    try:
+        await page.evaluate("()=>window.scrollTo(0,0)")
+    except Exception:
+        pass
+    grid_sel = None
+    for sel in (".react-grid-layout", "[data-testid='dashboard']", ".widget-list"):
+        if await page.query_selector(sel):
+            grid_sel = sel
+            break
+    await _autoscroll_dashboard(page)
+    grid_h = 0
+    if grid_sel:
+        try:
+            grid_h = await page.evaluate(
+                "(s)=>{const g=document.querySelector(s);return g?g.scrollHeight:0;}", grid_sel)
+        except Exception:
+            grid_h = 0
+    if grid_h and grid_h > 900:
+        # Cap so an enormous dashboard can't blow Chromium's max image size
+        # (device_scale_factor=2 doubles the pixel height).
+        tall = min(int(grid_h) + 400, _MAX_CAPTURE_VIEWPORT)
+        if grid_h + 400 > _MAX_CAPTURE_VIEWPORT:
+            log.warning("dashboard taller than capture cap; bottom may clip",
+                        dashboard=dashboard_id, grid_h=grid_h, cap=_MAX_CAPTURE_VIEWPORT)
+        try:
+            await page.set_viewport_size({"width": _CAPTURE_WIDTH, "height": tall})
+        except Exception:
+            pass
+        await page.evaluate("()=>window.scrollTo(0,0)")
+        await page.wait_for_timeout(1500)
+    try:
+        await page.wait_for_load_state("networkidle", timeout=25000)
+    except Exception:
+        pass
+    # Give every widget's chart a moment to finish drawing now that they are all
+    # on-screen.
+    await page.wait_for_timeout(4000)
+    grid = await page.query_selector(grid_sel) if grid_sel else None
+    boundaries = []
+    if grid:
+        try:
+            boundaries = await page.evaluate(_ROW_BOUNDARY_JS, grid) or []
+        except Exception:
+            boundaries = []
+        png = await grid.screenshot()
+    else:
+        png = await page.screenshot(full_page=True)
+    if not png:
+        return None, "Screenshot produced no image.", []
+    return png, "", boundaries
 
 
 async def _apply_absolute_override(page, dt_from, dt_to) -> bool:

@@ -27,7 +27,9 @@
   .cover-title { font-size: 38px; font-weight: 800; line-height: 1.2; margin: 0 0 7mm; }
   .cover-sub { font-size: 17px; opacity: .92; margin-bottom: 14mm; max-width: 140mm; }
   .cover-meta { border-top: 1px solid rgba(255,255,255,.35); padding-top: 7mm; font-size: 14px; opacity: .95; }
-  .cover-meta div { margin: 3px 0; }
+  .cover-meta div { margin: 3px 0; display: flex; }
+  .cover-meta .k { flex: 0 0 34mm; }
+  .cover-meta .v { flex: 1 1 auto; }
   .cover-badge { display:inline-block; background:#ff9800; color:#3a2600; font-weight:700; font-size:10px; letter-spacing:1px; padding:2px 8px; border-radius:4px; vertical-align:middle; margin-left:8px; }
 
   /* ---------- Section / content ---------- */
@@ -135,11 +137,11 @@
       <div class="cover-title">{{ report.title }}{% if report.beta %}<span class="cover-badge">BETA</span>{% endif %}</div>
       {% if report.subtitle %}<div class="cover-sub">{{ report.subtitle }}</div>{% endif %}
       <div class="cover-meta">
-        {% if report.period %}<div>{{ t.period }}: {{ report.period }}</div>{% endif %}
-        <div>{{ t.generated }}: {{ report.generated_at }}</div>
-        {% if report.author %}<div>{{ t.author }}: {{ report.author }}</div>{% endif %}
-        {% if report.server %}<div>{{ t.server }}: {{ report.server }}</div>{% endif %}
-        {% if report.app_version %}<div>{{ t.system }}: jt-glogarch v{{ report.app_version }}</div>{% endif %}
+        {% if report.period %}<div><span class="k">{{ t.period }}:</span><span class="v">{{ report.period }}</span></div>{% endif %}
+        <div><span class="k">{{ t.generated }}:</span><span class="v">{{ report.generated_at }}</span></div>
+        {% if report.author %}<div><span class="k">{{ t.author }}:</span><span class="v">{{ report.author }}</span></div>{% endif %}
+        {% if report.server %}<div><span class="k">{{ t.server }}:</span><span class="v">{{ report.server }}</span></div>{% endif %}
+        {% if report.app_version %}<div><span class="k">{{ t.system }}:</span><span class="v">jt-glogarch v{{ report.app_version }}</span></div>{% endif %}
       </div>
     </div>
   </div>
