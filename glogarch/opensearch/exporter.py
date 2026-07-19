@@ -105,8 +105,12 @@ class OpenSearchExporter:
             if not has_space:
                 raise RuntimeError(f"Insufficient disk space: {avail_mb:.0f} MB available")
 
-            # Resolve index prefixes from Graylog API
-            prefixes = await self._resolve_prefixes(index_prefix, index_set_ids)
+            # Resolve index prefixes from Graylog API. `skipped` names any index set
+            # this run will NOT cover (recorded on the result + logged as a warning).
+            prefixes, skipped_index_sets = await self._resolve_prefixes(index_prefix, index_set_ids)
+            result.index_sets_skipped = skipped_index_sets
+            log.info("Index sets resolved for export", prefixes=prefixes,
+                     covered=len(prefixes), skipped=skipped_index_sets)
 
             # Backpressure guard — OS-direct export still loads the same OpenSearch
             # cluster (especially on slow HDD storage), which can starve Graylog
@@ -632,29 +636,53 @@ class OpenSearchExporter:
 
     async def _resolve_prefixes(
         self, index_prefix: str | None, index_set_ids: list[str] | None
-    ) -> list[str]:
-        """Resolve index prefixes from Graylog API."""
+    ) -> tuple[list[str], list[str]]:
+        """Resolve which index prefixes to export from Graylog.
+
+        Returns ``(prefixes, skipped)`` where ``skipped`` names any Graylog index
+        set NOT covered by this run — always logged as a WARNING so a partial export
+        can never be silent.
+
+        When neither an explicit ``index_prefix`` nor ``index_set_ids`` is given,
+        **ALL** index sets are covered. (This used to return only the *default*
+        index set, which silently skipped every other index set — a data-loss bug in
+        multi-index-set deployments, since those logs were never archived and were
+        eventually deleted by Graylog retention.)
+        """
         if index_prefix:
-            return [index_prefix]
+            return [index_prefix], []
 
         async with GraylogClient(self.server_config, self.rate_limiter) as client:
-            if index_set_ids:
-                index_sets = await client.get_index_sets()
-                return [
-                    iset["index_prefix"]
-                    for iset in index_sets
-                    if iset["id"] in index_set_ids
-                ]
-            else:
-                # Default: use the default index set prefix
-                index_sets = await client.get_index_sets()
-                for iset in index_sets:
-                    if iset.get("default", False):
-                        return [iset["index_prefix"]]
-                # Fallback: first index set
-                if index_sets:
-                    return [index_sets[0]["index_prefix"]]
-        return ["graylog"]
+            index_sets = await client.get_index_sets()
+
+        valid = [iset for iset in index_sets if iset.get("index_prefix")]
+        if index_set_ids:
+            want = set(index_set_ids)
+            prefixes = [iset["index_prefix"] for iset in valid if iset.get("id") in want]
+            found_ids = {iset.get("id") for iset in valid}
+            missing = [i for i in want if i not in found_ids]
+            if missing:
+                log.warning("Requested index set id(s) not found on Graylog", missing=missing)
+        else:
+            # Safe default for an archival tool: cover every index set.
+            prefixes = [iset["index_prefix"] for iset in valid]
+
+        covered = set(prefixes)
+        skipped = [
+            (iset.get("title") or iset.get("id") or iset.get("index_prefix"))
+            for iset in valid
+            if iset["index_prefix"] not in covered
+        ]
+        if skipped:
+            log.warning(
+                "Index sets NOT covered by this OpenSearch export — their logs will "
+                "NOT be archived and will be lost when Graylog retention deletes them",
+                skipped=skipped, covered=sorted(covered),
+            )
+
+        if not prefixes:
+            return ["graylog"], skipped
+        return prefixes, skipped
 
     def get_resume_point(self, stream_id: str | None = None) -> datetime | None:
         """Find latest exported time_to for resume.

@@ -74,6 +74,9 @@ export:
   delay_between_requests_ms: 5          # Delay between API requests (ms)
   query: "*"                            # Search query (default: all)
   streams: []                           # Limit to specific streams (empty = all)
+  index_sets: []                        # OpenSearch mode: restrict to these index set IDs.
+                                        # EMPTY = archive ALL index sets (safe default —
+                                        # a restricted list logs which index sets it skips).
   fields: []                            # Limit to specific fields (empty = all)
 
   # --- Adaptive backpressure guard (see below) ---

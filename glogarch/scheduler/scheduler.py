@@ -172,7 +172,12 @@ class ArchiveScheduler:
 
         export_mode = cfg.get("mode", self.settings.export_mode)
         export_days = cfg.get("days", self.settings.schedule.export_days)
-        index_set_ids = [cfg["index_set"]] if cfg.get("index_set") else None
+        # Normalize the schedule's index_set into a list of IDs (or None = ALL index
+        # sets). Falls back to the global `export.index_sets` config, then to ALL —
+        # so a scheduled OpenSearch export never silently archives only the default
+        # index set. Backward-compatible with the historical single-string field.
+        from glogarch.export.exporter import normalize_index_set_ids
+        index_set_ids = normalize_index_set_ids(cfg.get("index_set"), self.settings.export.index_sets)
         stream_ids = cfg.get("streams") or None
         keep_indices = cfg.get("keep_indices") or None
 
@@ -223,7 +228,8 @@ class ArchiveScheduler:
         log.info("Scheduled export completed",
                  chunks=result.chunks_exported,
                  skipped=result.chunks_skipped,
-                 messages=result.messages_total)
+                 messages=result.messages_total,
+                 index_sets_skipped=getattr(result, "index_sets_skipped", []))
 
     def _run_cleanup(self, schedule_name: str = "auto-cleanup") -> None:
         """Scheduled cleanup job."""

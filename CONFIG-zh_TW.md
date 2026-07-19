@@ -74,6 +74,8 @@ export:
   delay_between_requests_ms: 5          # API 請求間隔（毫秒）
   query: "*"                            # 查詢條件（預設全部）
   streams: []                           # 限定串流（空 = 全部）
+  index_sets: []                        # OpenSearch 模式：限定這些 index set ID。
+                                        # 空 = 歸檔「所有」index set（安全預設；限縮清單會記錄略過哪些）
   fields: []                            # 限定欄位（空 = 全部）
 
   # --- 自適應反壓守護（見下方說明） ---

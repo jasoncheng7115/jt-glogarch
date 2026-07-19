@@ -2,6 +2,27 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.13.14] - 2026-07-19
+
+### 修正
+
+- **無聲資料遺失：排程／Web 的 OpenSearch export 只歸檔「預設 index set」。** 在多 index set
+  的 Graylog 環境下，排程 `auto-export`（或 Web export）以 OpenSearch 模式執行、且未明確指定
+  index set 時，只會解析到**預設** index set（`graylog`）。其餘 index set **無錯誤、無警告**
+  地被略過——那些記錄從未被歸檔，等 Graylog retention 刪除後就永久消失。現在
+  `OpenSearchExporter._resolve_prefixes` **預設涵蓋所有** index set，並對本次未涵蓋的 index set
+  記錄 WARNING 列名，讓部分涵蓋的 export 不再無聲。
+- 全域設定 `export.index_sets` 先前被排程與 Web 匯出路徑**忽略**（只有 CLI 有讀）。現在所有進入點
+  都透過同一個 helper（`normalize_index_set_ids`）讀取。
+
+### 變更 — 升級前請閱讀
+
+- **新預設：未指定 index set 的 OpenSearch export 現在會歸檔「所有」index set**（先前只歸檔預設）。
+  這是歸檔工具應有的安全行為，並修補上述資料遺失缺口。升級後，`index_set` 留空的既有排程會開始涵蓋
+  每一個 index set；已歸檔的資料會做重複資料刪除，因此不會重複匯出，也不需任何遷移。
+- `index_set` 欄位現在接受**單一 id**（不變）、**id 陣列**，或 `"*"`（明確代表全部）。留空即歸檔全部；
+  或設定 `export.index_sets` 或排程的 `index_set` 來限縮——被限縮的執行會記錄它略過了哪些 index set。
+
 ## [1.13.13] - 2026-07-13
 
 ### 修正

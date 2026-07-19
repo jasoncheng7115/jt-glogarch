@@ -17,7 +17,7 @@ from glogarch.cleanup.cleaner import Cleaner
 from glogarch.core.config import Settings
 from glogarch.core.database import ArchiveDB
 from glogarch.core.models import ArchiveStatus, JobStatus
-from glogarch.export.exporter import Exporter
+from glogarch.export.exporter import Exporter, normalize_index_set_ids
 from glogarch.gelf.sender import GelfSender
 from glogarch.import_.importer import Importer
 from glogarch.verify.verifier import Verifier
@@ -243,7 +243,7 @@ async def trigger_export(request: Request, background_tasks: BackgroundTasks):
             try:
                 result = asyncio.run(os_exporter.export(
                     time_from=time_from, time_to=time_to,
-                    index_set_ids=[index_set] if index_set else None,
+                    index_set_ids=normalize_index_set_ids(index_set, settings.export.index_sets),
                     progress_callback=_cb, source="manual:opensearch",
                     job_id=job_id, keep_indices=int(keep_indices) if keep_indices else None,
                 ))
@@ -924,7 +924,7 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
             try:
                 result = asyncio.run(os_exporter.export(
                     time_from=time_from, time_to=time_to,
-                    index_set_ids=[index_set] if index_set else None,
+                    index_set_ids=normalize_index_set_ids(index_set, settings.export.index_sets),
                     progress_callback=_cb, source=f"manual:opensearch:{name}",
                     job_id=job_id, keep_indices=int(keep_indices) if keep_indices else None,
                 ))

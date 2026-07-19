@@ -39,6 +39,37 @@ log = get_logger("export")
 _export_lock: dict[str, bool] = {}
 
 
+def normalize_index_set_ids(raw, config_index_sets=None):
+    """Normalize a schedule/request ``index_set`` value into a list of index-set IDs
+    (or ``None`` = cover ALL index sets). This is the single source of truth for how
+    every entry point (scheduler, Web API, run-now) reads the field, so an
+    OpenSearch-mode export never silently archives only the default index set.
+
+    Accepts, and is backward-compatible with the historical single-string field:
+      - a list of ids  -> those ids
+      - ``"*"``        -> None  (explicit ALL index sets)
+      - a single id    -> [id]
+      - ``""`` / None  -> ``config_index_sets`` if set, else None (ALL)
+
+    Passing ``None`` downstream makes ``OpenSearchExporter._resolve_prefixes`` cover
+    every index set — the safe default for an archival tool.
+    """
+    if isinstance(raw, (list, tuple)):
+        ids = [x for x in raw if x]
+        return ids or None
+    if isinstance(raw, str):
+        s = raw.strip()
+        if s == "*":
+            return None
+        if s:
+            return [s]
+    # empty / None -> fall back to the global config restriction, else ALL
+    if config_index_sets:
+        ids = [x for x in config_index_sets if x]
+        return ids or None
+    return None
+
+
 class ExportResult:
     """Result of an export operation."""
 
@@ -52,6 +83,10 @@ class ExportResult:
         self.original_bytes: int = 0
         self.compressed_bytes: int = 0
         self.duration_seconds: float = 0.0
+        # Names of Graylog index sets NOT covered by this OpenSearch export (empty
+        # in the default all-index-sets case). Surfaced so a partial export — e.g.
+        # one deliberately restricted to specific index sets — is never silent.
+        self.index_sets_skipped: list[str] = []
 
 
 class Exporter:

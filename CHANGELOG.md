@@ -2,6 +2,34 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.14] - 2026-07-19
+
+### Fixed
+
+- **Silent data loss: scheduled/Web OpenSearch export only archived the DEFAULT
+  index set.** In a multi-index-set Graylog deployment, a scheduled `auto-export`
+  (or a Web export) in OpenSearch mode with no explicit index set resolved to *only*
+  the default index set (`graylog`). Every other index set was skipped **with no
+  error or warning** — its logs were never archived and were permanently lost once
+  Graylog retention deleted them. `OpenSearchExporter._resolve_prefixes` now covers
+  **all** index sets by default, and logs a WARNING naming any index set a run does
+  NOT cover, so a partial export is never silent.
+- The global `export.index_sets` config was **ignored** by the scheduler and Web
+  export paths (only the CLI honored it). All entry points now read it through one
+  helper (`normalize_index_set_ids`).
+
+### Changed — please read before upgrading
+
+- **New default: an OpenSearch export with no index set specified now archives ALL
+  index sets** (previously default-only). This is the safe behaviour for an archival
+  tool and closes the data-loss gap above. After upgrading, existing schedules with
+  a blank `index_set` will start covering every index set; already-archived data is
+  de-duplicated, so nothing is re-exported and no migration is needed.
+- The `index_set` field now accepts a **single id** (unchanged), a **list of ids**,
+  or `"*"` (explicit all). Leave it blank to archive everything, or set
+  `export.index_sets` / the schedule's `index_set` to restrict — restricted runs log
+  which index sets they skip.
+
 ## [1.13.13] - 2026-07-13
 
 ### Fixed
