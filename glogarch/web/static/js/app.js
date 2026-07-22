@@ -1763,6 +1763,18 @@ async function startExport() {
 // Import page removed — import is done via batch actions on the Archives page
 
 // ---- Jobs ----
+// Colored chip summarising an OpenSearch export's index-set coverage
+// (from the job's structured `result`). Green = all covered; amber = some skipped.
+function coverageChip(job) {
+    const r = job && job.result;
+    if (!r || r.index_sets_covered === undefined || r.index_sets_covered === null) return '';
+    const skipped = r.index_sets_skipped || [];
+    if (skipped.length === 0) {
+        return `<span class="cov-chip cov-ok" title="${t('job_cov_all_hint')}">&#10003; ${t('job_cov_all')}</span>`;
+    }
+    return `<span class="cov-chip cov-warn" title="${t('job_cov_partial_hint')}: ${esc(skipped.join(', '))}">&#9888; ${skipped.length} ${t('job_cov_partial')}</span>`;
+}
+
 async function loadJobs() {
     const tbody = document.querySelector('#jobs-table tbody');
     if (!tbody) return;
@@ -1806,7 +1818,7 @@ async function loadJobs() {
             <td>${formatDT(j.started_at)}</td>
             <td>${formatDT(j.completed_at)}</td>
             <td>${formatElapsed(j.started_at, j.completed_at)}</td>
-            <td data-style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : (j.error_message || '').indexOf('Skipped') !== -1 ? 'var(--text-muted)' : 'var(--text-muted)'};font-size:0.85em;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${esc(j.error_message || '')}</td>
+            <td data-style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : (j.error_message || '').indexOf('Skipped') !== -1 ? 'var(--text-muted)' : 'var(--text-muted)'};font-size:0.85em;max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${coverageChip(j)}${esc(j.error_message || '')}</td>
             <td>${cancelBtn}</td>
         </tr>`;
     }).join('');
@@ -2224,6 +2236,8 @@ function watchJob(jobId, type, onComplete) {
                 text.innerHTML = `<span class="u030">${t('export_no_data')}</span>`;
             } else {
                 let html = `<span class="status-completed">${t('progress_completed')} (${formatNumber(msgs)} ${t('unit_records')})</span>`;
+                const cov = coverageChip(job);
+                if (cov) html += ` <span class="cov-chip-wrap">${cov}</span>`;
                 // Surface bulk-mode "where to find" notice (and any other
                 // post-completion info written into the job's error_message)
                 if (job.error_message) {
@@ -2384,7 +2398,7 @@ async function loadHistory() {
         <td class="u147">${formatRecords(j.messages_done, j.messages_total, j.job_type)}</td>
         <td>${formatDT(j.started_at)}</td>
         <td>${formatDT(j.completed_at)}</td>
-        <td data-style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : 'var(--text-muted)'};font-size:0.85em;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${esc(j.error_message || '')}</td>
+        <td data-style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : 'var(--text-muted)'};font-size:0.85em;max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${coverageChip(j)}${esc(j.error_message || '')}</td>
     </tr>`).join('');
 }
 

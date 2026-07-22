@@ -2,6 +2,17 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.16] - 2026-07-22
+
+### Added
+
+- **Index-set coverage badge on export jobs.** OpenSearch export jobs now show a
+  colored chip in Job History and the export result dialog: green **"all index
+  sets"** when a run covered everything, or amber **"N index set(s) not covered"**
+  (with their names on hover) when a run was restricted. Backed by a new structured
+  `result_json` job column (auto-migrated; nullable) so it's not parsed from free
+  text — the plain-text note stays too.
+
 ## [1.13.15] - 2026-07-22
 
 ### Fixed

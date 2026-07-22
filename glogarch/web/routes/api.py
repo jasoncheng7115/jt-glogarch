@@ -1866,6 +1866,15 @@ def _job_to_dict(j) -> dict:
         "phase": "",
         "current_detail": "",
     }
+    # Structured post-completion result (e.g. OpenSearch index-set coverage), parsed
+    # so the UI can render a badge without re-parsing free text.
+    _rj = getattr(j, "result_json", None)
+    if _rj:
+        try:
+            import json as _json
+            d["result"] = _json.loads(_rj)
+        except Exception:
+            d["result"] = None
     # Enrich with live progress info from in-memory store
     if j.id in _job_progress and _job_progress[j.id]:
         events = _job_progress[j.id]

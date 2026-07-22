@@ -76,6 +76,7 @@ class JobRecord(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     source: str = ""  # "manual", "scheduled", ""
+    result_json: str | None = None  # structured post-completion result (e.g. index-set coverage)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

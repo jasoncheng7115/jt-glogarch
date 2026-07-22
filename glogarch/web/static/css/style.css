@@ -627,6 +627,22 @@
 .os-src-own { background: rgba(80, 200, 120, 0.14); color: #2f9e5e; border-color: rgba(80, 200, 120, 0.35); }
 .os-src-global { background: rgba(160, 160, 170, 0.14); color: var(--text-dim); }
 
+/* Index-set coverage chip on export jobs */
+.cov-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.9em;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 10px;
+    margin-right: 5px;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+.cov-ok { background: rgba(80, 200, 120, 0.16); color: #2f9e5e; border: 1px solid rgba(80, 200, 120, 0.4); }
+.cov-warn { background: rgba(240, 170, 60, 0.18); color: #c47f16; border: 1px solid rgba(240, 170, 60, 0.5); }
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {

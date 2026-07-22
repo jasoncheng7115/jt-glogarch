@@ -333,11 +333,17 @@ class OpenSearchExporter:
                     f"⚠ {len(result.errors)} index(es) failed — data may be "
                     f"incomplete, will retry next run: {sample}")
             note = ". ".join(note_parts)
+            import json as _json
+            result_json = _json.dumps({
+                "index_sets_covered": len(prefixes),
+                "index_sets_skipped": result.index_sets_skipped,
+            })
             self.db.update_job(
                 job_id, status=JobStatus.COMPLETED, progress_pct=100.0,
                 messages_done=result.messages_total, messages_total=result.messages_total,
                 completed_at=datetime.utcnow(),
                 error_message=note,
+                result_json=result_json,
             )
             log.info("OpenSearch export completed", job_id=job_id,
                      exported=result.chunks_exported, skipped=result.chunks_skipped,

@@ -227,6 +227,11 @@ class ArchiveDB:
         existing = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
         if "source" not in existing:
             conn.execute("ALTER TABLE jobs ADD COLUMN source TEXT NOT NULL DEFAULT ''")
+        # Structured post-completion result (JSON) — e.g. OpenSearch export
+        # index-set coverage {index_sets_covered, index_sets_skipped}. Nullable;
+        # only some job types set it.
+        if "result_json" not in existing:
+            conn.execute("ALTER TABLE jobs ADD COLUMN result_json TEXT")
         existing_arc = {row[1] for row in conn.execute("PRAGMA table_info(archives)").fetchall()}
         if "original_size_bytes" not in existing_arc:
             conn.execute("ALTER TABLE archives ADD COLUMN original_size_bytes INTEGER NOT NULL DEFAULT 0")
@@ -615,7 +620,8 @@ class ArchiveDB:
     def update_job(self, job_id: str, **kwargs) -> None:
         from glogarch.utils.sanitize import sanitize
         ALLOWED_JOB_COLS = {"status", "progress_pct", "messages_done", "messages_total",
-                            "config_json", "error_message", "started_at", "completed_at", "source"}
+                            "config_json", "error_message", "started_at", "completed_at", "source",
+                            "result_json"}
         sets = []
         vals = []
         for key, val in kwargs.items():
@@ -1184,6 +1190,7 @@ class ArchiveDB:
             started_at=_str_to_dt(row["started_at"]),
             completed_at=_str_to_dt(row["completed_at"]),
             source=row["source"] if "source" in row.keys() else "",
+            result_json=row["result_json"] if "result_json" in row.keys() else None,
             created_at=_str_to_dt(row["created_at"]),  # type: ignore
         )
 
