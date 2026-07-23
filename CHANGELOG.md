@@ -2,6 +2,25 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.29] - 2026-07-23
+
+### Fixed
+
+- **Each OpenSearch server row now has its own "Test Connection" button.**
+  The dashboard's OpenSearch card listed one row per Graylog server but only had
+  a single shared test button (which tested the global config), inconsistent with
+  the Graylog servers table where every row has its own button. Now each row
+  carries a per-server test button that tests that server's resolved OpenSearch
+  cluster (per-server config, or the global fallback). The existing per-host
+  right-click test is unchanged.
+- **Sorting a table by a URL (or other text) column did nothing.** The client-side
+  table sort's numeric detection was too loose: a cell like
+  `http://192.0.2.10:9000` was parsed as the number `192.0` for every row
+  (parseFloat stops at the second dot), so the comparison was always 0 and the
+  rows never reordered. Numeric sorting now applies only when the whole cell is a
+  number (with optional thousands separators / size unit); URL, name and auth
+  columns sort as text.
+
 ## [1.13.28] - 2026-07-23
 
 ### Changed

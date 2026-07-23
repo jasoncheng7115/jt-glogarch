@@ -349,7 +349,32 @@ function renderOsServerRow(serverName, data) {
         const sv = serverName || '';
         return `<span class="host-label" data-server="${esc(sv)}" data-idx="${i}" data-count="${data.hosts.length}" oncontextmenu="showHostMenu(event)" title="${t('os_right_click')}">${icon('server')} ${esc(h)}${badge}</span>`;
     }).join(' ');
-    return `<div class="os-server-row">${nameLabel}${src} <span class="os-hosts">${hosts}</span></div>`;
+    // Per-server test button (tests THIS server's resolved OpenSearch cluster),
+    // so two servers each get their own button like the Graylog table.
+    const testBtn = `<button class="btn-sm btn-secondary os-test-btn" data-act="osTestServer" data-arg="${esc(serverName || '')}">${icon('refresh', 14)} ${t('btn_test_connection')}</button>`;
+    return `<div class="os-server-row">${nameLabel}${src} <span class="os-hosts">${hosts}</span>${testBtn}</div>`;
+}
+
+// Test one server's whole OpenSearch cluster (server-aware endpoint resolves its
+// per-server or global-fallback hosts). Empty server = the global config.
+async function osTestServer(server) {
+    const resultEl = document.getElementById('opensearch-result');
+    const who = esc(server || t('settings_global_os'));
+    if (resultEl) resultEl.innerHTML = `<span class="u022">${who} — ${t('btn_test_connection')}…</span>`;
+    try {
+        const data = await fetchJSON(`${API}/opensearch/test`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(server ? {server} : {}),
+        });
+        if (!resultEl) return;
+        if (data.connected) {
+            resultEl.innerHTML = `<span class="status-completed">${t('test_connected')}</span> ${who} — ${esc(data.cluster_name || '')} ${esc(data.version || '')} — ${t('os_status')}: ${esc(data.status || '')} — ${t('os_nodes')}: ${esc(String(data.nodes || ''))}`;
+        } else {
+            resultEl.innerHTML = `<span class="status-failed">${t('test_failed')}</span> ${who} — ${esc(data.error || t('unknown_error'))}`;
+        }
+    } catch (e) {
+        if (resultEl) resultEl.innerHTML = `<span class="status-failed">${t('test_error')}</span> ${esc(e.message)}`;
+    }
 }
 
 function showHostMenu(e) {
@@ -2837,11 +2862,17 @@ function sortTable(th) {
         const cellB = b.children[idx]?.textContent?.trim() || '';
         // Try date first (yyyy/mm/dd or yyyy-mm-dd)
         if (cellA.match(/^\d{4}[\/-]/) && cellB.match(/^\d{4}[\/-]/)) return cellA.localeCompare(cellB) * dir;
-        // Try numeric (handle commas and units like "31.06 MB")
-        const numA = parseFloat(cellA.replace(/,/g, '').replace(/[^\d.-]/g, ''));
-        const numB = parseFloat(cellB.replace(/,/g, '').replace(/[^\d.-]/g, ''));
-        if (!isNaN(numA) && !isNaN(numB)) return (numA - numB) * dir;
-        // String
+        // Numeric ONLY when the WHOLE cell is a number (optional thousands commas
+        // + size unit). A loose parseFloat treated "http://192.0.2.10:9000" as
+        // numeric and parsed EVERY row to 192.0 → the compare was always 0 and
+        // sorting a URL column did nothing.
+        const numRe = /^-?[\d,]+(\.\d+)?\s*(?:B|KB|MB|GB|TB|bytes)?$/i;
+        if (numRe.test(cellA) && numRe.test(cellB)) {
+            const numA = parseFloat(cellA.replace(/,/g, ''));
+            const numB = parseFloat(cellB.replace(/,/g, ''));
+            if (!isNaN(numA) && !isNaN(numB)) return (numA - numB) * dir;
+        }
+        // String (URLs, names, auth type, …)
         return cellA.localeCompare(cellB) * dir;
     });
 

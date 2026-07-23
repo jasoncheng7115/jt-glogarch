@@ -85,11 +85,9 @@
         <div class="section">
             <h2 data-i18n="opensearch_connection" data-icon="db">OpenSearch Connection</h2>
             <div class="card mb15" id="opensearch-card">
-                <div class="flex-row">
-                    <div id="opensearch-info" class="muted-flex1">Loading...</div>
-                    <button class="btn-secondary btn-sm" data-act="testOpenSearch"
-                            data-i18n="btn_test_connection" data-icon="shield">Test Connection</button>
-                </div>
+                <!-- Each OpenSearch row carries its OWN test button (per Graylog
+                     server), matching the Graylog servers table above. -->
+                <div id="opensearch-info" class="muted-flex1">Loading...</div>
                 <div id="opensearch-result" class="mt8"></div>
             </div>
         </div>

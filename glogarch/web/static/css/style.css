@@ -1608,3 +1608,6 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
 /* Inline clickable link (e.g. "select all N matching" in the archives batch bar) */
 .link-inline { color: var(--accent); cursor: pointer; text-decoration: underline; }
 .link-inline:hover { opacity: 0.8; }
+
+/* Per-server OpenSearch test button sits at the right edge of its row */
+.os-server-row .os-test-btn { margin-left: auto; flex-shrink: 0; }
