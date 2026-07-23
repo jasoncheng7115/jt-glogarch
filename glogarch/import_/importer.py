@@ -184,8 +184,14 @@ class Importer:
         _start_time = _time.time()
 
         fc = flow_control or ImportFlowControl()
-        fc.rate_ms = self.import_config.delay_between_batches_ms
-        fc.batch_size = self.import_config.batch_size
+        # Only seed rate/batch from config when the CALLER did not provide a flow
+        # control. The Web UI path (web/routes/api.py) creates the fc and sets
+        # rate_ms/batch_size from the import dialog BEFORE passing it in; blindly
+        # overwriting here clobbered the user's chosen batch (e.g. 50 -> config
+        # default 500) and rate, so the dialog values were silently ignored.
+        if flow_control is None:
+            fc.rate_ms = self.import_config.delay_between_batches_ms
+            fc.batch_size = self.import_config.batch_size
         fc._base_rate_ms = fc.rate_ms
 
         # Register flow control globally

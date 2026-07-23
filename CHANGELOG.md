@@ -2,6 +2,22 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.26] - 2026-07-23
+
+### Fixed
+
+- **The import batch size / rate chosen in the Web UI dialog was silently
+  ignored — the import always ran at the config default (batch 500).** Setting
+  e.g. "50 per batch / 100 ms" in the import dialog, the running import used 500.
+  Root cause: `Importer.import_archives` unconditionally overwrote the
+  flow-control object's `batch_size` and `rate_ms` with the config defaults, even
+  though the Web UI had already set the user's values on it before passing it in.
+  Now the config defaults are only applied when the caller (CLI / scheduled)
+  provides no flow control; the Web UI dialog's batch size and rate are honoured.
+  The live "Batch" selector during an import (which mirrors the actual running
+  value) will now correctly show the chosen size instead of 500. (CLI / scheduled
+  imports are unchanged — they still take the batch/rate from config.)
+
 ## [1.13.25] - 2026-07-23
 
 ### Fixed
