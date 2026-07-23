@@ -18,6 +18,7 @@ class JournalStatus:
     disk_free_bytes: int = 0
     available: bool = True
     error: str = ""
+    heap_percent: float | None = None  # target Graylog JVM heap used% (None if unknown)
 
 
 class JournalMonitor:
@@ -29,10 +30,16 @@ class JournalMonitor:
     - ssh: Run remote command via SSH to check journal dir size
     """
 
-    # Thresholds for dynamic rate control
+    # Thresholds for dynamic rate control (journal backlog)
     THRESHOLD_SLOW = 100_000      # uncommitted > 100K -> double delay
     THRESHOLD_PAUSE = 500_000     # uncommitted > 500K -> pause 30s
     THRESHOLD_STOP = 1_000_000    # uncommitted > 1M -> stop import
+
+    # JVM heap tiers — protect the TARGET Graylog from OOM during a fast import
+    # (mirrors the export HealthGuard). A big GELF batch that outruns indexing
+    # piles onto heap; back off before the target wedges.
+    HEAP_SLOW = 80.0              # heap used% >= 80 -> slow down
+    HEAP_PAUSE = 92.0             # heap used% >= 92 -> pause
 
     def __init__(
         self,
@@ -91,10 +98,28 @@ class JournalMonitor:
                 resp.raise_for_status()
                 data = resp.json()
 
+                # Also sample JVM heap so a fast import backs off before it OOMs
+                # the target Graylog (best-effort; heap stays None on failure).
+                heap_pct = None
+                try:
+                    jr = await client.get(
+                        f"{self.api_url}/api/system/jvm",
+                        auth=auth, headers={"Accept": "application/json"},
+                    )
+                    if jr.status_code == 200:
+                        jd = jr.json()
+                        used = (jd.get("used_memory") or {}).get("bytes", 0)
+                        mx = (jd.get("max_memory") or {}).get("bytes", 0)
+                        if mx > 0:
+                            heap_pct = round(used / mx * 100, 1)
+                except Exception:
+                    heap_pct = None
+
             return JournalStatus(
                 uncommitted=data.get("uncommitted_journal_entries", 0),
                 size_bytes=data.get("journal_size", 0),
                 available=True,
+                heap_percent=heap_pct,
             )
         except Exception as e:
             log.warning("Journal API check failed", error=str(e))
@@ -199,18 +224,31 @@ class JournalMonitor:
             log.warning("Journal SSH check failed (subprocess)", error=str(e))
             return JournalStatus(available=False, error=str(e))
 
+    _SEVERITY = {"normal": 0, "slow": 1, "pause": 2, "stop": 3}
+
     def recommend_action(self, status: JournalStatus) -> str:
-        """Return recommended action based on journal status.
+        """Return recommended action from BOTH the journal backlog and the target
+        Graylog's JVM heap — whichever is more severe wins.
 
         Returns: "normal", "slow", "pause", "stop"
         """
         if not status.available:
             return "normal"  # Can't check, proceed at user-set rate
 
+        # Journal-backlog tier
         if status.uncommitted >= self.THRESHOLD_STOP:
-            return "stop"
+            action = "stop"
         elif status.uncommitted >= self.THRESHOLD_PAUSE:
-            return "pause"
+            action = "pause"
         elif status.uncommitted >= self.THRESHOLD_SLOW:
-            return "slow"
-        return "normal"
+            action = "slow"
+        else:
+            action = "normal"
+
+        # JVM heap tier
+        hp = status.heap_percent
+        if hp is not None:
+            heap_action = "pause" if hp >= self.HEAP_PAUSE else ("slow" if hp >= self.HEAP_SLOW else "normal")
+            if self._SEVERITY[heap_action] > self._SEVERITY[action]:
+                action = heap_action
+        return action

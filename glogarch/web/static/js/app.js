@@ -1236,6 +1236,10 @@ async function doImportSingle() {
         body.gelf_port = parseInt(port);
         body.gelf_protocol = protocol;
         body.rate_ms = parseInt(rateMs);
+        body.batch_size = parseInt(document.getElementById('modal-batch-size')?.value || '500');
+        // Sync the live-view batch selector to the chosen starting value.
+        const liveBatch = document.getElementById('import-live-batch');
+        if (liveBatch) liveBatch.value = String(body.batch_size);
     } else {
         // bulk mode
         body.target_index_pattern = document.getElementById('modal-bulk-index-pattern')?.value?.trim() || 'jt_restored';
@@ -1343,6 +1347,16 @@ async function updateImportRate(val) {
     });
 }
 
+// Live batch-size adjustment during an import (50/500/1000/2000).
+async function updateImportBatch(val) {
+    if (!_activeImportJobId) return;
+    await fetchJSON(`${API}/import/${_activeImportJobId}/rate`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({batch_size: parseInt(val)}),
+    });
+}
+
 let _importStatusPoll = null;
 function startImportStatusPoll(jobId) {
     stopImportStatusPoll();
@@ -1358,7 +1372,14 @@ function startImportStatusPoll(jobId) {
                 const color = action === 'normal' ? 'var(--success)' : action === 'slow' ? 'var(--warning)' : 'var(--danger)';
                 const label = t('import_journal_label');
                 const actionLabel = t(`import_journal_${action}`) || action;
-                badge.innerHTML = `<span data-style="color:${color}">${label}: ${u !== null ? formatNumber(u) : '?'} (${actionLabel})</span>`;
+                let html = `<span data-style="color:${color}">${label}: ${u !== null ? formatNumber(u) : '?'} (${actionLabel})</span>`;
+                // Target Graylog JVM heap — the second signal the throttle watches.
+                const hp = st.heap_percent;
+                if (hp !== null && hp !== undefined) {
+                    const hc = hp >= 92 ? 'var(--danger)' : hp >= 80 ? 'var(--warning)' : 'var(--success)';
+                    html += ` <span data-style="color:${hc}">· ${t('import_heap_label')}: ${hp}%</span>`;
+                }
+                badge.innerHTML = html;
             }
         } catch(e) {}
     }, 5000);

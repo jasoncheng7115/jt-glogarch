@@ -266,6 +266,17 @@
                             </select>
                         </div>
                     </div>
+                    <!-- Batch size -->
+                    <div class="form-group">
+                        <label data-i18n="import_batch_size" data-icon="database">Batch Size</label>
+                        <select id="modal-batch-size">
+                            <option value="50">50</option>
+                            <option value="500" selected>500</option>
+                            <option value="1000">1000</option>
+                            <option value="2000">2000</option>
+                        </select>
+                        <small class="form-hint" data-i18n="import_batch_size_hint">Messages per batch. Higher = faster; auto-throttled by the target's journal & JVM heap.</small>
+                    </div>
                     <!-- Speed Control -->
                     <div class="form-group">
                         <label data-i18n="import_rate" data-icon="clock">Batch Delay (ms)</label>
@@ -371,6 +382,14 @@
                             <label class="u080">
                                 <span data-i18n="import_speed">Speed</span>: <input class="u154" type="range" id="import-live-rate" min="1" max="2000" value="100" data-act-input="updateImportRate">
                                 <span id="import-live-rate-display">100ms</span>
+                            </label>
+                            <label class="u080">
+                                <span data-i18n="import_batch_size">Batch</span>: <select id="import-live-batch" data-act-change="updateImportBatch">
+                                    <option value="50">50</option>
+                                    <option value="500">500</option>
+                                    <option value="1000">1000</option>
+                                    <option value="2000">2000</option>
+                                </select>
                             </label>
                         </span>
                         <!-- Cancel button — works for both modes. -->

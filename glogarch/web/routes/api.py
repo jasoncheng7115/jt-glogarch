@@ -528,12 +528,14 @@ async def get_import_status(request: Request, job_id: str):
         "batch_size": fc.batch_size,
         "auto_rate": fc.auto_rate,
         "journal_action": fc.journal_action,
+        "heap_percent": js.heap_percent if js else None,
         "journal": {
             "uncommitted": js.uncommitted if js else None,
             "size_bytes": js.size_bytes if js else None,
             "disk_free_bytes": js.disk_free_bytes if js else None,
             "available": js.available if js else False,
             "error": js.error if js else "",
+            "heap_percent": js.heap_percent if js else None,
         } if js else None,
     }
 

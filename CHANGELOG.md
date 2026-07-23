@@ -2,6 +2,19 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.17] - 2026-07-23
+
+### Added
+
+- **GELF import: selectable batch size (50 / 500 / 1000 / 2000) in BOTH the import
+  dialog and the live in-progress view.** Importing at a small batch is slow; you can
+  now pick a starting batch size and change it live mid-import (`/import/{id}/rate`
+  already accepted it — the UI just didn't expose it). Default stays 500.
+- **Import throttle now also watches the target Graylog's JVM heap**, not just the
+  journal backlog. The journal monitor samples `/api/system/jvm` and backs off on the
+  more-severe of the two signals (heap ≥ 80% → slow, ≥ 92% → pause), so a fast batch
+  can't OOM the target. Heap % is shown live next to the journal badge.
+
 ## [1.13.16] - 2026-07-22
 
 ### Added
