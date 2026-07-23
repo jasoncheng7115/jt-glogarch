@@ -643,6 +643,10 @@
 .cov-ok { background: rgba(80, 200, 120, 0.16); color: #2f9e5e; border: 1px solid rgba(80, 200, 120, 0.4); }
 .cov-warn { background: rgba(240, 170, 60, 0.18); color: #c47f16; border: 1px solid rgba(240, 170, 60, 0.5); }
 
+/* Live import speed/batch controls — keep each label on one line */
+#import-gelf-controls .u080 { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+#import-gelf-controls #import-live-batch { width: auto; min-width: 64px; }
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {

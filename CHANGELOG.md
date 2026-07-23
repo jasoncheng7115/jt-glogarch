@@ -2,6 +2,18 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.19] - 2026-07-23
+
+### Fixed
+
+- **Import batch-size dropdown could not be changed (live view).** The new selects
+  were being wrapped by the app's custom-dropdown component; interactive selects
+  need `class="no-custom"` (as every other `data-act-change` select has). Both the
+  dialog and live-view batch selectors are now native and adjustable.
+- **Live "Batch Size" label wrapped onto two lines** in the tight control row — the
+  live view now uses a short "Batch" / 「批次」 label with no-wrap, and the live
+  selector reflects the ACTUAL running batch size instead of showing a stale value.
+
 ## [1.13.18] - 2026-07-23
 
 ### Fixed

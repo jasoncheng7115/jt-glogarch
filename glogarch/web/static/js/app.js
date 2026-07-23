@@ -1364,6 +1364,12 @@ function startImportStatusPoll(jobId) {
         if (!_activeImportJobId) { stopImportStatusPoll(); return; }
         try {
             const st = await fetchJSON(`${API}/import/${jobId}/status`);
+            // Reflect the ACTUAL running batch size in the live selector (unless the
+            // user is mid-selection) so it never shows a stale value.
+            const lb = document.getElementById('import-live-batch');
+            if (lb && st.batch_size && document.activeElement !== lb && String(st.batch_size) !== lb.value) {
+                lb.value = String(st.batch_size);
+            }
             const badge = document.getElementById('import-journal-badge');
             if (badge && st.journal) {
                 badge.style.display = 'inline';

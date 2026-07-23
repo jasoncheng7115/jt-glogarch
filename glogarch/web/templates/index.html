@@ -269,7 +269,7 @@
                     <!-- Batch size -->
                     <div class="form-group">
                         <label data-i18n="import_batch_size" data-icon="database">Batch Size</label>
-                        <select id="modal-batch-size">
+                        <select id="modal-batch-size" class="no-custom">
                             <option value="50">50</option>
                             <option value="500" selected>500</option>
                             <option value="1000">1000</option>
@@ -383,8 +383,8 @@
                                 <span data-i18n="import_speed">Speed</span>: <input class="u154" type="range" id="import-live-rate" min="1" max="2000" value="100" data-act-input="updateImportRate">
                                 <span id="import-live-rate-display">100ms</span>
                             </label>
-                            <label class="u080">
-                                <span data-i18n="import_batch_size">Batch</span>: <select id="import-live-batch" data-act-change="updateImportBatch">
+                            <label class="u080 import-live-batch-label">
+                                <span data-i18n="import_batch_short">Batch</span>: <select id="import-live-batch" class="no-custom" data-act-change="updateImportBatch">
                                     <option value="50">50</option>
                                     <option value="500">500</option>
                                     <option value="1000">1000</option>
