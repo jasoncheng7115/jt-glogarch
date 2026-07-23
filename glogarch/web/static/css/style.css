@@ -1611,3 +1611,7 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
 
 /* Per-server OpenSearch test button sits at the right edge of its row */
 .os-server-row .os-test-btn { margin-left: auto; flex-shrink: 0; }
+
+/* Import-done button: hidden until the import finishes (JS toggles display via
+   CSSOM). Kept in CSS, not an inline style, to satisfy the strict CSP. */
+#import-done-btn { display: none; margin-top: 10px; }

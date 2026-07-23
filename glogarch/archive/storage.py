@@ -470,7 +470,7 @@ class ArchiveIterator:
                 meta_obj = json.loads(meta_json)
                 self.metadata = ArchiveMetadata(**meta_obj.get("metadata", {}))
             except Exception:
-                self.metadata = ArchiveMetadata()
+                self.metadata = ArchiveMetadata(server="", time_from="", time_to="")
 
         return self.metadata
 
@@ -492,7 +492,7 @@ class ArchiveIterator:
             try:
                 self.read_metadata()
             except Exception:
-                self.metadata = ArchiveMetadata()
+                self.metadata = ArchiveMetadata(server="", time_from="", time_to="")
 
         raw_decode = json.JSONDecoder().raw_decode
         _SEP = " \t\r\n,"

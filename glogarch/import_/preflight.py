@@ -1025,14 +1025,31 @@ class PreflightChecker:
         re.compile(r"for field \[([^\]]+)\]"),
         re.compile(r"\[([^\]]+)\] of different type"),
     ]
-    _REASON_RE = re.compile(r"([a-z_]+_exception)", re.I)
+    # snake_case (mapper_parsing_exception) or CamelCase (NumberFormatException);
+    # the leading [A-Za-z_]+ forces a prefix so a bare " exception" word isn't matched.
+    _REASON_RE = re.compile(r"([A-Za-z_]+(?:exception|error))", re.I)
+    _TS_RE = re.compile(r"^\d{4}-\d\d-\d\d")
+    # A real field name: starts alnum/underscore, then alnum/underscore/dot/dash.
+    _FIELD_OK_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]*$")
+
+    @staticmethod
+    def _is_plausible_field(name: str) -> bool:
+        # Reject log-prefix / timestamp / logger-path tokens that appear in
+        # bracketed form inside OS error strings — pinning one of THOSE as a
+        # keyword mapping would pollute the index set. Field names never contain
+        # ':' or spaces and are not ISO timestamps.
+        if not name or ":" in name or " " in name:
+            return False
+        if PreflightChecker._TS_RE.match(name):
+            return False
+        return bool(PreflightChecker._FIELD_OK_RE.match(name))
 
     @staticmethod
     def _parse_failure_message(msg: str) -> tuple[str | None, str | None]:
         field = None
         for rx in PreflightChecker._FIELD_RES:
             m = rx.search(msg or "")
-            if m:
+            if m and PreflightChecker._is_plausible_field(m.group(1)):
                 field = m.group(1)
                 break
         rm = PreflightChecker._REASON_RE.search(msg or "")

@@ -2,6 +2,26 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.30] - 2026-07-23
+
+### Fixed
+
+Found during a full-application test + logic-review pass:
+
+- **CSP violation on the Archives / Import pages.** The import modal's "Close"
+  button carried a static `style="display:none;…"` attribute, which the strict
+  `style-src 'self'` Content-Security-Policy blocked (logged a console violation).
+  Moved to a CSS rule; JS still toggles visibility via CSSOM (CSP-safe).
+- **A malformed/truncated archive header crashed the reader's fallback instead of
+  degrading.** `ArchiveIterator`'s metadata fallback constructed
+  `ArchiveMetadata()`, but that model has required fields → it raised
+  `ValidationError`. It now builds a graceful empty-placeholder metadata.
+- **Indexer-failure auto-diagnosis hardened against false field matches.** The
+  error-message parser could, in principle, pick a leading `[timestamp]`/`[logger]`
+  bracket as the "field" and pin a junk mapping. It now validates the extracted
+  token is a plausible field name (rejects timestamps, colons, spaces) and the
+  reason parser also recognises CamelCase exceptions.
+
 ## [1.13.29] - 2026-07-23
 
 ### Fixed
