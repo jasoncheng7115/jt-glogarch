@@ -342,6 +342,13 @@ class StreamingArchiveWriter:
                 t = "other"
             elif isinstance(v, (int, float)):
                 t = "numeric"
+                # A numeric value outside Java long range (e.g. a Windows Event
+                # Log "Keywords" 2^63 bitmask) overflows OpenSearch's auto 'long'
+                # mapping and causes an indexer failure. Classify it as string so
+                # preflight pins the field as keyword BEFORE the GELF send — such
+                # a bitmask/id field is correctly a keyword anyway.
+                if isinstance(v, int) and not (-9223372036854775808 <= v <= 9223372036854775807):
+                    t = "string"
             elif isinstance(v, str):
                 t = "string"
             else:

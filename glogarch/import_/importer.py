@@ -122,6 +122,7 @@ class ImportResult:
         self.notices: list[str] = []  # informational messages (e.g. "find your data in stream X")
         self.job_id: str = ""
         self.duration_seconds: float = 0.0
+        self.indexer_failure_fields: list[str] = []  # fields auto-diagnosed on failure
 
 
 class Importer:
@@ -564,12 +565,46 @@ class Importer:
                     after = await self.preflight.get_indexer_failures_count()
                     delta = after - preflight_result.indexer_failures_baseline
                     if delta > 0:
-                        recon_msg = (
-                            f"Compliance violation: {delta} indexer failures occurred "
-                            f"during this import (baseline {preflight_result.indexer_failures_baseline} "
-                            f"-> after {after}). Sent: {result.messages_sent:,}. "
-                            f"Check Graylog System / Indices / Indexer failures for details."
-                        )
+                        # Don't just report a count and tell the operator to go
+                        # read Graylog — auto-diagnose WHICH field(s) failed and
+                        # auto-fix the mapping so a re-import indexes cleanly.
+                        details = await self.preflight.get_indexer_failure_details()
+                        flds = details.get("fields", {})
+                        reasons = details.get("reasons", {})
+                        remediated: list[str] = []
+                        if flds and preflight_result.index_set_id:
+                            try:
+                                remediated = await self.preflight.remediate_fields_as_string(
+                                    preflight_result.index_set_id, list(flds.keys()))
+                            except Exception as e:
+                                log.warning("Auto-remediation failed", error=str(e))
+                        result.indexer_failure_fields = list(flds.keys())
+                        field_desc = ", ".join(
+                            f"'{k}' (×{v})" for k, v in
+                            sorted(flds.items(), key=lambda x: -x[1])[:6]
+                        ) or "unidentified field(s)"
+                        reason_desc = ", ".join(sorted(reasons.keys())) or "mapping conflict"
+                        if remediated:
+                            recon_msg = (
+                                f"{delta} indexer failures on field(s): {field_desc} "
+                                f"[{reason_desc}]. Auto-remediated: pinned "
+                                f"{len(remediated)} field(s) as string and cycled the "
+                                f"index — re-import these archives to recover the "
+                                f"{delta} affected message(s) (Bulk mode dedups; a GELF "
+                                f"re-send duplicates already-indexed messages)."
+                            )
+                        elif flds:
+                            recon_msg = (
+                                f"{delta} indexer failures on field(s): {field_desc} "
+                                f"[{reason_desc}]. Could not auto-fix the mapping — set "
+                                f"these field(s) to type 'string' in the target index set, "
+                                f"then re-import."
+                            )
+                        else:
+                            recon_msg = (
+                                f"{delta} indexer failures during this import (could not "
+                                f"parse the offending field). Reasons: {reason_desc}."
+                            )
                         log.warning(recon_msg)
                         result.errors.append(recon_msg)
                         # Mark as completed_with_failures via error_message

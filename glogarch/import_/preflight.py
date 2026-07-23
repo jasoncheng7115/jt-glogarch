@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import gzip
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -1012,6 +1013,73 @@ class PreflightChecker:
             except Exception as e:
                 log.warning("Cannot read indexer failures", error=str(e))
         return 0
+
+    # Extract the offending field name from an OpenSearch/Graylog indexer-failure
+    # error message (several phrasings across ES/OS versions).
+    _FIELD_RES = [
+        re.compile(r"failed to parse field \[([^\]]+)\]"),
+        re.compile(r"parse field \[([^\]]+)\]"),
+        re.compile(r"mapper \[([^\]]+)\] (?:of|cannot|tried)"),
+        re.compile(r"object mapping for \[([^\]]+)\]"),
+        re.compile(r"field \[([^\]]+)\] of type"),
+        re.compile(r"for field \[([^\]]+)\]"),
+        re.compile(r"\[([^\]]+)\] of different type"),
+    ]
+    _REASON_RE = re.compile(r"([a-z_]+_exception)", re.I)
+
+    @staticmethod
+    def _parse_failure_message(msg: str) -> tuple[str | None, str | None]:
+        field = None
+        for rx in PreflightChecker._FIELD_RES:
+            m = rx.search(msg or "")
+            if m:
+                field = m.group(1)
+                break
+        rm = PreflightChecker._REASON_RE.search(msg or "")
+        return field, (rm.group(1).lower() if rm else None)
+
+    async def get_indexer_failure_details(self, limit: int = 500) -> dict:
+        """Read recent indexer failures and parse which FIELD(S) and error type
+        caused them — so the system can name the culprit and fix the mapping
+        itself instead of telling the operator to go read Graylog."""
+        empty = {"fields": {}, "reasons": {}, "samples": []}
+        async with self._client() as c:
+            try:
+                r = await c.get(f"{self.api_url}/api/system/indexer/failures?limit={limit}")
+                if r.status_code != 200:
+                    return empty
+                data = r.json()
+            except Exception as e:
+                log.warning("Cannot read indexer failure details", error=str(e))
+                return empty
+        fields: dict[str, int] = {}
+        reasons: dict[str, int] = {}
+        samples: list[str] = []
+        for f in (data.get("failures") or []):
+            msg = f.get("message") or f.get("error") or ""
+            field, reason = self._parse_failure_message(msg)
+            if field:
+                fields[field] = fields.get(field, 0) + 1
+            if reason:
+                reasons[reason] = reasons.get(reason, 0) + 1
+            if len(samples) < 3 and msg:
+                samples.append(msg[:300])
+        return {"fields": fields, "reasons": reasons, "samples": samples}
+
+    async def remediate_fields_as_string(
+        self, index_set_id: str, fields: list[str]
+    ) -> list[str]:
+        """Pin the given fields as string (keyword) on the target index set and
+        cycle the index, so a subsequent import of the same data indexes cleanly.
+        Non-destructive: keyword mapping doesn't alter already-indexed data."""
+        fields = [f for f in dict.fromkeys(fields) if f]  # de-dup, keep order
+        if not index_set_id or not fields:
+            return []
+        await self.apply_custom_mappings(index_set_id, fields)
+        await self.cycle_index(index_set_id)
+        log.info("Auto-remediated indexer-failure fields as string",
+                 fields=fields, index_set=index_set_id)
+        return fields
 
     # ----------------------------------------------------- Top-level entry
 

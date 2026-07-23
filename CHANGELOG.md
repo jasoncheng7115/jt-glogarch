@@ -2,6 +2,25 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.28] - 2026-07-23
+
+### Changed
+
+- **Indexer failures during import are now diagnosed and fixed automatically —
+  no more "go check Graylog yourself".** Previously a compliance violation just
+  reported a count and told the operator to open Graylog's Indexer Failures page.
+  Now, when failures are detected, jt-glogarch reads the failure details, parses
+  **which field(s) and error type** caused them, and **auto-pins those fields as
+  string (keyword) + cycles the index** so a re-import indexes cleanly. The job
+  message names the culprit, e.g. *"173 indexer failures on field(s): 'Keywords'
+  (×173) [mapper_parsing_exception]. Auto-remediated: pinned 1 field(s) as string
+  and cycled the index — re-import to recover the affected messages."*
+- **Preventive: numeric values that overflow Java `long` are pinned as string up
+  front.** A Windows Event Log `Keywords` 2^63 bitmask (the most common cause of
+  restore indexer failures) is now detected at archive-write time and pinned as
+  keyword by preflight BEFORE the GELF send, so the failure never happens. (Both
+  changes are non-destructive — keyword mapping never alters already-indexed data.)
+
 ## [1.13.27] - 2026-07-23
 
 ### Added
