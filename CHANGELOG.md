@@ -2,6 +2,24 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.18] - 2026-07-23
+
+### Fixed
+
+- **Import now pauses when the target Graylog journal is STUCK, not just when it
+  overflows.** Previously the throttle only reacted to the absolute backlog
+  (slow ≥ 100K, pause ≥ 500K, stop ≥ 1M). Now:
+  - **Stuck (not draining):** an elevated backlog that isn't shrinking versus the
+    previous sample escalates from *slow* to *pause* — we stop piling on a journal
+    Graylog can't commit to OpenSearch.
+  - **Journal unreadable mid-import:** if the journal check worked before and then
+    fails (target unreachable/erroring), the import pauses (fail-safe) and
+    auto-resumes when it recovers — instead of blasting on blind. A target that
+    never exposed the journal endpoint is exempt (no deadlock; import runs at the
+    user rate with a one-time warning).
+  - **Check cadence is message-based (~every 5000 msgs)** instead of a fixed 10
+    batches, so a large batch size no longer leaves a big blind window.
+
 ## [1.13.17] - 2026-07-23
 
 ### Added

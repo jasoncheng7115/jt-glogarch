@@ -69,6 +69,10 @@ class JournalMonitor:
         self.ssh_key_path = ssh_key_path
         self.journal_path = journal_path
         self._ssh_client = None
+        # Trend/health state for stuck-journal detection.
+        self._last_uncommitted: int | None = None
+        self._ever_available: bool = False
+        self._warned_no_journal: bool = False
 
     async def check(self) -> JournalStatus:
         """Get current journal status."""
@@ -227,15 +231,34 @@ class JournalMonitor:
     _SEVERITY = {"normal": 0, "slow": 1, "pause": 2, "stop": 3}
 
     def recommend_action(self, status: JournalStatus) -> str:
-        """Return recommended action from BOTH the journal backlog and the target
-        Graylog's JVM heap — whichever is more severe wins.
+        """Return recommended action from the journal backlog, whether it is
+        DRAINING, and the target Graylog's JVM heap — most severe wins.
 
         Returns: "normal", "slow", "pause", "stop"
         """
-        if not status.available:
-            return "normal"  # Can't check, proceed at user-set rate
+        # Monitoring disabled -> honor the user's fixed rate.
+        if self.mode == "none":
+            return "normal"
 
-        # Journal-backlog tier
+        if status.available:
+            self._ever_available = True
+        else:
+            # Monitoring is ON but the check FAILED. If it NEVER succeeded, the
+            # journal endpoint is probably just unavailable on this target — don't
+            # deadlock the import; fall back to the user's rate (warn once). If it
+            # worked before and now fails, the target likely went unreachable or
+            # stuck: fail-safe PAUSE (re-checks and auto-resumes when it recovers).
+            if not self._ever_available:
+                if not self._warned_no_journal:
+                    log.warning("Journal endpoint unreachable; import proceeds at user "
+                                "rate without journal throttling", error=status.error)
+                    self._warned_no_journal = True
+                return "normal"
+            log.warning("Journal check failed mid-import (target unreachable/stuck) — "
+                        "pausing until it recovers", error=status.error)
+            return "pause"
+
+        # Journal-backlog tier (absolute)
         if status.uncommitted >= self.THRESHOLD_STOP:
             action = "stop"
         elif status.uncommitted >= self.THRESHOLD_PAUSE:
@@ -244,6 +267,14 @@ class JournalMonitor:
             action = "slow"
         else:
             action = "normal"
+
+        # NOT-DRAINING escalation: an elevated backlog that is not shrinking versus
+        # the previous sample means the journal is stuck (Graylog isn't committing
+        # to OpenSearch) — pause instead of merely slowing, so we stop piling on.
+        prev = self._last_uncommitted
+        self._last_uncommitted = status.uncommitted
+        if action == "slow" and prev is not None and status.uncommitted >= prev:
+            action = "pause"
 
         # JVM heap tier
         hp = status.heap_percent

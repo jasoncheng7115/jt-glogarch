@@ -451,8 +451,12 @@ class Importer:
                                 break
 
                             # --- Journal monitoring ---
+                            # Check on a ~5000-message cadence (not a fixed batch
+                            # count) so a large batch size doesn't leave a huge blind
+                            # window where a stuck journal could balloon unnoticed.
                             check_interval += 1
-                            if self.journal_monitor and check_interval % 10 == 0:
+                            _check_every = max(1, 5000 // max(1, fc.batch_size))
+                            if self.journal_monitor and check_interval % _check_every == 0:
                                 status = await self.journal_monitor.check()
                                 fc.journal_status = status
                                 action = self.journal_monitor.recommend_action(status)
