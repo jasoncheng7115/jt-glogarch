@@ -2,6 +2,29 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.23] - 2026-07-23
+
+### Added
+
+- **"Relieve target Graylog" — a one-click, non-destructive way to unstick a
+  wedged target.** When a large import backs up the target Graylog (journal
+  piling up, a ring buffer stuck near capacity, or a write index that won't
+  accept writes), operators can now relieve it without touching any message
+  data. It **cycles the write index** (rotates the deflector so a fresh index
+  takes writes) and **rebuilds index ranges** (fixes "data present but Search
+  finds nothing"), then shows a before/after snapshot of the journal and
+  buffers so you can see it draining. It **never deletes messages, indices, or
+  index sets** — a confirmation dialog states this. Available in two places: on
+  the **import progress screen** (relieve the import's own target mid-run) and
+  next to each server in **Settings** (routine maintenance). New endpoint
+  `POST /api/graylog/flush`; a configured server and an ad-hoc import target are
+  both supported (import-target secrets reconcile against stored defaults).
+- **Release gate now includes a headless-browser UI smoke** (`scripts/ui-smoke.py`):
+  a real headless Chromium loads the UI, asserts i18n is wired, switches to
+  zh-TW, and HARD-FAILS on any uncaught page/console error. `node --check`
+  catches only JavaScript *syntax* errors; this also catches runtime/render
+  breakage.
+
 ## [1.13.22] - 2026-07-23
 
 ### Fixed

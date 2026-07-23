@@ -3326,6 +3326,7 @@ function renderServersTable(data) {
             <td>${defCell}</td>
             <td>
                 <button class="btn-sm btn-secondary" data-act="testGraylogServer" data-arg="${esc(s.name)}">${icon('refresh', 14)} ${t('btn_test_connection')}</button>
+                <button class="btn-sm btn-secondary" data-act="flushServer" data-arg="${esc(s.name)}" title="${esc(t('flush_target_hint'))}">${icon('refresh', 14)} ${t('flush_server')}</button>
                 <button class="btn-sm btn-secondary" data-act="openServerModal" data-arg="${esc(s.name)}" data-icon-btn>${icon('lock', 14)} ${t('btn_edit')}</button>
                 <button class="btn-sm btn-danger" data-act="deleteServer" data-arg="${esc(s.name)}">${icon('trash', 14)} ${t('btn_delete')}</button>
             </td>
@@ -3500,6 +3501,62 @@ async function setDefaultServer(name) {
     });
     if (r.error) { showAlert(r.error); return; }
     loadSettingsPage();
+}
+
+// --- Non-destructive "relieve / flush" a wedged target Graylog --------------
+// Renders the before/after backpressure snapshot + per-action outcome. NEVER
+// deletes data — the backend only cycles the write index and rebuilds ranges.
+function _flushResultHtml(r) {
+    if (!r || r.error) {
+        return `<span class="status-failed">${t('flush_failed')}</span> ${esc((r && r.error) || t('unknown_error'))}`;
+    }
+    const actName = n => n === 'cycle_deflector' ? t('flush_action_cycle')
+        : (n === 'rebuild_index_ranges' ? t('flush_action_rebuild') : n);
+    const acts = (r.actions || []).map(a => {
+        const cls = a.status === 'ok' ? 'status-completed' : 'status-failed';
+        const detail = a.status === 'ok' ? '' : ` — ${esc(a.detail || '')}`;
+        return `<div><span class="${cls}">${esc(actName(a.name))}</span>${detail}</div>`;
+    }).join('');
+    const b = r.before || {}, af = r.after || {};
+    const delta = (before, after) => {
+        if (before == null || after == null) return '';
+        const d = after - before;
+        return ` <span class="u030">(${before} → ${after}${d ? (d < 0 ? ' ▼' : ' ▲') : ''})</span>`;
+    };
+    const snap = (Object.keys(b).length || Object.keys(af).length)
+        ? `<div class="u030" style="margin-top:6px">
+             ${t('flush_journal')}:${delta(b.journal_uncommitted, af.journal_uncommitted)}<br>
+             ${t('flush_buffers')}:${delta(b.buffer_process, af.buffer_process)} /${delta(b.buffer_output, af.buffer_output)}
+           </div>` : '';
+    const head = r.ok ? `<span class="status-completed">${t('flush_done')}</span>`
+        : `<span class="status-failed">${t('flush_failed')}</span>`;
+    return `${head}${acts}${snap}`;
+}
+
+async function flushServer(name) {
+    showConfirm(t('flush_confirm_title'), t('flush_confirm_msg'), async () => {
+        const el = document.getElementById('servers-result') || document.getElementById('config-servers-result');
+        if (el) el.innerHTML = `<span class="u022">${esc(name)} — ${t('flush_running')}</span>`;
+        const r = await fetchJSON(`${API}/graylog/flush`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ server: name }),
+        });
+        const html = `${esc(name)} — ${_flushResultHtml(r)}`;
+        if (el) el.innerHTML = html; else showAlert(html.replace(/<[^>]+>/g, ''));
+    });
+}
+
+async function flushImportTarget() {
+    showConfirm(t('flush_confirm_title'), t('flush_confirm_msg'), async () => {
+        const el = document.getElementById('modal-import-result');
+        if (el) el.innerHTML = `<span class="u022">${t('flush_running')}</span>`;
+        // Empty body → backend uses the stored import-default target creds.
+        const r = await fetchJSON(`${API}/graylog/flush`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+        });
+        if (el) el.innerHTML = _flushResultHtml(r);
+        else showAlert(_flushResultHtml(r).replace(/<[^>]+>/g, ''));
+    });
 }
 
 async function saveExportMode(mode) {

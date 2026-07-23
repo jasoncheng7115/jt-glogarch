@@ -396,6 +396,9 @@
                         <button class="btn-sm btn-danger" id="import-cancel-btn" data-act="cancelActiveImport" data-i18n="btn_cancel" data-icon="close">Cancel</button>
                         <!-- Close but keep importing in the background. -->
                         <button class="btn-sm btn-secondary" id="import-bg-close-btn" data-act="closeImportModal" data-i18n="btn_close_background" data-icon="close" title="" data-i18n-title="btn_close_background_hint">Close (keep running)</button>
+                        <!-- Non-destructive relief for a wedged target Graylog
+                             (cycle write index + rebuild ranges). Never deletes data. -->
+                        <button class="btn-sm btn-secondary" id="import-flush-btn" data-act="flushImportTarget" data-i18n="flush_target" data-icon="refresh" title="" data-i18n-title="flush_target_hint">Relieve target Graylog</button>
                         <span class="u085" id="import-journal-badge"></span>
                     </div>
                     <!-- Shown after the import finishes (import-controls is hidden). -->

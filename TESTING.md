@@ -9,9 +9,24 @@ This checklist must pass before every release. Run `pytest` from the project roo
 > i18n string) ships undetected and breaks the whole UI (falls back to English,
 > Settings renders blank). `scripts/run-tests.sh` runs `node --check` on every JS
 > file and HARD-FAILS the release on error. Always `node --check` after editing JS.
+>
+> **Headless UI smoke (mandatory):** `node --check` catches *syntax* errors only.
+> A real headless Chromium must also load the running UI and confirm it renders —
+> `scripts/ui-smoke.py` loads the login page, asserts `typeof t === 'function'`,
+> switches to zh-TW, and fails on ANY uncaught `pageerror`/console error. Point it
+> at your live deploy target (credential-free pre-auth checks catch the i18n class;
+> pass `localadmin` creds for the post-login Settings-renders check):
+> ```bash
+> python3 scripts/ui-smoke.py https://192.0.2.36:8990            # pre-auth
+> python3 scripts/ui-smoke.py https://192.0.2.36:8990 localadmin '<pw>'  # +Settings
+> ```
+> `run-tests.sh` runs this automatically against `UI_SMOKE_URL` (default
+> `https://localhost:8990`) and HARD-FAILS on a broken UI. **Every release must show
+> both `JS syntax check: OK` and `UI smoke (...): OK` before push.**
 
 ```bash
-./scripts/run-tests.sh
+# run against a live instance so the UI smoke has a target
+UI_SMOKE_URL=https://192.0.2.36:8990 ./scripts/run-tests.sh
 ```
 
 ---

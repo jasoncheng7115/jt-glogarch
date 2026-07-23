@@ -2348,6 +2348,71 @@ async def test_config_import_defaults(request: Request):
         return {"connected": False, "error": sanitize(str(e))}
 
 
+@router.post("/graylog/flush")
+async def flush_target_graylog(request: Request):
+    """Non-destructive 'relieve / flush' a wedged target Graylog. NEVER deletes
+    data — cycles the write index (deflector) and/or rebuilds index ranges, with
+    before/after backpressure snapshots.
+
+    Two contexts, both supported:
+      * ``{"server": "<name>"}`` — a configured server (Settings server list).
+      * ``{"target_api_url": ..., "target_api_token"/"username"/"password": ...}``
+        — an import target (import progress screen); secrets reconciled against
+        the stored import defaults so a masked field still works.
+    """
+    from glogarch.graylog.maintenance import GraylogFlusher
+    from glogarch.utils.netguard import ssrf_block_reason
+    from glogarch.core.config_writer import reconcile_secret
+    from glogarch.utils.sanitize import sanitize
+
+    body = await request.json()
+    settings = _settings(request)
+    index_set_id = (body.get("index_set_id") or "").strip() or None
+    do_cycle = body.get("do_cycle", True)
+    do_rebuild = body.get("do_rebuild", True)
+
+    server_name = (body.get("server") or "").strip()
+    if server_name:
+        # get_server() falls back to servers[0] for an unknown name, which would
+        # silently flush the WRONG server — validate the name matches exactly.
+        srv = next((s for s in settings.servers if s.name == server_name), None)
+        if srv is None:
+            return JSONResponse({"error": f"Unknown server: {server_name}"}, status_code=404)
+        url, token = srv.url, (srv.auth_token or "")
+        username, password, verify_ssl = (srv.username or ""), (srv.password or ""), srv.verify_ssl
+    else:
+        ic = settings.import_config
+        url = (body.get("target_api_url") or "").strip() or (ic.target_api_url or "")
+        token = reconcile_secret(body.get("target_api_token"), ic.target_api_token) or ""
+        username = (body.get("target_api_username") or "").strip() or (ic.target_api_username or "")
+        password = reconcile_secret(body.get("target_api_password"), ic.target_api_password) or ""
+        verify_ssl = False
+
+    if not url:
+        return JSONResponse({"error": "target_api_url or server is required"}, status_code=400)
+    _reason = ssrf_block_reason(url)
+    if _reason:
+        return JSONResponse({"ok": False, "error": _reason}, status_code=400)
+    if not token and not (username and password):
+        return JSONResponse({"ok": False, "error": "Provide a token or username + password"},
+                            status_code=400)
+
+    flusher = GraylogFlusher(
+        api_url=url, api_token=token, api_username=username,
+        api_password=password, verify_ssl=verify_ssl,
+    )
+    try:
+        report = await flusher.flush(index_set_id=index_set_id,
+                                     do_cycle=bool(do_cycle), do_rebuild=bool(do_rebuild))
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": sanitize(str(e))}, status_code=500)
+
+    acts = ",".join(a["name"] + ":" + a["status"] for a in report.get("actions", []))
+    _audit(request, "graylog_flush",
+           f"target={url} index_set={report.get('index_set_id')} actions=[{acts}]")
+    return report
+
+
 @router.post("/config/admin-password")
 async def save_admin_password(request: Request):
     """Set or clear the emergency local admin password (authenticated).

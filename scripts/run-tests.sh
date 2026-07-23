@@ -35,6 +35,27 @@ else
     echo "⚠ node not found — SKIPPING JS syntax check (install node to gate JS)."
 fi
 
+# --- Headless UI smoke ------------------------------------------------------
+# node --check catches JS *syntax* errors; this drives a REAL headless browser
+# against a running instance to catch RUNTIME/render breakage (i18n not
+# applying, Settings blank, uncaught pageerror). Needs a live URL: UI_SMOKE_URL
+# env, else localhost:8990. Hard-fails if reachable and broken; loud reminder if
+# no instance is reachable (can't fail the build on infra absence).
+UI_URL="${UI_SMOKE_URL:-https://localhost:8990}"
+UI_OUT=$(timeout 150 python3 scripts/ui-smoke.py "$UI_URL" ${UI_SMOKE_USER:+"$UI_SMOKE_USER" "$UI_SMOKE_PASS"} 2>&1)
+UI_RC=$?
+if echo "$UI_OUT" | grep -q "RESULT: OK"; then
+    echo "UI smoke ($UI_URL): OK"
+elif echo "$UI_OUT" | grep -q "RESULT: FAIL"; then
+    echo "❌ UI SMOKE FAILED — refusing to release:"
+    echo "$UI_OUT"
+    exit 1
+else
+    echo "⚠ UI smoke could NOT run against $UI_URL (instance unreachable)."
+    echo "  MANDATORY before release: point it at your deploy target, e.g."
+    echo "    python3 scripts/ui-smoke.py https://192.0.2.36:8990"
+fi
+
 # Run pytest and capture output (NO_COLOR disables ANSI escape codes).
 # IMPORTANT: pytest's exit code is captured BEFORE the ANSI strip pipe.
 # Previous "pytest | sed" form put $? on sed (always 0) so failures were
