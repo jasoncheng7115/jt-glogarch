@@ -2,6 +2,14 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.32] - 2026-07-24
+
+### Fixed
+
+- **Reports and System Logs shared the same sidebar icon.** Both used the
+  horizontal-lines `log` icon. Reports now has its own bar-chart icon (nav item,
+  page header, and the Report Definitions section).
+
 ## [1.13.31] - 2026-07-23
 
 ### Changed

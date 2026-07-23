@@ -23,7 +23,7 @@
             <li><a href="/notify-settings" class="{% if page == 'notify-settings' %}active{% endif %}" data-i18n="nav_notify_settings" data-icon="bell"><span>Notify</span></a></li>
             <li><a href="/logs" class="{% if page == 'logs' %}active{% endif %}" data-i18n="nav_logs" data-icon="log"><span>Sys Logs</span></a></li>
             <li><a href="/op-audit" class="{% if page == 'op-audit' %}active{% endif %}" data-i18n="nav_op_audit" data-icon="shield"><span>Operation Audit</span></a></li>
-            <li><a href="/reports" class="{% if page == 'reports' %}active{% endif %}" data-i18n="nav_reports" data-icon="log"><span>Reports</span></a></li>
+            <li><a href="/reports" class="{% if page == 'reports' %}active{% endif %}" data-i18n="nav_reports" data-icon="report"><span>Reports</span></a></li>
             <li><a href="/settings" class="{% if page == 'settings' %}active{% endif %}" data-i18n="nav_settings" data-icon="settings"><span>Settings</span></a></li>
         </ul>
         <div id="sidebar-job-status" class="sidebar-job-status hidden">
@@ -746,13 +746,13 @@
         </details>
 
         {% elif page == 'reports' %}
-        <h1><span data-i18n="page_reports" data-icon="log">Reports</span> <span class="report-beta">BETA</span></h1>
+        <h1><span data-i18n="page_reports" data-icon="report">Reports</span> <span class="report-beta">BETA</span></h1>
         <div class="text-muted fs-085 mb15" data-i18n="reports_subtitle">Generate branded PDF reports from Graylog dashboards and archive statistics — schedule and email delivery.</div>
         <div id="reports-engine-warn" class="hidden mb15"></div>
 
         <div class="section">
             <div class="u043">
-                <h2 data-i18n="reports_defs" data-icon="log">Report Definitions</h2>
+                <h2 data-i18n="reports_defs" data-icon="report">Report Definitions</h2>
                 <button class="btn-primary btn-sm" data-act="openReportModal" data-i18n="reports_add" data-icon="plus">New Report</button>
             </div>
             <table id="reports-table">
