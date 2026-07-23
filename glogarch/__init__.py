@@ -1,3 +1,3 @@
 """Glogarch - Graylog Open Archive tool."""
 
-__version__ = "1.13.30"
+__version__ = "1.13.31"

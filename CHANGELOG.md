@@ -2,6 +2,21 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.31] - 2026-07-23
+
+### Changed
+
+- **OpenSearch-direct export progress no longer regresses on multi-index-set
+  runs.** The export now scans/plans EVERY index set up front (phase A) and sets
+  one stable total, then exports (phase B). Previously the denominator grew as
+  each index set was reached, so the % bar could jump backwards. It's now
+  monotonic. (Trade-off: a brief "scanning" phase up front before the first
+  archive is written.)
+- **Cross-page "select all matching" now selects only COMPLETED archives.** It
+  resolves the exact id set via `status=completed` so batch import/delete never
+  act on corrupted / missing / in-progress rows, and the count shown reflects the
+  true actionable number.
+
 ## [1.13.30] - 2026-07-23
 
 ### Fixed

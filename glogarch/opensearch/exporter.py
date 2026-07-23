@@ -125,15 +125,13 @@ class OpenSearchExporter:
                 guard = HealthGuard(None, self.export_config, progress_callback)  # disabled
 
             async with OpenSearchClient(self.os_config) as os_client:
-                # Grand total docs to export, ACCUMULATED across every prefix
-                # (index set). The job's denominator (messages_total) and the
-                # progress % must use this cumulative total — NOT a single
-                # prefix's count. `result.messages_total` (the numerator) is
-                # cumulative across all prefixes, so if the denominator were reset
-                # per-prefix the display would read "214M of 21M" (done > total)
-                # and the bar would pin at 99% once a later, smaller index set is
-                # reached. Accumulating keeps done <= total for the whole run.
+                # === PHASE A (plan): scan / filter / dedup / count EVERY prefix
+                # (index set) UP FRONT so the progress denominator is STABLE for
+                # the whole run. Accumulating per-prefix (the previous approach)
+                # kept done <= total but made the % bar regress each time a new
+                # index set was reached; pre-scanning gives one fixed grand total.
                 grand_total_docs = 0
+                export_plan = []  # flat: (prefix, index_name, idx_from, idx_to, docs_count)
                 for prefix in prefixes:
                     if self._cancelled:
                         break
@@ -144,11 +142,8 @@ class OpenSearchExporter:
 
                     # List all indices for this prefix
                     indices = await os_client.list_indices(prefix)
-                    total_indices = len(indices)
+                    log.info("Found indices", prefix=prefix, count=len(indices))
 
-                    log.info("Found indices", prefix=prefix, count=total_indices)
-
-                    # Filter: exclude active, empty, get time ranges
                     # First pass: filter out active/empty indices quickly
                     scan_list = []
                     for idx_info in indices:
@@ -160,7 +155,6 @@ class OpenSearchExporter:
                             continue
                         scan_list.append(idx_info)
 
-                    # Report scanning phase to UI
                     if progress_callback:
                         progress_callback({
                             "phase": "scanning",
@@ -198,7 +192,6 @@ class OpenSearchExporter:
                                             min_ts=min_ts, max_ts=max_ts)
                                 continue
                             candidates.append((index_name, idx_from, idx_to, idx_info["docs_count"]))
-                        # Report scan progress
                         if progress_callback:
                             scanned = min(i + batch_size, len(scan_list))
                             progress_callback({
@@ -209,14 +202,12 @@ class OpenSearchExporter:
 
                     # Apply keep_indices limit (keep most recent N indices)
                     if keep_indices and keep_indices > 0:
-                        # Sort by idx_to descending (newest first), take N
                         candidates.sort(key=lambda x: x[2], reverse=True)
                         selected = candidates[:keep_indices]
-                        selected.sort(key=lambda x: x[1])  # Re-sort by time ascending for export order
+                        selected.sort(key=lambda x: x[1])  # ascending for export order
                         log.info("Keep indices filter", keep=keep_indices,
                                  total_candidates=len(candidates), selected=len(selected))
                     else:
-                        # Fallback: time range filter
                         selected = []
                         for c in candidates:
                             if c[2] < time_from or c[1] > time_to:
@@ -224,10 +215,9 @@ class OpenSearchExporter:
                                 continue
                             selected.append(c)
 
-                    # Dedup check
-                    export_list = []
+                    # Dedup check + accurate _count → add survivors to the plan.
                     total_selected = len(selected)
-                    for check_idx, (index_name, idx_from, idx_to, docs_count) in enumerate(selected):
+                    for index_name, idx_from, idx_to, docs_count in selected:
                         log.info("Index time range",
                                  index=index_name, idx_from=str(idx_from), idx_to=str(idx_to),
                                  docs=docs_count)
@@ -239,8 +229,7 @@ class OpenSearchExporter:
                             log.info("Index already exported, skipping", index=index_name)
                             if progress_callback:
                                 progress_callback({
-                                    "phase": "dedup",
-                                    "pct": 0,
+                                    "phase": "dedup", "pct": 0,
                                     "detail": f"skipped {result.chunks_skipped}/{total_selected} indices (archived)",
                                 })
                             continue
@@ -251,80 +240,71 @@ class OpenSearchExporter:
                                      coverage_pct=f"{coverage * 100:.0f}%", index=index_name)
                             if progress_callback:
                                 progress_callback({
-                                    "phase": "dedup",
-                                    "pct": 0,
+                                    "phase": "dedup", "pct": 0,
                                     "detail": f"skipped {result.chunks_skipped}/{total_selected} indices (archived)",
                                 })
                             continue
-                        export_list.append((index_name, idx_from, idx_to, docs_count))
-
-                    total_to_export = len(export_list)
-                    # Get accurate doc counts via _count API (not _cat which includes deleted docs)
-                    accurate_list = []
-                    for idx_name, idx_from, idx_to, cat_count in export_list:
+                        # Accurate doc count via _count (not _cat which includes deleted docs)
                         try:
-                            resp = await os_client.post(f"/{idx_name}/_count", json={"query": {"match_all": {}}})
-                            real_count = resp.get("count", cat_count)
+                            resp = await os_client.post(f"/{index_name}/_count", json={"query": {"match_all": {}}})
+                            real_count = resp.get("count", docs_count)
                         except Exception:
-                            real_count = cat_count
-                        accurate_list.append((idx_name, idx_from, idx_to, real_count))
-                    export_list = accurate_list
-                    prefix_total_docs = sum(e[3] for e in export_list)
-                    # Accumulate into the grand total; the denominator is the sum
-                    # across all prefixes processed so far, never a single prefix.
-                    grand_total_docs += prefix_total_docs
-                    total_docs = grand_total_docs
-                    log.info("Indices to export", count=total_to_export,
-                             prefix_total_docs=prefix_total_docs, grand_total_docs=grand_total_docs)
-                    self.db.update_job(job_id, messages_total=grand_total_docs)
+                            real_count = docs_count
+                        export_plan.append((prefix, index_name, idx_from, idx_to, real_count))
+                        grand_total_docs += real_count
 
-                    # Second pass: export
-                    for idx_num, (index_name, idx_from, idx_to, docs_count) in enumerate(export_list):
-                        if self._cancelled:
-                            break
+                # Stable denominator, set ONCE before any export writes.
+                total_docs = grand_total_docs
+                total_to_export = len(export_plan)
+                self.db.update_job(job_id, messages_total=grand_total_docs)
+                log.info("Export plan built", indices=total_to_export,
+                         grand_total_docs=grand_total_docs, prefixes=len(prefixes))
 
-                        # Pause here if Graylog ingestion is backing up.
-                        await guard.checkpoint({
-                            "phase": "exporting", "index": index_name,
+                # === PHASE B (export): every planned index against the STABLE total.
+                for idx_num, (prefix, index_name, idx_from, idx_to, docs_count) in enumerate(export_plan):
+                    if self._cancelled:
+                        break
+
+                    # Pause here if Graylog ingestion is backing up.
+                    await guard.checkpoint({
+                        "phase": "exporting", "index": index_name,
+                        "messages_done": result.messages_total,
+                        "messages_total": total_docs,
+                        "pct": (idx_num / max(total_to_export, 1)) * 100,
+                    })
+
+                    if progress_callback:
+                        progress_callback({
+                            "phase": "exporting",
+                            "pct": (idx_num / max(total_to_export, 1)) * 100,
+                            "index": index_name,
                             "messages_done": result.messages_total,
                             "messages_total": total_docs,
-                            "pct": (idx_num / max(total_to_export, 1)) * 100,
+                            "detail": f"querying {index_name} ({docs_count:,} docs)...",
                         })
 
-                        # Report start of index export
-                        if progress_callback:
-                            progress_callback({
-                                "phase": "exporting",
-                                "pct": (idx_num / max(total_to_export, 1)) * 100,
-                                "index": index_name,
-                                "messages_done": result.messages_total,
-                                "messages_total": total_docs,
-                                "detail": f"querying {index_name} ({docs_count:,} docs)...",
-                            })
+                    try:
+                        msgs = await self._export_index(
+                            os_client, index_name, prefix,
+                            idx_from, idx_to,
+                            idx_num, total_to_export,
+                            progress_callback, result,
+                            job_id, total_docs, guard=guard,
+                        )
+                        result.chunks_exported += 1
+                        result.messages_total += msgs
+                    except _FatalExportError:
+                        raise  # disk full etc. — abort the whole run
+                    except Exception as e:
+                        err = f"Index {index_name} failed: {e}"
+                        log.error(err)
+                        result.errors.append(err)
 
-                        # Export this index
-                        try:
-                            msgs = await self._export_index(
-                                os_client, index_name, prefix,
-                                idx_from, idx_to,
-                                idx_num, total_to_export,
-                                progress_callback, result,
-                                job_id, total_docs, guard=guard,
-                            )
-                            result.chunks_exported += 1
-                            result.messages_total += msgs
-                        except _FatalExportError:
-                            raise  # disk full etc. — abort the whole run
-                        except Exception as e:
-                            err = f"Index {index_name} failed: {e}"
-                            log.error(err)
-                            result.errors.append(err)
-
-                        # Periodic disk check
-                        if (idx_num + 1) % 5 == 0:
-                            has_space, _ = self.storage.check_disk_space()
-                            if not has_space:
-                                raise RuntimeError("Disk space exhausted during export")
+                    # Periodic disk check
+                    if (idx_num + 1) % 5 == 0:
+                        has_space, _ = self.storage.check_disk_space()
+                        if not has_space:
+                            raise RuntimeError("Disk space exhausted during export")
 
             # Build completion note with skip + failure info. A failed index is
             # not recorded, so it retries next run — but the operator must still

@@ -540,6 +540,7 @@ async function _loadArchivesInner(page) {
     const newFilter = {server: server || '', stream: stream || '', time_from: from || '', time_to: to || ''};
     if (JSON.stringify(newFilter) !== JSON.stringify(_archiveFilter)) {
         _selectAllPages = false;
+        _selectAllIds = null;
         const _sa = document.getElementById('archive-select-all'); if (_sa) _sa.checked = false;
     }
     _archiveFilter = newFilter;
@@ -645,6 +646,7 @@ function initColumnSettings() {
 let _selectAllPages = false;   // true = "all archives matching the current filter"
 let _archiveFilter = {};       // the filter the current list was loaded with
 let _archiveTotal = 0;         // total archives matching that filter (all pages)
+let _selectAllIds = null;      // resolved COMPLETED ids when cross-page select is active
 
 // Header checkbox: select/deselect the CURRENT page. A plain click no longer
 // needs Shift — if more rows match the filter than are on this page, the
@@ -656,8 +658,22 @@ function toggleArchiveSelectAll(evt) {
     onArchiveCheckChange();
 }
 
-// Cross-page: select EVERY archive matching the active filter (all pages).
-function selectAllMatching() {
+// Cross-page: select every COMPLETED archive matching the active filter (all
+// pages). Scoped to status=completed so batch import/delete never act on
+// corrupted/missing/importing rows the user didn't intend. One request resolves
+// the exact id set, which the count then reflects truthfully.
+async function selectAllMatching() {
+    const p = new URLSearchParams({status: 'completed'});
+    if (_archiveFilter.server) p.set('server', _archiveFilter.server);
+    if (_archiveFilter.stream) p.set('stream', _archiveFilter.stream);
+    if (_archiveFilter.time_from) p.set('time_from', _archiveFilter.time_from);
+    if (_archiveFilter.time_to) p.set('time_to', _archiveFilter.time_to);
+    const count = document.getElementById('batch-count');
+    if (count) count.innerHTML = `<span class="u022">${t('loading')}…</span>`;
+    try {
+        const data = await fetchJSON(`${API}/archives/ids?${p}`);
+        _selectAllIds = data.ids || [];
+    } catch (e) { _selectAllIds = []; }
     _selectAllPages = true;
     document.querySelectorAll('.archive-check').forEach(cb => cb.checked = true);
     const sa = document.getElementById('archive-select-all'); if (sa) sa.checked = true;
@@ -666,6 +682,7 @@ function selectAllMatching() {
 
 function clearArchiveSelection() {
     _selectAllPages = false;
+    _selectAllIds = null;
     document.querySelectorAll('.archive-check').forEach(cb => cb.checked = false);
     const sa = document.getElementById('archive-select-all'); if (sa) sa.checked = false;
     onArchiveCheckChange();
@@ -681,7 +698,7 @@ function onArchiveCheckChange() {
         if (_selectAllPages) {
             // whole filtered set selected — show the real total + a clear link
             count.innerHTML =
-                `<strong class="u030">${t('sel_all_matching_active').replace('{n}', formatNumber(_archiveTotal))}</strong> · ` +
+                `<strong class="u030">${t('sel_all_matching_active').replace('{n}', formatNumber(_selectAllIds ? _selectAllIds.length : _archiveTotal))}</strong> · ` +
                 `<a data-act="clearArchiveSelection" class="link-inline">${t('sel_clear')}</a>`;
         } else if (checked.length > 0 && _archiveTotal > checked.length) {
             // more rows match than are on this page — offer cross-page select
@@ -698,17 +715,10 @@ function onArchiveCheckChange() {
 }
 
 async function getSelectedArchiveIds() {
-    if (_selectAllPages) {
-        // One request returns EVERY id matching the active filter (server /
-        // stream / time range) — not the whole archive store, and no per-page walk.
-        const p = new URLSearchParams();
-        if (_archiveFilter.server) p.set('server', _archiveFilter.server);
-        if (_archiveFilter.stream) p.set('stream', _archiveFilter.stream);
-        if (_archiveFilter.time_from) p.set('time_from', _archiveFilter.time_from);
-        if (_archiveFilter.time_to) p.set('time_to', _archiveFilter.time_to);
-        const data = await fetchJSON(`${API}/archives/ids?${p}`);
-        return data.ids || [];
-    }
+    // Cross-page selection returns the COMPLETED ids already resolved by
+    // selectAllMatching() (scoped to the active filter) — no per-page walk, and
+    // never the whole archive store or non-completed rows.
+    if (_selectAllPages) return _selectAllIds || [];
     return Array.from(document.querySelectorAll('.archive-check:checked')).map(c => parseInt(c.value));
 }
 
@@ -810,6 +820,7 @@ async function batchDelete() {
             }
             // Reset
             _selectAllPages = false;
+            _selectAllIds = null;
             const selectAll = document.getElementById('archive-select-all');
             if (selectAll) selectAll.checked = false;
             onArchiveCheckChange();
