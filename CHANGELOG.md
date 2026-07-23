@@ -2,6 +2,22 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.24] - 2026-07-23
+
+### Changed
+
+- **The systemd memory cap is now SOFT-only (`MemoryHigh`), never a hard kill.**
+  Previously the shipped unit / upgrade drop-in also set a hard `MemoryMax=4G`,
+  which would let the kernel OOM-kill jt-glogarch's whole cgroup — and the PDF-report
+  Chromium runs in that same cgroup, so a heavy report render could be killed.
+  Now only `MemoryHigh=3G` is set: past it the kernel throttles jt-glogarch and
+  reclaims its memory (protecting co-located OpenSearch/Graylog and the box) but
+  never kills the process. `upgrade.sh` migrates an existing hard-cap drop-in to
+  soft-only automatically. This is a backstop only — the real protection is the
+  streaming archive reader (import memory stays flat regardless of archive size:
+  measured ~47 MB for a 500k-message archive vs ~545 MB for the old full-load) plus
+  the import memory guard, both already shipped.
+
 ## [1.13.23] - 2026-07-23
 
 ### Added

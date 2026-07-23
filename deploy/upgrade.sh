@@ -206,20 +206,22 @@ if [ -f "$INSTALL_DIR/deploy/report-deps.sh" ]; then
 fi
 
 # 3b. Memory safety cap (drop-in — doesn't touch a customer-edited main unit).
-# jt-glogarch usually shares the VM with Graylog + OpenSearch; this cgroup cap
-# guarantees a runaway jt-glogarch is OOM-killed within its OWN cgroup instead of
-# taking down OpenSearch or the whole box. Only created if absent (respects overrides).
+# jt-glogarch usually shares the VM with Graylog + OpenSearch; this SOFT cgroup cap
+# throttles + reclaims a runaway jt-glogarch (protecting OpenSearch/the box) but
+# NEVER OOM-kills it — no hard MemoryMax, so heavy PDF reports (Chromium in the same
+# cgroup) aren't killed. Created if absent; an OLD hard-cap drop-in (MemoryMax) is
+# migrated to soft-only. A customer's own edit without MemoryMax is left untouched.
 DROPIN=/etc/systemd/system/${SERVICE}.service.d/memory.conf
-if [ ! -f "$DROPIN" ]; then
+if [ ! -f "$DROPIN" ] || grep -q "MemoryMax" "$DROPIN" 2>/dev/null; then
     mkdir -p "$(dirname "$DROPIN")"
     cat > "$DROPIN" <<'EOF'
 [Service]
-# Adjust for large boxes / heavy PDF-report use; lower on very small VMs.
+# SOFT cap: past MemoryHigh the kernel throttles + reclaims but never OOM-kills.
+# Raise on large boxes / heavy PDF-report use; lower on very small VMs.
 MemoryAccounting=yes
 MemoryHigh=3G
-MemoryMax=4G
 EOF
-    echo "  Installed memory-cap drop-in ($DROPIN): MemoryHigh=3G, MemoryMax=4G"
+    echo "  Installed memory-cap drop-in ($DROPIN): MemoryHigh=3G (soft, no hard kill)"
     systemctl daemon-reload
 fi
 

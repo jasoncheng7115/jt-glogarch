@@ -19,13 +19,12 @@ Environment=PYTHONUNBUFFERED=1
 
 # Memory safety cap (jt-glogarch is usually co-located with Graylog + OpenSearch on
 # ONE VM). The archive reader streams and the import has a memory guard, so normal
-# usage stays well under 1.5 GB — but this cgroup cap is a hard backstop: if
-# jt-glogarch ever ran away it is throttled at MemoryHigh and, at MemoryMax, the
-# kernel OOM-kills ONLY this service's cgroup — never OpenSearch/Graylog or the box.
-# Raise these on large boxes or heavy PDF-report use; lower them on very small VMs.
+# usage stays well under 1.5 GB. This is a SOFT cap: past MemoryHigh the kernel
+# throttles jt-glogarch and reclaims its memory (protecting OpenSearch/Graylog and
+# the box) but NEVER OOM-kills it — deliberately no hard limit, so heavy PDF
+# reports (Chromium runs in this same cgroup) are never killed. Raise on large boxes.
 MemoryAccounting=yes
 MemoryHigh=3G
-MemoryMax=4G
 
 # Security
 NoNewPrivileges=yes
