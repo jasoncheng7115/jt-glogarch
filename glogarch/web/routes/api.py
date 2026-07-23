@@ -113,6 +113,34 @@ def list_archives(
     }
 
 
+@router.get("/archives/ids")
+def list_archive_ids(
+    request: Request,
+    server: str | None = None,
+    stream: str | None = None,
+    time_from: str | None = None,
+    time_to: str | None = None,
+    status: str | None = None,
+):
+    """Return just the IDs of every archive matching the filter — for the
+    cross-page "select all matching" action, so the UI can select thousands of
+    archives across pages in ONE request instead of walking every page. Uses the
+    exact same filter as GET /archives (server / stream / time range)."""
+    db = _db(request)
+    dt_from = _parse_dt(time_from) if time_from else None
+    dt_to = _parse_dt(time_to) if time_to else None
+    try:
+        arch_status = ArchiveStatus(status) if status else None
+    except ValueError:
+        return JSONResponse({"error": f"Invalid status: {status}"}, status_code=400)
+    archives = db.list_archives(
+        server=server, stream=stream,
+        time_from=dt_from, time_to=dt_to, status=arch_status,
+    )
+    ids = [a.id for a in archives if a.id is not None]
+    return {"ids": ids, "total": len(ids)}
+
+
 @router.get("/archives/timeline")
 def get_archive_timeline(request: Request):
     """Get archive distribution by day for timeline visualization."""

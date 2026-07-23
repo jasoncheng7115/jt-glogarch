@@ -2,6 +2,26 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.27] - 2026-07-23
+
+### Added
+
+- **Cross-page "select all matching" on the Archives page.** Previously "select
+  all" only ticked the *current* page, so clicking it and Batch Import imported
+  just that page (e.g. one day) — easy to mistake for "all pages". Now, after
+  selecting a page, a discoverable link appears — **"Select all N archives
+  matching this filter"** — that selects every archive matching the active
+  filter (server / stream / time range) across all pages in one request, and a
+  count confirmation is shown before importing. Set a time range (type or drag
+  the timeline), then one click selects the whole range.
+
+### Fixed
+
+- **The hidden Shift+Select-All "all pages" mode ignored the active filter** and
+  would have selected the *entire* archive store instead of the filtered subset.
+  Cross-page selection is now always scoped to the current filter, and is
+  discoverable (no Shift needed).
+
 ## [1.13.26] - 2026-07-23
 
 ### Fixed

@@ -510,7 +510,17 @@ async function _loadArchivesInner(page) {
     if (from) params.set('time_from', from);
     if (to) params.set('time_to', to);
 
+    // Remember the ACTIVE filter so "select all matching" can span every page
+    // (and reset a cross-page selection when the filter itself changes).
+    const newFilter = {server: server || '', stream: stream || '', time_from: from || '', time_to: to || ''};
+    if (JSON.stringify(newFilter) !== JSON.stringify(_archiveFilter)) {
+        _selectAllPages = false;
+        const _sa = document.getElementById('archive-select-all'); if (_sa) _sa.checked = false;
+    }
+    _archiveFilter = newFilter;
+
     const data = await fetchJSON(`${API}/archives?${params}`);
+    _archiveTotal = data.total || 0;
     // Load stream names for display
     if (!window._streamNames) {
         try {
@@ -607,24 +617,32 @@ function initColumnSettings() {
     applyColumnSettings();
 }
 
-let _selectAllPages = false;
-let _selectAllTotal = 0;
+let _selectAllPages = false;   // true = "all archives matching the current filter"
+let _archiveFilter = {};       // the filter the current list was loaded with
+let _archiveTotal = 0;         // total archives matching that filter (all pages)
 
+// Header checkbox: select/deselect the CURRENT page. A plain click no longer
+// needs Shift — if more rows match the filter than are on this page, the
+// batch bar offers a discoverable "select all N matching" link (Gmail-style).
 function toggleArchiveSelectAll(evt) {
     const el = evt.target;
-    if (evt && evt.shiftKey && el.checked) {
-        _selectAllPages = true;
-        document.querySelectorAll('.archive-check').forEach(cb => cb.checked = true);
-        // Fetch total count
-        fetchJSON(`${API}/archives?page_size=1`).then(data => {
-            _selectAllTotal = data.total || 0;
-            onArchiveCheckChange();
-        });
-    } else {
-        _selectAllPages = false;
-        _selectAllTotal = 0;
-        document.querySelectorAll('.archive-check').forEach(cb => cb.checked = el.checked);
-    }
+    _selectAllPages = false;   // a page-level toggle always clears cross-page mode
+    document.querySelectorAll('.archive-check').forEach(cb => cb.checked = el.checked);
+    onArchiveCheckChange();
+}
+
+// Cross-page: select EVERY archive matching the active filter (all pages).
+function selectAllMatching() {
+    _selectAllPages = true;
+    document.querySelectorAll('.archive-check').forEach(cb => cb.checked = true);
+    const sa = document.getElementById('archive-select-all'); if (sa) sa.checked = true;
+    onArchiveCheckChange();
+}
+
+function clearArchiveSelection() {
+    _selectAllPages = false;
+    document.querySelectorAll('.archive-check').forEach(cb => cb.checked = false);
+    const sa = document.getElementById('archive-select-all'); if (sa) sa.checked = false;
     onArchiveCheckChange();
 }
 
@@ -636,45 +654,64 @@ function onArchiveCheckChange() {
     if (actions) actions.style.display = show ? 'flex' : 'none';
     if (count) {
         if (_selectAllPages) {
-            const total = _selectAllTotal || '...';
-            count.innerHTML = `<strong class="u030">${total} ${t('select_all_pages')}</strong>`;
+            // whole filtered set selected — show the real total + a clear link
+            count.innerHTML =
+                `<strong class="u030">${t('sel_all_matching_active').replace('{n}', formatNumber(_archiveTotal))}</strong> · ` +
+                `<a data-act="clearArchiveSelection" class="link-inline">${t('sel_clear')}</a>`;
+        } else if (checked.length > 0 && _archiveTotal > checked.length) {
+            // more rows match than are on this page — offer cross-page select
+            count.innerHTML =
+                `${checked.length} ${t('btn_selected')} · ` +
+                `<a data-act="selectAllMatching" class="link-inline"><strong>${t('sel_all_matching_offer').replace('{n}', formatNumber(_archiveTotal))}</strong></a>`;
         } else {
             count.textContent = `${checked.length} ${t('btn_selected')}`;
         }
     }
-    if (!checked.length) _selectAllPages = false;
+    if (!checked.length && !_selectAllPages) {
+        const sa = document.getElementById('archive-select-all'); if (sa) sa.checked = false;
+    }
 }
 
 async function getSelectedArchiveIds() {
     if (_selectAllPages) {
-        // Fetch ALL archive IDs across all pages
-        let allIds = [];
-        let page = 1;
-        while (true) {
-            const data = await fetchJSON(`${API}/archives?page=${page}&page_size=500`);
-            if (!data.items || data.items.length === 0) break;
-            allIds = allIds.concat(data.items.map(a => a.id));
-            if (allIds.length >= (data.total || 0)) break;
-            page++;
-        }
-        return allIds;
+        // One request returns EVERY id matching the active filter (server /
+        // stream / time range) — not the whole archive store, and no per-page walk.
+        const p = new URLSearchParams();
+        if (_archiveFilter.server) p.set('server', _archiveFilter.server);
+        if (_archiveFilter.stream) p.set('stream', _archiveFilter.stream);
+        if (_archiveFilter.time_from) p.set('time_from', _archiveFilter.time_from);
+        if (_archiveFilter.time_to) p.set('time_to', _archiveFilter.time_to);
+        const data = await fetchJSON(`${API}/archives/ids?${p}`);
+        return data.ids || [];
     }
     return Array.from(document.querySelectorAll('.archive-check:checked')).map(c => parseInt(c.value));
 }
 
 async function batchImport() {
+    const selAll = _selectAllPages;
     const ids = await getSelectedArchiveIds();
     if (ids.length === 0) return;
-    // Open import modal for batch
-    _importArchiveId = null;
-    const modal = document.getElementById('import-modal');
-    document.getElementById('modal-import-result').innerHTML = '';
-    modal.style.display = 'flex';
-    // Override doImportSingle for batch
-    window._batchImportIds = ids;
-    applyI18n();
-    _autofillImportModal();
-    _applyImportDataNodeLock();
+    const openModal = () => {
+        // Open import modal for batch
+        _importArchiveId = null;
+        const modal = document.getElementById('import-modal');
+        document.getElementById('modal-import-result').innerHTML = '';
+        modal.style.display = 'flex';
+        // Override doImportSingle for batch
+        window._batchImportIds = ids;
+        applyI18n();
+        _autofillImportModal();
+        _applyImportDataNodeLock();
+    };
+    // Surface the real count before importing a large / cross-page selection so
+    // "select all matching" can never silently queue thousands of archives.
+    if (selAll || ids.length > 100) {
+        showConfirm(t('batch_import_confirm_title'),
+            t('batch_import_confirm_msg').replace('{n}', formatNumber(ids.length)),
+            openModal);
+    } else {
+        openModal();
+    }
 }
 
 // Pre-fill the import dialog's target fields from the saved restore-target
