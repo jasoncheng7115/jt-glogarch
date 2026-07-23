@@ -69,6 +69,11 @@ class ImportConfig(BaseModel):
     gelf_protocol: str = "tcp"  # "udp" or "tcp"
     batch_size: int = 500
     delay_between_batches_ms: int = 100
+    # Local box-memory guard (jt-glogarch usually shares the VM with Graylog +
+    # OpenSearch). Pause the import when MemAvailable falls this low so a big
+    # import can't OOM-kill the box. Fail-open if /proc/meminfo is unreadable.
+    mem_pause_mb: int = 700    # MemAvailable <= this -> pause
+    mem_slow_mb: int = 1400    # MemAvailable <= this -> slow
     # Default restore target (pre-filled into the import dialog so the operator
     # doesn't retype it every time). All optional; the dialog still lets the
     # user override per-import.

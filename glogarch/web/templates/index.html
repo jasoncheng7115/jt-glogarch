@@ -282,7 +282,7 @@
                         <label data-i18n="import_rate" data-icon="clock">Batch Delay (ms)</label>
                         <div class="u037">
                             <input class="u071" type="range" id="modal-rate-ms" min="1" max="2000" value="100" data-act-input="showRateMs">
-                            <span class="u122" id="rate-display">100ms</span>
+                            <input class="u122 rate-num" type="number" id="rate-display" min="1" max="2000" value="100" data-act-change="setRateMsNum" title="ms"> ms
                         </div>
                         <small class="form-hint" data-i18n="import_rate_hint">Lower = faster. Adjust based on target Graylog capacity.</small>
                     </div>
@@ -381,7 +381,7 @@
                             <button class="btn-sm btn-secondary" id="import-pause-btn" data-i18n="btn_pause" data-state="running" data-act="toggleImportPause">Pause</button>
                             <label class="u080">
                                 <span data-i18n="import_speed">Speed</span>: <input class="u154" type="range" id="import-live-rate" min="1" max="2000" value="100" data-act-input="updateImportRate">
-                                <span id="import-live-rate-display">100ms</span>
+                                <input class="rate-num" type="number" id="import-live-rate-display" min="1" max="2000" value="100" data-act-change="updateImportRateNum" title="ms"> ms
                             </label>
                             <label class="u080 import-live-batch-label">
                                 <span data-i18n="import_batch_short">Batch</span>: <select id="import-live-batch" class="no-custom" data-act-change="updateImportBatch">

@@ -1282,7 +1282,7 @@ async function doImportSingle() {
         if (gelfControls) gelfControls.style.display = (mode === 'bulk') ? 'none' : 'flex';
         // Set live rate slider
         const liveRate = document.getElementById('import-live-rate');
-        if (liveRate) { liveRate.value = rateMs; document.getElementById('import-live-rate-display').textContent = rateMs + 'ms'; }
+        if (liveRate) { liveRate.value = rateMs; const rd = document.getElementById('import-live-rate-display'); if (rd) rd.value = rateMs; }
 
         resultEl.innerHTML = `<span class="status-completed">${t('import_started')}${esc(result.job_id.substring(0,8))} (${ids.length} ${t('import_archives_unit')})</span>`;
         watchJob(result.job_id, 'import', () => {
@@ -1338,12 +1338,27 @@ async function toggleImportPause() {
 }
 
 async function updateImportRate(val) {
-    document.getElementById('import-live-rate-display').textContent = val + 'ms';
+    const rd = document.getElementById('import-live-rate-display'); if (rd) rd.value = parseInt(val);
     if (!_activeImportJobId) return;
     await fetchJSON(`${API}/import/${_activeImportJobId}/rate`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({rate_ms: parseInt(val)}),
+    });
+}
+
+// Keyboard/numeric entry for the live import speed — clamp, sync the slider,
+// and push the new rate to the running job.
+async function updateImportRateNum(val) {
+    let n = parseInt(val, 10); if (isNaN(n)) n = 100;
+    n = Math.max(1, Math.min(2000, n));
+    const s = document.getElementById('import-live-rate'); if (s) s.value = n;
+    const rd = document.getElementById('import-live-rate-display'); if (rd) rd.value = n;
+    if (!_activeImportJobId) return;
+    await fetchJSON(`${API}/import/${_activeImportJobId}/rate`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({rate_ms: n}),
     });
 }
 
@@ -1391,6 +1406,13 @@ function startImportStatusPoll(jobId) {
                 if (bo !== null && bo !== undefined) {
                     const bc = bo >= 90 ? 'var(--danger)' : bo >= 70 ? 'var(--warning)' : 'var(--success)';
                     html += ` <span data-style="color:${bc}">· ${t('import_buffer_label')}: ${bo}%</span>`;
+                }
+                // Local box free memory — jt-glogarch shares the VM with Graylog/OS,
+                // so low free memory means the import is paused to avoid an OOM.
+                const mm = st.mem_available_mb;
+                if (mm !== null && mm !== undefined) {
+                    const mc = mm <= 700 ? 'var(--danger)' : mm <= 1400 ? 'var(--warning)' : 'var(--success)';
+                    html += ` <span data-style="color:${mc}">· ${t('import_mem_label')}: ${formatNumber(mm)}MB</span>`;
                 }
                 badge.innerHTML = html;
             }
@@ -3612,7 +3634,14 @@ async function saveAdminPassword() {
 // --- Small named helpers replacing former inline DOM-manipulation handlers ---
 function closeModalById(id) { const e = document.getElementById(id); if (e) e.style.display = 'none'; }
 function clearLogOutput() { const e = document.getElementById('log-output'); if (e) e.textContent = ''; }
-function showRateMs(v) { const e = document.getElementById('rate-display'); if (e) e.textContent = v + 'ms'; }
+function showRateMs(v) { const e = document.getElementById('rate-display'); if (e) e.value = v; }
+// Keyboard/numeric entry for the batch delay (dialog) — clamp + sync the slider.
+function setRateMsNum(v) {
+    let n = parseInt(v, 10); if (isNaN(n)) n = 100;
+    n = Math.max(1, Math.min(2000, n));
+    const s = document.getElementById('modal-rate-ms'); if (s) s.value = n;
+    const e = document.getElementById('rate-display'); if (e) e.value = n;
+}
 function copyAuditBody(btn) {
     const src = document.getElementById('audit-body-raw');
     if (!src) return;

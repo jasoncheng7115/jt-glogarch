@@ -647,6 +647,18 @@
 #import-gelf-controls .u080 { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 #import-gelf-controls #import-live-batch { width: auto; min-width: 64px; }
 
+/* Editable numeric entry for batch delay (keyboard-friendly, beside the slider) */
+.rate-num {
+    width: 62px;
+    text-align: right;
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--input-bg);
+    color: var(--text);
+    font-size: 0.9em;
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {

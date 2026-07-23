@@ -2,6 +2,31 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.13.21] - 2026-07-23
+
+### 修正
+
+- **匯入不再把整台記憶體吃爆——歸檔讀取改為真正的串流。** `ArchiveIterator` 宣稱是串流，實際卻
+  對整份歸檔做 `json.load()`：50MB 的 `.json.gz` 轉成 Python 物件會膨脹到好幾 GB，匯入大歸檔時
+  jt-glogarch 記憶體會漲到 ~12GB，被核心 OOM killer 殺掉（**「Interrupted by service restart」、
+  停在可重現的筆數**），同機部署還會連 OpenSearch 一起害到。現在改用 `raw_decode` 一次讀一筆，
+  記憶體只留約一個批次（＋256KiB 視窗）。**這是匯入 OOM 當機的根因修正。**
+- **暫停/塞住的匯入現在按取消有效。** journal 自動暫停原本是不可中斷的 30 秒 sleep，退讓期間按取消
+  沒反應；現在每秒檢查取消旗標。GELF 送出也加了 connect（15 秒）與 drain（30 秒）逾時——目標 TCP
+  緩衝滿（Graylog 塞住）時原本會無限卡在送出、取消永遠進不去；兩種情況現在都能即時取消。
+- **匯入進度記憶體洩漏。** 匯入進度事件清單無限成長（匯出早有修剪），百萬級匯入會撐大記憶體；現在
+  只留最後約 100 筆。
+
+### 新增
+
+- **匯入的本機記憶體守門。** jt-glogarch 通常與目標 Graylog＋OpenSearch 裝在同一台 VM，大匯入會吃光
+  共用記憶體觸發 OOM。匯入現在會讀 `MemAvailable`，可用記憶體過低就暫停（`import.mem_pause_mb`
+  預設 700MB；`mem_slow_mb` 預設 1400MB 放慢）。可用記憶體會即時顯示在 journal/buffer/heap 標籤旁。
+- **批次間隔改成可用鍵盤輸入的數值欄位**（對話框與進度畫面），不再只有滑桿；滑桿保留、雙向同步。
+- **systemd 記憶體上限（縱深防禦）。** 升級／安裝現在會加一個 drop-in（`MemoryHigh=3G`、
+  `MemoryMax=4G`），就算 jt-glogarch 真的失控暴衝，也只會在它「自己的 cgroup」內被 OOM 處理，
+  **絕不會拖垮同機的 OpenSearch／Graylog 或整台 VM**。大機器或大量產報表可自行調高。
+
 ## [1.13.20] - 2026-07-23
 
 ### 修正

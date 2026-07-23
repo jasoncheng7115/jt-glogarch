@@ -46,6 +46,7 @@ class ImportFlowControl:
         self._base_rate_ms: int = 100  # user-set rate before auto adjustment
         self.journal_status: JournalStatus | None = None
         self.journal_action: str = "normal"
+        self.mem_available_mb: float | None = None  # local box MemAvailable (OOM guard)
 
     def pause(self):
         self.paused = True
@@ -450,38 +451,61 @@ class Importer:
                             if fc.cancelled:
                                 break
 
-                            # --- Journal monitoring ---
+                            # --- Backpressure monitoring (target Graylog + this box)
                             # Check on a ~5000-message cadence (not a fixed batch
                             # count) so a large batch size doesn't leave a huge blind
-                            # window where a stuck journal could balloon unnoticed.
+                            # window where a stuck journal / rising memory could
+                            # balloon unnoticed.
                             check_interval += 1
                             _check_every = max(1, 5000 // max(1, fc.batch_size))
-                            if self.journal_monitor and check_interval % _check_every == 0:
-                                status = await self.journal_monitor.check()
-                                fc.journal_status = status
-                                action = self.journal_monitor.recommend_action(status)
+                            if check_interval % _check_every == 0:
+                                from glogarch.utils.memguard import mem_action, SEVERITY
+                                action = "normal"
+                                uncommitted = None
+                                if self.journal_monitor:
+                                    status = await self.journal_monitor.check()
+                                    fc.journal_status = status
+                                    action = self.journal_monitor.recommend_action(status)
+                                    uncommitted = status.uncommitted
+                                # Local box-memory guard — jt-glogarch usually shares
+                                # the VM with Graylog + OpenSearch, so a big import can
+                                # OOM-kill the box ("Interrupted by service restart").
+                                # Back off before MemAvailable runs out.
+                                mem_act, avail = mem_action(self.import_config.mem_pause_mb,
+                                                            self.import_config.mem_slow_mb)
+                                fc.mem_available_mb = avail
+                                if SEVERITY[mem_act] > SEVERITY[action]:
+                                    action = mem_act
                                 fc.journal_action = action
                                 fc.auto_rate = True
 
                                 if action == "stop":
                                     log.error("Journal overflow, stopping import",
-                                              uncommitted=status.uncommitted)
+                                              uncommitted=uncommitted)
                                     try:
                                         from glogarch.notify.sender import notify_error
                                         await notify_error("Import",
-                                            f"Graylog journal overflow: {status.uncommitted:,} uncommitted entries. "
+                                            f"Graylog journal overflow: {uncommitted:,} uncommitted entries. "
                                             f"Import stopped to prevent data loss.")
                                     except Exception:
                                         pass
                                     raise RuntimeError(
-                                        f"Graylog journal overflow ({status.uncommitted:,} uncommitted). "
+                                        f"Graylog journal overflow ({uncommitted:,} uncommitted). "
                                         f"Import stopped.")
 
                                 if action == "pause":
-                                    log.warning("Journal high, pausing import",
-                                                uncommitted=status.uncommitted)
-                                    # Auto-pause for 30s
-                                    await asyncio.sleep(30)
+                                    log.warning("Backpressure, pausing import",
+                                                reason=("memory" if mem_act == "pause" else "journal/buffer"),
+                                                journal_action=action, uncommitted=uncommitted,
+                                                mem_available_mb=avail)
+                                    # Interruptible auto-pause (~30s) — poll the cancel
+                                    # flag every second so the user can ALWAYS stop a
+                                    # paused import immediately (an uninterruptible
+                                    # sleep made Cancel look dead while backed up).
+                                    for _ in range(30):
+                                        if fc.cancelled:
+                                            break
+                                        await asyncio.sleep(1)
                                     continue  # Re-check after pause
 
                             # --- Send batch ---

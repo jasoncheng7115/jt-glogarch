@@ -467,22 +467,78 @@ class ArchiveIterator:
 
         return self.metadata
 
+    _READ_CHUNK = 262144  # 256 KiB decompressed read window
+
     def __iter__(self):
-        """Yield batches of messages. Loads file but yields in chunks to limit memory."""
-        with gzip.open(self.path, "rt", encoding="utf-8") as f:
-            data = json.load(f)
+        """Yield batches of messages, STREAMING the file so only ~batch_size
+        messages (+ a small read window) are ever in memory.
 
+        The old implementation did ``json.load(f)`` on the whole archive — a 50 MB
+        ``.json.gz`` expands to multiple GB of Python objects, which OOM-killed
+        jt-glogarch on the common same-VM deployment (import crash at a reproducible
+        message count, "Interrupted by service restart"). The on-disk format is
+        ``{"metadata": {...}, "messages": [m1, m2, ...]}`` (comma-separated objects),
+        so we skip to the messages array and pull one object at a time with
+        ``json.JSONDecoder.raw_decode``, refilling the buffer as needed.
+        """
         if self.metadata is None:
-            self.metadata = ArchiveMetadata(**data.get("metadata", {}))
+            try:
+                self.read_metadata()
+            except Exception:
+                self.metadata = ArchiveMetadata()
 
-        messages = data.get("messages", [])
-        self._total = len(messages)
+        decoder = json.JSONDecoder()
+        self._total = 0
+        with gzip.open(self.path, "rt", encoding="utf-8") as f:
+            # 1) Skip to the start of the messages array (the '[' after "messages").
+            buf = ""
+            started = False
+            while not started:
+                chunk = f.read(self._READ_CHUNK)
+                if not chunk:
+                    return  # no messages array — empty/short archive
+                buf += chunk
+                k = buf.find('"messages"')
+                if k != -1:
+                    b = buf.find('[', k)
+                    if b != -1:
+                        buf = buf[b + 1:]
+                        started = True
 
-        for i in range(0, len(messages), self.batch_size):
-            yield messages[i:i + self.batch_size]
-
-        del messages
-        del data
+            # 2) Stream message objects; only `buf` (~read window) + one batch live.
+            batch = []
+            while True:
+                # Skip whitespace / element commas between objects.
+                i, n = 0, len(buf)
+                while i < n and buf[i] in " \t\r\n,":
+                    i += 1
+                if i:
+                    buf = buf[i:]
+                if buf[:1] == "]":
+                    break  # end of messages array
+                if not buf:
+                    chunk = f.read(self._READ_CHUNK)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    continue
+                try:
+                    obj, idx = decoder.raw_decode(buf)
+                except json.JSONDecodeError:
+                    # Object straddles the buffer tail — read more and retry.
+                    chunk = f.read(self._READ_CHUNK)
+                    if not chunk:
+                        break  # truncated file — stop gracefully
+                    buf += chunk
+                    continue
+                batch.append(obj)
+                buf = buf[idx:]
+                self._total += 1
+                if len(batch) >= self.batch_size:
+                    yield batch
+                    batch = []
+            if batch:
+                yield batch
 
     @property
     def total(self) -> int:

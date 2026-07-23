@@ -205,6 +205,24 @@ if [ -f "$INSTALL_DIR/deploy/report-deps.sh" ]; then
     install_report_deps "$PIP_FLAGS"
 fi
 
+# 3b. Memory safety cap (drop-in — doesn't touch a customer-edited main unit).
+# jt-glogarch usually shares the VM with Graylog + OpenSearch; this cgroup cap
+# guarantees a runaway jt-glogarch is OOM-killed within its OWN cgroup instead of
+# taking down OpenSearch or the whole box. Only created if absent (respects overrides).
+DROPIN=/etc/systemd/system/${SERVICE}.service.d/memory.conf
+if [ ! -f "$DROPIN" ]; then
+    mkdir -p "$(dirname "$DROPIN")"
+    cat > "$DROPIN" <<'EOF'
+[Service]
+# Adjust for large boxes / heavy PDF-report use; lower on very small VMs.
+MemoryAccounting=yes
+MemoryHigh=3G
+MemoryMax=4G
+EOF
+    echo "  Installed memory-cap drop-in ($DROPIN): MemoryHigh=3G, MemoryMax=4G"
+    systemctl daemon-reload
+fi
+
 # 4. Restart
 echo ""
 echo "[4/5] Restarting service..."

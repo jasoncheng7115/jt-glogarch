@@ -2,6 +2,43 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.21] - 2026-07-23
+
+### Fixed
+
+- **Import no longer OOM-kills the box — the archive reader now truly streams.**
+  `ArchiveIterator` claimed to stream but actually did `json.load()` on the whole
+  archive: a 50 MB `.json.gz` expands to multiple GB of Python objects, so importing
+  large archives grew jt-glogarch's memory to ~12 GB and the kernel OOM-killer took
+  down jt-glogarch (**"Interrupted by service restart"** at a reproducible message
+  count) and/or OpenSearch — especially on the common same-VM deployment. It now
+  pulls one message at a time via `raw_decode` and holds only ~one batch (+ a 256 KiB
+  window) in memory. **This is the root-cause fix for the import OOM crashes.**
+- **Cancel now works on a paused/wedged import.** The journal auto-pause was an
+  uninterruptible 30 s sleep, so Cancel did nothing while the import was backed off;
+  it now polls the cancel flag every second. The GELF sender also gained connect
+  (15 s) and drain (30 s) timeouts — a target whose TCP buffer is full (Graylog
+  wedged) used to block the send forever, so the loop could never reach its cancel
+  checkpoint. Cancel is now responsive in both cases.
+- **Import progress memory leak.** The import progress event list grew unbounded
+  (the export path already pruned) — a multi-million-record import ballooned service
+  memory. Now capped to the last ~100 events.
+
+### Added
+
+- **Local box-memory guard on import.** jt-glogarch is usually deployed on the SAME
+  VM as the target Graylog + OpenSearch, so a big import can exhaust shared RAM and
+  trip the OOM killer (which shows as "Interrupted by service restart"). The import
+  now reads `MemAvailable` and pauses when free memory is low (`import.mem_pause_mb`,
+  default 700 MB; slow at `mem_slow_mb`, default 1400 MB). Free memory is shown live
+  next to the journal/buffer/heap badges.
+- **Batch delay is now a keyboard-editable number field** (dialog + live view), not
+  only a slider — precise entry without dragging. The slider stays, synced both ways.
+- **systemd memory cap (defense in depth).** Upgrade/install now add a drop-in
+  (`MemoryHigh=3G`, `MemoryMax=4G`) so that even a hypothetical runaway is OOM-killed
+  within jt-glogarch's OWN cgroup — it can never take down the co-located OpenSearch /
+  Graylog or the whole VM. Adjust for large boxes / heavy report use.
+
 ## [1.13.20] - 2026-07-23
 
 ### Fixed

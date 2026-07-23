@@ -125,12 +125,18 @@ class GelfSender:
         self._connected = False
         self._messages_sent = 0
 
+    # Never block forever on a wedged/unreachable target — a hung connect/send would
+    # make Cancel impossible (the import loop can't reach its cancel checkpoint).
+    CONNECT_TIMEOUT = 15
+    DRAIN_TIMEOUT = 30
+
     async def connect(self) -> None:
         """Establish connection."""
         try:
             if self.protocol == "tcp":
-                self._reader, self._writer = await asyncio.open_connection(
-                    self.host, self.port
+                self._reader, self._writer = await asyncio.wait_for(
+                    asyncio.open_connection(self.host, self.port),
+                    timeout=self.CONNECT_TIMEOUT,
                 )
             else:
                 # UDP — create datagram endpoint
@@ -179,7 +185,9 @@ class GelfSender:
             if not self._writer:
                 raise RuntimeError("TCP writer not available")
             self._writer.write(data + b"\x00")
-            await self._writer.drain()
+            # Bounded drain: if the target's TCP buffer is full (Graylog wedged),
+            # drain() would block indefinitely and Cancel could never take effect.
+            await asyncio.wait_for(self._writer.drain(), timeout=self.DRAIN_TIMEOUT)
         else:
             if not self._udp_transport:
                 raise RuntimeError("UDP transport not available")

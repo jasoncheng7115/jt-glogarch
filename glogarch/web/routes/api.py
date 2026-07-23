@@ -537,6 +537,7 @@ async def get_import_status(request: Request, job_id: str):
         "heap_percent": js.heap_percent if js else None,
         "buffer_output_pct": js.buffer_output_pct if js else None,
         "buffer_process_pct": js.buffer_process_pct if js else None,
+        "mem_available_mb": round(fc.mem_available_mb) if fc.mem_available_mb is not None else None,
         "journal": {
             "uncommitted": js.uncommitted if js else None,
             "size_bytes": js.size_bytes if js else None,
