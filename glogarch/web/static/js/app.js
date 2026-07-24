@@ -262,6 +262,47 @@ async function loadDashboard() {
         console.error('Failed to load dashboard stats:', e);
     }
 
+    // ---- Hardware sizing advice (computed from this box's real readings) ----
+    try {
+        const sz = await fetchJSON(`${API}/sizing`);
+        const sec = document.getElementById('sizing-section');
+        const el = document.getElementById('sizing-info');
+        if (sec && el && sz && sz.recommended) {
+            const cur = sz.current || {}, det = sz.detected || {}, rec = sz.recommended;
+            const W = {
+                swap_in_use: t('sizing_w_swap').replace('{mb}', formatNumber(cur.swap_used_mb || 0)),
+                ram_below_recommended: t('sizing_w_ram'),
+                cores_below_recommended: t('sizing_w_cores'),
+                jvm_heaps_too_large: t('sizing_w_heaps'),
+                graylog_heap_low: t('sizing_w_glheap'),
+            };
+            const warns = (sz.warnings || []).map(w => W[w]).filter(Boolean);
+            const colour = sz.level === 'critical' ? 'status-failed'
+                         : sz.level === 'warn' ? 'u030' : 'status-completed';
+            let html = `<div>${esc(t('sizing_current')
+                .replace('{ram}', cur.ram_gb != null ? cur.ram_gb : '?')
+                .replace('{cpu}', cur.cpu_count != null ? cur.cpu_count : '?'))}</div>`;
+            html += `<div class="cap-info">${esc(sz.colocated
+                ? t('sizing_detected').replace('{gl}', det.graylog_heap_gb != null ? det.graylog_heap_gb : '?')
+                                      .replace('{os}', det.opensearch_heap_gb != null ? det.opensearch_heap_gb : '?')
+                : t('sizing_detected_none'))}</div>`;
+            let recLine = t('sizing_rec').replace('{ram}', rec.ram_gb).replace('{cpu}', rec.cpu_cores);
+            if (sz.colocated && rec.graylog_heap_gb) {
+                recLine += t('sizing_rec_heaps').replace('{gl}', rec.graylog_heap_gb)
+                                                .replace('{os}', rec.opensearch_heap_gb);
+            }
+            html += `<div class="mt8"><span class="${colour}">${esc(recLine)}</span></div>`;
+            if (warns.length) {
+                html += warns.map(w => `<div class="cap-warn"><span class="${sz.level === 'critical' ? 'status-failed' : 'u030'}">${esc(w)}</span></div>`).join('');
+            } else {
+                html += `<div class="cap-warn"><span class="status-completed">${esc(t('sizing_ok'))}</span></div>`;
+            }
+            html += `<div class="cap-info mt8">${esc(t('sizing_note').replace('{n}', formatNumber(sz.archive_count || 0)))}</div>`;
+            el.innerHTML = html;
+            sec.style.display = '';
+        }
+    } catch (e) { /* sizing is advisory — never block the dashboard */ }
+
     const _stb0 = document.querySelector('#servers-table tbody');
     if (_stb0) _stb0.innerHTML = `<tr><td colspan="5" class="text-center text-muted"><span class="spinner-text">${t('loading')}...</span></td></tr>`;
     try {

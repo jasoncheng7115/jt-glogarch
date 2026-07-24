@@ -1,4 +1,4 @@
-# jt-glogarch v1.13.45
+# jt-glogarch v1.13.46
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.13.45-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.13.46-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -1189,6 +1189,38 @@ After clicking **Start Import**, the modal switches to a control panel:
 
 ## Performance & Tuning
 
+### Hardware sizing (co-located single VM)
+
+The most common deployment puts jt-glogarch on the **same VM** as the target
+Graylog + OpenSearch (+ MongoDB). RAM is the binding constraint: two JVMs plus
+the page cache OpenSearch depends on will exceed a small box, and a heavy import
+then tips it into **swap** (imports crawl) or the **OOM killer** (jobs die as
+"Interrupted by service restart").
+
+**jt-glogarch computes the recommendation for your own box** — see the
+**Hardware Sizing** card on the Dashboard (or `GET /api/sizing`). It reads
+`/proc/meminfo`, the CPU count and the running Graylog/OpenSearch `-Xmx`, and
+sizes against your archive count. Rough guide:
+
+| Deployment | RAM | Cores |
+|---|---|---|
+| Archive-only node (Graylog/OpenSearch elsewhere) | 4 GB | 4 |
+| Co-located, light (< 10K archives) | 16 GB | 8 |
+| Co-located, heavy (≥ 10K archives / large imports) | **32 GB** | **16+** |
+
+Rules that matter more than the table:
+
+- **Never let the box swap.** Sustained swap use means imports will crawl — add
+  RAM or lower the heaps. It is the single best predictor of a bad import.
+- **Both JVM heaps together ≤ 50% of RAM.** OpenSearch needs file cache roughly
+  equal to its heap (Lucene reads through the page cache); starving it is why
+  indexing and search crawl even when there appears to be free RAM.
+- **Pin `-Xms` = `-Xmx`** on both JVMs, each ≤ 31 GB (compressed oops).
+- Leave 2–3 GB headroom for MongoDB, the kernel and agents.
+
+jt-glogarch itself is modest (~200 MB steady — it streams archives rather than
+loading them) and throttles automatically on target backpressure and low host
+memory, shrinking its own batch size when RAM gets tight instead of stopping.
 
 ### Benchmarks (with default config)
 

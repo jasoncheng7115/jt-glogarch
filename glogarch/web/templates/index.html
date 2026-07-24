@@ -92,6 +92,15 @@
                 <div id="opensearch-result" class="mt8"></div>
             </div>
         </div>
+        <!-- Hardware sizing advice, computed from THIS box: /proc/meminfo, CPU
+             count and the co-located Graylog/OpenSearch JVM -Xmx. Hidden unless
+             there is something to say. -->
+        <div class="section" id="sizing-section" style="display:none">
+            <h2 data-i18n="sizing_title" data-icon="server">Hardware Sizing</h2>
+            <div class="card mb15" id="sizing-card">
+                <div id="sizing-info" class="muted-flex1">Loading...</div>
+            </div>
+        </div>
         <div class="section">
             <h2 data-i18n="notifications" data-icon="globe">Notifications</h2>
             <div class="card mb15" id="notify-card">

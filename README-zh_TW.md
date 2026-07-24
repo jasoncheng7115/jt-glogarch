@@ -1,4 +1,4 @@
-# jt-glogarch v1.13.45
+# jt-glogarch v1.13.46
 
 **語言**： [English](README.md) | **繁體中文**  
 **網站**： <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.13.45-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.13.46-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -1118,6 +1118,26 @@ API Token:        你的_TOKEN          ← 用 Token...
 
 ## 效能與調校
 
+### 硬體規格建議（單機共置）
+
+最常見的部署方式，是把 jt-glogarch 與目標 Graylog + OpenSearch（＋MongoDB）放在**同一台 VM**。此時**記憶體是關鍵瓶頸**：兩個 JVM 加上 OpenSearch 所依賴的檔案快取，很容易超出一台小主機的容量；一旦執行大量匯入，就會落入**使用 swap**（匯入變得極慢）或被 **OOM killer** 終止（工作顯示為「Interrupted by service restart」）。
+
+**jt-glogarch 會直接為您這台主機算出建議規格**——請見儀表板的**硬體規格建議**卡片（或 `GET /api/sizing`）。它會讀取 `/proc/meminfo`、CPU 核心數,以及執行中的 Graylog／OpenSearch `-Xmx`,並依您的歸檔份數估算。概略對照：
+
+| 部署型態 | 記憶體 | 核心數 |
+|---|---|---|
+| 純歸檔主機（Graylog／OpenSearch 在其他機器） | 4 GB | 4 |
+| 單機共置，輕量（< 10K 份歸檔） | 16 GB | 8 |
+| 單機共置，大量（≥ 10K 份歸檔／大批匯入） | **32 GB** | **16 以上** |
+
+比表格更重要的原則：
+
+- **絕對不要讓主機用到 swap。** 只要持續使用 swap，匯入就會變得極慢——請增加記憶體或調降 heap。這是判斷匯入是否會出問題最準的指標。
+- **兩個 JVM heap 合計 ≤ 記憶體的 50%。** OpenSearch 需要約與其 heap 相當的檔案快取（Lucene 透過 page cache 讀取）；快取不足正是「看起來還有可用記憶體，索引與搜尋卻很慢」的原因。
+- **兩個 JVM 都把 `-Xms` 設為與 `-Xmx` 相同**，且單一 heap ≤ 31 GB（compressed oops）。
+- 另外保留 2–3 GB 給 MongoDB、核心與各式代理程式。
+
+jt-glogarch 本身占用不高（穩定約 200 MB——採串流方式讀取歸檔，不會整份載入），並會依目標端 backpressure 與本機記憶體自動節流；記憶體吃緊時會**自動調小批次**繼續執行，而非直接停止。
 
 ### Benchmark(預設設定)
 

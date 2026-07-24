@@ -47,6 +47,8 @@ class ImportFlowControl:
         self.journal_status: JournalStatus | None = None
         self.journal_action: str = "normal"
         self.mem_available_mb: float | None = None  # local box MemAvailable (OOM guard)
+        self._user_batch_size: int = 500   # size to restore to after adaptive shrink
+        self.batch_adapted: bool = False   # True while auto-shrunk (shown in UI)
 
     def pause(self):
         self.paused = True
@@ -57,11 +59,35 @@ class ImportFlowControl:
     def cancel(self):
         self.cancelled = True
 
+    # Adaptive-batch floor and the user's chosen size to return to.
+    MIN_ADAPTIVE_BATCH = 50
+
     def set_rate(self, rate_ms: int, batch_size: int | None = None):
         self.rate_ms = max(1, rate_ms)
         self._base_rate_ms = self.rate_ms
         if batch_size is not None:
             self.batch_size = max(1, batch_size)
+            self._user_batch_size = self.batch_size   # restore target
+
+    def adapt_batch_for_memory(self, mem_action: str) -> None:
+        """Shrink the batch when the box is low on memory, restore when it isn't.
+
+        A batch is materialized in memory (archive dicts -> GELF dicts), so batch
+        size is the main lever we control over OUR peak. Halving it keeps the
+        import running at reduced footprint instead of pausing outright; on
+        recovery it steps back toward the user's chosen size.
+        """
+        base = getattr(self, "_user_batch_size", None) or self.batch_size
+        self._user_batch_size = base
+        if mem_action in ("pause", "slow"):
+            new = max(self.MIN_ADAPTIVE_BATCH, self.batch_size // 2)
+        elif self.batch_size < base:
+            new = min(base, self.batch_size * 2)      # recover gradually
+        else:
+            return
+        if new != self.batch_size:
+            self.batch_size = new
+            self.batch_adapted = new < base
 
     def get_effective_delay(self) -> int:
         """Get current delay in ms, considering auto-rate from journal monitoring."""
@@ -196,6 +222,22 @@ class Importer:
             log.warning("Mid-import remediation failed", error=str(e))
         return cur
 
+    def _iter_archives(self, archive_ids: list[int]):
+        """Yield ArchiveRecords one at a time by id, so a large import never
+        holds the whole record list resident (see import_archives). A missing or
+        no-longer-completed archive is skipped with a warning rather than
+        aborting the run."""
+        for aid in archive_ids:
+            try:
+                rec = self.db.get_archive(aid)
+            except Exception as e:
+                log.warning("Failed to re-read archive", archive_id=aid, error=str(e))
+                continue
+            if rec is None:
+                log.warning("Archive vanished mid-import", archive_id=aid)
+                continue
+            yield rec
+
     async def import_archives(
         self,
         archive_ids: list[int] | None = None,
@@ -293,6 +335,17 @@ class Importer:
             total_messages = sum(a.message_count for a in archives)
             self.db.update_job(job_id, messages_total=total_messages)
 
+            # Keep only the ids resident. A 24.5K-archive import held that many
+            # ArchiveRecord objects for the WHOLE run purely to walk them in
+            # order; ids are ~8 bytes each and each record is re-read lazily by
+            # primary key (microseconds) right before it is imported. On the
+            # common co-located VM every MB of OUR peak is a MB the JVMs don't
+            # have. `pf_ids`/`pf_total_bytes` are computed here, before release.
+            pf_ids = [a.id for a in archives if a.id is not None]
+            pf_total_bytes = sum(a.original_size_bytes or 0 for a in archives)
+            archive_id_seq = [a.id for a in archives if a.id is not None]
+            archives = None  # release the record list
+
             log.info("Import started", job_id=job_id, archives=total_archives,
                      total_messages=total_messages)
 
@@ -314,10 +367,9 @@ class Importer:
                         "messages_total": total_messages,
                         "pct": 0,
                     })
-                pf_ids = [a.id for a in archives if a.id is not None]
-                # Estimate total bytes from archive original_size_bytes (uncompressed
-                # size, closer to what Graylog will store after re-indexing)
-                pf_total_bytes = sum(a.original_size_bytes or 0 for a in archives)
+                # pf_ids / pf_total_bytes were computed above, before the record
+                # list was released (uncompressed size is closer to what Graylog
+                # stores after re-indexing).
                 # For bulk mode pass through OpenSearch URL/creds + target pattern
                 # so preflight can write the OpenSearch template + create the
                 # Graylog index set.
@@ -374,7 +426,9 @@ class Importer:
                 if preflight_result and preflight_result.bulk_stream_id:
                     self.bulk_importer.target_stream_id = preflight_result.bulk_stream_id
                 from pathlib import Path as _P
-                paths = [_P(a.file_path) for a in archives]
+                # Re-read lazily (the record list was released above) — only the
+                # paths are needed here, which is far smaller than the records.
+                paths = [_P(a.file_path) for a in self._iter_archives(archive_id_seq)]
 
                 def _bulk_cb(info):
                     if fc.cancelled:
@@ -486,7 +540,7 @@ class Importer:
                               if preflight_result is not None else 0)
 
             async with GelfSender(gelf_host, gelf_port, protocol=gelf_protocol) as sender:
-                for arch_idx, archive in enumerate(archives):
+                for arch_idx, archive in enumerate(self._iter_archives(archive_id_seq)):
                     if fc.cancelled:
                         log.info("Import cancelled by user")
                         break
@@ -561,6 +615,14 @@ class Importer:
                                     action = mem_act
                                 fc.journal_action = action
                                 fc.auto_rate = True
+
+                                # --- Adaptive batch size under memory pressure ---
+                                # Pausing is a blunt instrument: it stops all
+                                # progress. Shrinking the batch first keeps the
+                                # import moving while cutting the per-batch peak
+                                # (a batch is held in memory as GELF dicts), and
+                                # restores it once memory recovers.
+                                fc.adapt_batch_for_memory(mem_act)
 
                                 if action == "stop":
                                     log.error("Journal overflow, stopping import",

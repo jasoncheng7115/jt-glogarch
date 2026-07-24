@@ -1469,6 +1469,21 @@ def get_status(request: Request):
     }
 
 
+@router.get("/sizing")
+def get_sizing(request: Request):
+    """Hardware sizing advice for THIS box, computed from real readings:
+    /proc/meminfo, CPU count, and the co-located Graylog/OpenSearch JVM -Xmx
+    found by scanning /proc. Sized against the archive corpus (big corpora mean
+    big imports, the peak-memory event)."""
+    from glogarch.core.sizing import recommend_spec
+    db = _db(request)
+    try:
+        archive_count = int((db.get_archive_stats() or {}).get("total") or 0)
+    except Exception:
+        archive_count = 0
+    return recommend_spec(archive_count=archive_count)
+
+
 def _get_sparkline_data(db: ArchiveDB) -> dict:
     """Get daily aggregates for sparkline charts (last 30 days)."""
     from datetime import timedelta

@@ -2,6 +2,36 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.46] - 2026-07-25
+
+### Added
+
+- **Hardware sizing advisor — the system now tells you what spec to run.** New
+  `glogarch/core/sizing.py` + `GET /api/sizing` + a **Hardware Sizing** card on
+  the Dashboard. It measures THIS box rather than quoting a generic table: it
+  reads `/proc/meminfo` (RAM, and **swap actually in use**), the CPU count, and
+  scans `/proc` for the co-located Graylog / OpenSearch JVMs' `-Xmx`, then sizes
+  against the archive corpus. Output: recommended RAM + cores + a heap setting
+  for each JVM, plus specific findings — swap in use, RAM/cores below
+  recommendation, both heaps over 60% of RAM (OpenSearch needs page cache ≈ its
+  heap), Graylog heap under 4 GB. Calibrated against the field: a 24.5K-archive
+  co-located site on 16 GB/16 cores that only became healthy at 32 GB now gets
+  exactly "32 GB / 16 cores".
+- **Deployment sizing guidance in both READMEs** (Performance & Tuning), incl.
+  the never-swap and "both heaps ≤ 50% of RAM" rules.
+
+### Changed
+
+- **Adaptive batch size under memory pressure.** Pausing stops all progress;
+  the importer now HALVES its batch (floor 50) when the host memory guard says
+  slow/pause and steps back toward the user's size on recovery — the import keeps
+  moving at a smaller peak instead of stalling.
+- **Large imports no longer hold every archive record resident.** A 24.5K-archive
+  import kept that many `ArchiveRecord` objects alive for the whole run just to
+  walk them in order; only the ids are kept now and each record is re-read by
+  primary key (microseconds) immediately before it is imported. On the common
+  co-located VM, every MB of our peak is a MB the JVMs don't get.
+
 ## [1.13.45] - 2026-07-25
 
 ### Fixed
