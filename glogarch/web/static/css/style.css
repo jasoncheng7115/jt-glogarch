@@ -1626,6 +1626,11 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
    a sliver — this wins it back. */
 .form-group input.rate-num { width: 62px; flex: 0 0 auto; box-sizing: border-box; }
 
+/* Dashboard disk-card sub-line: projected remaining archive retention. Muted by
+   default; the .low variant (red) only when below the alert threshold. */
+.stat-card .card-sub { margin-top: 4px; font-size: 0.8em; color: var(--text-muted); }
+.stat-card .card-sub .low { color: var(--danger); font-weight: 600; }
+
 /* Import "paused/waiting" banner — a stalled progress bar during backpressure
    should read as "waiting for the target to drain", not "stuck/failed". Amber,
    not red: this is a normal protective pause, not an error. */

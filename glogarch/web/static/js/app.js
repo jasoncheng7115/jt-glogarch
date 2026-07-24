@@ -232,6 +232,22 @@ async function loadDashboard() {
         document.getElementById('stat-size').textContent = formatBytes(s.total_bytes || 0);
         document.getElementById('stat-disk').textContent = formatMB(status.storage_stats.available_mb || 0);
 
+        // Projected remaining archive retention (compressed footprint per month
+        // of log × free disk). Muted normally; red when below the alert months.
+        const rel = document.getElementById('stat-disk-retention');
+        if (rel) {
+            const re = status.retention_estimate;
+            const alertM = status.disk_alert_months || 0;
+            if (re && re.available) {
+                const m = re.remaining_months;
+                const low = alertM > 0 && m < alertM;
+                const txt = t('disk_retention_est').replace('{m}', formatNumber(m));
+                rel.innerHTML = low ? `<span class="low">⚠ ${txt}</span>` : txt;
+            } else {
+                rel.textContent = t('disk_retention_wait');
+            }
+        }
+
         // Sparklines
         const sp = status.sparkline || {};
         const cardArchives = document.getElementById('card-archives');

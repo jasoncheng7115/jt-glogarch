@@ -608,9 +608,47 @@ class ArchiveScheduler:
 
         threading.Thread(target=_work, daemon=True).start()
 
+    def _run_disk_retention_check(self) -> None:
+        """Daily internal check: estimate remaining archive-disk retention and
+        notify when it drops below retention.disk_alert_months. Not a user
+        schedule — a fixed internal heartbeat registered in start()."""
+        try:
+            threshold = float(getattr(self.settings.retention, "disk_alert_months", 0) or 0)
+            if threshold <= 0:
+                return
+            from glogarch.archive.storage import ArchiveStorage
+            from glogarch.core.retention_estimate import estimate_archive_retention
+            stats = self.db.get_archive_stats()
+            sstats = ArchiveStorage(self.settings.export).get_storage_stats()
+            avail = int((sstats.get("available_mb") or 0) * 1024 * 1024)
+            est = estimate_archive_retention(
+                stats.get("total_bytes") or 0, stats.get("earliest"),
+                stats.get("latest"), avail)
+            if not est.get("available"):
+                return
+            months = est["remaining_months"]
+            if months >= threshold:
+                return
+            from glogarch.notify.sender import notify_disk_low
+            asyncio.run(notify_disk_low(months, avail, est["bytes_per_month"]))
+            log.warning("Archive disk retention low",
+                        remaining_months=months, threshold=threshold)
+        except Exception as e:
+            log.warning("Disk retention check failed", error=str(e))
+
     def start(self) -> None:
         """Start the scheduler."""
         self.setup()
+        # Internal daily heartbeat (not a user schedule): warn when the projected
+        # archive-disk retention drops below retention.disk_alert_months.
+        try:
+            self.scheduler.add_job(
+                self._run_disk_retention_check,
+                trigger=CronTrigger.from_crontab("30 4 * * *"),
+                id="internal-disk-retention-check", replace_existing=True,
+                misfire_grace_time=3600)
+        except Exception as e:
+            log.warning("Failed to register disk retention check", error=str(e))
         self.scheduler.start()
         log.info("Scheduler started")
 

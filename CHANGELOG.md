@@ -2,6 +2,20 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.43] - 2026-07-24
+
+### Added
+
+- **Projected "remaining archive retention" on the dashboard + low-space alert.**
+  The Disk Available card now shows an estimate like "≈ 5 more months of logs",
+  computed from the archive's OWN data: compressed footprint per month of log
+  (total compressed size ÷ the log-time span the archives cover) × free disk. No
+  fixed compression/rate assumptions — it folds in this deployment's real ratio
+  and volume, and re-derives as the data grows. Shows "estimate pending" until
+  there is ≥1 day of history. A daily internal check sends a notification when
+  the estimate drops below `retention.disk_alert_months` (default 1.0 month;
+  0 disables). New `/api/status` fields `retention_estimate` + `disk_alert_months`.
+
 ## [1.13.42] - 2026-07-24
 
 ### Added

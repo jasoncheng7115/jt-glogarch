@@ -284,6 +284,10 @@ _MSG = {
                              "Graylog is reachable but nginx may have stopped forwarding.\n"
                              "Last received: {last}\n"
                              "Check nginx config and syslog on all Graylog nodes."),
+        "disk_low_title": "⚠️ Archive disk retention running low",
+        "disk_low_body": ("Only ~{months} month(s) of archive capacity left at the current rate.\n"
+                          "Free space: {avail} · growing ~{rate}/month.\n"
+                          "Expand the archive disk or lower retention before it fills up."),
     },
     "zh-TW": {
         "export_ok": "✅ 匯出成功",
@@ -319,6 +323,10 @@ _MSG = {
                              "Graylog 可連線但 nginx 可能已停止轉送。\n"
                              "最後收到: {last}\n"
                              "請檢查所有 Graylog 節點的 nginx 設定與 syslog 狀態。"),
+        "disk_low_title": "⚠️ 歸檔磁碟可存時間偏低",
+        "disk_low_body": ("依目前增長速度，歸檔空間大約只剩 ~{months} 個月。\n"
+                          "可用空間: {avail} · 每月約增加 {rate}。\n"
+                          "請在空間用盡前擴充歸檔磁碟或調低保留設定。"),
     },
 }
 
@@ -423,4 +431,23 @@ async def notify_error(operation: str, error: str):
         NotifyEvent.ERROR,
         _t("error_title", op=operation),
         error[:500],
+    )
+
+
+async def notify_disk_low(remaining_months: float, available_bytes: int,
+                          bytes_per_month: float):
+    """Warn that the archive disk will fill in ~remaining_months at the current
+    compressed-growth rate. Routed through the ERROR event so it reaches any
+    enabled channel without new config wiring."""
+    def _fmt(b):
+        for u in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if b < 1024:
+                return f"{b:.1f} {u}"
+            b /= 1024
+        return f"{b:.1f} PB"
+    await send_notification(
+        NotifyEvent.ERROR,
+        _t("disk_low_title"),
+        _t("disk_low_body", months=remaining_months,
+           avail=_fmt(available_bytes), rate=_fmt(bytes_per_month)),
     )

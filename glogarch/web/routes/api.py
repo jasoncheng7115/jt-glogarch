@@ -1440,12 +1440,25 @@ def get_status(request: Request):
     stats = db.get_archive_stats()
     storage_stats = storage.get_storage_stats()
 
+    # Projected remaining archive retention: compressed footprint per month of
+    # LOG (from the archives' own span) × free disk → months of headroom left.
+    from glogarch.core.retention_estimate import estimate_archive_retention
+    avail_bytes = int((storage_stats.get("available_mb") or 0) * 1024 * 1024)
+    retention_estimate = estimate_archive_retention(
+        total_compressed_bytes=stats.get("total_bytes") or 0,
+        earliest=stats.get("earliest"),
+        latest=stats.get("latest"),
+        available_bytes=avail_bytes,
+    )
+
     # Sparkline data: daily aggregates for last 30 days
     sparkline = _get_sparkline_data(db)
 
     return {
         "archive_stats": stats,
         "storage_stats": storage_stats,
+        "retention_estimate": retention_estimate,
+        "disk_alert_months": settings.retention.disk_alert_months,
         "sparkline": sparkline,
         "servers": [
             {"name": s.name, "url": s.url}

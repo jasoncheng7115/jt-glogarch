@@ -102,6 +102,10 @@ class IntegrityConfig(BaseModel):
 class RetentionConfig(BaseModel):
     enabled: bool = True
     retention_days: int = 1095
+    # Projected-archive-retention alert: when the estimated months of archive
+    # disk headroom (compressed footprint per month of log × free disk) falls
+    # below this, a notification is sent by the daily internal check. 0 = off.
+    disk_alert_months: float = 1.0
 
 
 class RateLimitConfig(BaseModel):

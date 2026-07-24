@@ -57,6 +57,9 @@ const I18N = {
         original_size: 'Original Size',
         storage_used: 'Compressed',
         disk_available: 'Disk Available',
+        disk_retention_est: '≈ {m} more month(s) of logs',
+        disk_retention_wait: 'estimate pending — accumulating data',
+        disk_retention_tip: 'Estimated from the compressed archive size per month of log times the free disk space. Assumes the log rate stays roughly the same.',
         servers: 'Graylog Servers',
         recent_jobs: 'Recent Jobs',
 
@@ -718,6 +721,9 @@ const I18N = {
         original_size: '歸檔前大小',
         storage_used: '壓縮後大小',
         disk_available: '可用磁碟空間',
+        disk_retention_est: '≈ 可再存約 {m} 個月',
+        disk_retention_wait: '資料累積中，尚無法估算',
+        disk_retention_tip: '依「每月 log 的壓縮歸檔量 × 可用磁碟空間」估算，假設 log 增長速度大致不變。',
         servers: 'Graylog 伺服器',
         recent_jobs: '最近工作',
 
