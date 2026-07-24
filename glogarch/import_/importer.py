@@ -157,6 +157,44 @@ class Importer:
         self.mode = mode  # "gelf" or "bulk"
         self.bulk_importer = bulk_importer
 
+    async def _mid_import_remediate(self, preflight_result, result, baseline: int) -> int:
+        """Poll the target's indexer-failure count DURING the import; on a rise,
+        diagnose the offending field(s), pin them as string and cycle the index
+        so the REST of the import indexes cleanly — instead of losing every
+        conflicting message and only fixing the mapping after the whole run.
+
+        Returns the updated baseline. GELF is fire-and-forget (no per-message
+        ack), so the handful sent-and-failed BEFORE detection aren't recovered
+        here — post-import reconciliation + the one-click retry cover those. Only
+        NEW fields (not already pinned this run) trigger a cycle, so an
+        already-fixed field's in-flight stragglers don't re-cycle repeatedly."""
+        if self.preflight is None or preflight_result is None or not preflight_result.index_set_id:
+            return baseline
+        try:
+            cur = await self.preflight.get_indexer_failures_count()
+        except Exception:
+            return baseline
+        if cur <= baseline:
+            return baseline
+        try:
+            details = await self.preflight.get_indexer_failure_details()
+            fields = list(details.get("fields", {}).keys())
+            new_fields = [f for f in fields if f not in result.indexer_failure_fields]
+            if new_fields:
+                await self.preflight.remediate_fields_as_string(
+                    preflight_result.index_set_id, new_fields)
+                try:
+                    await self.preflight.wait_for_index_ready(
+                        preflight_result.index_set_id, timeout_sec=20)
+                except Exception:
+                    pass
+                result.indexer_failure_fields.extend(new_fields)
+                log.warning("Mid-import auto-remediation applied",
+                            fields=new_fields, failures_delta=cur - baseline)
+        except Exception as e:
+            log.warning("Mid-import remediation failed", error=str(e))
+        return cur
+
     async def import_archives(
         self,
         archive_ids: list[int] | None = None,
@@ -167,6 +205,7 @@ class Importer:
         progress_callback: Callable[[dict], None] | None = None,
         job_id: str | None = None,
         flow_control: ImportFlowControl | None = None,
+        job_config: dict | None = None,
     ) -> ImportResult:
         """Import archived messages into Graylog.
 
@@ -198,8 +237,12 @@ class Importer:
         # Register flow control globally
         _import_controls[job_id] = fc
 
+        # Persist the retry params (archives + target, NEVER secrets) so a failed
+        # import can be re-run with one click after auto-remediation.
+        import json as _json_cfg
         job = JobRecord(id=job_id, job_type=JobType.IMPORT, status=JobStatus.RUNNING,
-                        started_at=datetime.utcnow())
+                        started_at=datetime.utcnow(),
+                        config_json=_json_cfg.dumps(job_config) if job_config else None)
         self.db.create_job(job)
 
         try:
@@ -340,9 +383,34 @@ class Importer:
                         messages_done=info.get("messages_done", 0),
                     )
 
+                # Remediation callback: pin the offending field(s) as string +
+                # cycle the index (via the target's Graylog API), so bulk can
+                # re-send the failed docs and reach zero loss in the same run.
+                async def _bulk_remediate(fields: list[str]) -> bool:
+                    if self.preflight is None or preflight_result is None \
+                            or not preflight_result.index_set_id:
+                        return False
+                    try:
+                        done = await self.preflight.remediate_fields_as_string(
+                            preflight_result.index_set_id, fields)
+                        try:
+                            await self.preflight.wait_for_index_ready(
+                                preflight_result.index_set_id, timeout_sec=20)
+                        except Exception:
+                            pass
+                        if done:
+                            for f in done:
+                                if f not in result.indexer_failure_fields:
+                                    result.indexer_failure_fields.append(f)
+                        return bool(done)
+                    except Exception as e:
+                        log.warning("Bulk in-line remediation failed", error=str(e))
+                        return False
+
                 bulk_result = await self.bulk_importer.import_archives(
                     paths, progress_callback=_bulk_cb,
                     cancel_check=lambda: fc.cancelled,
+                    remediate_cb=_bulk_remediate,
                 )
                 result.archives_processed = bulk_result.archives_processed
                 result.messages_sent = bulk_result.messages_sent
@@ -408,6 +476,9 @@ class Importer:
             gelf_protocol = getattr(self.import_config, 'gelf_protocol', 'udp')
 
             check_interval = 0  # counter for journal checks
+            # Running indexer-failure baseline for mid-import auto-remediation.
+            _fail_baseline = (preflight_result.indexer_failures_baseline
+                              if preflight_result is not None else 0)
 
             async with GelfSender(gelf_host, gelf_port, protocol=gelf_protocol) as sender:
                 for arch_idx, archive in enumerate(archives):
@@ -514,6 +585,14 @@ class Importer:
                                             break
                                         await asyncio.sleep(1)
                                     continue  # Re-check after pause
+
+                                # --- Mid-import indexer-failure remediation ---
+                                # On the same cadence, catch a mapping conflict
+                                # EARLY (pin the field as string + cycle) so the
+                                # rest of the import indexes cleanly, instead of
+                                # losing every conflicting message until the end.
+                                _fail_baseline = await self._mid_import_remediate(
+                                    preflight_result, result, _fail_baseline)
 
                             # --- Send batch ---
                             batch_sent = await sender.send_batch(

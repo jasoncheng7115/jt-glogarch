@@ -1914,6 +1914,16 @@ async function loadJobs() {
         const cancelBtn = isRunning
             ? `<button class="btn-sm btn-danger" data-act="cancelJob" data-arg="${j.id}" data-i18n="btn_cancel">Cancel</button>`
             : '';
+        // One-click retry: an import that hit indexer failures (fields now
+        // auto-pinned as string) can be re-run to recover them. Bulk-preferred
+        // (dedups); shown only when we still have the job's archive list.
+        const _em = j.error_message || '';
+        const canRetry = (j.job_type === 'import') && !isRunning
+            && j.retry_config && (j.retry_config.archive_ids || []).length
+            && (j.status === 'failed' || _em.indexOf('indexer failures') !== -1 || _em.indexOf('Compliance') !== -1);
+        const retryBtn = canRetry
+            ? `<button class="btn-sm btn-secondary" data-act="retryImport" data-arg="${j.id}" title="${esc(t('retry_import_hint'))}">${icon('refresh', 14)} ${t('retry_import')}</button>`
+            : '';
         // Records display with context
         let recordsHtml;
         if (j.status === 'completed' && j.messages_done === 0 && !j.error_message) {
@@ -1948,7 +1958,7 @@ async function loadJobs() {
             <td>${formatDT(j.completed_at)}</td>
             <td>${formatElapsed(j.started_at, j.completed_at)}</td>
             <td data-style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : (j.error_message || '').indexOf('Skipped') !== -1 ? 'var(--text-muted)' : 'var(--text-muted)'};font-size:0.85em;max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${coverageChip(j)}${esc(j.error_message || '')}</td>
-            <td>${cancelBtn}</td>
+            <td>${cancelBtn}${retryBtn}</td>
         </tr>`;
     }).join('');
     applyI18n();
@@ -1963,6 +1973,43 @@ function cancelJob(jobId) {
             loadJobs();
         }
     );
+}
+
+// One-click retry of a failed import: re-imports that job's archives. Prefers
+// Bulk mode (dedups by message id → only the previously-failed messages get
+// added, no duplicates); falls back to GELF with a clear duplicate warning when
+// the target is a Data Node (Bulk unavailable). The offending fields were
+// already auto-pinned as string during the original run.
+async function retryImport(jobId) {
+    const j = await fetchJSON(`${API}/jobs/${jobId}`);
+    const rc = (j && j.retry_config) || {};
+    const ids = rc.archive_ids || [];
+    if (!ids.length) { showAlert(t('retry_no_archives')); return; }
+    let dn = window._hasDataNode;
+    if (dn === undefined) {
+        try { const s = await fetchJSON(`${API}/servers`); dn = (s.items || []).some(x => x.has_datanode); window._hasDataNode = dn; }
+        catch (e) { dn = false; }
+    }
+    const mode = dn ? 'gelf' : 'bulk';
+    const msg = (mode === 'bulk' ? t('retry_confirm_bulk') : t('retry_confirm_gelf'))
+        .replace('{n}', formatNumber(ids.length));
+    showConfirm(`${icon('refresh')} ${t('retry_import')}`, msg, () => {
+        window._batchImportIds = ids;
+        _importArchiveId = null;
+        const modal = document.getElementById('import-modal');
+        document.getElementById('modal-import-result').innerHTML = '';
+        modal.style.display = 'flex';
+        applyI18n();
+        _autofillImportModal();
+        _applyImportDataNodeLock();
+        // Preselect the safe mode and prefill the target from the failed job.
+        const radio = document.querySelector(`input[name="import-mode"][value="${mode}"]`);
+        if (radio && !radio.disabled) { radio.checked = true; if (typeof onImportModeChange === 'function') onImportModeChange(mode); }
+        const setv = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+        setv('modal-target-api-url', rc.target_api_url);
+        setv('modal-gelf-host', rc.gelf_host);
+        if (rc.gelf_port) setv('modal-gelf-port', String(rc.gelf_port));
+    });
 }
 
 // ---- Schedules ----

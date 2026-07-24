@@ -2,6 +2,28 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.35] - 2026-07-24
+
+### Added
+
+- **Indexer failures are now fixed DURING the import, not only after it.**
+  - **Bulk mode — true zero loss.** The `_bulk` response reports per-document
+    errors, so when a batch hits a mapping conflict jt-glogarch pins the offending
+    field(s) as string, cycles the index, and **re-sends just the failed
+    documents** in the same run — nothing is lost.
+  - **GELF mode — early stop-the-bleeding.** GELF is fire-and-forget (no
+    per-message ack), so the import now polls the target's indexer-failure count
+    on its existing back-pressure cadence; on the first rise it pins the field(s)
+    as string and cycles the index, so the *rest* of the import indexes cleanly
+    instead of every conflicting message failing until the end. (The few sent
+    before detection are recovered via the retry below.)
+- **One-click "Retry" on a failed import.** A finished import that hit indexer
+  failures now shows a Retry button in Job History. It re-imports that job's
+  archives, preferring **Bulk** (dedups by message id → only the previously-failed
+  messages are added, no duplicates); on a Data Node (Bulk unavailable) it falls
+  back to GELF with a clear duplicate warning. The job persists its archive list +
+  target (never secrets) to enable this.
+
 ## [1.13.34] - 2026-07-24
 
 ### Fixed

@@ -170,8 +170,10 @@ class BulkImporter:
 
     async def _send_bulk(
         self, client: httpx.AsyncClient, body: bytes
-    ) -> tuple[int, int, list[str]]:
-        """POST one bulk request. Returns (indexed, failed, error_samples)."""
+    ) -> tuple[int, int, list[str], list[tuple[int, str, str]]]:
+        """POST one bulk request. Returns (indexed, failed, error_samples,
+        failed_items) where failed_items is [(doc_index_in_batch, type, reason)]
+        so the caller can pin the offending field(s) and re-send just those docs."""
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -206,19 +208,21 @@ class BulkImporter:
         indexed = 0
         failed = 0
         error_samples: list[str] = []
-        for item in items:
+        failed_items: list[tuple[int, str, str]] = []
+        for i, item in enumerate(items):
             op = item.get("index") or item.get("create") or {}
             status = op.get("status", 0)
             if 200 <= status < 300:
                 indexed += 1
             else:
                 failed += 1
+                err = op.get("error", {})
+                etype = err.get("type", "?")
+                ereason = err.get("reason", "?")
+                failed_items.append((i, etype, str(ereason)))
                 if len(error_samples) < 5:
-                    err = op.get("error", {})
-                    error_samples.append(
-                        f"{err.get('type', '?')}: {err.get('reason', '?')[:200]}"
-                    )
-        return indexed, failed, error_samples
+                    error_samples.append(f"{etype}: {str(ereason)[:200]}")
+        return indexed, failed, error_samples, failed_items
 
     @staticmethod
     def _read_archive(path: Path):
@@ -277,10 +281,18 @@ class BulkImporter:
         archive_paths: list[Path],
         progress_callback: Callable[[dict], None] | None = None,
         cancel_check: Callable[[], bool] | None = None,
+        remediate_cb: Callable[[list[str]], "Awaitable[bool]"] | None = None,
     ) -> BulkImportResult:
-        """Bulk-import every archive in archive_paths."""
+        """Bulk-import every archive in archive_paths.
+
+        remediate_cb(fields) -> awaitable[bool]: called when a batch has mapping
+        failures. It should pin those fields as string + cycle the index and
+        return True if remediation was applied. The failed docs of that batch are
+        then re-sent so they index cleanly — TRUE zero-loss (bulk gives per-doc
+        errors, unlike fire-and-forget GELF)."""
         result = BulkImportResult()
         start = time.time()
+        _remediated_fields: set[str] = set()
 
         # Compute total messages. We always write to the deflector alias
         # (single target per pattern) so the per-doc index name walk that
@@ -330,8 +342,38 @@ class BulkImporter:
                     result.bytes_sent += len(body)
                     result.bulk_requests += 1
 
-                    indexed, failed, samples = await self._send_bulk(client, body)
+                    indexed, failed, samples, failed_items = await self._send_bulk(client, body)
                     result.messages_sent += count
+
+                    # In-line remediation: a batch with mapping failures →  pin the
+                    # offending field(s) as string, cycle the index, and RE-SEND the
+                    # failed docs so they index. Zero-loss, in the same run.
+                    if failed and failed_items and remediate_cb is not None:
+                        from glogarch.import_.preflight import PreflightChecker as _PF
+                        fields = []
+                        for _i, _t, _r in failed_items:
+                            f, _ = _PF._parse_failure_message(f"{_t}: {_r}")
+                            if f and f not in fields:
+                                fields.append(f)
+                        new_fields = [f for f in fields if f not in _remediated_fields]
+                        if new_fields:
+                            try:
+                                ok = await remediate_cb(new_fields)
+                            except Exception as e:
+                                ok = False
+                                log.warning("Bulk remediation callback failed", error=str(e))
+                            if ok:
+                                _remediated_fields.update(new_fields)
+                                retry_docs = [batch[i] for i, _t, _r in failed_items if i < len(batch)]
+                                rbody, rcount = self._build_bulk_body(retry_docs)
+                                r_indexed, r_failed, r_samples, _ = await self._send_bulk(client, rbody)
+                                log.info("Bulk re-sent failed docs after remediation",
+                                         fields=new_fields, resent=rcount,
+                                         reindexed=r_indexed, still_failed=r_failed)
+                                indexed += r_indexed
+                                failed = r_failed          # only the still-failing remain
+                                samples = r_samples
+
                     result.messages_indexed += indexed
                     result.messages_failed += failed
                     for s in samples:

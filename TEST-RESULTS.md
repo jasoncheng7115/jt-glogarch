@@ -3,17 +3,17 @@
 | Item | Value |
 |---|---|
 | **Status** | ✅ ALL PASSED |
-| **Version** | v1.13.34 |
-| **Date** | 2026-07-24 00:45:06 UTC |
+| **Version** | v1.13.35 |
+| **Date** | 2026-07-24 01:10:42 UTC |
 | **Platform** | Python 3.10.12 / Linux 5.15.0-185-generic x86_64 |
-| **Results** | 317 passed  / 1 skipped in 37.50s |
+| **Results** | 322 passed  / 1 skipped in 38.15s |
 | **Version Check** | ✅ OK |
 
 ## Test Output
 
 ```
 ============================= test session starts ==============================
-collecting ... collected 318 items
+collecting ... collected 323 items
 
 tests/test_api_error_handling.py::test_index_sets_catches_401 PASSED
 tests/test_api_error_handling.py::test_streams_catches_401 PASSED
@@ -23,14 +23,14 @@ tests/test_archive_ids_endpoint.py::test_ids_endpoint_scoped_to_time_filter PASS
 tests/test_archive_ids_endpoint.py::test_ids_endpoint_scoped_to_server_and_stream PASSED
 tests/test_archive_ids_endpoint.py::test_ids_endpoint_status_completed_excludes_others PASSED
 tests/test_archive_ids_endpoint.py::test_ids_endpoint_requires_auth PASSED
-tests/test_archive_streaming.py::test_streaming_returns_all_messages_incl_tricky_content 2026-07-24T00:45:14.070282Z [info     ] Archive written                messages=1000 path=/tmp/pytest-of-root/pytest-78/test_streaming_returns_all_mes0/test/s1/2026/01/01/test_s1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.01
+tests/test_archive_streaming.py::test_streaming_returns_all_messages_incl_tricky_content 2026-07-24T01:10:48.757845Z [info     ] Archive written                messages=1000 path=/tmp/pytest-of-root/pytest-82/test_streaming_returns_all_mes0/test/s1/2026/01/01/test_s1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.01
 PASSED
-tests/test_archive_streaming.py::test_empty_and_single 2026-07-24T00:45:14.121569Z [info     ] Archive written                messages=0 path=/tmp/pytest-of-root/pytest-78/test_empty_and_single0/test/s1/2026/01/01/test_s1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.00
-2026-07-24T00:45:14.123744Z [info     ] Archive written                messages=1 path=/tmp/pytest-of-root/pytest-78/test_empty_and_single0/b/test/s1/2026/01/01/test_s1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.00
+tests/test_archive_streaming.py::test_empty_and_single 2026-07-24T01:10:48.823416Z [info     ] Archive written                messages=0 path=/tmp/pytest-of-root/pytest-82/test_empty_and_single0/test/s1/2026/01/01/test_s1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.00
+2026-07-24T01:10:48.825898Z [info     ] Archive written                messages=1 path=/tmp/pytest-of-root/pytest-82/test_empty_and_single0/b/test/s1/2026/01/01/test_s1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.00
 PASSED
-tests/test_archive_streaming.py::test_batching_shape 2026-07-24T00:45:14.129639Z [info     ] Archive written                messages=105 path=/tmp/pytest-of-root/pytest-78/test_batching_shape0/test/s1/2026/01/01/test_s1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.00
+tests/test_archive_streaming.py::test_batching_shape 2026-07-24T01:10:48.833419Z [info     ] Archive written                messages=105 path=/tmp/pytest-of-root/pytest-82/test_batching_shape0/test/s1/2026/01/01/test_s1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.00
 PASSED
-tests/test_archive_streaming.py::test_memory_is_bounded_not_whole_file 2026-07-24T00:45:15.208501Z [info     ] Archive written                messages=20000 path=/tmp/pytest-of-root/pytest-78/test_memory_is_bounded_not_who0/test/s1/2026/01/01/test_s1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.12
+tests/test_archive_streaming.py::test_memory_is_bounded_not_whole_file 2026-07-24T01:10:49.979768Z [info     ] Archive written                messages=20000 path=/tmp/pytest-of-root/pytest-82/test_memory_is_bounded_not_who0/test/s1/2026/01/01/test_s1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.12
 PASSED
 tests/test_audit.py::test_decode_username_basic PASSED
 tests/test_audit.py::test_decode_username_token PASSED
@@ -58,15 +58,15 @@ tests/test_audit.py::test_is_noise_prepare_preview PASSED
 tests/test_audit.py::test_is_noise_non_api PASSED
 tests/test_audit.py::test_is_noise_whitelisted PASSED
 tests/test_audit.py::test_is_noise_unlisted PASSED
-tests/test_audit.py::test_cleanup_uses_audit_retention 2026-07-24T00:45:16.381611Z [info     ] No archives to clean up        retention_days=1095
-2026-07-24T00:45:16.387724Z [info     ] Cleaned audit records          deleted=1 retention_days=180
-2026-07-24T00:45:16.387993Z [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
-2026-07-24T00:45:16.395008Z [info     ] No archives to clean up        retention_days=1095
-2026-07-24T00:45:16.395741Z [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
+tests/test_audit.py::test_cleanup_uses_audit_retention 2026-07-24T01:10:51.254775Z [info     ] No archives to clean up        retention_days=1095
+2026-07-24T01:10:51.265384Z [info     ] Cleaned audit records          deleted=1 retention_days=180
+2026-07-24T01:10:51.265687Z [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
+2026-07-24T01:10:51.280936Z [info     ] No archives to clean up        retention_days=1095
+2026-07-24T01:10:51.281565Z [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
 PASSED
-tests/test_audit.py::test_cleanup_audit_no_config 2026-07-24T00:45:16.585006Z [info     ] No archives to clean up        retention_days=1095
-2026-07-24T00:45:16.593990Z [info     ] Cleaned audit records          deleted=1 retention_days=180
-2026-07-24T00:45:16.594224Z [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
+tests/test_audit.py::test_cleanup_audit_no_config 2026-07-24T01:10:51.464144Z [info     ] No archives to clean up        retention_days=1095
+2026-07-24T01:10:51.475606Z [info     ] Cleaned audit records          deleted=1 retention_days=180
+2026-07-24T01:10:51.475842Z [info     ] Cleanup completed              bytes_freed=0 files_deleted=0
 PASSED
 tests/test_bulk_import.py::test_reserved_fields_stripped PASSED
 tests/test_bulk_import.py::test_index_name_is_deflector PASSED
@@ -101,37 +101,37 @@ tests/test_database_datetime.py::test_utc_aware_roundtrip PASSED
 tests/test_database_datetime.py::test_non_utc_aware_roundtrip PASSED
 tests/test_database_datetime.py::test_none_passthrough PASSED
 tests/test_database_datetime.py::test_str_to_dt_with_offset PASSED
-tests/test_db_rebuild.py::test_rebuild_dry_run 2026-07-24T00:45:20.479033Z [info     ] Would insert                   path=/tmp/tmpv80f8fwk/archives/server1/2026/01/test.json.gz server=test time_from=2026-01-01T00:00:00Z
+tests/test_db_rebuild.py::test_rebuild_dry_run 2026-07-24T01:10:55.238157Z [info     ] Would insert                   path=/tmp/tmpn1g_pl42/archives/server1/2026/01/test.json.gz server=test time_from=2026-01-01T00:00:00Z
 PASSED
 tests/test_db_rebuild.py::test_rebuild_actual PASSED
 tests/test_db_rebuild.py::test_rebuild_skip_existing PASSED
 tests/test_db_rebuild.py::test_backup_db PASSED
 tests/test_db_rebuild.py::test_prune_backups PASSED
-tests/test_export_pagination.py::test_deep_pagination_no_same_ms_loss_or_dup 2026-07-24T00:45:21.159003Z [info     ] Total messages to fetch        total=6
-2026-07-24T00:45:21.159974Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=4 new_from='2024-01-01 00:00:00.003000' old_from='2024-01-01 00:00:00'
+tests/test_export_pagination.py::test_deep_pagination_no_same_ms_loss_or_dup 2026-07-24T01:10:55.910584Z [info     ] Total messages to fetch        total=6
+2026-07-24T01:10:55.911418Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=4 new_from='2024-01-01 00:00:00.003000' old_from='2024-01-01 00:00:00'
 PASSED
-tests/test_export_pagination.py::test_deep_pagination_multiple_windows 2026-07-24T00:45:21.165077Z [info     ] Total messages to fetch        total=30
-2026-07-24T00:45:21.166985Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=6 new_from='2024-01-01 00:00:00.005000' old_from='2024-01-01 00:00:00'
-2026-07-24T00:45:21.168961Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=11 new_from='2024-01-01 00:00:00.010000' old_from='2024-01-01 00:00:00.005000'
-2026-07-24T00:45:21.171564Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=16 new_from='2024-01-01 00:00:00.015000' old_from='2024-01-01 00:00:00.010000'
-2026-07-24T00:45:21.173085Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=21 new_from='2024-01-01 00:00:00.020000' old_from='2024-01-01 00:00:00.015000'
-2026-07-24T00:45:21.174829Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=26 new_from='2024-01-01 00:00:00.025000' old_from='2024-01-01 00:00:00.020000'
+tests/test_export_pagination.py::test_deep_pagination_multiple_windows 2026-07-24T01:10:55.916527Z [info     ] Total messages to fetch        total=30
+2026-07-24T01:10:55.918715Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=6 new_from='2024-01-01 00:00:00.005000' old_from='2024-01-01 00:00:00'
+2026-07-24T01:10:55.920691Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=11 new_from='2024-01-01 00:00:00.010000' old_from='2024-01-01 00:00:00.005000'
+2026-07-24T01:10:55.922859Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=16 new_from='2024-01-01 00:00:00.015000' old_from='2024-01-01 00:00:00.010000'
+2026-07-24T01:10:55.925614Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=21 new_from='2024-01-01 00:00:00.020000' old_from='2024-01-01 00:00:00.015000'
+2026-07-24T01:10:55.928133Z [info     ] Advancing time window for deep pagination carry=1 fetched_so_far=26 new_from='2024-01-01 00:00:00.025000' old_from='2024-01-01 00:00:00.020000'
 PASSED
-tests/test_export_pagination.py::test_pagination_raises_on_unsplittable_ms 2026-07-24T00:45:21.180602Z [info     ] Total messages to fetch        total=10
+tests/test_export_pagination.py::test_pagination_raises_on_unsplittable_ms 2026-07-24T01:10:55.935069Z [info     ] Total messages to fetch        total=10
 PASSED
 tests/test_export_pagination.py::test_fmt_ts_millisecond_precision PASSED
 tests/test_export_pagination.py::test_parse_timestamp_robust_fallback PASSED
-tests/test_export_pagination.py::test_transient_5xx_fails_over_to_next_host 2026-07-24T00:45:21.196575Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=1 status=503 wait=1
-2026-07-24T00:45:21.200470Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=2 status=503 wait=2
-2026-07-24T00:45:21.202363Z [warning  ] Transient errors exhausted, failing over to next host host=http://host0:9200 status=503
-2026-07-24T00:45:21.204939Z [info     ] Failover to host               host=http://host1:9200
+tests/test_export_pagination.py::test_transient_5xx_fails_over_to_next_host 2026-07-24T01:10:55.952786Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=1 status=503 wait=1
+2026-07-24T01:10:55.955769Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=2 status=503 wait=2
+2026-07-24T01:10:55.957149Z [warning  ] Transient errors exhausted, failing over to next host host=http://host0:9200 status=503
+2026-07-24T01:10:55.960454Z [info     ] Failover to host               host=http://host1:9200
 PASSED
-tests/test_export_pagination.py::test_all_hosts_transient_raises 2026-07-24T00:45:21.216267Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=1 status=503 wait=1
-2026-07-24T00:45:21.217844Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=2 status=503 wait=2
-2026-07-24T00:45:21.218161Z [warning  ] Transient errors exhausted, failing over to next host host=http://host0:9200 status=503
-2026-07-24T00:45:21.218405Z [warning  ] Transient error, retrying      host=http://host1:9200 retry=1 status=503 wait=1
-2026-07-24T00:45:21.218583Z [warning  ] Transient error, retrying      host=http://host1:9200 retry=2 status=503 wait=2
-2026-07-24T00:45:21.218729Z [warning  ] Transient errors exhausted, failing over to next host host=http://host1:9200 status=503
+tests/test_export_pagination.py::test_all_hosts_transient_raises 2026-07-24T01:10:55.970032Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=1 status=503 wait=1
+2026-07-24T01:10:55.971238Z [warning  ] Transient error, retrying      host=http://host0:9200 retry=2 status=503 wait=2
+2026-07-24T01:10:55.971504Z [warning  ] Transient errors exhausted, failing over to next host host=http://host0:9200 status=503
+2026-07-24T01:10:55.971683Z [warning  ] Transient error, retrying      host=http://host1:9200 retry=1 status=503 wait=1
+2026-07-24T01:10:55.971862Z [warning  ] Transient error, retrying      host=http://host1:9200 retry=2 status=503 wait=2
+2026-07-24T01:10:55.972020Z [warning  ] Transient errors exhausted, failing over to next host host=http://host1:9200 status=503
 PASSED
 tests/test_export_pagination.py::test_non_transient_4xx_raises_immediately PASSED
 tests/test_export_pagination.py::test_iter_index_docs_no_stale_total_early_stop PASSED
@@ -146,13 +146,13 @@ tests/test_field_schema.py::test_db_field_schema_store_and_read PASSED
 tests/test_graylog_error_detail.py::test_error_detail_extracts_graylog_message PASSED
 tests/test_graylog_error_detail.py::test_error_detail_falls_back_to_text_body PASSED
 tests/test_graylog_error_detail.py::test_error_detail_handles_empty_body PASSED
-tests/test_graylog_flush.py::test_flush_cycles_and_rebuilds_never_deletes 2026-07-24T00:45:21.463890Z [info     ] graylog flush done             actions=['cycle_deflector:ok', 'rebuild_index_ranges:ok'] ok=True
+tests/test_graylog_flush.py::test_flush_cycles_and_rebuilds_never_deletes 2026-07-24T01:10:56.237416Z [info     ] graylog flush done             actions=['cycle_deflector:ok', 'rebuild_index_ranges:ok'] ok=True
 PASSED
-tests/test_graylog_flush.py::test_flush_global_deflector_fallback_when_no_index_set 2026-07-24T00:45:21.472218Z [info     ] graylog flush done             actions=['cycle_deflector:ok', 'rebuild_index_ranges:ok'] ok=True
+tests/test_graylog_flush.py::test_flush_global_deflector_fallback_when_no_index_set 2026-07-24T01:10:56.247473Z [info     ] graylog flush done             actions=['cycle_deflector:ok', 'rebuild_index_ranges:ok'] ok=True
 PASSED
-tests/test_graylog_flush.py::test_flush_reports_action_error_without_raising 2026-07-24T00:45:21.480194Z [info     ] graylog flush done             actions=['cycle_deflector:error', 'rebuild_index_ranges:ok'] ok=False
+tests/test_graylog_flush.py::test_flush_reports_action_error_without_raising 2026-07-24T01:10:56.256815Z [info     ] graylog flush done             actions=['cycle_deflector:error', 'rebuild_index_ranges:ok'] ok=False
 PASSED
-tests/test_graylog_flush.py::test_snapshot_unreachable_returns_empty_not_raise 2026-07-24T00:45:21.484005Z [warning  ] flush snapshot failed          error=unreachable
+tests/test_graylog_flush.py::test_snapshot_unreachable_returns_empty_not_raise 2026-07-24T01:10:56.261757Z [warning  ] flush snapshot failed          error=unreachable
 PASSED
 tests/test_health_endpoint.py::test_health_response_structure PASSED
 tests/test_health_endpoint.py::test_health_not_behind_auth PASSED
@@ -164,15 +164,15 @@ tests/test_health_guard.py::test_heap_hard_tier_trips_immediately PASSED
 tests/test_health_guard.py::test_heap_soft_tier_needs_sustained PASSED
 tests/test_health_guard.py::test_heap_soft_streak_resets_on_dip PASSED
 tests/test_health_guard.py::test_tripped_on_rising_journal PASSED
-tests/test_health_guard.py::test_pause_then_resume 2026-07-24T00:45:21.505443Z [warning  ] export paused — Graylog backpressure signals=['JVM heap 95%（超過硬上限 90%）']
-2026-07-24T00:45:21.505615Z [info     ] export resumed — backpressure cleared waited_sec=1
+tests/test_health_guard.py::test_pause_then_resume 2026-07-24T01:10:56.286965Z [warning  ] export paused — Graylog backpressure signals=['JVM heap 95%（超過硬上限 90%）']
+2026-07-24T01:10:56.287189Z [info     ] export resumed — backpressure cleared waited_sec=1
 PASSED
-tests/test_health_guard.py::test_pause_times_out_and_raises 2026-07-24T00:45:21.507795Z [warning  ] export paused — Graylog backpressure signals=['JVM heap 99%（超過硬上限 90%）']
-2026-07-24T00:45:21.507957Z [error    ] export stopped — backpressure did not clear signals=['JVM heap 99%（超過硬上限 90%）'] waited_sec=60
+tests/test_health_guard.py::test_pause_times_out_and_raises 2026-07-24T01:10:56.290233Z [warning  ] export paused — Graylog backpressure signals=['JVM heap 99%（超過硬上限 90%）']
+2026-07-24T01:10:56.290442Z [error    ] export stopped — backpressure did not clear signals=['JVM heap 99%（超過硬上限 90%）'] waited_sec=60
 PASSED
-tests/test_import_batch_flow.py::test_web_ui_flow_control_batch_and_rate_are_preserved 2026-07-24T00:45:21.681532Z [info     ] No archives to import         
+tests/test_import_batch_flow.py::test_web_ui_flow_control_batch_and_rate_are_preserved 2026-07-24T01:10:56.506585Z [info     ] No archives to import         
 PASSED
-tests/test_import_batch_flow.py::test_no_flow_control_captures_config_defaults 2026-07-24T00:45:21.949487Z [info     ] No archives to import         
+tests/test_import_batch_flow.py::test_no_flow_control_captures_config_defaults 2026-07-24T01:10:56.728500Z [info     ] No archives to import         
 PASSED
 tests/test_import_batch_flow.py::test_seeding_is_guarded_in_source PASSED
 tests/test_import_jvm_throttle.py::test_ring_buffer_is_the_early_signal PASSED
@@ -182,9 +182,9 @@ tests/test_import_jvm_throttle.py::test_journal_alone_still_works PASSED
 tests/test_import_jvm_throttle.py::test_most_severe_signal_wins PASSED
 tests/test_import_jvm_throttle.py::test_unknown_heap_is_ignored PASSED
 tests/test_import_jvm_throttle.py::test_monitoring_disabled_is_normal PASSED
-tests/test_import_jvm_throttle.py::test_failed_check_before_ever_working_does_not_deadlock 2026-07-24T00:45:21.988465Z [warning  ] Journal endpoint unreachable; import proceeds at user rate without journal throttling error=404
+tests/test_import_jvm_throttle.py::test_failed_check_before_ever_working_does_not_deadlock 2026-07-24T01:10:56.759624Z [warning  ] Journal endpoint unreachable; import proceeds at user rate without journal throttling error=404
 PASSED
-tests/test_import_jvm_throttle.py::test_failed_check_after_working_is_failsafe_pause 2026-07-24T00:45:21.990318Z [warning  ] Journal check failed mid-import (target unreachable/stuck) — pausing until it recovers error=timeout
+tests/test_import_jvm_throttle.py::test_failed_check_after_working_is_failsafe_pause 2026-07-24T01:10:56.761601Z [warning  ] Journal check failed mid-import (target unreachable/stuck) — pausing until it recovers error=timeout
 PASSED
 tests/test_import_jvm_throttle.py::test_elevated_backlog_not_draining_escalates_to_pause PASSED
 tests/test_import_jvm_throttle.py::test_elevated_backlog_that_is_draining_stays_slow PASSED
@@ -200,7 +200,7 @@ tests/test_index_set_coverage.py::test_list_value PASSED
 tests/test_index_set_coverage.py::test_empty_falls_back_to_global_config PASSED
 tests/test_index_set_coverage.py::test_explicit_value_overrides_global_config PASSED
 tests/test_index_set_coverage.py::test_none_covers_all_index_sets PASSED
-tests/test_index_set_coverage.py::test_restricting_reports_skipped_index_sets 2026-07-24T00:45:22.030580Z [warning  ] Index sets NOT covered by this OpenSearch export — their logs will NOT be archived and will be lost when Graylog retention deletes them covered=['graylog'] skipped=['PVE Hosts', 'Wazuh']
+tests/test_index_set_coverage.py::test_restricting_reports_skipped_index_sets 2026-07-24T01:10:56.797247Z [warning  ] Index sets NOT covered by this OpenSearch export — their logs will NOT be archived and will be lost when Graylog retention deletes them covered=['graylog'] skipped=['PVE Hosts', 'Wazuh']
 PASSED
 tests/test_index_set_coverage.py::test_explicit_prefix_skips_api_lookup PASSED
 tests/test_index_set_coverage.py::test_index_sets_without_prefix_are_ignored PASSED
@@ -208,16 +208,26 @@ tests/test_index_set_coverage.py::test_job_result_json_round_trips PASSED
 tests/test_indexer_failure_autofix.py::test_parse_failure_message_extracts_field_and_reason PASSED
 tests/test_indexer_failure_autofix.py::test_parse_failure_rejects_log_prefix_tokens PASSED
 tests/test_indexer_failure_autofix.py::test_get_indexer_failure_details_aggregates_fields PASSED
-tests/test_indexer_failure_autofix.py::test_remediate_pins_fields_and_cycles_never_deletes 2026-07-24T00:45:22.254344Z [info     ] Custom mappings applied        failed=0 ok=2 total=2
-2026-07-24T00:45:22.255204Z [info     ] Auto-remediated indexer-failure fields as string fields=['Keywords', 'foo'] index_set=idx1
+tests/test_indexer_failure_autofix.py::test_remediate_pins_fields_and_cycles_never_deletes 2026-07-24T01:10:57.049902Z [info     ] Custom mappings applied        failed=0 ok=2 total=2
+2026-07-24T01:10:57.050749Z [info     ] Auto-remediated indexer-failure fields as string fields=['Keywords', 'foo'] index_set=idx1
 PASSED
 tests/test_indexer_failure_autofix.py::test_iterator_metadata_fallback_degrades_not_crashes PASSED
 tests/test_indexer_failure_autofix.py::test_long_overflow_numeric_tracked_as_string PASSED
+tests/test_inline_remediation.py::test_mid_import_remediate_pins_new_fields_on_rise 2026-07-24T01:10:57.068004Z [warning  ] Mid-import auto-remediation applied failures_delta=5 fields=['Keywords']
+PASSED
+tests/test_inline_remediation.py::test_mid_import_remediate_noop_when_no_rise PASSED
+tests/test_inline_remediation.py::test_mid_import_remediate_skips_already_pinned_field PASSED
+tests/test_inline_remediation.py::test_bulk_inline_remediation_resends_failed_docs 2026-07-24T01:10:57.088064Z [info     ] Bulk import starting           archives=1 batch_docs=10000 indices_to_create=1 target_pattern=jt_restored total_messages=2
+2026-07-24T01:10:57.088761Z [info     ] Bulk re-sent failed docs after remediation fields=['Keywords'] reindexed=1 resent=1 still_failed=0
+2026-07-24T01:10:57.088876Z [info     ] Bulk import completed          archives=1 duration=0.0s failed=0 indexed=2 sent=2
+PASSED
+tests/test_inline_remediation.py::test_import_job_persists_retry_config 2026-07-24T01:10:57.301696Z [info     ] No archives to import         
+PASSED
 tests/test_integration.py::test_cross_conflict_actual_os_mapping PASSED
 tests/test_integration.py::test_field_schema_zlib_in_preflight PASSED
 tests/test_integration.py::test_timezone_dedup_correctness PASSED
 tests/test_integration.py::test_timezone_retention_correctness PASSED
-tests/test_integration.py::test_archive_write_read_integrity 2026-07-24T00:45:23.670501Z [info     ] Archive written                messages=50 path=/tmp/tmp10fxymbf/test/stream1/2026/01/01/test_stream1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.00
+tests/test_integration.py::test_archive_write_read_integrity 2026-07-24T01:10:58.948017Z [info     ] Archive written                messages=50 path=/tmp/tmpuz0a4g2n/test/stream1/2026/01/01/test_stream1_20260101T000000Z_20260101T010000Z_001.json.gz size_mb=0.00
 PASSED
 tests/test_integration.py::test_coverage_ratio_timezone PASSED
 tests/test_integrity.py::test_key_gen_and_load_roundtrip PASSED
@@ -228,9 +238,9 @@ tests/test_integrity.py::test_seal_writes_hmac_and_ledger PASSED
 tests/test_integrity.py::test_verify_ok_when_untouched PASSED
 tests/test_integrity.py::test_tamper_detected_even_if_db_checksum_rewritten PASSED
 tests/test_integrity.py::test_verify_skip_when_not_sealed PASSED
-tests/test_integrity.py::test_verifier_flags_tampered 2026-07-24T00:45:24.921307Z [info     ] Verification started           total_archives=1
-2026-07-24T00:45:24.922142Z [error    ] TAMPERED archive (HMAC mismatch) archive_id=1 path=/tmp/pytest-of-root/pytest-78/test_verifier_flags_tampered0/a.json.gz
-2026-07-24T00:45:24.938489Z [info     ] Verification completed         corrupted=0 missing=0 orphans=0 tampered=1 total=1 valid=0
+tests/test_integrity.py::test_verifier_flags_tampered 2026-07-24T01:11:00.255825Z [info     ] Verification started           total_archives=1
+2026-07-24T01:11:00.258111Z [error    ] TAMPERED archive (HMAC mismatch) archive_id=1 path=/tmp/pytest-of-root/pytest-82/test_verifier_flags_tampered0/a.json.gz
+2026-07-24T01:11:00.272643Z [info     ] Verification completed         corrupted=0 missing=0 orphans=0 tampered=1 total=1 valid=0
 PASSED
 tests/test_integrity.py::test_notify_tampered_line_is_distinct PASSED
 tests/test_local_admin.py::test_default_hash_is_empty PASSED
@@ -269,71 +279,71 @@ tests/test_opensearch_client.py::test_search_sort_uses_doc_not_id PASSED
 tests/test_opensearch_multicluster.py::test_status_reports_per_server_vs_global PASSED
 tests/test_opensearch_multicluster.py::test_reorder_is_server_aware PASSED
 tests/test_opensearch_multicluster.py::test_reorder_without_server_touches_global PASSED
-tests/test_os_export_multiprefix.py::test_denominator_is_grand_total_across_prefixes 2026-07-24T00:45:37.574089Z [info     ] Index sets resolved for export covered=2 prefixes=['graylog', 'noise_38'] skipped=[]
-2026-07-24T00:45:37.574439Z [info     ] Active write index             active=graylog_write prefix=graylog
-2026-07-24T00:45:37.574698Z [info     ] Found indices                  count=3 prefix=graylog
-2026-07-24T00:45:37.574893Z [info     ] Skipping active write index    index=graylog_write
-2026-07-24T00:45:37.575717Z [info     ] Index time range               docs=20 idx_from='2026-07-01 00:00:00' idx_to='2026-07-01 00:59:59' index=graylog_0
-2026-07-24T00:45:37.576610Z [info     ] Index time range               docs=10 idx_from='2026-07-01 00:00:00' idx_to='2026-07-01 00:59:59' index=graylog_1
-2026-07-24T00:45:37.576843Z [info     ] Active write index             active=noise_38_write prefix=noise_38
-2026-07-24T00:45:37.576941Z [info     ] Found indices                  count=2 prefix=noise_38
-2026-07-24T00:45:37.577019Z [info     ] Skipping active write index    index=noise_38_write
-2026-07-24T00:45:37.577924Z [info     ] Index time range               docs=5 idx_from='2026-07-02 00:00:00' idx_to='2026-07-02 00:59:59' index=noise_38_0
-2026-07-24T00:45:37.584820Z [info     ] Export plan built              grand_total_docs=35 indices=3 prefixes=2
-2026-07-24T00:45:37.585381Z [info     ] Single-scan export starting    batch_size=10000 index=graylog_0
-2026-07-24T00:45:37.595845Z [info     ] Archive written (streaming)    messages=20 original_mb=0.00 path=/tmp/pytest-of-root/pytest-78/test_denominator_is_grand_tota0/arch/s1/graylog_0/2026/07/01/s1_graylog_0_20260701T000000Z_20260701T010000Z_001.json.gz size_mb=0.00
-2026-07-24T00:45:37.603504Z [info     ] Chunk exported                 index=graylog_0 messages=20 time_from='2026-07-01 00:00:00'
-2026-07-24T00:45:37.604000Z [info     ] Single-scan export starting    batch_size=10000 index=graylog_1
-2026-07-24T00:45:37.616947Z [info     ] Archive written (streaming)    messages=10 original_mb=0.00 path=/tmp/pytest-of-root/pytest-78/test_denominator_is_grand_tota0/arch/s1/graylog_1/2026/07/01/s1_graylog_1_20260701T000000Z_20260701T010000Z_001.json.gz size_mb=0.00
-2026-07-24T00:45:37.627018Z [info     ] Chunk exported                 index=graylog_1 messages=10 time_from='2026-07-01 00:00:00'
-2026-07-24T00:45:37.627441Z [info     ] Single-scan export starting    batch_size=10000 index=noise_38_0
-2026-07-24T00:45:37.640809Z [info     ] Archive written (streaming)    messages=5 original_mb=0.00 path=/tmp/pytest-of-root/pytest-78/test_denominator_is_grand_tota0/arch/s1/noise_38_0/2026/07/02/s1_noise_38_0_20260702T000000Z_20260702T010000Z_001.json.gz size_mb=0.00
-2026-07-24T00:45:37.650890Z [info     ] Chunk exported                 index=noise_38_0 messages=5 time_from='2026-07-02 00:00:00'
-2026-07-24T00:45:37.657316Z [info     ] OpenSearch export completed    exported=3 job_id=job-mp-1 messages=35 skipped=0
+tests/test_os_export_multiprefix.py::test_denominator_is_grand_total_across_prefixes 2026-07-24T01:11:12.995952Z [info     ] Index sets resolved for export covered=2 prefixes=['graylog', 'noise_38'] skipped=[]
+2026-07-24T01:11:12.996347Z [info     ] Active write index             active=graylog_write prefix=graylog
+2026-07-24T01:11:12.996573Z [info     ] Found indices                  count=3 prefix=graylog
+2026-07-24T01:11:12.996746Z [info     ] Skipping active write index    index=graylog_write
+2026-07-24T01:11:12.997606Z [info     ] Index time range               docs=20 idx_from='2026-07-01 00:00:00' idx_to='2026-07-01 00:59:59' index=graylog_0
+2026-07-24T01:11:12.998585Z [info     ] Index time range               docs=10 idx_from='2026-07-01 00:00:00' idx_to='2026-07-01 00:59:59' index=graylog_1
+2026-07-24T01:11:12.999008Z [info     ] Active write index             active=noise_38_write prefix=noise_38
+2026-07-24T01:11:12.999244Z [info     ] Found indices                  count=2 prefix=noise_38
+2026-07-24T01:11:12.999385Z [info     ] Skipping active write index    index=noise_38_write
+2026-07-24T01:11:12.999870Z [info     ] Index time range               docs=5 idx_from='2026-07-02 00:00:00' idx_to='2026-07-02 00:59:59' index=noise_38_0
+2026-07-24T01:11:13.006187Z [info     ] Export plan built              grand_total_docs=35 indices=3 prefixes=2
+2026-07-24T01:11:13.006555Z [info     ] Single-scan export starting    batch_size=10000 index=graylog_0
+2026-07-24T01:11:13.016739Z [info     ] Archive written (streaming)    messages=20 original_mb=0.00 path=/tmp/pytest-of-root/pytest-82/test_denominator_is_grand_tota0/arch/s1/graylog_0/2026/07/01/s1_graylog_0_20260701T000000Z_20260701T010000Z_001.json.gz size_mb=0.00
+2026-07-24T01:11:13.022786Z [info     ] Chunk exported                 index=graylog_0 messages=20 time_from='2026-07-01 00:00:00'
+2026-07-24T01:11:13.023248Z [info     ] Single-scan export starting    batch_size=10000 index=graylog_1
+2026-07-24T01:11:13.033250Z [info     ] Archive written (streaming)    messages=10 original_mb=0.00 path=/tmp/pytest-of-root/pytest-82/test_denominator_is_grand_tota0/arch/s1/graylog_1/2026/07/01/s1_graylog_1_20260701T000000Z_20260701T010000Z_001.json.gz size_mb=0.00
+2026-07-24T01:11:13.040083Z [info     ] Chunk exported                 index=graylog_1 messages=10 time_from='2026-07-01 00:00:00'
+2026-07-24T01:11:13.040567Z [info     ] Single-scan export starting    batch_size=10000 index=noise_38_0
+2026-07-24T01:11:13.049569Z [info     ] Archive written (streaming)    messages=5 original_mb=0.00 path=/tmp/pytest-of-root/pytest-82/test_denominator_is_grand_tota0/arch/s1/noise_38_0/2026/07/02/s1_noise_38_0_20260702T000000Z_20260702T010000Z_001.json.gz size_mb=0.00
+2026-07-24T01:11:13.056565Z [info     ] Chunk exported                 index=noise_38_0 messages=5 time_from='2026-07-02 00:00:00'
+2026-07-24T01:11:13.062610Z [info     ] OpenSearch export completed    exported=3 job_id=job-mp-1 messages=35 skipped=0
 PASSED
-tests/test_os_export_multiprefix.py::test_progress_never_exceeds_total 2026-07-24T00:45:37.939887Z [info     ] Index sets resolved for export covered=2 prefixes=['graylog', 'noise_38'] skipped=[]
-2026-07-24T00:45:37.940258Z [info     ] Active write index             active=graylog_write prefix=graylog
-2026-07-24T00:45:37.940475Z [info     ] Found indices                  count=3 prefix=graylog
-2026-07-24T00:45:37.940640Z [info     ] Skipping active write index    index=graylog_write
-2026-07-24T00:45:37.941412Z [info     ] Index time range               docs=20 idx_from='2026-07-01 00:00:00' idx_to='2026-07-01 00:59:59' index=graylog_0
-2026-07-24T00:45:37.942089Z [info     ] Index time range               docs=10 idx_from='2026-07-01 00:00:00' idx_to='2026-07-01 00:59:59' index=graylog_1
-2026-07-24T00:45:37.942433Z [info     ] Active write index             active=noise_38_write prefix=noise_38
-2026-07-24T00:45:37.942572Z [info     ] Found indices                  count=2 prefix=noise_38
-2026-07-24T00:45:37.942682Z [info     ] Skipping active write index    index=noise_38_write
-2026-07-24T00:45:37.943103Z [info     ] Index time range               docs=5 idx_from='2026-07-02 00:00:00' idx_to='2026-07-02 00:59:59' index=noise_38_0
-2026-07-24T00:45:37.949141Z [info     ] Export plan built              grand_total_docs=35 indices=3 prefixes=2
-2026-07-24T00:45:37.949588Z [info     ] Single-scan export starting    batch_size=10000 index=graylog_0
-2026-07-24T00:45:37.962693Z [info     ] Archive written (streaming)    messages=20 original_mb=0.00 path=/tmp/pytest-of-root/pytest-78/test_progress_never_exceeds_to0/arch/s1/graylog_0/2026/07/01/s1_graylog_0_20260701T000000Z_20260701T010000Z_001.json.gz size_mb=0.00
-2026-07-24T00:45:37.972511Z [info     ] Chunk exported                 index=graylog_0 messages=20 time_from='2026-07-01 00:00:00'
-2026-07-24T00:45:37.972915Z [info     ] Single-scan export starting    batch_size=10000 index=graylog_1
-2026-07-24T00:45:37.990311Z [info     ] Archive written (streaming)    messages=10 original_mb=0.00 path=/tmp/pytest-of-root/pytest-78/test_progress_never_exceeds_to0/arch/s1/graylog_1/2026/07/01/s1_graylog_1_20260701T000000Z_20260701T010000Z_001.json.gz size_mb=0.00
-2026-07-24T00:45:38.008536Z [info     ] Chunk exported                 index=graylog_1 messages=10 time_from='2026-07-01 00:00:00'
-2026-07-24T00:45:38.009052Z [info     ] Single-scan export starting    batch_size=10000 index=noise_38_0
-2026-07-24T00:45:38.019265Z [info     ] Archive written (streaming)    messages=5 original_mb=0.00 path=/tmp/pytest-of-root/pytest-78/test_progress_never_exceeds_to0/arch/s1/noise_38_0/2026/07/02/s1_noise_38_0_20260702T000000Z_20260702T010000Z_001.json.gz size_mb=0.00
-2026-07-24T00:45:38.035084Z [info     ] Chunk exported                 index=noise_38_0 messages=5 time_from='2026-07-02 00:00:00'
-2026-07-24T00:45:38.045033Z [info     ] OpenSearch export completed    exported=3 job_id=job-mp-1 messages=35 skipped=0
+tests/test_os_export_multiprefix.py::test_progress_never_exceeds_total 2026-07-24T01:11:13.245845Z [info     ] Index sets resolved for export covered=2 prefixes=['graylog', 'noise_38'] skipped=[]
+2026-07-24T01:11:13.246241Z [info     ] Active write index             active=graylog_write prefix=graylog
+2026-07-24T01:11:13.246484Z [info     ] Found indices                  count=3 prefix=graylog
+2026-07-24T01:11:13.246659Z [info     ] Skipping active write index    index=graylog_write
+2026-07-24T01:11:13.247409Z [info     ] Index time range               docs=20 idx_from='2026-07-01 00:00:00' idx_to='2026-07-01 00:59:59' index=graylog_0
+2026-07-24T01:11:13.248220Z [info     ] Index time range               docs=10 idx_from='2026-07-01 00:00:00' idx_to='2026-07-01 00:59:59' index=graylog_1
+2026-07-24T01:11:13.248732Z [info     ] Active write index             active=noise_38_write prefix=noise_38
+2026-07-24T01:11:13.248933Z [info     ] Found indices                  count=2 prefix=noise_38
+2026-07-24T01:11:13.249102Z [info     ] Skipping active write index    index=noise_38_write
+2026-07-24T01:11:13.249697Z [info     ] Index time range               docs=5 idx_from='2026-07-02 00:00:00' idx_to='2026-07-02 00:59:59' index=noise_38_0
+2026-07-24T01:11:13.258340Z [info     ] Export plan built              grand_total_docs=35 indices=3 prefixes=2
+2026-07-24T01:11:13.258849Z [info     ] Single-scan export starting    batch_size=10000 index=graylog_0
+2026-07-24T01:11:13.269269Z [info     ] Archive written (streaming)    messages=20 original_mb=0.00 path=/tmp/pytest-of-root/pytest-82/test_progress_never_exceeds_to0/arch/s1/graylog_0/2026/07/01/s1_graylog_0_20260701T000000Z_20260701T010000Z_001.json.gz size_mb=0.00
+2026-07-24T01:11:13.276631Z [info     ] Chunk exported                 index=graylog_0 messages=20 time_from='2026-07-01 00:00:00'
+2026-07-24T01:11:13.277344Z [info     ] Single-scan export starting    batch_size=10000 index=graylog_1
+2026-07-24T01:11:13.291830Z [info     ] Archive written (streaming)    messages=10 original_mb=0.00 path=/tmp/pytest-of-root/pytest-82/test_progress_never_exceeds_to0/arch/s1/graylog_1/2026/07/01/s1_graylog_1_20260701T000000Z_20260701T010000Z_001.json.gz size_mb=0.00
+2026-07-24T01:11:13.301927Z [info     ] Chunk exported                 index=graylog_1 messages=10 time_from='2026-07-01 00:00:00'
+2026-07-24T01:11:13.302390Z [info     ] Single-scan export starting    batch_size=10000 index=noise_38_0
+2026-07-24T01:11:13.314216Z [info     ] Archive written (streaming)    messages=5 original_mb=0.00 path=/tmp/pytest-of-root/pytest-82/test_progress_never_exceeds_to0/arch/s1/noise_38_0/2026/07/02/s1_noise_38_0_20260702T000000Z_20260702T010000Z_001.json.gz size_mb=0.00
+2026-07-24T01:11:13.322845Z [info     ] Chunk exported                 index=noise_38_0 messages=5 time_from='2026-07-02 00:00:00'
+2026-07-24T01:11:13.331086Z [info     ] OpenSearch export completed    exported=3 job_id=job-mp-1 messages=35 skipped=0
 PASSED
-tests/test_os_export_multiprefix.py::test_denominator_is_stable_no_regression 2026-07-24T00:45:38.266309Z [info     ] Index sets resolved for export covered=2 prefixes=['graylog', 'noise_38'] skipped=[]
-2026-07-24T00:45:38.266643Z [info     ] Active write index             active=graylog_write prefix=graylog
-2026-07-24T00:45:38.266836Z [info     ] Found indices                  count=3 prefix=graylog
-2026-07-24T00:45:38.267007Z [info     ] Skipping active write index    index=graylog_write
-2026-07-24T00:45:38.267847Z [info     ] Index time range               docs=20 idx_from='2026-07-01 00:00:00' idx_to='2026-07-01 00:59:59' index=graylog_0
-2026-07-24T00:45:38.268558Z [info     ] Index time range               docs=10 idx_from='2026-07-01 00:00:00' idx_to='2026-07-01 00:59:59' index=graylog_1
-2026-07-24T00:45:38.268855Z [info     ] Active write index             active=noise_38_write prefix=noise_38
-2026-07-24T00:45:38.268986Z [info     ] Found indices                  count=2 prefix=noise_38
-2026-07-24T00:45:38.269093Z [info     ] Skipping active write index    index=noise_38_write
-2026-07-24T00:45:38.269581Z [info     ] Index time range               docs=5 idx_from='2026-07-02 00:00:00' idx_to='2026-07-02 00:59:59' index=noise_38_0
-2026-07-24T00:45:38.281306Z [info     ] Export plan built              grand_total_docs=35 indices=3 prefixes=2
-2026-07-24T00:45:38.281888Z [info     ] Single-scan export starting    batch_size=10000 index=graylog_0
-2026-07-24T00:45:38.294523Z [info     ] Archive written (streaming)    messages=20 original_mb=0.00 path=/tmp/pytest-of-root/pytest-78/test_denominator_is_stable_no_0/arch/s1/graylog_0/2026/07/01/s1_graylog_0_20260701T000000Z_20260701T010000Z_001.json.gz size_mb=0.00
-2026-07-24T00:45:38.307477Z [info     ] Chunk exported                 index=graylog_0 messages=20 time_from='2026-07-01 00:00:00'
-2026-07-24T00:45:38.307847Z [info     ] Single-scan export starting    batch_size=10000 index=graylog_1
-2026-07-24T00:45:38.316700Z [info     ] Archive written (streaming)    messages=10 original_mb=0.00 path=/tmp/pytest-of-root/pytest-78/test_denominator_is_stable_no_0/arch/s1/graylog_1/2026/07/01/s1_graylog_1_20260701T000000Z_20260701T010000Z_001.json.gz size_mb=0.00
-2026-07-24T00:45:38.327890Z [info     ] Chunk exported                 index=graylog_1 messages=10 time_from='2026-07-01 00:00:00'
-2026-07-24T00:45:38.328409Z [info     ] Single-scan export starting    batch_size=10000 index=noise_38_0
-2026-07-24T00:45:38.338020Z [info     ] Archive written (streaming)    messages=5 original_mb=0.00 path=/tmp/pytest-of-root/pytest-78/test_denominator_is_stable_no_0/arch/s1/noise_38_0/2026/07/02/s1_noise_38_0_20260702T000000Z_20260702T010000Z_001.json.gz size_mb=0.00
-2026-07-24T00:45:38.354693Z [info     ] Chunk exported                 index=noise_38_0 messages=5 time_from='2026-07-02 00:00:00'
-2026-07-24T00:45:38.371402Z [info     ] OpenSearch export completed    exported=3 job_id=job-mp-1 messages=35 skipped=0
+tests/test_os_export_multiprefix.py::test_denominator_is_stable_no_regression 2026-07-24T01:11:13.551326Z [info     ] Index sets resolved for export covered=2 prefixes=['graylog', 'noise_38'] skipped=[]
+2026-07-24T01:11:13.551629Z [info     ] Active write index             active=graylog_write prefix=graylog
+2026-07-24T01:11:13.551838Z [info     ] Found indices                  count=3 prefix=graylog
+2026-07-24T01:11:13.552005Z [info     ] Skipping active write index    index=graylog_write
+2026-07-24T01:11:13.552718Z [info     ] Index time range               docs=20 idx_from='2026-07-01 00:00:00' idx_to='2026-07-01 00:59:59' index=graylog_0
+2026-07-24T01:11:13.553487Z [info     ] Index time range               docs=10 idx_from='2026-07-01 00:00:00' idx_to='2026-07-01 00:59:59' index=graylog_1
+2026-07-24T01:11:13.553797Z [info     ] Active write index             active=noise_38_write prefix=noise_38
+2026-07-24T01:11:13.553965Z [info     ] Found indices                  count=2 prefix=noise_38
+2026-07-24T01:11:13.554183Z [info     ] Skipping active write index    index=noise_38_write
+2026-07-24T01:11:13.554654Z [info     ] Index time range               docs=5 idx_from='2026-07-02 00:00:00' idx_to='2026-07-02 00:59:59' index=noise_38_0
+2026-07-24T01:11:13.560596Z [info     ] Export plan built              grand_total_docs=35 indices=3 prefixes=2
+2026-07-24T01:11:13.561058Z [info     ] Single-scan export starting    batch_size=10000 index=graylog_0
+2026-07-24T01:11:13.572033Z [info     ] Archive written (streaming)    messages=20 original_mb=0.00 path=/tmp/pytest-of-root/pytest-82/test_denominator_is_stable_no_0/arch/s1/graylog_0/2026/07/01/s1_graylog_0_20260701T000000Z_20260701T010000Z_001.json.gz size_mb=0.00
+2026-07-24T01:11:13.581445Z [info     ] Chunk exported                 index=graylog_0 messages=20 time_from='2026-07-01 00:00:00'
+2026-07-24T01:11:13.581968Z [info     ] Single-scan export starting    batch_size=10000 index=graylog_1
+2026-07-24T01:11:13.590509Z [info     ] Archive written (streaming)    messages=10 original_mb=0.00 path=/tmp/pytest-of-root/pytest-82/test_denominator_is_stable_no_0/arch/s1/graylog_1/2026/07/01/s1_graylog_1_20260701T000000Z_20260701T010000Z_001.json.gz size_mb=0.00
+2026-07-24T01:11:13.599354Z [info     ] Chunk exported                 index=graylog_1 messages=10 time_from='2026-07-01 00:00:00'
+2026-07-24T01:11:13.599859Z [info     ] Single-scan export starting    batch_size=10000 index=noise_38_0
+2026-07-24T01:11:13.609022Z [info     ] Archive written (streaming)    messages=5 original_mb=0.00 path=/tmp/pytest-of-root/pytest-82/test_denominator_is_stable_no_0/arch/s1/noise_38_0/2026/07/02/s1_noise_38_0_20260702T000000Z_20260702T010000Z_001.json.gz size_mb=0.00
+2026-07-24T01:11:13.615846Z [info     ] Chunk exported                 index=noise_38_0 messages=5 time_from='2026-07-02 00:00:00'
+2026-07-24T01:11:13.621750Z [info     ] OpenSearch export completed    exported=3 job_id=job-mp-1 messages=35 skipped=0
 PASSED
 tests/test_os_export_progress.py::test_denominator_is_accumulated_not_reset_per_prefix PASSED
 tests/test_os_export_progress.py::test_update_job_uses_grand_total_not_prefix_total PASSED
@@ -431,7 +441,7 @@ tests/test_settings_api.py::test_upgrade_existing_servers_skip_wizard PASSED
 tests/test_settings_api.py::test_upgrade_partial_edit_preserves_untouched_fields PASSED
 tests/test_startup_recovery.py::test_recover_stuck_importing PASSED
 tests/test_startup_recovery.py::test_recover_stuck_importing_noop_when_clean PASSED
-tests/test_storage_ownership.py::test_fix_dir_ownership_as_root 2026-07-24T00:45:47.523158Z [warning  ] Fixing directory ownership     new_owner=jt-glogarch path=/tmp/tmp0k4hstql/archives/log4
+tests/test_storage_ownership.py::test_fix_dir_ownership_as_root 2026-07-24T01:11:23.177964Z [warning  ] Fixing directory ownership     new_owner=jt-glogarch path=/tmp/tmp5eiawvs5/archives/log4
 PASSED
 tests/test_storage_ownership.py::test_fix_dir_ownership_not_root SKIPPED
 tests/test_storage_ownership.py::test_fix_only_under_base_path PASSED
@@ -450,12 +460,12 @@ tests/test_upgrade_script.py::test_upgrade_script_op_audit_has_retention_days PA
 tests/test_upgrade_script.py::test_readme_git_clone_has_sudo PASSED
 tests/test_upgrade_script.py::test_memory_cap_is_soft_only PASSED
 
-======================= 317 passed, 1 skipped in 37.50s ========================
+======================= 322 passed, 1 skipped in 38.15s ========================
 ```
 
 ## Version Check
 
 ```
-Canonical version: 1.13.34
-OK: version '1.13.34' has exactly one source of truth.
+Canonical version: 1.13.35
+OK: version '1.13.35' has exactly one source of truth.
 ```

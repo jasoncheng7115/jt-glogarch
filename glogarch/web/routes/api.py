@@ -457,6 +457,18 @@ async def trigger_import(request: Request, background_tasks: BackgroundTasks):
     archive_ids = body.get("archive_ids")
     target = body.get("target_server")
 
+    # Retry params persisted on the job (NEVER secrets) so a failed import can be
+    # re-run with one click. Secrets are re-read from the stored import defaults.
+    retry_config = {
+        "archive_ids": archive_ids,
+        "mode": import_mode,
+        "target_api_url": target_api_url,
+        "gelf_host": body.get("gelf_host") or "",
+        "gelf_port": body.get("gelf_port") or "",
+        "gelf_protocol": body.get("gelf_protocol") or "",
+        "target_server": target,
+    }
+
     job_id = str(uuid.uuid4())
     _job_progress[job_id] = []
 
@@ -496,6 +508,7 @@ async def trigger_import(request: Request, background_tasks: BackgroundTasks):
                 progress_callback=_cb,
                 job_id=job_id,
                 flow_control=fc,
+                job_config=retry_config,
             ))
             _job_progress.setdefault(job_id, []).append(
                 {"phase": "done", "pct": 100}
@@ -1914,6 +1927,14 @@ def _job_to_dict(j) -> dict:
             d["result"] = _json.loads(_rj)
         except Exception:
             d["result"] = None
+    # Parsed retry config (archives + target, no secrets) for the one-click retry.
+    _cj = getattr(j, "config_json", None)
+    if _cj:
+        try:
+            import json as _json2
+            d["retry_config"] = _json2.loads(_cj)
+        except Exception:
+            d["retry_config"] = None
     # Enrich with live progress info from in-memory store
     if j.id in _job_progress and _job_progress[j.id]:
         events = _job_progress[j.id]
