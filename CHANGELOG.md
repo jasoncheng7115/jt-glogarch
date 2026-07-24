@@ -2,6 +2,23 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.39] - 2026-07-24
+
+### Fixed
+
+- **The capacity check no longer BLOCKS the import — added "Import anyway".**
+  Preflight aborts the import when retention "will delete data", but the estimate
+  can over-count, which made a perfectly fine import impossible. The capacity
+  warning now offers an **"Import anyway"** button (and there's an `ignore_capacity`
+  flag end-to-end) that proceeds past the check with a clear confirmation.
+- **Capacity estimate no longer inflated by non-log system indices.** When the
+  target index set is empty, the bytes/document is measured from the cluster —
+  but a plain cluster-wide average was skewed by small system/plugin indices
+  (`top_queries`, `.kibana`, `gl-events` — few docs but large). It now sums only
+  the real **log** indices (excludes dot-prefixed + known system indices), so the
+  measured index size is realistic (on our test cluster: 160 B/doc instead of the
+  skewed 407 → ~2.5× fewer indices).
+
 ## [1.13.38] - 2026-07-24
 
 ### Fixed

@@ -852,15 +852,16 @@ async function estimateImportCapacity() {
             .replace('{total}', formatBytes(r.os_disk_total_bytes))
             .replace('{idx}', perIdx).replace('{rep}', r.replicas)
             .replace('{rec}', formatNumber(r.recommended_max_indices))}${ratio}</div>`);
+        const anywayBtn = `<button class="btn-sm btn-secondary" data-act="importAnyway">${t('cap_anyway')}</button>`;
         if (r.disk_fits === false) {
             lines.push(`<div class="cap-warn status-failed">${t('cap_disk_full')
                 .replace('{rec}', formatNumber(r.recommended_max_indices))
-                .replace('{est}', formatNumber(r.estimated_indices))}</div>`);
+                .replace('{est}', formatNumber(r.estimated_indices))} ${anywayBtn}</div>`);
         } else if (r.max_indices > 0 && r.max_indices < r.estimated_indices) {
             lines.push(`<div class="cap-warn"><span class="status-failed">${t('cap_raise')
                 .replace('{max}', formatNumber(r.max_indices))
                 .replace('{est}', formatNumber(r.estimated_indices))}</span> ` +
-                `<button class="btn-sm btn-primary" data-act="applyRetention" data-arg="${r.suggested_setting}">${t('cap_apply').replace('{n}', formatNumber(r.suggested_setting))}</button></div>` +
+                `<button class="btn-sm btn-primary" data-act="applyRetention" data-arg="${r.suggested_setting}">${t('cap_apply').replace('{n}', formatNumber(r.suggested_setting))}</button> ${anywayBtn}</div>` +
                 `<div class="cap-warn u030">${t('cap_sop')}</div>`);
         } else {
             lines.push(`<div class="cap-warn"><span class="status-completed">${t('cap_ok_disk')}</span></div>`);
@@ -873,7 +874,10 @@ async function estimateImportCapacity() {
             cls = r.sufficient ? 'status-completed' : 'status-failed';
         } else { verdict = t('cap_no_deletion'); cls = 'status-completed'; }
         lines.push(`<div><span class="${cls}">${verdict}</span></div><div class="cap-warn u030">${t('cap_no_disk')}</div>`);
-        if (!r.sufficient && (r.warnings || []).length) lines.push(`<div class="cap-warn u030">${esc(r.warnings[0])}</div>`);
+        if (!r.sufficient && (r.warnings || []).length) {
+            lines.push(`<div class="cap-warn u030">${esc(r.warnings[0])}</div>`);
+            lines.push(`<div class="cap-warn"><button class="btn-sm btn-secondary" data-act="importAnyway">${t('cap_anyway')}</button></div>`);
+        }
     }
     el.innerHTML = lines.join('');
 }
@@ -897,6 +901,15 @@ async function applyRetention(n) {
         });
         if (r && r.ok) { showAlert(t('cap_applied').replace('{n}', formatNumber(n))); estimateImportCapacity(); }
         else { showAlert((r && r.error) || t('unknown_error')); }
+    });
+}
+
+// "Import anyway": proceed despite the capacity warning (the estimate can
+// over-count from raw JSON; the operator may accept old data rotating out).
+function importAnyway() {
+    showConfirm(`${icon('warning')} ${t('cap_anyway_title')}`, t('cap_anyway_msg'), () => {
+        window._ignoreCapacity = true;
+        doImportSingle();
     });
 }
 
@@ -1410,6 +1423,9 @@ async function doImportSingle() {
         target_api_token: apiToken,
         target_api_username: apiUser,
         target_api_password: apiPass,
+        // "Import anyway": the capacity estimate can over-count (raw JSON); when
+        // the user chooses to proceed, don't let the preflight abort on it.
+        ignore_capacity: !!window._ignoreCapacity,
     };
 
     if (mode === 'gelf') {
@@ -1439,6 +1455,7 @@ async function doImportSingle() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(body),
     });
+    window._ignoreCapacity = false;   // consume the one-shot "import anyway" flag
 
     // NOTE: do NOT clear window._batchImportIds here — if the job fails and the
     // user wants to retry (e.g. after fixing the host), we need the ids to be

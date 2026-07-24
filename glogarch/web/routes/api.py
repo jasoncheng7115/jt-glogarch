@@ -509,6 +509,7 @@ async def trigger_import(request: Request, background_tasks: BackgroundTasks):
                 job_id=job_id,
                 flow_control=fc,
                 job_config=retry_config,
+                ignore_capacity=bool(body.get("ignore_capacity")),
             ))
             _job_progress.setdefault(job_id, []).append(
                 {"phase": "done", "pct": 100}
@@ -665,25 +666,48 @@ async def _measure_bytes_per_doc(hosts, user, pw, verify, prefix):
     JSON guess. Returns (bytes_per_doc, scope) or None."""
     import httpx as _httpx
     auth = _httpx.BasicAuth(user, pw) if user else None
-    targets = []
+    # 1) the target index set's own indices (most representative)
     if prefix:
-        targets.append((f"/{prefix}*/_stats/store,docs", "index-set"))
-    targets.append(("/_stats/store,docs", "cluster"))   # fallback: all existing data
-    for path, scope in targets:
         for h in (hosts or []):
             try:
                 async with _httpx.AsyncClient(verify=verify, timeout=10.0) as c:
-                    r = await c.get(f"{h.rstrip('/')}{path}", auth=auth,
-                                    headers={"Accept": "application/json"})
-                    if r.status_code != 200:
-                        continue
-                    pri = ((r.json().get("_all") or {}).get("primaries") or {})
-                    store = int((pri.get("store") or {}).get("size_in_bytes") or 0)
-                    docs = int((pri.get("docs") or {}).get("count") or 0)
-                    if store > 0 and docs > 0:
-                        return store / docs, scope
+                    r = await c.get(f"{h.rstrip('/')}/{prefix}*/_stats/store,docs",
+                                    auth=auth, headers={"Accept": "application/json"})
+                    if r.status_code == 200:
+                        pri = ((r.json().get("_all") or {}).get("primaries") or {})
+                        store = int((pri.get("store") or {}).get("size_in_bytes") or 0)
+                        docs = int((pri.get("docs") or {}).get("count") or 0)
+                        if store > 0 and docs > 0:
+                            return store / docs, "index-set"
             except Exception:
-                continue
+                pass
+    # 2) fallback: the DOMINANT log data across the cluster. Use _cat/indices and
+    # EXCLUDE system/plugin indices (dot-prefixed, or top_queries/gl-events/…) —
+    # those have few docs but large ones and badly skew a cluster-wide _all ratio.
+    _SYS = ("top_queries", "gl-events", "gl-system-events", "gl_system_events")
+    for h in (hosts or []):
+        try:
+            async with _httpx.AsyncClient(verify=verify, timeout=10.0) as c:
+                r = await c.get(f"{h.rstrip('/')}/_cat/indices",
+                                params={"h": "index,docs.count,pri.store.size", "bytes": "b",
+                                        "format": "json"},
+                                auth=auth, headers={"Accept": "application/json"})
+                if r.status_code != 200:
+                    continue
+                store = docs = 0
+                for row in r.json():
+                    name = row.get("index", "")
+                    if name.startswith(".") or any(name.startswith(s) for s in _SYS):
+                        continue
+                    dc = int(row.get("docs.count") or 0)
+                    sz = int(row.get("pri.store.size") or 0)
+                    if dc > 0:
+                        docs += dc
+                        store += sz
+                if store > 0 and docs > 0:
+                    return store / docs, "log-data"
+        except Exception:
+            continue
     return None
 
 

@@ -207,6 +207,7 @@ class Importer:
         job_id: str | None = None,
         flow_control: ImportFlowControl | None = None,
         job_config: dict | None = None,
+        ignore_capacity: bool = False,
     ) -> ImportResult:
         """Import archived messages into Graylog.
 
@@ -330,7 +331,8 @@ class Importer:
                     pf_kwargs["bulk_os_password"] = self.bulk_importer.os_password
                     pf_kwargs["bulk_target_pattern"] = self.bulk_importer.target_index_pattern
                 preflight_result = await self.preflight.run(
-                    self.db, pf_ids, cancel_check=lambda: fc.cancelled, **pf_kwargs,
+                    self.db, pf_ids, cancel_check=lambda: fc.cancelled,
+                    ignore_capacity=ignore_capacity, **pf_kwargs,
                 )
                 # User cancelled during preflight — mark CANCELLED, not FAILED.
                 if preflight_result.cancelled or fc.cancelled:

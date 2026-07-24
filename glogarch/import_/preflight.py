@@ -1112,6 +1112,7 @@ class PreflightChecker:
         bulk_os_password: str | None = None,
         bulk_target_pattern: str | None = None,
         cancel_check: "Callable[[], bool] | None" = None,
+        ignore_capacity: bool = False,
     ) -> PreflightResult:
         """Execute the full preflight pipeline.
 
@@ -1204,8 +1205,11 @@ class PreflightChecker:
                 for w in cap_warnings:
                     log.warning("Preflight capacity warning", msg=w)
                     result.capacity_warnings.append(f"[capacity] {w}")
-                    # Retention-will-delete is a HARD error
-                    if "Retention will delete data" in w:
+                    # Retention-will-delete is normally a HARD error — but the
+                    # operator can override it ("import anyway"): the estimate can
+                    # over-count (raw JSON), and they may accept that old data
+                    # rotates out. With ignore_capacity it stays a warning.
+                    if "Retention will delete data" in w and not ignore_capacity:
                         result.aborted = True
                         result.error = w
                         return result
