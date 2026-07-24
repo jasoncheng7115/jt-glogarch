@@ -415,10 +415,16 @@ class PreflightChecker:
         return errors, warnings
 
     async def check_capacity(
-        self, index_set_id: str, total_messages: int, total_bytes: int
+        self, index_set_id: str, total_messages: int, total_bytes: int,
+        estimated_override: int = 0,
     ) -> tuple[int, list[str]]:
         """Check whether the target index set can hold the upcoming import.
         Returns (estimated_indices_needed, list_of_warnings).
+
+        `estimated_override`: use this index count instead of the raw-JSON÷max_size
+        guess. The pre-import dialog measures the REAL indexed bytes/doc and passes
+        its (accurate) index count here, so the actual import's capacity decision
+        matches exactly what the operator saw (no "dialog said 74, import said 165").
 
         We look at:
             - Rotation strategy + its limits (size / message count / time)
@@ -445,10 +451,15 @@ class PreflightChecker:
         prefix = iset.get("index_prefix", "graylog")
 
         # --- Estimate indices needed ---
-        if "SizeBased" in rot_class:
+        if estimated_override and estimated_override > 0:
+            # Use the dialog's MEASURED estimate (real indexed bytes/doc) so the
+            # import's decision matches what the operator was shown.
+            estimated = estimated_override
+        elif "SizeBased" in rot_class:
             max_size = int(rot.get("max_size", 0))
             if max_size > 0:
-                # Conservative: assume 1.5x compression vs raw bytes
+                # Fallback (no measured estimate): raw JSON ÷ max_size. This
+                # OVER-counts (raw JSON > indexed size); the dialog override avoids it.
                 estimated = max(1, (total_bytes // max_size) + 1)
         elif "MessageCount" in rot_class:
             max_docs = int(rot.get("max_docs_per_index", 0))
@@ -1113,6 +1124,7 @@ class PreflightChecker:
         bulk_target_pattern: str | None = None,
         cancel_check: "Callable[[], bool] | None" = None,
         ignore_capacity: bool = False,
+        estimated_indices: int = 0,
     ) -> PreflightResult:
         """Execute the full preflight pipeline.
 
@@ -1190,7 +1202,8 @@ class PreflightChecker:
             # 6. Capacity check (rotation/retention) — abort if retention will eat data
             if total_messages > 0:
                 estimated, cap_warnings = await self.check_capacity(
-                    index_set_id, total_messages, total_bytes
+                    index_set_id, total_messages, total_bytes,
+                    estimated_override=estimated_indices,
                 )
                 result.estimated_indices_needed = estimated
                 # Read strategies for the result

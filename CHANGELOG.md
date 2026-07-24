@@ -2,6 +2,24 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.40] - 2026-07-24
+
+### Fixed
+
+- **The pre-import estimate and the actual import now agree.** The dialog showed
+  the MEASURED index count (e.g. 74) but the running import re-computed capacity
+  from raw JSON in preflight (e.g. 165) and aborted — "dialog said 74, import said
+  165, raise retention to 165". The dialog's measured index count is now passed
+  into the import, so `check_capacity` uses the SAME number the operator saw. No
+  more inconsistent abort.
+- **The capacity estimate read the WRONG OpenSearch disk.** It measured
+  jt-glogarch's globally-configured OpenSearch (often a different/production
+  cluster) instead of the import target's own OpenSearch — e.g. showing 1.97 TB
+  when the target's data path was a 4 TB disk. It now prefers the **target's**
+  OpenSearch (explicit `target_os_url` → auto-detected from the target Graylog
+  host → global OS last), and the estimate now shows **which host + data path**
+  it measured so a wrong-cluster read is obvious at a glance.
+
 ## [1.13.39] - 2026-07-24
 
 ### Fixed

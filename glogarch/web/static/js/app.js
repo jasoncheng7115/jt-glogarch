@@ -834,7 +834,8 @@ async function estimateImportCapacity() {
     } catch (e) { el.innerHTML = ''; return; }
     if (!r || r.error) { el.innerHTML = ''; return; }   // silent — creds may not be ready
     window._lastEstimate = {ids: ids.slice().sort().join(','), total_messages: r.total_messages,
-                            index_set_id: r.index_set_id, suggested: r.suggested_setting};
+                            index_set_id: r.index_set_id, suggested: r.suggested_setting,
+                            est_indices: r.estimated_indices};
     const gb = (r.total_bytes / 1e9).toFixed(2);
     const head = `${icon('db', 14)} ${t('cap_summary')
         .replace('{m}', formatNumber(r.total_messages))
@@ -847,11 +848,16 @@ async function estimateImportCapacity() {
         // indexed size, and recommend the retention that fits 80% of the disk.
         const perIdx = formatBytes(r.per_index_bytes * (1 + (r.replicas || 0)));
         const ratio = r.json_to_index_ratio ? ` (${t('cap_ratio').replace('{x}', r.json_to_index_ratio)})` : '';
+        // Show WHICH disk/host was measured so a wrong-cluster read is obvious.
+        const where = (r.os_disk_host || (r.os_disk_paths || []).length)
+            ? `<div class="cap-warn u030">${t('cap_disk_where')
+                .replace('{host}', esc(r.os_disk_host || '?'))
+                .replace('{path}', esc((r.os_disk_paths || []).join(', ') || '?'))}</div>` : '';
         lines.push(`<div class="u030">${t('cap_disk')
             .replace('{avail}', formatBytes(r.os_disk_avail_bytes))
             .replace('{total}', formatBytes(r.os_disk_total_bytes))
             .replace('{idx}', perIdx).replace('{rep}', r.replicas)
-            .replace('{rec}', formatNumber(r.recommended_max_indices))}${ratio}</div>`);
+            .replace('{rec}', formatNumber(r.recommended_max_indices))}${ratio}</div>${where}`);
         const anywayBtn = `<button class="btn-sm btn-secondary" data-act="importAnyway">${t('cap_anyway')}</button>`;
         if (r.disk_fits === false) {
             lines.push(`<div class="cap-warn status-failed">${t('cap_disk_full')
@@ -1426,6 +1432,11 @@ async function doImportSingle() {
         // "Import anyway": the capacity estimate can over-count (raw JSON); when
         // the user chooses to proceed, don't let the preflight abort on it.
         ignore_capacity: !!window._ignoreCapacity,
+        // Pass the dialog's MEASURED index count so the import's capacity check
+        // uses the SAME number the operator saw (not a raw-JSON recompute).
+        estimated_indices: (window._lastEstimate
+            && window._lastEstimate.ids === ids.slice().sort().join(',')
+            && window._lastEstimate.est_indices) || 0,
     };
 
     if (mode === 'gelf') {

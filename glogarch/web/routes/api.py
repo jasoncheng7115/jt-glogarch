@@ -510,6 +510,7 @@ async def trigger_import(request: Request, background_tasks: BackgroundTasks):
                 flow_control=fc,
                 job_config=retry_config,
                 ignore_capacity=bool(body.get("ignore_capacity")),
+                estimated_indices=int(body.get("estimated_indices") or 0),
             ))
             _job_progress.setdefault(job_id, []).append(
                 {"phase": "done", "pct": 100}
@@ -592,15 +593,27 @@ async def import_capacity_estimate(request: Request):
     if per_index_bytes == 0 and estimated > 0:
         per_index_bytes = total_bytes // estimated  # MessageCount/time: derive avg
     replicas = int(iset.get("replicas", 0) or 0)
+    # Resolve the OpenSearch to measure. CRITICAL: prefer the IMPORT TARGET's own
+    # OpenSearch (the disk the imported data will actually land on) — NOT
+    # jt-glogarch's globally-configured OS, which is often a DIFFERENT cluster
+    # (e.g. production). Order: explicit target_os_url → auto-detect from the
+    # target Graylog host → the app's global OS (last resort).
     os_cfg = settings.get_opensearch()
-    os_hosts = list(os_cfg.hosts or [])
-    if not os_hosts:
+    body_os = (body.get("target_os_url") or "").strip()
+    if body_os:
+        os_hosts = [body_os]
+    else:
         auto = await pf.auto_detect_opensearch_url()
-        if auto:
-            os_hosts = [auto]
+        os_hosts = [auto] if auto else list(os_cfg.hosts or [])
+    # Try the app's OS creds first, then the target Graylog creds (co-located
+    # setups often share admin creds; OS may also be open).
     disk = await _query_os_data_disk(os_hosts, os_cfg.username, os_cfg.password, os_cfg.verify_ssl)
+    if not disk:
+        disk = await _query_os_data_disk(os_hosts, user, pw, False)
     disk_total = disk[0] if disk else 0
     disk_avail = disk[1] if disk else 0
+    disk_host = (disk[2] if disk else "")
+    disk_paths = (disk[3] if disk else [])
 
     # Measure REAL indexed size/doc from the target's existing indices so the
     # estimate reflects OpenSearch on-disk size, not raw JSON size (they differ:
@@ -642,6 +655,8 @@ async def import_capacity_estimate(request: Request):
         "os_disk_reachable": bool(disk),
         "os_disk_total_bytes": disk_total,
         "os_disk_avail_bytes": disk_avail,
+        "os_disk_host": disk_host,
+        "os_disk_paths": disk_paths,
         "per_index_bytes": per_index_bytes,
         "replicas": replicas,
         "recommended_max_indices": rec_max_indices,
@@ -712,8 +727,10 @@ async def _measure_bytes_per_doc(hosts, user, pw, verify, prefix):
 
 
 async def _query_os_data_disk(hosts, user, pw, verify):
-    """Return (total_bytes, available_bytes) of the OpenSearch DATA path across
-    data nodes via _nodes/stats/fs, or None if unreachable."""
+    """Return (total_bytes, available_bytes, host, data_paths) of the OpenSearch
+    DATA path across data nodes via _nodes/stats/fs, or None if unreachable. The
+    host + data paths are returned so the UI can show WHICH disk was measured
+    (avoids silently reading the wrong cluster)."""
     import httpx as _httpx
     auth = _httpx.BasicAuth(user, pw) if user else None
     for h in (hosts or []):
@@ -725,12 +742,18 @@ async def _query_os_data_disk(hosts, user, pw, verify):
                     continue
                 data = r.json()
                 total = avail = 0
+                paths = set()
                 for _nid, n in (data.get("nodes") or {}).items():
-                    fs_total = (n.get("fs") or {}).get("total") or {}
+                    fs = n.get("fs") or {}
+                    fs_total = fs.get("total") or {}
                     total += int(fs_total.get("total_in_bytes") or 0)
                     avail += int(fs_total.get("available_in_bytes") or 0)
+                    for d in (fs.get("data") or []):
+                        p = d.get("path") or d.get("mount")
+                        if p:
+                            paths.add(p)
                 if total > 0:
-                    return total, avail
+                    return total, avail, h, sorted(paths)
         except Exception:
             continue
     return None
