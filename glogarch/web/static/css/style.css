@@ -1629,3 +1629,7 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
 /* Pre-import capacity estimate line + its warning */
 .capacity-estimate { margin: 8px 0; font-size: 0.9em; }
 .capacity-estimate .cap-warn { margin-top: 4px; }
+/* Neutral/muted color for INFORMATIONAL lines (disk stats, measured-from host,
+   SOP hint) so they don't read as a warning — only real "insufficient" lines
+   keep the orange/red warning color. */
+.capacity-estimate .cap-info { color: var(--text-muted); }

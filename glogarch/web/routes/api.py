@@ -1006,26 +1006,55 @@ def cancel_job(request: Request, job_id: str):
 
 @router.get("/jobs/{job_id}/stream")
 async def job_stream(request: Request, job_id: str):
-    """SSE endpoint for real-time job progress."""
+    """SSE endpoint for real-time job progress.
+
+    A backpressure pause (target Graylog output buffer full / journal climbing)
+    can legitimately stall message progress for many minutes while the importer
+    waits for the buffer to drain — during that window NO new progress event is
+    appended. The old code declared a fake ``SSE timeout`` after 10 min of that,
+    surfacing a *running* import as a red error. Instead we now emit a periodic
+    heartbeat so the stream never idles into a false failure, and only END the
+    stream with the job's REAL status (from the in-memory final event, or the DB
+    once the job has left memory) — never a synthetic error.
+    """
     async def event_generator():
         import json as _json
         last_idx = 0
-        max_wait = 600  # 10 minutes max
-        waited = 0
-        while waited < max_wait:
+        idle = 0.0
+        HEARTBEAT = 10.0  # keepalive cadence while progress is stalled (paused)
+        while True:
+            if await request.is_disconnected():
+                return
             events = _job_progress.get(job_id, [])
+            new = False
             while last_idx < len(events):
                 evt = events[last_idx]
                 last_idx += 1
+                new = True
                 yield {"event": "progress", "data": _json.dumps(evt)}
                 if evt.get("pct", 0) >= 100 or evt.get("phase") in ("error", "done"):
                     yield {"event": "done", "data": _json.dumps(evt)}
                     return
-                waited = 0  # Reset timeout on activity
+            if new:
+                idle = 0.0
+                continue
             await asyncio.sleep(0.5)
-            waited += 0.5
-        # Timeout
-        yield {"event": "done", "data": _json.dumps({"phase": "error", "error": "SSE timeout", "pct": 0})}
+            idle += 0.5
+            if idle >= HEARTBEAT:
+                idle = 0.0
+                # If the job has left the in-memory buffer, the run is over — emit
+                # the DB's terminal status and stop. Otherwise it's still running
+                # (possibly paused on backpressure): send a heartbeat and wait.
+                if job_id not in _job_progress:
+                    try:
+                        job = _db(request).get_job(job_id)
+                    except Exception:
+                        job = None
+                    if job and job.status.value in ("completed", "failed", "cancelled"):
+                        yield {"event": "done", "data": _json.dumps(
+                            {"phase": job.status.value, "pct": 100})}
+                        return
+                yield {"event": "heartbeat", "data": _json.dumps({"phase": "heartbeat"})}
 
     return EventSourceResponse(event_generator())
 

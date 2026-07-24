@@ -2,6 +2,27 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.41] - 2026-07-24
+
+### Fixed
+
+- **Import progress no longer shows a false "SSE timeout" while paused.** When the
+  target Graylog's output buffer fills (backpressure), the importer pauses and
+  stops emitting progress events; the live progress stream used to declare a fake
+  `SSE timeout` after 10 minutes of that and paint the *running* import red. The
+  stream now sends periodic heartbeats during a pause and only ends with the job's
+  REAL status (the final event, or the DB status once the job leaves memory) — a
+  paused/slow import is never surfaced as a failure. The browser also keeps its
+  polling fallback alive and won't finalize a still-running job.
+
+### Changed
+
+- **Pre-import capacity dialog: informational lines are muted, not orange.** The
+  disk / measured-from / SOP lines used the warning color and read as an alert
+  even when the verdict was "fits"; they are now a neutral muted color so only a
+  real "insufficient" line stands out. Colons in the zh dialog get full-width
+  spacing so they aren't cramped.
+
 ## [1.13.40] - 2026-07-24
 
 ### Fixed

@@ -850,10 +850,10 @@ async function estimateImportCapacity() {
         const ratio = r.json_to_index_ratio ? ` (${t('cap_ratio').replace('{x}', r.json_to_index_ratio)})` : '';
         // Show WHICH disk/host was measured so a wrong-cluster read is obvious.
         const where = (r.os_disk_host || (r.os_disk_paths || []).length)
-            ? `<div class="cap-warn u030">${t('cap_disk_where')
+            ? `<div class="cap-warn cap-info">${t('cap_disk_where')
                 .replace('{host}', esc(r.os_disk_host || '?'))
                 .replace('{path}', esc((r.os_disk_paths || []).join(', ') || '?'))}</div>` : '';
-        lines.push(`<div class="u030">${t('cap_disk')
+        lines.push(`<div class="cap-info">${t('cap_disk')
             .replace('{avail}', formatBytes(r.os_disk_avail_bytes))
             .replace('{total}', formatBytes(r.os_disk_total_bytes))
             .replace('{idx}', perIdx).replace('{rep}', r.replicas)
@@ -868,7 +868,7 @@ async function estimateImportCapacity() {
                 .replace('{max}', formatNumber(r.max_indices))
                 .replace('{est}', formatNumber(r.estimated_indices))}</span> ` +
                 `<button class="btn-sm btn-primary" data-act="applyRetention" data-arg="${r.suggested_setting}">${t('cap_apply').replace('{n}', formatNumber(r.suggested_setting))}</button> ${anywayBtn}</div>` +
-                `<div class="cap-warn u030">${t('cap_sop')}</div>`);
+                `<div class="cap-warn cap-info">${t('cap_sop')}</div>`);
         } else {
             lines.push(`<div class="cap-warn"><span class="status-completed">${t('cap_ok_disk')}</span></div>`);
         }
@@ -879,7 +879,7 @@ async function estimateImportCapacity() {
             verdict = (r.sufficient ? t('cap_ok') : t('cap_insufficient')).replace('{max}', formatNumber(r.max_indices));
             cls = r.sufficient ? 'status-completed' : 'status-failed';
         } else { verdict = t('cap_no_deletion'); cls = 'status-completed'; }
-        lines.push(`<div><span class="${cls}">${verdict}</span></div><div class="cap-warn u030">${t('cap_no_disk')}</div>`);
+        lines.push(`<div><span class="${cls}">${verdict}</span></div><div class="cap-warn cap-info">${t('cap_no_disk')}</div>`);
         if (!r.sufficient && (r.warnings || []).length) {
             lines.push(`<div class="cap-warn u030">${esc(r.warnings[0])}</div>`);
             lines.push(`<div class="cap-warn"><button class="btn-sm btn-secondary" data-act="importAnyway">${t('cap_anyway')}</button></div>`);
@@ -2599,9 +2599,13 @@ function watchJob(jobId, type, onComplete) {
             }
         }
     });
+    // Heartbeat: the server sends these while a running import is paused on
+    // backpressure (no message progress for minutes). Just keep the stream
+    // marked alive — never treat the silence as a failure.
+    es.addEventListener('heartbeat', () => { sseOk = true; });
     es.addEventListener('done', async (e) => {
         sseOk = true;
-        cleanup();
+        const evt = JSON.parse(e.data);
         // SSE 'done' event payload only has phase/pct/messages, NOT the
         // job's error_message (where post-completion notes live, e.g.
         // bulk-mode "find your data in stream X"). Fetch the full job
@@ -2610,14 +2614,22 @@ function watchJob(jobId, type, onComplete) {
             const resp = await fetch(`${API}/jobs/${jobId}`);
             if (resp.ok) {
                 const job = await resp.json();
+                // Defensive: a 'done' carrying a transport-level error (e.g. a
+                // stale client's "SSE timeout") must NOT be shown as the job's
+                // result while the job is still running — keep polling instead.
+                if (job && job.status && ['running', 'pending', 'importing'].includes(job.status)) {
+                    try { es.close(); } catch (_) {}
+                    return;
+                }
+                cleanup();
                 // Merge SSE event data with full job record
-                const evt = JSON.parse(e.data);
                 showResult({...job, ...evt, error_message: job.error_message});
                 return;
             }
         } catch (_) {}
         // Fallback: just show what SSE gave us
-        showResult(JSON.parse(e.data));
+        cleanup();
+        showResult(evt);
     });
     es.onerror = () => { es.close(); };
 
