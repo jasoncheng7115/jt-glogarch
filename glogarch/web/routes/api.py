@@ -578,20 +578,179 @@ async def import_capacity_estimate(request: Request):
         return c.rsplit(".", 1)[-1].replace("Strategy", "").replace("Config", "") if c else "?"
 
     ret = iset.get("retention_strategy", {}) or {}
+    rot = iset.get("rotation_strategy", {}) or {}
     ret_class = iset.get("retention_strategy_class", "") or ""
+    rot_class = iset.get("rotation_strategy_class", "") or ""
     max_indices = int(ret.get("max_number_of_indices", 0)) if "Deletion" in ret_class else 0
     insufficient = any("Retention will delete" in w for w in warnings)
+
+    # --- Read the ACTUAL OpenSearch data-path disk and compute the max index
+    # retention that fits within 80% of it. The disk may be plenty while
+    # max_number_of_indices is set too low — so recommend the safe number. ---
+    per_index_bytes = int(rot.get("max_size", 0)) if "SizeBased" in rot_class else 0
+    if per_index_bytes == 0 and estimated > 0:
+        per_index_bytes = total_bytes // estimated  # MessageCount/time: derive avg
+    replicas = int(iset.get("replicas", 0) or 0)
+    os_cfg = settings.get_opensearch()
+    os_hosts = list(os_cfg.hosts or [])
+    if not os_hosts:
+        auto = await pf.auto_detect_opensearch_url()
+        if auto:
+            os_hosts = [auto]
+    disk = await _query_os_data_disk(os_hosts, os_cfg.username, os_cfg.password, os_cfg.verify_ssl)
+    disk_total = disk[0] if disk else 0
+    disk_avail = disk[1] if disk else 0
+
+    # Measure REAL indexed size/doc from the target's existing indices so the
+    # estimate reflects OpenSearch on-disk size, not raw JSON size (they differ:
+    # _source is compressed but the inverted index + doc_values add overhead;
+    # the ratio is data-dependent, so measure it from the customer's own data).
+    prefix = iset.get("index_prefix", "") or ""
+    bytes_per_doc = 0.0
+    if os_hosts and prefix:
+        bpd = await _measure_bytes_per_doc(os_hosts, os_cfg.username, os_cfg.password,
+                                           os_cfg.verify_ssl, prefix)
+        if bpd:
+            bytes_per_doc = bpd
+    indexed_bytes_est = int(total_messages * bytes_per_doc) if bytes_per_doc else 0
+    json_to_index_ratio = (indexed_bytes_est / total_bytes) if (indexed_bytes_est and total_bytes) else None
+    # For SizeBased rotation, recompute the index count from the ACTUAL indexed
+    # size (max_size is an on-disk primary threshold, so raw JSON ÷ max_size was
+    # comparing different units).
+    if indexed_bytes_est and "SizeBased" in rot_class and per_index_bytes:
+        estimated = max(1, -(-indexed_bytes_est // per_index_bytes))  # ceil
+
+    per_index_on_disk = per_index_bytes * (1 + replicas)
+    rec_max_indices = 0
+    if disk_total > 0 and per_index_on_disk > 0:
+        rec_max_indices = int((disk_total * 0.8) // per_index_on_disk)
+
     return {
         "total_messages": total_messages,
         "total_bytes": total_bytes,
+        "index_set_id": idx_id,
         "index_set_title": idx_title,
-        "rotation": _short(iset.get("rotation_strategy_class", "")),
+        "rotation": _short(rot_class),
         "retention": _short(ret_class),
         "max_indices": max_indices,
         "estimated_indices": estimated,
         "sufficient": not insufficient,
         "warnings": warnings,
+        # disk-aware sizing
+        "os_disk_reachable": bool(disk),
+        "os_disk_total_bytes": disk_total,
+        "os_disk_avail_bytes": disk_avail,
+        "per_index_bytes": per_index_bytes,
+        "replicas": replicas,
+        "recommended_max_indices": rec_max_indices,
+        # what to set: enough for this import, but no more than 80%-disk allows
+        "suggested_setting": (min(estimated, rec_max_indices) if rec_max_indices else estimated),
+        "disk_fits": (rec_max_indices >= estimated) if rec_max_indices else None,
+        # measured JSON→index sizing
+        "bytes_per_doc": round(bytes_per_doc, 1),
+        "indexed_bytes_est": indexed_bytes_est,
+        "json_to_index_ratio": round(json_to_index_ratio, 3) if json_to_index_ratio else None,
     }
+
+
+async def _measure_bytes_per_doc(hosts, user, pw, verify, prefix):
+    """Measure REAL indexed bytes-per-document from the target's existing indices
+    (primary store size ÷ doc count) — the accurate proxy for OpenSearch on-disk
+    size vs the raw archive JSON. Returns a float or None."""
+    import httpx as _httpx
+    auth = _httpx.BasicAuth(user, pw) if user else None
+    for h in (hosts or []):
+        try:
+            async with _httpx.AsyncClient(verify=verify, timeout=10.0) as c:
+                r = await c.get(f"{h.rstrip('/')}/{prefix}*/_stats/store,docs",
+                                auth=auth, headers={"Accept": "application/json"})
+                if r.status_code != 200:
+                    continue
+                pri = ((r.json().get("_all") or {}).get("primaries") or {})
+                store = int((pri.get("store") or {}).get("size_in_bytes") or 0)
+                docs = int((pri.get("docs") or {}).get("count") or 0)
+                if store > 0 and docs > 0:
+                    return store / docs
+        except Exception:
+            continue
+    return None
+
+
+async def _query_os_data_disk(hosts, user, pw, verify):
+    """Return (total_bytes, available_bytes) of the OpenSearch DATA path across
+    data nodes via _nodes/stats/fs, or None if unreachable."""
+    import httpx as _httpx
+    auth = _httpx.BasicAuth(user, pw) if user else None
+    for h in (hosts or []):
+        try:
+            async with _httpx.AsyncClient(verify=verify, timeout=8.0) as c:
+                r = await c.get(f"{h.rstrip('/')}/_nodes/stats/fs", auth=auth,
+                                headers={"Accept": "application/json"})
+                if r.status_code != 200:
+                    continue
+                data = r.json()
+                total = avail = 0
+                for _nid, n in (data.get("nodes") or {}).items():
+                    fs_total = (n.get("fs") or {}).get("total") or {}
+                    total += int(fs_total.get("total_in_bytes") or 0)
+                    avail += int(fs_total.get("available_in_bytes") or 0)
+                if total > 0:
+                    return total, avail
+        except Exception:
+            continue
+    return None
+
+
+@router.post("/import/set-retention")
+async def import_set_retention(request: Request):
+    """One-click SOP action: raise the target index set's
+    max_number_of_indices (Deletion retention) to the given value, so retention
+    won't delete freshly-imported data. NEVER lowers below the current value."""
+    from glogarch.import_.preflight import PreflightChecker
+    from glogarch.utils.netguard import ssrf_block_reason
+    from glogarch.core.config_writer import reconcile_secret
+    from glogarch.utils.sanitize import sanitize
+    import httpx as _httpx
+    import json
+
+    body = await request.json()
+    settings = _settings(request)
+    ic = settings.import_config
+    idx_id = (body.get("index_set_id") or "").strip()
+    new_max = int(body.get("max_number_of_indices") or 0)
+    if not idx_id or new_max <= 0:
+        return JSONResponse({"error": "index_set_id and max_number_of_indices required"}, status_code=400)
+    url = (body.get("target_api_url") or "").strip() or (ic.target_api_url or "")
+    reason = ssrf_block_reason(url) if url else "target_api_url required"
+    if reason:
+        return JSONResponse({"error": reason}, status_code=400)
+    token = reconcile_secret(body.get("target_api_token"), ic.target_api_token) or ""
+    user = (body.get("target_api_username") or "").strip() or (ic.target_api_username or "")
+    pw = reconcile_secret(body.get("target_api_password"), ic.target_api_password) or ""
+    auth = _httpx.BasicAuth(token, "token") if token else _httpx.BasicAuth(user, pw)
+    try:
+        async with _httpx.AsyncClient(verify=False, timeout=20,
+                headers={"X-Requested-By": "jt-glogarch", "Content-Type": "application/json"}) as c:
+            r = await c.get(f"{url.rstrip('/')}/api/system/indices/index_sets/{idx_id}", auth=auth)
+            if r.status_code != 200:
+                return JSONResponse({"error": f"Cannot read index set: HTTP {r.status_code}"}, status_code=400)
+            iset = r.json()
+            ret = iset.get("retention_strategy", {}) or {}
+            cur = int(ret.get("max_number_of_indices", 0))
+            if new_max <= cur:
+                return {"ok": True, "unchanged": True, "current": cur,
+                        "message": f"max_number_of_indices already {cur} (>= {new_max})"}
+            ret["max_number_of_indices"] = new_max
+            iset["retention_strategy"] = ret
+            r2 = await c.put(f"{url.rstrip('/')}/api/system/indices/index_sets/{idx_id}",
+                             content=json.dumps(iset))
+            if r2.status_code not in (200, 201):
+                return JSONResponse({"error": f"Update failed: HTTP {r2.status_code}: {r2.text[:200]}"},
+                                    status_code=400)
+    except Exception as e:
+        return JSONResponse({"error": sanitize(str(e))}, status_code=500)
+    _audit(request, "index_set_retention_changed", f"idx={idx_id} max_indices {cur}->{new_max}")
+    return {"ok": True, "previous": cur, "new": new_max}
 
 
 @router.post("/import/{job_id}/pause")

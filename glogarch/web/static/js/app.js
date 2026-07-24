@@ -833,25 +833,71 @@ async function estimateImportCapacity() {
         });
     } catch (e) { el.innerHTML = ''; return; }
     if (!r || r.error) { el.innerHTML = ''; return; }   // silent — creds may not be ready
-    window._lastEstimate = {ids: ids.slice().sort().join(','), total_messages: r.total_messages};
+    window._lastEstimate = {ids: ids.slice().sort().join(','), total_messages: r.total_messages,
+                            index_set_id: r.index_set_id, suggested: r.suggested_setting};
     const gb = (r.total_bytes / 1e9).toFixed(2);
     const head = `${icon('db', 14)} ${t('cap_summary')
         .replace('{m}', formatNumber(r.total_messages))
         .replace('{gb}', gb)
         .replace('{n}', formatNumber(r.estimated_indices))}`;
-    let verdict, cls;
-    if (r.max_indices > 0) {
-        verdict = (r.sufficient ? t('cap_ok') : t('cap_insufficient'))
-            .replace('{max}', formatNumber(r.max_indices))
-            .replace('{set}', esc(r.index_set_title || ''));
-        cls = r.sufficient ? 'status-completed' : 'status-failed';
+    const lines = [`<div>${head}</div>`];
+
+    if (r.os_disk_reachable) {
+        // Disk-aware sizing: read the real OpenSearch data-path disk + measured
+        // indexed size, and recommend the retention that fits 80% of the disk.
+        const perIdx = formatBytes(r.per_index_bytes * (1 + (r.replicas || 0)));
+        const ratio = r.json_to_index_ratio ? ` (${t('cap_ratio').replace('{x}', r.json_to_index_ratio)})` : '';
+        lines.push(`<div class="u030">${t('cap_disk')
+            .replace('{avail}', formatBytes(r.os_disk_avail_bytes))
+            .replace('{total}', formatBytes(r.os_disk_total_bytes))
+            .replace('{idx}', perIdx).replace('{rep}', r.replicas)
+            .replace('{rec}', formatNumber(r.recommended_max_indices))}${ratio}</div>`);
+        if (r.disk_fits === false) {
+            lines.push(`<div class="cap-warn status-failed">${t('cap_disk_full')
+                .replace('{rec}', formatNumber(r.recommended_max_indices))
+                .replace('{est}', formatNumber(r.estimated_indices))}</div>`);
+        } else if (r.max_indices > 0 && r.max_indices < r.estimated_indices) {
+            lines.push(`<div class="cap-warn"><span class="status-failed">${t('cap_raise')
+                .replace('{max}', formatNumber(r.max_indices))
+                .replace('{est}', formatNumber(r.estimated_indices))}</span> ` +
+                `<button class="btn-sm btn-primary" data-act="applyRetention" data-arg="${r.suggested_setting}">${t('cap_apply').replace('{n}', formatNumber(r.suggested_setting))}</button></div>` +
+                `<div class="cap-warn u030">${t('cap_sop')}</div>`);
+        } else {
+            lines.push(`<div class="cap-warn"><span class="status-completed">${t('cap_ok_disk')}</span></div>`);
+        }
     } else {
-        verdict = t('cap_no_deletion');
-        cls = 'status-completed';
+        // No OS disk access (Data Node / OS not configured) — retention-count only.
+        let verdict, cls;
+        if (r.max_indices > 0) {
+            verdict = (r.sufficient ? t('cap_ok') : t('cap_insufficient')).replace('{max}', formatNumber(r.max_indices));
+            cls = r.sufficient ? 'status-completed' : 'status-failed';
+        } else { verdict = t('cap_no_deletion'); cls = 'status-completed'; }
+        lines.push(`<div><span class="${cls}">${verdict}</span></div><div class="cap-warn u030">${t('cap_no_disk')}</div>`);
+        if (!r.sufficient && (r.warnings || []).length) lines.push(`<div class="cap-warn u030">${esc(r.warnings[0])}</div>`);
     }
-    const warn = (!r.sufficient && (r.warnings || []).length)
-        ? `<div class="cap-warn u030">${esc(r.warnings[0])}</div>` : '';
-    el.innerHTML = `<div>${head} · <span class="${cls}">${verdict}</span></div>${warn}`;
+    el.innerHTML = lines.join('');
+}
+
+// One-click SOP action: raise the target index set's max_number_of_indices so
+// retention won't delete freshly-imported data (never lowers it).
+async function applyRetention(n) {
+    const rc = window._lastEstimate;
+    if (!rc || !rc.index_set_id) return;
+    showConfirm(`${icon('shield')} ${t('cap_apply_title')}`,
+        t('cap_apply_msg').replace('{n}', formatNumber(n)), async () => {
+        const r = await fetchJSON(`${API}/import/set-retention`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                index_set_id: rc.index_set_id, max_number_of_indices: parseInt(n),
+                target_api_url: document.getElementById('modal-target-api-url')?.value || '',
+                target_api_token: document.getElementById('modal-target-api-token')?.value || '',
+                target_api_username: document.getElementById('modal-target-api-user')?.value || '',
+                target_api_password: document.getElementById('modal-target-api-pass')?.value || '',
+            }),
+        });
+        if (r && r.ok) { showAlert(t('cap_applied').replace('{n}', formatNumber(n))); estimateImportCapacity(); }
+        else { showAlert((r && r.error) || t('unknown_error')); }
+    });
 }
 
 async function batchDelete() {

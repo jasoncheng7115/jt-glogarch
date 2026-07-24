@@ -2,6 +2,26 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.37] - 2026-07-24
+
+### Added
+
+- **The pre-import capacity estimate now reads the real OpenSearch data-path disk
+  and recommends the retention setting.** Previously it only compared against the
+  index set's `max_number_of_indices`. Now it:
+  - reads the actual **OpenSearch data-path disk** (total + free, via
+    `_nodes/stats/fs`) so a "disk is fine but retention is set too low" situation
+    is caught;
+  - **measures real indexed bytes/document** from the target's existing indices,
+    so the index-count estimate reflects the ACTUAL OpenSearch on-disk size, not
+    the raw archive JSON size (they differ — it shows the measured "index ≈ N×
+    raw JSON" ratio);
+  - recommends the **max index retention that fits within 80% of the disk**
+    (accounting for replicas), and warns if even 80% can't hold the import;
+  - offers a **one-click "Set retention to N"** action (raises
+    `max_number_of_indices`, never lowers/deletes) plus the manual SOP
+    (Graylog → System → Indices → index set → Edit → Index Retention).
+
 ## [1.13.36] - 2026-07-24
 
 ### Added
