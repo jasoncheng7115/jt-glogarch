@@ -2,6 +2,16 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.34] - 2026-07-24
+
+### Fixed
+
+- **The import dialog's "Batch Delay (ms)" slider was squeezed to a sliver.** A
+  general `.form-group input { width: 100% }` rule out-specified `.rate-num`'s
+  fixed width, so the number box stretched to full width and the range slider
+  next to it collapsed to ~26px. The number box is now pinned to its intended
+  width so the slider fills the row again.
+
 ## [1.13.33] - 2026-07-24
 
 ### Changed

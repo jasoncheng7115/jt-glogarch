@@ -1619,3 +1619,9 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
 /* Owner group label in the import live badge (Target Graylog vs jt-glogarch host) */
 .badge-owner { font-weight: 600; opacity: 0.85; display: inline-flex; align-items: center; gap: 3px; }
 .badge-owner svg { vertical-align: middle; }
+
+/* The batch-delay number field must stay compact so the range slider beside it
+   (flex:1) fills the row. `.form-group input{width:100%}` (higher specificity
+   than `.rate-num`) was stretching it to full width and squeezing the slider to
+   a sliver — this wins it back. */
+.form-group input.rate-num { width: 62px; flex: 0 0 auto; box-sizing: border-box; }
