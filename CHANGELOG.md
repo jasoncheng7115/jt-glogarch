@@ -2,6 +2,17 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.33] - 2026-07-24
+
+### Changed
+
+- **The import progress badge now labels each metric with WHOSE it is.** It
+  showed bare `Heap` / `Buffer` / `Mem` with no indication of the source. The
+  metrics are now grouped under **"Target Graylog"** (its disk journal, JVM heap
+  and output buffer — what the import throttles on) and **"jt-glogarch host"**
+  (this machine's free system RAM), each with a hover tooltip explaining it. The
+  memory metric is relabelled "Free RAM" for clarity.
+
 ## [1.13.32] - 2026-07-24
 
 ### Fixed

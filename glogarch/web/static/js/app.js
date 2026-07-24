@@ -1464,28 +1464,28 @@ function startImportStatusPoll(jobId) {
                 const u = st.journal.uncommitted;
                 const action = st.journal_action;
                 const color = action === 'normal' ? 'var(--success)' : action === 'slow' ? 'var(--warning)' : 'var(--danger)';
-                const label = t('import_journal_label');
                 const actionLabel = t(`import_journal_${action}`) || action;
-                let html = `<span data-style="color:${color}">${label}: ${u !== null ? formatNumber(u) : '?'} (${actionLabel})</span>`;
-                // Target Graylog JVM heap — the second signal the throttle watches.
+                // === Group 1: the TARGET Graylog (journal / JVM heap / output
+                // buffer all belong to the Graylog being imported INTO). ===
+                let html = `<span class="badge-owner" title="${esc(t('import_owner_target_hint'))}">${icon('server', 12)} ${t('import_owner_target')}</span> `;
+                html += `<span data-style="color:${color}">${t('import_journal_label')}: ${u !== null ? formatNumber(u) : '?'} (${actionLabel})</span>`;
                 const hp = st.heap_percent;
                 if (hp !== null && hp !== undefined) {
                     const hc = hp >= 98 ? 'var(--danger)' : hp >= 95 ? 'var(--warning)' : 'var(--success)';
                     html += ` <span data-style="color:${hc}">· ${t('import_heap_label')}: ${hp}%</span>`;
                 }
-                // Output ring buffer — the EARLIEST sign Graylog can't drain to
-                // OpenSearch (this is what wedges Graylog first).
                 const bo = st.buffer_output_pct;
                 if (bo !== null && bo !== undefined) {
                     const bc = bo >= 90 ? 'var(--danger)' : bo >= 70 ? 'var(--warning)' : 'var(--success)';
                     html += ` <span data-style="color:${bc}">· ${t('import_buffer_label')}: ${bo}%</span>`;
                 }
-                // Local box free memory — jt-glogarch shares the VM with Graylog/OS,
-                // so low free memory means the import is paused to avoid an OOM.
+                // === Group 2: THIS host (jt-glogarch's own box free RAM — it
+                // often shares the VM with Graylog/OS, so low free RAM pauses). ===
                 const mm = st.mem_available_mb;
                 if (mm !== null && mm !== undefined) {
                     const mc = mm <= 700 ? 'var(--danger)' : mm <= 1400 ? 'var(--warning)' : 'var(--success)';
-                    html += ` <span data-style="color:${mc}">· ${t('import_mem_label')}: ${formatNumber(mm)}MB</span>`;
+                    html += `  <span class="badge-owner" title="${esc(t('import_owner_host_hint'))}">${icon('disk', 12)} ${t('import_owner_host')}</span> `;
+                    html += `<span data-style="color:${mc}">${t('import_mem_label')}: ${formatNumber(mm)}MB</span>`;
                 }
                 badge.innerHTML = html;
             }

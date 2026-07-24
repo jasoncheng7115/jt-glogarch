@@ -1615,3 +1615,7 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
 /* Import-done button: hidden until the import finishes (JS toggles display via
    CSSOM). Kept in CSS, not an inline style, to satisfy the strict CSP. */
 #import-done-btn { display: none; margin-top: 10px; }
+
+/* Owner group label in the import live badge (Target Graylog vs jt-glogarch host) */
+.badge-owner { font-weight: 600; opacity: 0.85; display: inline-flex; align-items: center; gap: 3px; }
+.badge-owner svg { vertical-align: middle; }
