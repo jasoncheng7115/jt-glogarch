@@ -2,6 +2,30 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.45] - 2026-07-25
+
+### Fixed
+
+- **Cancel now takes effect mid-batch.** `GelfSender.send_batch()` sent an entire
+  batch (default 500 messages) with no cancel check, so a cancel could only land
+  *between* batches — on a loaded/swapping box one batch takes tens of seconds and
+  the Cancel button looked dead (customer report). `send_batch()` now accepts
+  `cancel_check` and polls it every 25 messages plus before each inter-batch
+  delay; the importer passes `fc.cancelled`. Cancel lands in well under a second.
+
+### Changed
+
+- **Archive listing no longer reads the `field_schema` blob (peak-memory cut).**
+  `list_archives()` did `SELECT *`, so `fetchall()` materialized every archive's
+  `field_schema` JSON (avg ~2.5 KB, max 41 KB/row) purely to discard it —
+  `_row_to_archive()` never copied it into `ArchiveRecord` and no caller reads it
+  (preflight queries the column itself). Measured on a real DB: peak for a 2,643-
+  archive listing dropped **14.2 MB → 6.9 MB (−51%)**; at customer scale that is
+  ~68 MB off an import of 24.5K archives and ~192 MB off a 69K-archive export
+  dedup scan. Peak RSS is what trips the OOM killer on the common co-located
+  single-VM deployment. `include_schema=True` restores the old behaviour; the
+  column list is derived from the live table so migration-added columns are safe.
+
 ## [1.13.44] - 2026-07-24
 
 ### Fixed

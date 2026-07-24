@@ -115,6 +115,11 @@ def message_to_gelf(msg: dict) -> dict:
 class GelfSender:
     """Async GELF sender — supports TCP (null-byte delimited) and UDP."""
 
+    # How often (in messages) send_batch polls cancel_check mid-batch. Small
+    # enough that Cancel lands in well under a second even on a slow target,
+    # large enough that the check costs nothing measurable.
+    _CANCEL_POLL_EVERY = 25
+
     def __init__(self, host: str = "localhost", port: int = 32202, protocol: str = "tcp"):
         self.host = host
         self.port = port
@@ -205,6 +210,7 @@ class GelfSender:
         batch_size: int = 500,
         delay_ms: int = 100,
         progress_callback: Callable[[int, int], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> int:
         """Send messages in batches with delay between batches.
 
@@ -213,6 +219,11 @@ class GelfSender:
             batch_size: Messages per batch.
             delay_ms: Milliseconds to wait between batches.
             progress_callback: Called with (sent_count, total_count).
+            cancel_check: Polled DURING the send (every `_CANCEL_POLL_EVERY`
+                messages and before each inter-batch delay) so Cancel takes
+                effect mid-batch. Without it, a cancel could only land between
+                batches — on a busy/swapping box one 500-message batch can take
+                tens of seconds, which made Cancel look dead.
 
         Returns:
             Number of messages successfully sent.
@@ -221,8 +232,12 @@ class GelfSender:
         sent = 0
 
         for i in range(0, total, batch_size):
+            if cancel_check and cancel_check():
+                return sent
             batch = messages[i:i + batch_size]
-            for msg in batch:
+            for n, msg in enumerate(batch):
+                if cancel_check and n % self._CANCEL_POLL_EVERY == 0 and cancel_check():
+                    return sent
                 gelf_msg = message_to_gelf(msg)
                 try:
                     await self.send_message(gelf_msg)
@@ -241,6 +256,9 @@ class GelfSender:
 
             if progress_callback:
                 progress_callback(sent, total)
+
+            if cancel_check and cancel_check():
+                return sent
 
             if delay_ms > 0 and i + batch_size < total:
                 await asyncio.sleep(delay_ms / 1000.0)

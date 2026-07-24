@@ -529,6 +529,17 @@ class ArchiveDB:
         ).fetchone()
         return self._row_to_archive(row) if row else None
 
+    def _archive_cols_no_schema(self) -> str:
+        """Column list for `archives` minus `field_schema`, derived from the LIVE
+        table so migration-added columns (original_size_bytes, hmac_sha256, …)
+        are included and a not-yet-migrated DB can't produce a bad SELECT."""
+        if getattr(self, "_arch_cols_cache", None):
+            return self._arch_cols_cache
+        cols = [r[1] for r in self.conn.execute("PRAGMA table_info(archives)").fetchall()
+                if r[1] != "field_schema"]
+        self._arch_cols_cache = ", ".join(cols) if cols else "*"
+        return self._arch_cols_cache
+
     def list_archives(
         self,
         server: str | None = None,
@@ -538,11 +549,24 @@ class ArchiveDB:
         status: ArchiveStatus | None = None,
         sort: str = "time_from",
         order: str = "DESC",
+        include_schema: bool = False,
     ) -> list[ArchiveRecord]:
+        """List archives.
+
+        `field_schema` is EXCLUDED by default: it averages ~2.5 KB (max 41 KB)
+        per row, and nothing here consumes it — `_row_to_archive()` does not even
+        copy it into `ArchiveRecord`, and preflight reads the column with its own
+        targeted query. Selecting it made `fetchall()` materialize every schema
+        blob at once purely to throw it away: a ~62 MB PEAK for a 24.5K-archive
+        import, ~177 MB for a 69K-archive export dedup scan. Peak RSS is what
+        trips the OOM killer on the common co-located single-VM deployment, so
+        this spike is worth removing even though it is transient.
+        """
         ALLOWED_SORT = {"time_from", "time_to", "message_count", "file_size_bytes", "created_at", "server_name"}
         sort_col = sort if sort in ALLOWED_SORT else "time_from"
         sort_dir = "ASC" if order.upper() == "ASC" else "DESC"
-        query = "SELECT * FROM archives WHERE 1=1"
+        cols = "*" if include_schema else self._archive_cols_no_schema()
+        query = f"SELECT {cols} FROM archives WHERE 1=1"
         params: list = []
         if server:
             query += " AND server_name = ?"

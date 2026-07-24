@@ -604,6 +604,10 @@ class Importer:
                                 messages=msg_batch,
                                 batch_size=fc.batch_size,
                                 delay_ms=fc.get_effective_delay(),
+                                # Poll cancel DURING the batch — on a loaded box a
+                                # single batch can take tens of seconds, and a
+                                # between-batches-only check made Cancel look dead.
+                                cancel_check=lambda: fc.cancelled,
                             )
                             sent += batch_sent
 
