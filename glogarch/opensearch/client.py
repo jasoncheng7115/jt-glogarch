@@ -257,8 +257,11 @@ class OpenSearchClient:
                              index=index_name, avg_doc_bytes=_avg,
                              page_size=_fit, was=body["size"])
                     body["size"] = _fit
-            except Exception:
-                pass
+            except Exception as e:
+                # Never silently swallow: a bug here (e.g. a missing import)
+                # would disable the guard invisibly while every test still
+                # passed. Log it, then continue with the current page size.
+                log.warning("Page-size adaptation failed", error=str(e))
 
             # Extract _source documents.
             # We strip Graylog internal `gl2_*` metadata because they reference

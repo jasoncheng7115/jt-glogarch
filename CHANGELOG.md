@@ -2,6 +2,26 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.50] - 2026-07-25
+
+Closing test gaps found while reviewing 1.13.49's own coverage.
+
+### Fixed
+
+- **The adaptive page-size guard no longer fails silently.** It was wrapped in a
+  bare `except: pass`, so a bug inside it (exactly like the missing `json` import
+  it shipped with for a moment) would disable the guard invisibly while every
+  test still passed. It now logs a warning and continues.
+
+### Added
+
+- **Real tests for the OpenSearch page-size adaptation** (`tests/test_os_page_sizing.py`),
+  driving the actual client scan loop through a mock transport rather than a
+  simulation: 9 KB documents shrink 10,000 → ~1,837 per page, 60 KB documents
+  clamp at the 500-doc floor, typical 1.2 KB messages keep the full 10,000-doc
+  page (no throughput regression), every document is still delivered across a
+  resize, and the guard must not emit its failure warning.
+
 ## [1.13.49] - 2026-07-25
 
 Follow-up audit: **can jt-glogarch cause OpenSearch memory problems?** Yes — two
