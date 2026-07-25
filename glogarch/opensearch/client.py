@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime
 from typing import Any, AsyncIterator
 
@@ -225,6 +226,17 @@ class OpenSearchClient:
 
         log.info("Fetching from index", index=index_name, total=total)
 
+        # Adaptive page size. `batch_size` bounds the DOC COUNT only; how many
+        # BYTES a page weighs depends on how wide the documents are. At the
+        # default 10,000 docs a page is ~14 MB for typical 1.2 KB messages but
+        # ~90 MB for 9 KB Windows Event Log records — a large fetch-phase heap
+        # spike on OpenSearch and a big JSON parse on our side, on a box where
+        # the two often share RAM. After each page we measure the real average
+        # document size and shrink the next page toward _TARGET_PAGE_BYTES,
+        # never below _MIN_PAGE_DOCS so throughput stays reasonable.
+        _TARGET_PAGE_BYTES = 16 * 1024 * 1024
+        _MIN_PAGE_DOCS = 500
+
         while True:
             if search_after:
                 body["search_after"] = search_after
@@ -234,6 +246,19 @@ class OpenSearchClient:
 
             if not hits:
                 break
+
+            # Right-size the NEXT page from what this one actually weighed.
+            try:
+                _sample = hits[:20]
+                _avg = max(1, len(json.dumps(_sample, default=str)) // len(_sample))
+                _fit = max(_MIN_PAGE_DOCS, min(batch_size, _TARGET_PAGE_BYTES // _avg))
+                if _fit < body["size"]:
+                    log.info("Reducing OpenSearch page size for wide documents",
+                             index=index_name, avg_doc_bytes=_avg,
+                             page_size=_fit, was=body["size"])
+                    body["size"] = _fit
+            except Exception:
+                pass
 
             # Extract _source documents.
             # We strip Graylog internal `gl2_*` metadata because they reference

@@ -123,7 +123,7 @@ osc() {   # curl against OpenSearch, with auth only if the cluster needs it
     if [ -n "$OS_USER" ]; then curl -s -u "$OS_USER:$OS_PASS" "$@"; else curl -s "$@"; fi
 }
 BIDX="jt_e2e_bulk"
-osc -X DELETE "$OS_URL/${BIDX}_0" >/dev/null 2>&1
+osc -X DELETE "$OS_URL/${BIDX}*" >/dev/null 2>&1
 # Bulk writes through the Graylog-managed deflector alias; create it for the test.
 osc -X PUT "$OS_URL/${BIDX}_0" -H 'Content-Type: application/json' \
     -d "{\"aliases\":{\"${BIDX}_deflector\":{}}}" -o /dev/null
@@ -133,9 +133,12 @@ bulk_out="$($PYO import --mode bulk --from "$yest" \
     --target-api-password "$GL_PASS" 2>&1)"
 echo "$bulk_out" | grep -iE 'indexed|failed|messages sent|import completed|archives:' | tail -5
 sleep 5
-bcount="$(osc "$OS_URL/${BIDX}_0/_count" \
+# Count across the WHOLE index pattern, not a hardcoded _0: bulk writes through
+# the deflector alias, and preflight may cycle it onto a new index (${BIDX}_1…),
+# so checking only _0 can report 0 while the data is really there.
+bcount="$(osc "$OS_URL/${BIDX}*/_count" \
     | python3 -c 'import sys,json;print(json.load(sys.stdin).get("count",-1))' 2>/dev/null || echo -1)"
-echo "  docs actually in OpenSearch (${BIDX}_0): $bcount"
+echo "  docs actually in OpenSearch (${BIDX}*): $bcount"
 if [ "${bcount:-0}" -gt 0 ] 2>/dev/null && ! echo "$bulk_out" | grep -qiE 'Traceback|MemoryError'; then
     echo "  PASS: bulk import wrote $bcount docs to OpenSearch"
 else
@@ -143,7 +146,7 @@ else
     echo "$bulk_out" | tail -15
     FAIL=1
 fi
-osc -X DELETE "$OS_URL/${BIDX}_0" >/dev/null 2>&1   # clean up the throwaway index
+osc -X DELETE "$OS_URL/${BIDX}*" >/dev/null 2>&1   # clean up the throwaway indices
 
 echo ""
 echo "=== RESULT: $([ $FAIL -eq 0 ] && echo 'ALL PASS' || echo 'FAILURES') ==="

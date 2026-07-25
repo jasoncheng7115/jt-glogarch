@@ -58,10 +58,18 @@ class BulkImportResult:
 class BulkImporter:
     """Direct OpenSearch _bulk writer."""
 
-    # OpenSearch typically accepts up to ~100MB bulk requests; we keep ours
-    # well under that to leave headroom for large messages.
     DEFAULT_BATCH_DOCS = 10000
-    DEFAULT_BATCH_BYTES_LIMIT = 50 * 1024 * 1024  # 50 MB
+    # Hard cap on the SIZE of one _bulk request. `batch_docs` bounds the doc
+    # count only, which says nothing about bytes: measured at the default 10,000
+    # docs, a request is ~14 MB for typical 1.2 KB messages but ~52 MB for 5 KB
+    # docs and ~93 MB for 9 KB Windows Event Log records — the last is at
+    # OpenSearch's default `http.max_content_length` (100 MB → HTTP 413, whole
+    # batch lost) and a big coordinating-node heap spike long before that.
+    # OpenSearch's own guidance is 5-15 MB per request, so default to 10 MB.
+    # (A `DEFAULT_BATCH_BYTES_LIMIT = 50MB` constant existed here but was never
+    # wired to anything — the cap was intended and simply never implemented.)
+    DEFAULT_MAX_BULK_BYTES = 10 * 1024 * 1024   # 10 MB
+    DEFAULT_BATCH_BYTES_LIMIT = DEFAULT_MAX_BULK_BYTES   # back-compat alias
 
     def __init__(
         self,
@@ -74,6 +82,7 @@ class BulkImporter:
         marker_field: str | None = "_jt_glogarch_imported_at",
         marker_value: str | None = None,
         verify_tls: bool = False,
+        max_bulk_bytes: int = DEFAULT_MAX_BULK_BYTES,
     ):
         self.opensearch_url = opensearch_url.rstrip("/")
         self.os_username = os_username
@@ -81,6 +90,7 @@ class BulkImporter:
         self.target_index_pattern = target_index_pattern
         self.dedup_strategy = dedup_strategy
         self.batch_docs = batch_docs
+        self.max_bulk_bytes = max_bulk_bytes
         self.marker_field = marker_field
         self.marker_value = marker_value or datetime.utcnow().isoformat() + "Z"
         self.verify_tls = verify_tls
@@ -121,10 +131,23 @@ class BulkImporter:
         return f"{target_pattern}_deflector"
 
     def _build_bulk_body(
-        self, docs: list[dict]
+        self, docs: list[dict], max_bytes: int | None = None
     ) -> tuple[bytes, int]:
-        """Serialize a batch of docs into NDJSON bulk format.
-        Returns (body_bytes, doc_count).
+        """Serialize docs into NDJSON bulk format.
+
+        Returns (body_bytes, doc_count) where doc_count may be LESS than
+        len(docs) if `max_bytes` was reached — the caller then advances by
+        doc_count and sends the rest in the next request.
+
+        Why the byte cap matters: `batch_docs` alone bounds the DOC COUNT, not
+        the request size, and OpenSearch holds a whole bulk request in the
+        coordinating node's heap (plus parsing overhead) before dispatching it.
+        Measured with the default 10,000 docs: ~14 MB for typical 1.2 KB
+        messages (fine), but ~52 MB for 5 KB docs and ~93 MB for 9 KB Windows
+        Event Log records — the latter is at OpenSearch's default
+        `http.max_content_length` of 100 MB (HTTP 413, whole batch lost) and is
+        a large heap spike well before that. OpenSearch's own guidance is 5-15
+        MB per bulk request.
         """
         # OpenSearch reserved top-level fields. If a source archive happens to
         # contain a field named ``_id`` / ``_type`` / ``_index`` / ``_source``
@@ -133,6 +156,9 @@ class BulkImporter:
         # and cannot be added inside a document." We strip them defensively.
         RESERVED_OS_FIELDS = ("_id", "_index", "_source", "_type", "_routing",
                               "_parent", "_version", "_op_type")
+        cap = max_bytes if max_bytes and max_bytes > 0 else None
+        size = 0
+        used = 0
         lines: list[str] = []
         for doc in docs:
             for rf in RESERVED_OS_FIELDS:
@@ -162,11 +188,19 @@ class BulkImporter:
                     action["index"]["_id"] = msg_id
                 # else: let OpenSearch auto-generate
 
-            lines.append(json.dumps(action, ensure_ascii=False))
-            lines.append(json.dumps(doc, ensure_ascii=False, default=str))
+            a_line = json.dumps(action, ensure_ascii=False)
+            d_line = json.dumps(doc, ensure_ascii=False, default=str)
+            # Always emit at least one doc, even if a single doc exceeds the cap
+            # (splitting further is impossible — let OpenSearch judge that one).
+            if cap and used and size + len(a_line) + len(d_line) + 2 > cap:
+                break
+            lines.append(a_line)
+            lines.append(d_line)
+            size += len(a_line) + len(d_line) + 2
+            used += 1
 
-        body = ("\n".join(lines) + "\n").encode("utf-8")
-        return body, len(docs)
+        body = ("\n".join(lines) + "\n").encode("utf-8") if lines else b""
+        return body, used
 
     async def _send_bulk(
         self, client: httpx.AsyncClient, body: bytes
@@ -389,11 +423,16 @@ class BulkImporter:
                     result.errors.append(err)
                     continue
 
-                # Send in batches
+                # Send in batches. `pending` holds docs read but not yet sent —
+                # a batch is split further when it would exceed max_bulk_bytes,
+                # so the leftover must be carried over, never dropped.
                 _read_failed = False
+                pending: list[dict] = []
                 while True:
                     try:
-                        batch = next(batch_iter)
+                        if not pending:
+                            pending = list(next(batch_iter))
+                        batch = pending
                     except StopIteration:
                         break
                     except Exception as e:
@@ -418,7 +457,14 @@ class BulkImporter:
                             await health_cb()
                         except Exception as e:
                             log.warning("Bulk health check failed", error=str(e))
-                    body, count = self._build_bulk_body(batch)
+                    # Cap the REQUEST SIZE, not just the doc count: count may be
+                    # less than len(batch) for wide documents. Carry the rest.
+                    body, count = self._build_bulk_body(batch, self.max_bulk_bytes)
+                    if count <= 0:
+                        pending = []
+                        continue
+                    batch = batch[:count]
+                    pending = pending[count:]
                     result.bytes_sent += len(body)
                     result.bulk_requests += 1
 

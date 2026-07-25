@@ -2,6 +2,34 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.49] - 2026-07-25
+
+Follow-up audit: **can jt-glogarch cause OpenSearch memory problems?** Yes — two
+request-size issues, both fixed. Neither `batch_docs` nor `batch_size` bounded
+BYTES, only document counts.
+
+### Fixed
+
+- **`_bulk` requests are now capped by SIZE (10 MB), not just document count.**
+  Measured at the default `batch_docs=10000`: ~14 MB for typical 1.2 KB messages
+  (fine), but **~52 MB for 5 KB documents and ~93 MB for 9 KB Windows Event Log
+  records**. OpenSearch holds an entire bulk request in the coordinating node's
+  heap before dispatch, and its default `http.max_content_length` is 100 MB — so
+  wide documents were one step away from HTTP 413 (whole batch lost) and caused a
+  large heap spike well before that. OpenSearch's own guidance is 5-15 MB per
+  request. `_build_bulk_body()` now stops at `max_bulk_bytes` and the caller
+  carries the remainder over (verified: no documents dropped by the split). A
+  single document larger than the cap is still sent alone, so it can never spin.
+  (A `DEFAULT_BATCH_BYTES_LIMIT = 50 MB` constant had existed here since the
+  original implementation but was never wired to anything.)
+- **OpenSearch export pages adapt to document width.** The scan requested
+  `max(batch_size, 10000)` documents per `_search`, which is ~14 MB for typical
+  messages but **~90 MB for 9 KB documents** — a fetch-phase heap spike on
+  OpenSearch plus an equally large JSON parse on our side, on a box where the two
+  often share RAM. The client now measures the real average document size from
+  each page and right-sizes the next one toward ~16 MB (floor 500 docs). Typical
+  deployments are unaffected — 1.2 KB messages still use the full 10,000-doc page.
+
 ## [1.13.48] - 2026-07-25
 
 ### Added
