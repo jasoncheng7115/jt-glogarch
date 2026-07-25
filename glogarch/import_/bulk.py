@@ -226,10 +226,48 @@ class BulkImporter:
 
     @staticmethod
     def _read_archive(path: Path):
-        """Yield messages from a .json.gz archive file."""
+        """Read ALL messages from an archive at once.
+
+        DEPRECATED for the import path — kept only for callers/tests that need a
+        materialized list. `json.load()` expands a 50 MB `.json.gz` into multiple
+        GB of Python objects (and customer archives reach 1.2 GB compressed /
+        14M messages), which OOM-kills the box. Use `_iter_batches()` instead.
+        """
         with gzip.open(path, "rt", encoding="utf-8") as f:
             data = json.load(f)
         return data.get("messages", []) if isinstance(data, dict) else []
+
+    def _iter_batches(self, path: Path):
+        """Stream an archive, yielding lists of at most `batch_docs` messages.
+
+        Uses the same streaming reader as the GELF path (ArchiveIterator), which
+        pulls one JSON object at a time via raw_decode instead of materializing
+        the whole file. Bulk mode never got that fix and still did `json.load()`
+        on the entire archive — the single largest peak-memory source in the
+        import path on the common co-located VM.
+        """
+        from glogarch.archive.storage import ArchiveIterator
+        it = ArchiveIterator(Path(path), self.batch_docs)
+        for batch in it:
+            yield batch
+
+    @staticmethod
+    def _count_messages(path: Path) -> int:
+        """Message count for an archive WITHOUT reading its messages.
+
+        The archive header carries `message_count`, so the pre-count pass no
+        longer decompresses and parses every archive in full just to size the
+        progress bar (that read the entire corpus twice per import).
+        """
+        from glogarch.archive.storage import ArchiveIterator
+        it = ArchiveIterator(Path(path), 1)
+        md = it.read_metadata()
+        n = getattr(md, "message_count", 0) or 0
+        if n:
+            return int(n)
+        # Header lacked a count (very old archive) — fall back to streaming count,
+        # which is still bounded memory, unlike json.load().
+        return sum(len(b) for b in it)
 
     async def _ensure_index(self, client: httpx.AsyncClient, index_name: str) -> None:
         """Pre-create an index if it doesn't exist.
@@ -300,8 +338,7 @@ class BulkImporter:
         total_msgs = 0
         for p in archive_paths:
             try:
-                msgs = self._read_archive(p)
-                total_msgs += len(msgs)
+                total_msgs += self._count_messages(p)
             except Exception as e:
                 log.warning("Cannot pre-count archive", path=str(p), error=str(e))
         index_names: set[str] = {f"{self.target_index_pattern}_deflector"}
@@ -322,8 +359,9 @@ class BulkImporter:
             for idx_name in sorted(index_names):
                 await self._ensure_index(client, idx_name)
             for arch_idx, path in enumerate(archive_paths):
+                # Stream the archive: only one batch is resident at a time.
                 try:
-                    msgs = self._read_archive(path)
+                    batch_iter = self._iter_batches(path)
                 except Exception as e:
                     err = f"Failed to read archive {path}: {e}"
                     log.error(err)
@@ -331,13 +369,24 @@ class BulkImporter:
                     continue
 
                 # Send in batches
-                for batch_start in range(0, len(msgs), self.batch_docs):
+                _read_failed = False
+                while True:
+                    try:
+                        batch = next(batch_iter)
+                    except StopIteration:
+                        break
+                    except Exception as e:
+                        # A truncated/corrupt archive must not abort the whole run.
+                        err = f"Failed to read archive {path}: {e}"
+                        log.error(err)
+                        result.errors.append(err)
+                        _read_failed = True
+                        break
                     if cancel_check and cancel_check():
                         log.info("Bulk import cancelled by user",
                                  sent_so_far=result.messages_sent)
                         result.duration_sec = time.time() - start
                         return result
-                    batch = msgs[batch_start:batch_start + self.batch_docs]
                     body, count = self._build_bulk_body(batch)
                     result.bytes_sent += len(body)
                     result.bulk_requests += 1
@@ -392,6 +441,8 @@ class BulkImporter:
                             "failed": result.messages_failed,
                         })
 
+                if _read_failed:
+                    continue
                 result.archives_processed += 1
 
         result.duration_sec = time.time() - start

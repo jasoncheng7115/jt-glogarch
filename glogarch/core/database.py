@@ -550,6 +550,8 @@ class ArchiveDB:
         sort: str = "time_from",
         order: str = "DESC",
         include_schema: bool = False,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[ArchiveRecord]:
         """List archives.
 
@@ -586,8 +588,46 @@ class ArchiveDB:
         else:
             query += " AND status != 'deleted'"
         query += f" ORDER BY {sort_col} {sort_dir}"
+        if limit is not None:
+            # Push paging into SQL. The Archives page used to materialize EVERY
+            # matching row (70K+ at customer scale) just to slice one page out of
+            # it — a large allocation spike on every page view / refresh.
+            query += " LIMIT ? OFFSET ?"
+            params.extend([int(limit), int(offset or 0)])
         rows = self.conn.execute(query, params).fetchall()
         return [self._row_to_archive(r) for r in rows]
+
+    def count_archives(
+        self,
+        server: str | None = None,
+        stream: str | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        status: ArchiveStatus | None = None,
+    ) -> int:
+        """COUNT(*) matching the same filters as list_archives (for pagination
+        totals, without materializing the rows)."""
+        query = "SELECT COUNT(*) FROM archives WHERE 1=1"
+        params: list = []
+        if server:
+            query += " AND server_name = ?"
+            params.append(server)
+        if stream:
+            query += " AND (stream_id = ? OR stream_name = ?)"
+            params.extend([stream, stream])
+        if time_from:
+            query += " AND time_to >= ?"
+            params.append(_dt_to_str(time_from))
+        if time_to:
+            query += " AND time_from <= ?"
+            params.append(_dt_to_str(time_to))
+        if status:
+            query += " AND status = ?"
+            params.append(status.value)
+        else:
+            query += " AND status != 'deleted'"
+        row = self.conn.execute(query, params).fetchone()
+        return int(row[0]) if row else 0
 
     def get_archives_older_than(self, days: int) -> list[ArchiveRecord]:
         cutoff = datetime.utcnow() - timedelta(days=days)

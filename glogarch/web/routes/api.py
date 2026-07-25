@@ -95,15 +95,17 @@ def list_archives(
     except ValueError:
         return JSONResponse({"error": f"Invalid status: {status}"}, status_code=400)
 
-    archives = db.list_archives(
+    # Page in SQL — never materialize the whole archive table to show one page.
+    total = db.count_archives(
+        server=server, stream=stream,
+        time_from=dt_from, time_to=dt_to, status=arch_status,
+    )
+    page_items = db.list_archives(
         server=server, stream=stream,
         time_from=dt_from, time_to=dt_to, status=arch_status,
         sort=sort, order=order,
+        limit=page_size, offset=(page - 1) * page_size,
     )
-
-    total = len(archives)
-    start = (page - 1) * page_size
-    page_items = archives[start:start + page_size]
 
     return {
         "total": total,

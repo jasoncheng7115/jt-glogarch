@@ -2,6 +2,41 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.47] - 2026-07-25
+
+Findings from a systematic audit of the import/export memory, cancel and
+throttle mechanisms.
+
+### Fixed
+
+- **Bulk import now STREAMS archives (was the single largest peak-memory source).**
+  `BulkImporter` still did `json.load()` on the whole `.json.gz` — the GELF path
+  was converted to a streaming reader long ago, but bulk was missed. One archive
+  was fully materialized as Python objects; real customer archives reach **1.2 GB
+  compressed / 14.3M messages**, which expands to many GB and OOM-kills the
+  co-located VM. Bulk now uses the same `ArchiveIterator` as GELF, holding only
+  one `batch_docs` batch at a time.
+- **Bulk no longer reads the entire corpus twice per import.** The progress-bar
+  pre-count decompressed and parsed every archive in full just to count messages;
+  it now reads the count from the archive header (`message_count`), falling back
+  to a bounded streaming count for very old archives.
+- **A corrupt/truncated archive no longer aborts a bulk run** — streaming surfaces
+  the error mid-iteration, which is now recorded per archive and skipped.
+- **Archive list pages in SQL.** `GET /api/archives` materialized EVERY matching
+  row (70K+ at customer scale) just to slice out one page; `list_archives()` now
+  takes `limit`/`offset` and the total comes from a new `count_archives()`.
+- **Cancel responsiveness**: the post-import reconciliation wait is now
+  interruptible (was a flat 5 s ignoring cancel), and a backpressure auto-pause
+  now also breaks on a user pause/resume instead of ignoring it for up to 30 s.
+
+### Notes
+
+- Audited and found **safe** (no change needed): archive-iterator file handles on
+  early cancel, archive status/lock/job cleanup in `finally` blocks, export-side
+  cancel checks, and the `_job_progress`/`_cancel_flags` registries (both are
+  pruned together and capped at 50 — an earlier report of unbounded growth was a
+  false positive).
+
 ## [1.13.46] - 2026-07-25
 
 ### Added

@@ -130,12 +130,19 @@ def recommend_spec(host: dict | None = None, jvms: dict | None = None,
 
     # --- RAM ---
     if colocated:
-        # Assume a sane heap for any component present but unreadable.
-        gl_eff = gl if gl else (4 * _GB if gl is None and colocated else 0.0)
-        os_eff = osh if osh else (4 * _GB if osh is None and colocated else 0.0)
-        required = (gl_eff                      # Graylog heap
-                    + os_eff                    # OpenSearch heap
-                    + os_eff                    # OpenSearch page cache (~= heap)
+        # Budget ONLY for components actually found on THIS box. A split
+        # deployment (e.g. Graylog here, OpenSearch elsewhere) must not be
+        # charged for the absent component — assuming a default heap for it
+        # added ~8 GB of phantom requirement (heap + its page cache).
+        gl_eff = gl or 0.0
+        os_eff = osh or 0.0
+        if not gl_eff and not os_eff:
+            # Caller asserted co-location but no heap was readable — assume one
+            # modest JVM rather than nothing, so the advice is not misleadingly low.
+            gl_eff = 4 * _GB
+        required = (gl_eff                      # Graylog heap (if here)
+                    + os_eff                    # OpenSearch heap (if here)
+                    + os_eff                    # OpenSearch page cache (~= its heap)
                     + _MONGO_AND_OS_BASE_MB
                     + _JT_GLOGARCH_MB)
         required *= (1 + _HEADROOM)
@@ -187,6 +194,10 @@ def recommend_spec(host: dict | None = None, jvms: dict | None = None,
         level = "critical"
     elif warnings:
         level = "warn"
+    elif not total_gb:
+        # Couldn't read /proc/meminfo (non-Linux, restricted container). Saying
+        # "ok" would be a claim we can't support — report unknown instead.
+        level = "unknown"
 
     return {
         "colocated": colocated,
@@ -208,9 +219,11 @@ def recommend_spec(host: dict | None = None, jvms: dict | None = None,
             "cpu_cores": rec_cores,
             # Keep each JVM heap <= 25% of the recommended RAM (both JVMs <= 50%),
             # leaving the rest for OpenSearch's page cache and everything else.
-            # Never exceed 31 GB (compressed oops).
-            "graylog_heap_gb": min(31, max(4, int(rec_gb * 0.25))) if colocated else None,
-            "opensearch_heap_gb": min(31, max(4, int(rec_gb * 0.25))) if colocated else None,
+            # Never exceed 31 GB (compressed oops). Only advise a heap for a
+            # component that actually runs HERE — advising an OpenSearch heap on
+            # a box without OpenSearch is noise the operator can't act on.
+            "graylog_heap_gb": min(31, max(4, int(rec_gb * 0.25))) if gl else None,
+            "opensearch_heap_gb": min(31, max(4, int(rec_gb * 0.25))) if osh else None,
             "required_ram_gb_raw": round(required / _GB, 1),
         },
         "warnings": warnings,

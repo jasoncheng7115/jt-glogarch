@@ -648,7 +648,10 @@ class Importer:
                                     # paused import immediately (an uninterruptible
                                     # sleep made Cancel look dead while backed up).
                                     for _ in range(30):
-                                        if fc.cancelled:
+                                        # Break out for a user pause too, so an
+                                        # operator who pauses (or resumes) during
+                                        # an auto-pause isn't ignored for 30s.
+                                        if fc.cancelled or fc.paused:
                                             break
                                         await asyncio.sleep(1)
                                     continue  # Re-check after pause
@@ -709,8 +712,13 @@ class Importer:
             final_status = JobStatus.COMPLETED
             recon_msg = ""
             if self.preflight is not None and preflight_result is not None:
-                # Give Graylog a moment to flush remaining buffered messages
-                await asyncio.sleep(5)
+                # Give Graylog a moment to flush remaining buffered messages —
+                # interruptible, so a cancel issued right at the end isn't held
+                # for 5 s with the UI already showing "cancelling".
+                for _ in range(5):
+                    if fc.cancelled:
+                        break
+                    await asyncio.sleep(1)
                 try:
                     after = await self.preflight.get_indexer_failures_count()
                     delta = after - preflight_result.indexer_failures_baseline
