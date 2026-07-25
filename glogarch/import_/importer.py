@@ -49,6 +49,8 @@ class ImportFlowControl:
         self.mem_available_mb: float | None = None  # local box MemAvailable (OOM guard)
         self._user_batch_size: int = 500   # size to restore to after adaptive shrink
         self.batch_adapted: bool = False   # True while auto-shrunk (shown in UI)
+        self.os_heap_percent: float | None = None  # bulk mode: target OpenSearch heap
+        self.started_at: float = _time.time()      # for elapsed time in the UI
 
     def pause(self):
         self.paused = True
@@ -442,6 +444,47 @@ class Importer:
                         messages_done=info.get("messages_done", 0),
                     )
 
+                # Health hook for bulk. Bulk bypasses Graylog, but on the common
+                # co-located VM it still drives the SAME OpenSearch and the same
+                # RAM — an unthrottled bulk run is precisely what tips the box
+                # into swap/OOM. Sample on a ~5000-doc cadence (cheap), publish
+                # the readings to the UI via fc, and block here while pressured.
+                _bulk_health = {"last": 0}
+
+                async def _bulk_health_cb() -> None:
+                    from glogarch.utils.memguard import mem_action, SEVERITY
+                    _bulk_health["last"] += 1
+                    every = max(1, 5000 // max(1, self.bulk_importer.batch_docs))
+                    if _bulk_health["last"] % every != 0:
+                        return
+                    mem_act, avail = mem_action(self.import_config.mem_pause_mb,
+                                                self.import_config.mem_slow_mb)
+                    fc.mem_available_mb = avail
+                    heap = await self.bulk_importer.get_os_heap_percent()
+                    fc.os_heap_percent = heap
+                    action = mem_act
+                    # OpenSearch heap is the target-side signal for bulk (the
+                    # equivalent of Graylog's journal/buffers in GELF mode).
+                    if heap is not None:
+                        heap_act = "pause" if heap >= 90 else ("slow" if heap >= 80 else "normal")
+                        if SEVERITY[heap_act] > SEVERITY[action]:
+                            action = heap_act
+                    fc.journal_action = action
+                    fc.auto_rate = True
+                    fc.adapt_batch_for_memory(action)
+                    # Keep the bulk sender's batch in step with the adaptive size.
+                    self.bulk_importer.batch_docs = max(
+                        ImportFlowControl.MIN_ADAPTIVE_BATCH, fc.batch_size)
+                    if action == "pause":
+                        log.warning("Bulk import paused (backpressure)",
+                                    os_heap_percent=heap, mem_available_mb=avail)
+                        for _ in range(30):
+                            if fc.cancelled or fc.paused:
+                                break
+                            await asyncio.sleep(1)
+                    elif action == "slow":
+                        await asyncio.sleep(1)
+
                 # Remediation callback: pin the offending field(s) as string +
                 # cycle the index (via the target's Graylog API), so bulk can
                 # re-send the failed docs and reach zero loss in the same run.
@@ -470,6 +513,7 @@ class Importer:
                     paths, progress_callback=_bulk_cb,
                     cancel_check=lambda: fc.cancelled,
                     remediate_cb=_bulk_remediate,
+                    health_cb=_bulk_health_cb,
                 )
                 result.archives_processed = bulk_result.archives_processed
                 result.messages_sent = bulk_result.messages_sent

@@ -5,6 +5,7 @@
 #   [1] Graylog API-mode archive (export)
 #   [2] OpenSearch-direct archive (export)
 #   [3] GELF import of an archive back into a Graylog GELF TCP input
+#   [4] OpenSearch Bulk import (writes straight to OpenSearch — NOT covered by [3])
 #
 # Uses throwaway configs + DBs + archive dirs under /tmp, so it never touches
 # the live service's database. A GELF TCP input must be listening on GELF_PORT.
@@ -113,6 +114,36 @@ else
 fi
 echo "  waiting 20s for re-indexing..."; sleep 20
 echo "  (24h Graylog count now: $(count '%2A') — re-imported messages land 8h earlier per the Taipei/UTC offset)"
+
+echo "=== [4] OpenSearch Bulk import ==="
+# Bulk writes STRAIGHT to OpenSearch (no Graylog), so step [3] does not cover it.
+# This gap is how a "json.load the whole archive" OOM risk survived in the bulk
+# path long after the GELF path was converted to streaming. Verify docs land.
+osc() {   # curl against OpenSearch, with auth only if the cluster needs it
+    if [ -n "$OS_USER" ]; then curl -s -u "$OS_USER:$OS_PASS" "$@"; else curl -s "$@"; fi
+}
+BIDX="jt_e2e_bulk"
+osc -X DELETE "$OS_URL/${BIDX}_0" >/dev/null 2>&1
+# Bulk writes through the Graylog-managed deflector alias; create it for the test.
+osc -X PUT "$OS_URL/${BIDX}_0" -H 'Content-Type: application/json' \
+    -d "{\"aliases\":{\"${BIDX}_deflector\":{}}}" -o /dev/null
+bulk_out="$($PYO import --mode bulk --from "$yest" \
+    --target-index-pattern "$BIDX" \
+    --target-api-url "$GL_URL" --target-api-username "$GL_USER" \
+    --target-api-password "$GL_PASS" 2>&1)"
+echo "$bulk_out" | grep -iE 'indexed|failed|messages sent|import completed|archives:' | tail -5
+sleep 5
+bcount="$(osc "$OS_URL/${BIDX}_0/_count" \
+    | python3 -c 'import sys,json;print(json.load(sys.stdin).get("count",-1))' 2>/dev/null || echo -1)"
+echo "  docs actually in OpenSearch (${BIDX}_0): $bcount"
+if [ "${bcount:-0}" -gt 0 ] 2>/dev/null && ! echo "$bulk_out" | grep -qiE 'Traceback|MemoryError'; then
+    echo "  PASS: bulk import wrote $bcount docs to OpenSearch"
+else
+    echo "FAIL: bulk import wrote no docs (or crashed)"
+    echo "$bulk_out" | tail -15
+    FAIL=1
+fi
+osc -X DELETE "$OS_URL/${BIDX}_0" >/dev/null 2>&1   # clean up the throwaway index
 
 echo ""
 echo "=== RESULT: $([ $FAIL -eq 0 ] && echo 'ALL PASS' || echo 'FAILURES') ==="

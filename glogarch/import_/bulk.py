@@ -251,6 +251,26 @@ class BulkImporter:
         for batch in it:
             yield batch
 
+    async def get_os_heap_percent(self) -> float | None:
+        """Highest JVM heap-used percent across OpenSearch nodes, or None if it
+        can't be read. Used to throttle bulk writes before the target's heap
+        (and, on a co-located box, the whole VM) is driven into trouble."""
+        try:
+            async with self._client() as c:
+                r = await c.get(f"{self.opensearch_url.rstrip('/')}/_nodes/stats/jvm",
+                                timeout=8.0)
+                if r.status_code != 200:
+                    return None
+                nodes = (r.json() or {}).get("nodes", {}) or {}
+                pcts = [
+                    n.get("jvm", {}).get("mem", {}).get("heap_used_percent")
+                    for n in nodes.values()
+                ]
+                pcts = [p for p in pcts if isinstance(p, (int, float))]
+                return float(max(pcts)) if pcts else None
+        except Exception:
+            return None
+
     @staticmethod
     def _count_messages(path: Path) -> int:
         """Message count for an archive WITHOUT reading its messages.
@@ -320,6 +340,7 @@ class BulkImporter:
         progress_callback: Callable[[dict], None] | None = None,
         cancel_check: Callable[[], bool] | None = None,
         remediate_cb: Callable[[list[str]], "Awaitable[bool]"] | None = None,
+        health_cb: "Callable[[], Awaitable[None]] | None" = None,
     ) -> BulkImportResult:
         """Bulk-import every archive in archive_paths.
 
@@ -387,6 +408,16 @@ class BulkImporter:
                                  sent_so_far=result.messages_sent)
                         result.duration_sec = time.time() - start
                         return result
+                    # Bulk bypasses Graylog but still loads the SAME box's
+                    # OpenSearch and RAM — on the common co-located VM an
+                    # unthrottled bulk run is exactly what tips it into swap/OOM.
+                    # The hook samples OpenSearch heap + host memory and blocks
+                    # here while under pressure.
+                    if health_cb is not None:
+                        try:
+                            await health_cb()
+                        except Exception as e:
+                            log.warning("Bulk health check failed", error=str(e))
                     body, count = self._build_bulk_body(batch)
                     result.bytes_sent += len(body)
                     result.bulk_requests += 1

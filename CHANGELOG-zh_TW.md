@@ -2,6 +2,14 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.13.48] - 2026-07-25
+
+### 新增
+
+- **OpenSearch Bulk 匯入加入 backpressure 保護。** Bulk 當初的設計明確標示「無 back-pressure／無自動暫停」,理由是它繞過 Graylog;但在常見的單機共置環境中,它仍會操到**同一台的 OpenSearch 與同一份記憶體**,不加節流的 Bulk 正是把主機推入 swap／OOM 的元兇。現在會以每約 5000 筆的頻率取樣 **OpenSearch JVM heap**（`_nodes/stats/jvm`）與**本機可用記憶體**,並據此減速（heap ≥ 80%）或暫停（heap ≥ 90%,或本機記憶體不足）,同時比照 GELF 路徑自動調小批次。
+- **Bulk 匯入的進度視窗會顯示即時健康資訊與已執行時間。** 先前徽章顯示的是 Bulk 模式根本不存在的 Graylog 指標（`Journal: ?`）。現在會依模式顯示：Bulk 顯示**目標 OpenSearch ＋ heap %**,GELF 顯示 Graylog journal／heap／緩衝;兩種模式都會額外顯示**本機可用記憶體、已執行時間,以及批次被自動調小時的提示**。
+- **`scripts/e2e-archive-test.sh` 新增步驟 [4]：真實的 OpenSearch Bulk 匯入測試**,並驗證文件確實寫入 OpenSearch。Bulk 是直接寫入 OpenSearch,原有的 GELF 步驟從未涵蓋它——這正是 Bulk 整份載入的 OOM 風險長期未被測出的原因。
+
 ## [1.13.47] - 2026-07-25
 
 本版為系統性稽核匯入／匯出的記憶體、取消與節流機制後的修正。

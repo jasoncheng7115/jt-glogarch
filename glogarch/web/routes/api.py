@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time as _t
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -869,6 +870,12 @@ async def get_import_status(request: Request, job_id: str):
         "buffer_output_pct": js.buffer_output_pct if js else None,
         "buffer_process_pct": js.buffer_process_pct if js else None,
         "mem_available_mb": round(fc.mem_available_mb) if fc.mem_available_mb is not None else None,
+        # Bulk (OpenSearch-direct) mode: the target-side signal is OpenSearch's
+        # JVM heap, not Graylog's journal/buffers.
+        "os_heap_percent": (round(fc.os_heap_percent, 1)
+                            if getattr(fc, "os_heap_percent", None) is not None else None),
+        "batch_adapted": bool(getattr(fc, "batch_adapted", False)),
+        "elapsed_sec": round(max(0.0, _t.time() - getattr(fc, "started_at", _t.time()))),
         "journal": {
             "uncommitted": js.uncommitted if js else None,
             "size_bytes": js.size_bytes if js else None,

@@ -2,6 +2,27 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.48] - 2026-07-25
+
+### Added
+
+- **OpenSearch Bulk import now has backpressure protection.** Bulk was explicitly
+  built with "no back-pressure / no auto-pause" because it bypasses Graylog — but
+  on the common co-located VM it still drives the SAME OpenSearch and the same
+  RAM, so an unthrottled bulk run is exactly what tips the box into swap/OOM. It
+  now samples **OpenSearch JVM heap** (`_nodes/stats/jvm`) and **host memory** on
+  a ~5000-doc cadence, and slows (≥80% heap) or pauses (≥90% heap, or low host
+  memory) accordingly, shrinking its batch like the GELF path.
+- **Bulk imports show live health + elapsed time in the progress dialog.**
+  Previously the badge rendered Graylog signals that do not exist in bulk mode
+  (`Journal: ?`). It is now mode-aware: **Target OpenSearch + heap %** for bulk,
+  Graylog journal/heap/buffer for GELF; both modes additionally show **host free
+  memory, elapsed time, and a note when the batch was auto-reduced**.
+- **`scripts/e2e-archive-test.sh` gained step [4]: a real OpenSearch Bulk import**
+  with verification that documents actually land in OpenSearch. Bulk writes
+  straight to OpenSearch, so the existing GELF step never covered it — that gap
+  is how the bulk whole-file-load OOM risk survived undetected.
+
 ## [1.13.47] - 2026-07-25
 
 Findings from a systematic audit of the import/export memory, cancel and

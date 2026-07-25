@@ -108,6 +108,16 @@ function formatNumber(n) {
     return (n || 0).toLocaleString();
 }
 
+// Compact elapsed time (e.g. 45s / 12m03s / 3h07m) for long-running jobs.
+function formatDuration(sec) {
+    sec = Math.max(0, Math.floor(sec || 0));
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60), s = sec % 60;
+    if (m < 60) return `${m}m${String(s).padStart(2, '0')}s`;
+    const h = Math.floor(m / 60);
+    return `${h}h${String(m % 60).padStart(2, '0')}m`;
+}
+
 function _unitFor(jobType) {
     // verify counts archive files (份), cleanup counts deleted files (個檔),
     // export/import count messages (筆). Header reads "Processed" / "處理量"
@@ -1546,6 +1556,9 @@ async function doImportSingle() {
         // loop, so the controls would just confuse the user.
         const gelfControls = document.getElementById('import-gelf-controls');
         if (gelfControls) gelfControls.style.display = (mode === 'bulk') ? 'none' : 'flex';
+        // Remember the mode so the health badge shows the right target signals:
+        // Graylog journal/buffers for GELF, OpenSearch heap for bulk.
+        window._activeImportMode = mode;
         // Set live rate slider
         const liveRate = document.getElementById('import-live-rate');
         if (liveRate) { liveRate.value = rateMs; const rd = document.getElementById('import-live-rate-display'); if (rd) rd.value = rateMs; }
@@ -1658,23 +1671,39 @@ function startImportStatusPoll(jobId) {
             const badge = document.getElementById('import-journal-badge');
             if (badge && st.journal) {
                 badge.style.display = 'inline';
+                const isBulk = window._activeImportMode === 'bulk';
                 const u = st.journal.uncommitted;
                 const action = st.journal_action;
                 const color = action === 'normal' ? 'var(--success)' : action === 'slow' ? 'var(--warning)' : 'var(--danger)';
                 const actionLabel = t(`import_journal_${action}`) || action;
-                // === Group 1: the TARGET Graylog (journal / JVM heap / output
-                // buffer all belong to the Graylog being imported INTO). ===
-                let html = `<span class="badge-owner" title="${esc(t('import_owner_target_hint'))}">${icon('server', 12)} ${t('import_owner_target')}</span> `;
-                html += `<span data-style="color:${color}">${t('import_journal_label')}: ${u !== null ? formatNumber(u) : '?'} (${actionLabel})</span>`;
-                const hp = st.heap_percent;
-                if (hp !== null && hp !== undefined) {
-                    const hc = hp >= 98 ? 'var(--danger)' : hp >= 95 ? 'var(--warning)' : 'var(--success)';
-                    html += ` <span data-style="color:${hc}">· ${t('import_heap_label')}: ${hp}%</span>`;
+                // === Group 1: the TARGET being written INTO ===
+                // GELF goes through Graylog (journal / JVM heap / output buffer);
+                // bulk writes straight to OpenSearch, where those Graylog signals
+                // don't exist — showing "Journal: ?" there was just misleading.
+                let html;
+                if (isBulk) {
+                    html = `<span class="badge-owner" title="${esc(t('import_owner_target_hint'))}">${icon('db', 12)} ${t('import_owner_target_os')}</span> `;
+                    html += `<span data-style="color:${color}">${esc(actionLabel)}</span>`;
+                } else {
+                    html = `<span class="badge-owner" title="${esc(t('import_owner_target_hint'))}">${icon('server', 12)} ${t('import_owner_target')}</span> `;
+                    html += `<span data-style="color:${color}">${t('import_journal_label')}: ${u !== null ? formatNumber(u) : '?'} (${actionLabel})</span>`;
+                    const hp = st.heap_percent;
+                    if (hp !== null && hp !== undefined) {
+                        const hc = hp >= 98 ? 'var(--danger)' : hp >= 95 ? 'var(--warning)' : 'var(--success)';
+                        html += ` <span data-style="color:${hc}">· ${t('import_heap_label')}: ${hp}%</span>`;
+                    }
+                    const bo = st.buffer_output_pct;
+                    if (bo !== null && bo !== undefined) {
+                        const bc = bo >= 90 ? 'var(--danger)' : bo >= 70 ? 'var(--warning)' : 'var(--success)';
+                        html += ` <span data-style="color:${bc}">· ${t('import_buffer_label')}: ${bo}%</span>`;
+                    }
                 }
-                const bo = st.buffer_output_pct;
-                if (bo !== null && bo !== undefined) {
-                    const bc = bo >= 90 ? 'var(--danger)' : bo >= 70 ? 'var(--warning)' : 'var(--success)';
-                    html += ` <span data-style="color:${bc}">· ${t('import_buffer_label')}: ${bo}%</span>`;
+                // Bulk (OpenSearch-direct) mode: the target-side signal is the
+                // OpenSearch JVM heap rather than Graylog's journal/buffers.
+                const oh = st.os_heap_percent;
+                if (oh !== null && oh !== undefined) {
+                    const ohc = oh >= 90 ? 'var(--danger)' : oh >= 80 ? 'var(--warning)' : 'var(--success)';
+                    html += ` <span data-style="color:${ohc}">· ${t('import_os_heap_label')}: ${oh}%</span>`;
                 }
                 // === Group 2: THIS host (jt-glogarch's own box free RAM — it
                 // often shares the VM with Graylog/OS, so low free RAM pauses). ===
@@ -1683,6 +1712,16 @@ function startImportStatusPoll(jobId) {
                     const mc = mm <= 700 ? 'var(--danger)' : mm <= 1400 ? 'var(--warning)' : 'var(--success)';
                     html += `  <span class="badge-owner" title="${esc(t('import_owner_host_hint'))}">${icon('disk', 12)} ${t('import_owner_host')}</span> `;
                     html += `<span data-style="color:${mc}">${t('import_mem_label')}: ${formatNumber(mm)}MB</span>`;
+                }
+                // Elapsed time — applies to BOTH modes, so a long-running import
+                // shows how long it has actually been going.
+                if (st.elapsed_sec !== null && st.elapsed_sec !== undefined) {
+                    html += ` <span class="cap-info">· ${t('import_elapsed_label')}: ${esc(formatDuration(st.elapsed_sec))}</span>`;
+                }
+                // Auto-shrunk batch (memory pressure) — explain the smaller batch
+                // instead of letting it look like a setting that changed itself.
+                if (st.batch_adapted) {
+                    html += ` <span data-style="color:var(--warning)">· ${t('import_batch_adapted')}</span>`;
                 }
                 badge.innerHTML = html;
             }
