@@ -2,6 +2,32 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.54] - 2026-07-26
+
+### Fixed
+
+- **First bulk import to a new pattern could still lose documents to a race.**
+  1.13.53 cycled a newly created index set so Graylog would provision it, but the
+  write could start under a second later — while Graylog was still setting the
+  index set up — so documents reported as indexed landed in an index Graylog then
+  replaced. Preflight now waits for the index set to report ready (plus a short
+  settle) before any write. Verified on a clean cluster: 13,500 documents land
+  and stay.
+
+### Added
+
+- **The release test plan now covers the two failure modes behind the "0%"
+  incident** (`scripts/e2e-archive-test.sh`, run every release):
+  - **[5] Re-export dedup** — a re-run over already-archived time must add
+    nothing AND take ~1s using query-level dedup (guards the regression where an
+    export re-scanned hundreds of millions of documents and sat at 0% for hours);
+    then a GAP is punched into the archive set and the next export must refill
+    exactly that gap, proving the range filter never hides unarchived data.
+  - **[6] Deleted archive file** — the dedup trusts the DATABASE, so an archive
+    whose FILE was deleted must not be skipped forever. `verify` must flag it as
+    missing, and because dedup only counts `completed` rows the next export
+    re-archives exactly that range. The whole chain is now asserted end to end.
+
 ## [1.13.53] - 2026-07-26
 
 ### Fixed

@@ -1327,6 +1327,17 @@ class PreflightChecker:
                         # never helps, because nothing triggers the provisioning.
                         try:
                             await self.cycle_index(set_id)
+                            # Then WAIT for Graylog to finish provisioning. Writing
+                            # while it is still setting the index set up means the
+                            # documents land in an index Graylog immediately
+                            # replaces: the bulk import reports them as indexed and
+                            # they are silently gone (observed with the write
+                            # starting <1s after the cycle).
+                            try:
+                                await self.wait_for_index_ready(set_id, timeout_sec=60)
+                            except Exception:
+                                pass
+                            await asyncio.sleep(3)
                             log.info("Cycled the new index set so Graylog creates "
                                      "its first write index", id=set_id)
                         except Exception as e:

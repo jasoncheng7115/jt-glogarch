@@ -6,6 +6,9 @@
 #   [2] OpenSearch-direct archive (export)
 #   [3] GELF import of an archive back into a Graylog GELF TCP input
 #   [4] OpenSearch Bulk import (writes straight to OpenSearch — NOT covered by [3])
+#   [5] Re-export dedup: already-archived time is skipped in the QUERY (guards the
+#       "export stuck at 0%" bug) while a punched GAP is still re-exported exactly
+#   [6] A deleted archive FILE is detected by verify and self-healed on re-export
 #
 # Uses throwaway configs + DBs + archive dirs under /tmp, so it never touches
 # the live service's database. A GELF TCP input must be listening on GELF_PORT.
@@ -155,6 +158,103 @@ fi
 # Graylog refuses to drop an index set a stream still writes to).
 $PYO streams-cleanup --prefix "$BIDX" --yes 2>&1 | grep -iE 'deleted|failed' | sed 's/^/  /'
 osc -X DELETE "$OS_URL/${BIDX}*" >/dev/null 2>&1   # any index the cleanup missed
+
+echo "=== [5] Re-export dedup: skip archived time, still refill gaps ==="
+# Guards the "export stuck at 0% for 14h" class of bug: de-dup must happen in the
+# QUERY (so an already-archived index is skipped instantly instead of dragging
+# hundreds of millions of documents across the network), while a GAP must still
+# be re-exported — getting that wrong loses data silently.
+W5="$W/dedup"; mkdir -p "$W5/arch"
+cat > "$W5/cfg.yaml" <<YAML
+servers:
+  - {name: local, url: $GL_URL, username: $GL_USER, password: $GL_PASS, verify_ssl: false}
+default_server: local
+export_mode: opensearch
+export: {base_path: $W5/arch}
+opensearch: {hosts: ["$OS_URL"], username: "$OS_USER", password: "$OS_PASS", verify_ssl: false}
+database_path: $W5/db.db
+log_level: WARNING
+YAML
+chown -R jt-glogarch:jt-glogarch "$W5"
+P5="sudo -u jt-glogarch python3 -m glogarch --config $W5/cfg.yaml"
+$P5 export --mode opensearch --days 3 --no-resume >/dev/null 2>&1
+sum5() { sudo -u jt-glogarch python3 -c "import sqlite3;c=sqlite3.connect('$W5/db.db');print(c.execute('SELECT COALESCE(SUM(message_count),0) FROM archives WHERE status=\"completed\"').fetchone()[0])"; }
+base="$(sum5)"
+echo "  first export archived: $base records"
+if [ "${base:-0}" -le 0 ] 2>/dev/null; then
+    echo "FAIL: dedup test could not archive anything to work with"; FAIL=1
+else
+    # (a) re-run with everything covered -> must add nothing, and be quick
+    t0=$(date +%s)
+    out5="$($P5 export --mode opensearch --days 3 --no-resume 2>&1)"
+    el=$(( $(date +%s) - t0 ))
+    again="$(sum5)"
+    echo "  re-export added $(( again - base )) records in ${el}s (expect 0)"
+    if [ "$again" != "$base" ]; then
+        echo "FAIL: re-export duplicated data ($base -> $again)"; FAIL=1
+    elif ! echo "$out5" | grep -qiE "Nothing left to export|Excluding already-archived"; then
+        echo "FAIL: re-export did not use query-level dedup (would re-scan everything)"; FAIL=1
+    else
+        echo "  PASS: already-archived time skipped at the query level"
+    fi
+    # (b) punch a GAP and confirm exactly that gap is re-exported
+    gap="$(sudo -u jt-glogarch python3 - <<PY
+import sqlite3, os
+c = sqlite3.connect("$W5/db.db")
+rows = c.execute("SELECT id,message_count,file_path FROM archives "
+                 "WHERE status='completed' ORDER BY time_from").fetchall()
+mid = rows[len(rows)//2]
+try: os.remove(mid[2])
+except OSError: pass
+c.execute("DELETE FROM archives WHERE id=?", (mid[0],)); c.commit()
+print(mid[1])
+PY
+)"
+    $P5 export --mode opensearch --days 3 --no-resume >/dev/null 2>&1
+    filled="$(sum5)"
+    echo "  gap of $gap records removed; after re-export total=$filled (expect $base)"
+    if [ "$filled" = "$base" ]; then
+        echo "  PASS: gap re-exported exactly, nothing duplicated"
+    else
+        echo "FAIL: gap not restored correctly ($base expected, got $filled)"; FAIL=1
+    fi
+fi
+
+echo "=== [6] Deleted archive FILE: verify detects it, re-export self-heals ==="
+# The dedup in [5] trusts the DATABASE. So if an archive FILE disappears while
+# its row survives, the export must not keep skipping that time forever. verify
+# marks such a row `missing`, and because dedup only counts `completed` rows the
+# next export re-archives exactly that range. This is the safety net for the
+# whole query-level dedup design — assert the chain end to end.
+if [ "${base:-0}" -gt 0 ] 2>/dev/null; then
+    victim="$(sudo -u jt-glogarch python3 - <<PY
+import sqlite3
+c = sqlite3.connect("$W5/db.db")
+r = c.execute("SELECT file_path,message_count FROM archives "
+              "WHERE status='completed' ORDER BY time_from").fetchall()
+m = r[len(r) // 2]
+print(f"{m[0]}|{m[1]}")
+PY
+)"
+    vfile="${victim%|*}"; vcount="${victim#*|}"
+    rm -f "$vfile"
+    echo "  deleted archive file ($vcount records): $(basename "$vfile")"
+    vout="$($P5 verify 2>&1)"
+    echo "$vout" | grep -iE "Missing files|Valid:" | sed 's/^/    /'
+    if echo "$vout" | grep -qiE "Missing files: [1-9]"; then
+        echo "  PASS: verify detected the missing archive file"
+    else
+        echo "FAIL: verify did not detect the deleted archive file"; FAIL=1
+    fi
+    $P5 export --mode opensearch --days 3 --no-resume >/dev/null 2>&1
+    healed="$(sum5)"
+    echo "  completed records after re-export: $healed (expect $base)"
+    if [ "$healed" = "$base" ]; then
+        echo "  PASS: the missing range was re-archived automatically"
+    else
+        echo "FAIL: deleted archive was not self-healed ($base expected, got $healed)"; FAIL=1
+    fi
+fi
 
 echo ""
 echo "=== RESULT: $([ $FAIL -eq 0 ] && echo 'ALL PASS' || echo 'FAILURES') ==="
