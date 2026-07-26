@@ -53,6 +53,9 @@ class BulkImportResult:
         self.bulk_requests: int = 0
         self.bytes_sent: int = 0
         self.duration_sec: float = 0.0
+        # Documents actually present in the target pattern after the run — the
+        # bulk response only says what OpenSearch ACCEPTED.
+        self.docs_at_destination: int | None = None
 
 
 class BulkImporter:
@@ -288,6 +291,44 @@ class BulkImporter:
         for batch in it:
             yield batch
 
+    ALIAS_STABLE_CHECKS = 3      # consecutive identical resolutions required
+    ALIAS_STABLE_TIMEOUT = 30    # seconds
+
+    async def _wait_for_stable_alias(self, client: httpx.AsyncClient,
+                                     alias: str) -> str | None:
+        """Block until `alias` resolves to the SAME concrete index on
+        ALIAS_STABLE_CHECKS consecutive polls.
+
+        Graylog provisions an index set asynchronously; right after a deflector
+        cycle the alias can exist yet still be re-pointed (or its index
+        recreated) moments later. Documents written in that window are accepted
+        by OpenSearch — the bulk response says "indexed" — and then vanish with
+        the replaced index. Waiting for stability makes this deterministic
+        instead of relying on a fixed sleep.
+        """
+        last, streak = None, 0
+        for _ in range(self.ALIAS_STABLE_TIMEOUT):
+            try:
+                r = await client.get(f"{self.opensearch_url}/_cat/aliases/{alias}"
+                                     "?h=index&format=json", timeout=10.0)
+                idx = None
+                if r.status_code == 200:
+                    rows = r.json() or []
+                    idx = rows[0].get("index") if rows else None
+            except Exception:
+                idx = None
+            if idx and idx == last:
+                streak += 1
+                if streak >= self.ALIAS_STABLE_CHECKS:
+                    return idx
+            else:
+                streak = 1 if idx else 0
+            last = idx
+            await asyncio.sleep(1)
+        log.warning("Deflector alias did not settle; writing anyway",
+                    alias=alias, resolved_to=last)
+        return last
+
     async def get_os_heap_percent(self) -> float | None:
         """Highest JVM heap-used percent across OpenSearch nodes, or None if it
         can't be read. Used to throttle bulk writes before the target's heap
@@ -355,11 +396,15 @@ class BulkImporter:
                 await asyncio.sleep(1)
                 r = await client.head(f"{self.opensearch_url}/{index_name}")
                 if r.status_code == 200:
+                    # Existing is not the same as SETTLED. Graylog may still be
+                    # provisioning and re-point (or recreate) the write index a
+                    # moment later, and documents written into the index it then
+                    # replaces are reported as indexed but are silently gone —
+                    # an intermittent failure seen in e2e. Wait until the alias
+                    # resolves to the SAME concrete index on consecutive checks
+                    # instead of sleeping a fixed amount and hoping.
+                    await self._wait_for_stable_alias(client, index_name)
                     log.info("Deflector alias became ready", alias=index_name)
-                    # Give Graylog a moment to finish provisioning before writing:
-                    # writing into an index it is still setting up risks the docs
-                    # landing in an index it then replaces.
-                    await asyncio.sleep(2)
                     return
             raise RuntimeError(
                 f"Graylog deflector alias '{index_name}' did not appear on "
@@ -542,11 +587,45 @@ class BulkImporter:
                 result.archives_processed += 1
 
         result.duration_sec = time.time() - start
+
+        # "Indexed" is what the _bulk response claimed. Confirm at the
+        # DESTINATION that the documents are actually there: if Graylog replaced
+        # the write index while it was still provisioning, OpenSearch accepted
+        # the writes and then dropped them with the old index — reporting that as
+        # success would be silent data loss. Advisory: never downgrade a real
+        # success, only surface a destination that is empty.
+        if result.messages_indexed > 0:
+            try:
+                async with self._client() as c:
+                    # Refresh so the count reflects what was just written.
+                    await c.post(
+                        f"{self.opensearch_url}/{self.target_index_pattern}*/_refresh",
+                        timeout=30.0)
+                    rr = await c.get(
+                        f"{self.opensearch_url}/{self.target_index_pattern}*/_count",
+                        timeout=30.0)
+                    at_dest = (int((rr.json() or {}).get("count", -1))
+                               if rr.status_code == 200 else -1)
+            except Exception as e:
+                at_dest = -1
+                log.warning("Could not verify documents at the destination", error=str(e))
+            result.docs_at_destination = at_dest
+            if at_dest == 0:
+                msg = (f"Bulk reported {result.messages_indexed:,} documents indexed but "
+                       f"'{self.target_index_pattern}*' holds 0 — the target index was "
+                       f"replaced while Graylog was still provisioning it. The data was "
+                       f"NOT written; re-run the import.")
+                log.error(msg)
+                result.errors.append(msg)
+                result.messages_indexed = 0
+                result.messages_failed = result.messages_sent
+
         log.info("Bulk import completed",
                  archives=result.archives_processed,
                  sent=result.messages_sent,
                  indexed=result.messages_indexed,
                  failed=result.messages_failed,
+                 at_destination=getattr(result, "docs_at_destination", None),
                  duration=f"{result.duration_sec:.1f}s")
         return result
 

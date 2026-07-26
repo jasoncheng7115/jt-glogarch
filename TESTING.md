@@ -199,6 +199,29 @@ GL_PASS='<graylog-admin-pw>' bash scripts/e2e-archive-test.sh
 
 ---
 
+## Upgrade Compatibility Test (mandatory)
+
+    REPO=/path/to/git-clone bash scripts/upgrade-compat-test.sh [version ...]
+
+Builds REAL state with an OLD release's OWN code (taken from git history) — 12
+archives with files on disk, three schedules, and a config.yaml in the old format
+— then hands that state to the CURRENT code and asserts the three
+non-negotiable upgrade principles:
+
+1. **Never lose data** — archive rows, message counts and files intact after
+   `_migrate()`; nothing deleted anywhere in the upgrade path.
+2. **Never leave the system unusable** — the old `config.yaml` loads, legacy
+   `api_audit:` migrates to `op_audit`, fields added since then take defaults.
+3. **Never stop scheduled archiving** — every pre-existing schedule survives AND
+   is registered with APScheduler; a cleanup schedule storing a SHORTER retention
+   than the one in force is reconciled upward, and the cleanup run is proven to
+   use the safe value (otherwise the first 04:00 after the upgrade would delete
+   200–1095-day-old archives).
+
+Verified from **1.7.9, 1.7.15, 1.9.2, 1.10.13, 1.11.0, 1.12.0, 1.12.10, 1.13.0,
+1.13.20, 1.13.40** — all ALL PASS. Run it whenever you touch a schema migration,
+a config default, the scheduler, or any code that reinterprets stored state.
+
 ## Design-Review Pitfall Checklist
 
 Every item below has actually shipped as a bug in this project — the incident is

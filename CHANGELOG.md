@@ -2,6 +2,47 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.60] - 2026-07-26
+
+### Fixed
+
+- **Intermittent silent data loss on the first bulk import to a new pattern.**
+  Even after 1.13.57 waited for the index set to report ready, the write could
+  still begin while Graylog was re-pointing (or recreating) the write index —
+  OpenSearch accepted the documents, the `_bulk` response said "indexed", and
+  they vanished with the replaced index. It reproduced roughly one run in three
+  in e2e. Waiting is now deterministic: `_wait_for_stable_alias()` polls until
+  the deflector alias resolves to the SAME concrete index on three consecutive
+  checks, instead of sleeping a fixed amount and hoping. Verified with five
+  consecutive first-imports from a completely clean slate — 36,300 documents
+  landed every time.
+- **Bulk no longer reports success when the destination is empty.** After a run
+  it refreshes and counts the target pattern; if OpenSearch claimed documents
+  were indexed but the destination holds 0, the run is reported as FAILED with an
+  explicit "the data was NOT written; re-run the import" error instead of a green
+  result. `BulkImportResult.docs_at_destination` carries the verified count.
+
+## [1.13.59] - 2026-07-26
+
+### Added
+
+- **`scripts/upgrade-compat-test.sh` — upgrade safety is now proven, not assumed.**
+  It builds REAL state with an OLD release's OWN code taken from git history (12
+  archives with files on disk, three schedules, a config.yaml in the old format),
+  hands that state to the CURRENT code, and asserts the three non-negotiable
+  principles: no data lost (rows, counts and files intact through `_migrate()`,
+  nothing deleted), the system still usable (old config loads, legacy
+  `api_audit:` migrates to `op_audit`, later fields take defaults), and scheduled
+  archiving unbroken (every pre-existing schedule survives AND is registered with
+  APScheduler, and a cleanup schedule holding a shorter retention than the one in
+  force is reconciled upward — proven by inspecting the value the cleanup run
+  would actually use).
+
+  Verified end to end from **1.7.9, 1.7.15, 1.9.2, 1.10.13, 1.11.0, 1.12.0,
+  1.12.10, 1.13.0, 1.13.20 and 1.13.40** — all ALL PASS. Documented in
+  TESTING.md as mandatory whenever a schema migration, config default, scheduler
+  behaviour or any reinterpretation of stored state changes.
+
 ## [1.13.58] - 2026-07-26
 
 ### Added
