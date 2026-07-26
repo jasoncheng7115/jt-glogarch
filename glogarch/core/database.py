@@ -613,11 +613,23 @@ class ArchiveDB:
         exporter exclude that time at the QUERY level instead of fetching every
         document and discarding it.
         """
+        # Count ONLY archives that hold the FULL data for their time range:
+        #   * stream_id IS NULL  -> an API-mode export of ALL streams
+        #   * stream_id = index  -> this very OpenSearch index
+        # Everything else is a partial view and must NOT suppress an export:
+        #   * a sister index of the same prefix (graylog_75 vs graylog_74) holds
+        #     only its own slice of the hour,
+        #   * a stream-FILTERED API archive (stream_id = a stream UUID) holds
+        #     only that stream's messages.
+        # The previous rule was `stream_id NOT LIKE '<prefix>%'`, which had two
+        # defects: in SQL `NULL NOT LIKE 'x%'` is NULL (not true), so API-mode
+        # archives — the main cross-mode case — were invisible and the same logs
+        # got archived twice when switching modes; and it accepted partial,
+        # stream-filtered archives as if they covered everything.
         sql = ("SELECT time_from, time_to FROM archives "
                "WHERE server_name = ? AND status = 'completed' "
-               "AND (stream_id = ? OR stream_id NOT LIKE ?)")
-        params: list = [server_name, index_name,
-                        f"{exclude_stream_id_prefix or index_name}%"]
+               "AND (stream_id IS NULL OR stream_id = ?)")
+        params: list = [server_name, index_name]
         if time_to:
             sql += " AND time_from <= ?"
             params.append(_dt_to_str(time_to))

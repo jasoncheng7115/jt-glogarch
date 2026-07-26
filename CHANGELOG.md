@@ -2,6 +2,30 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.55] - 2026-07-26
+
+### Fixed
+
+- **Switching between Graylog-API and OpenSearch archiving stored the same logs
+  TWICE.** Cross-mode de-duplication never actually fired. Two defects stacked:
+  an API-mode export of all streams records `stream_id = NULL`, and the rule was
+  `stream_id NOT LIKE '<prefix>%'` — in SQL `NULL NOT LIKE 'x%'` evaluates to
+  NULL, not true, so API archives were invisible to the check; and coverage
+  required ONE archive to fully contain the chunk, which cross-mode boundaries
+  never satisfy (API chunks start at the requested time, e.g. 10:43:58-11:43:58,
+  while OpenSearch chunks are hour-aligned 11:00-12:00). Measured on a live
+  cluster: one day archived via API (22,800 records) then via OpenSearch added
+  14,200 more for the same logs.
+
+  Coverage is now computed from the merged ranges of archives that actually hold
+  the FULL data for their range — an API export of all streams (`stream_id IS
+  NULL`) or this very OpenSearch index. Partial archives no longer suppress an
+  export: a sister index of the same prefix holds only its slice of the hour, and
+  a stream-FILTERED API archive holds only one stream, so treating either as
+  coverage could skip an export and lose the rest. Re-measured: the same
+  API-then-OpenSearch sequence now re-archives **nothing** inside the API window,
+  and still archives the hours outside it.
+
 ## [1.13.54] - 2026-07-26
 
 ### Fixed
