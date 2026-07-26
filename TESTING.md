@@ -221,7 +221,23 @@ much cheaper than the incident.
 - [ ] Does a "check" get more expensive as history accumulates? Merge/aggregate it
   so it scales with the number of RANGES, not the number of records.
 
-### 2. First run and empty state
+### 2. First run, empty state, and UPGRADE
+
+- [ ] **Does the fix itself delete data on upgrade?** A behaviour correction is
+  applied to state that was written under the OLD behaviour, and the first
+  scheduled run after the upgrade acts on it unattended.
+  *v1.13.56 made cleanup schedules honour their own `retention_days` — correct in
+  isolation, but a site whose Schedules page showed "200 Days" while config.yaml
+  said 1095 was really keeping 3 years, so the next 04:00 run would have deleted
+  every archive between 200 and 1095 days old. v1.13.57 reconciles the stored
+  value on startup instead: never shorten what the previous version was keeping,
+  log both numbers, and let the operator opt in.*
+- [ ] Which direction is destructive? Apply the change only in the SAFE direction
+  automatically; require an explicit action for the destructive one.
+- [ ] Would changing a DEFAULT alter behaviour for anyone who never set it?
+  *`retention_days` was left at 1095 for exactly this reason — lowering it would
+  silently shorten retention everywhere it was not set explicitly, and the next
+  cleanup would delete data those sites still expect (v1.13.57).*
 
 - [ ] Fresh install, nothing configured, zero archives: no crash, no false warning.
   *The sizing advisor reported "ok" when `/proc/meminfo` was unreadable — a claim
