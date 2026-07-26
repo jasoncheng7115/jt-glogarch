@@ -2,6 +2,32 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.56] - 2026-07-26
+
+### Fixed
+
+- **A cleanup schedule ignored the retention it was saved with.**
+  `POST /api/schedules` stores `{"retention_days": N}` in the schedule and the
+  Schedules page displays it — one site showed "200 Days" — but the scheduler
+  always applied `settings.retention.retention_days` from config.yaml instead
+  (default **1095**, i.e. 3 years). The displayed value was decorative. Either
+  direction is damaging and silent: a larger effective retention keeps archives
+  the operator meant to expire and quietly fills the disk, while a smaller one
+  deletes archives they meant to keep. The scheduled cleanup now reads the
+  schedule's own `retention_days`, falls back to config.yaml when it has none,
+  and logs which source it used.
+
+- **An index that was ~95% archived could keep a hole in it FOREVER.** The plan
+  phase skipped a whole index when `get_coverage_ratio(...) >= 0.95`. That lost
+  data twice over: up to 5% of an index stayed unarchived permanently, and the
+  ratio was computed over the TIME RANGE for the whole server, so sister indices
+  covering the same hours inflated each other — with three indices spanning the
+  same hours, one index's real gap read as ">=95% covered". The heuristic is also
+  obsolete: since 1.13.53 the exporter excludes already-archived ranges in the
+  OpenSearch query and skips an index only when the filtered count is exactly 0,
+  which is precise and costs one `_count`. Removed. Found by the new e2e step [5]
+  on its first real run — it punches a gap and demands it back.
+
 ## [1.13.55] - 2026-07-26
 
 ### Fixed

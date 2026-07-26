@@ -240,9 +240,32 @@ class ArchiveScheduler:
         self._running_jobs["cleanup"] = True
         job_id = self._create_run_job(JobType.CLEANUP, f"scheduled:cleanup:{schedule_name}")
         try:
+            # Honour the retention the SCHEDULE was saved with. `POST /api/schedules`
+            # stores `{"retention_days": N}` in config_json and the Schedules page
+            # displays it, but this handler used to ignore it and always apply
+            # `settings.retention.retention_days` — so a schedule shown as "200
+            # Days" actually ran with whatever config.yaml said (default 1095).
+            # Either direction is bad: too large silently fills the disk, too
+            # small silently deletes archives the operator meant to keep.
+            import json as _json
+            retention_days = None
+            try:
+                sched = next((s for s in self.db.list_schedules()
+                              if s.name == schedule_name), None)
+                if sched and sched.config_json:
+                    val = (_json.loads(sched.config_json) or {}).get("retention_days")
+                    if val:
+                        retention_days = int(val)
+            except Exception as e:
+                log.warning("Could not read the schedule's retention setting; "
+                            "falling back to config.yaml",
+                            schedule=schedule_name, error=str(e))
+
             cleaner = Cleaner(self.settings.retention, self.settings.export, self.db, self.settings.op_audit)
-            result = cleaner.cleanup()
+            result = cleaner.cleanup(retention_days=retention_days)
             log.info("Scheduled cleanup completed",
+                     retention_days=retention_days or self.settings.retention.retention_days,
+                     retention_source="schedule" if retention_days else "config.yaml",
                      files_deleted=result.files_deleted,
                      bytes_freed=result.bytes_freed)
             mb = result.bytes_freed / (1024 * 1024)

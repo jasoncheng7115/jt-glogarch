@@ -233,17 +233,22 @@ class OpenSearchExporter:
                                     "detail": f"skipped {result.chunks_skipped}/{total_selected} indices (archived)",
                                 })
                             continue
-                        coverage = self.db.get_coverage_ratio(self.server_config.name, idx_from, idx_to)
-                        if coverage >= 0.95:
-                            result.chunks_skipped += 1
-                            log.info("Index already covered by other archives, skipping",
-                                     coverage_pct=f"{coverage * 100:.0f}%", index=index_name)
-                            if progress_callback:
-                                progress_callback({
-                                    "phase": "dedup", "pct": 0,
-                                    "detail": f"skipped {result.chunks_skipped}/{total_selected} indices (archived)",
-                                })
-                            continue
+                        # NOTE: there used to be a "coverage >= 95% -> skip this
+                        # whole index" heuristic here. It silently lost data twice
+                        # over: up to 5% of an index could stay unarchived FOREVER
+                        # (a hole inside a mostly-archived index was never
+                        # refilled), and the ratio was computed over the TIME RANGE
+                        # for the whole server, so sister indices covering the same
+                        # hours inflated each other's coverage — with three indices
+                        # spanning the same hours, one index's real gap read as
+                        # ">=95% covered". Caught by e2e step [5], which punches a
+                        # gap and requires it back.
+                        #
+                        # It is also obsolete: since v1.13.53 `_export_index`
+                        # excludes the already-archived ranges in the OpenSearch
+                        # query and skips the index outright when the filtered
+                        # count is 0. That is exact, costs one `_count`, and can
+                        # never skip a gap.
                         # Accurate doc count via _count (not _cat which includes deleted docs)
                         try:
                             resp = await os_client.post(f"/{index_name}/_count", json={"query": {"match_all": {}}})
