@@ -2,6 +2,12 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.13.51] - 2026-07-26
+
+### 修正
+
+- **`glogarch streams-cleanup`無法刪除它自己建立的物件。** 它是以**串流名稱**是否以 `--prefix` 開頭來篩選,但 Bulk 匯入建立的串流名為 `jt-glogarch Restored (<prefix>)`,並不以該前置碼開頭。因此指令回報「Streams matching: 0」,串流仍綁在索引集上,Graylog 隨即拒絕刪除該索引集——`Couldn't delete index set`,HTTP 404。這個指令唯一的用途就此無聲失效,反覆的 Bulk 匯入／測試也因此累積出刪不掉的索引集。現在改為依**串流所寫入的索引集**來比對（同時保留名稱前置碼比對）,先移除串流,索引集即可順利刪除。已對實機 Graylog 完整驗證：修正前為「Streams matching: 0」＋ HTTP 404;修正後為「Streams matching: 1」,且兩個物件皆成功刪除。
+
 ## [1.13.50] - 2026-07-25
 
 檢視 1.13.49 自身測試覆蓋率後,補上缺口。

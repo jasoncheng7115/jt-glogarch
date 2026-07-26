@@ -2,6 +2,22 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.51] - 2026-07-26
+
+### Fixed
+
+- **`glogarch streams-cleanup` could not delete what it created.** It selected
+  streams whose TITLE starts with `--prefix`, but bulk import names its stream
+  `jt-glogarch Restored (<prefix>)`, which does not. So the command reported
+  "Streams matching: 0", left the stream bound to the index set, and Graylog then
+  refused to drop that index set — `Couldn't delete index set`, HTTP 404. The one
+  job the command exists for failed silently, and repeated bulk imports/tests
+  accumulated undeletable index sets. Streams are now matched by the **index set
+  they write to** (title-prefix matching is kept as well), so the stream is
+  removed first and the index set deletes cleanly. Verified end-to-end against a
+  live Graylog: before the fix "Streams matching: 0" + HTTP 404; after it
+  "Streams matching: 1" and both objects deleted.
+
 ## [1.13.50] - 2026-07-25
 
 Closing test gaps found while reviewing 1.13.49's own coverage.

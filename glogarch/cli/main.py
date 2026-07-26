@@ -1089,15 +1089,26 @@ def streams_cleanup(server: str | None, prefix: str, dry_run: bool, yes: bool):
             auth = (sc.username, sc.password or "")
 
         async with httpx.AsyncClient(verify=False, timeout=30, auth=auth, headers=headers) as c:
-            # Streams
-            r = await c.get(f"{sc.url}/api/streams")
-            r.raise_for_status()
-            streams = [s for s in r.json().get("streams", [])
-                       if (s.get("title") or "").startswith(prefix)]
+            # Index sets first — they are matched by `index_prefix`, which is
+            # exactly what the user passes.
             r = await c.get(f"{sc.url}/api/system/indices/index_sets")
             r.raise_for_status()
             isets = [s for s in r.json().get("index_sets", [])
                      if (s.get("index_prefix") or "").startswith(prefix)]
+            iset_ids = {s.get("id") for s in isets}
+
+            # Streams: match by the INDEX SET they write to, not by title.
+            # Bulk import names its stream "jt-glogarch Restored (<prefix>)",
+            # which does NOT start with <prefix> — so a title-prefix match found
+            # ZERO streams, left them bound to the index set, and Graylog then
+            # refused to delete that index set ("Couldn't delete index set",
+            # HTTP 404). The command silently failed at the one job it exists
+            # for. Keep the title match too, for streams named with the prefix.
+            r = await c.get(f"{sc.url}/api/streams")
+            r.raise_for_status()
+            streams = [s for s in r.json().get("streams", [])
+                       if s.get("index_set_id") in iset_ids
+                       or (s.get("title") or "").startswith(prefix)]
 
             console.print(f"[bold]Streams matching '{prefix}*':[/bold] {len(streams)}")
             for s in streams:
