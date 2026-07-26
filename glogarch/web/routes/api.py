@@ -1411,11 +1411,33 @@ def get_health(request: Request):
 
     # Scheduler (best-effort — may not be present in pure-CLI deployments)
     sched_ok = True
+    schedules_registered = None
     try:
         sched = getattr(request.app.state, "scheduler", None)
         if sched and hasattr(sched, "running") and not sched.running:
             sched_ok = False
             issues.append("scheduler: not running")
+        elif sched is not None:
+            # "Running" only means the APScheduler loop is alive — it says nothing
+            # about whether the SCHEDULES are registered. An enabled schedule that
+            # never got registered silently never fires: the Schedules page still
+            # computes a plausible "next run" from the cron expression, so the UI
+            # looks correct while archiving has quietly stopped (a customer's
+            # export sat un-run for ~6 weeks this way). An upgrade must never stop
+            # scheduled archiving, so surface the mismatch here where upgrade.sh
+            # and monitoring can see it.
+            try:
+                enabled = {s.name for s in _db(request).list_schedules() if s.enabled}
+                registered = {j.id for j in sched.scheduler.get_jobs()}
+                missing = sorted(enabled - registered)
+                schedules_registered = f"{len(enabled - set(missing))}/{len(enabled)}"
+                if missing:
+                    sched_ok = False
+                    issues.append(
+                        "scheduler: enabled schedule(s) not registered — they will "
+                        f"never run: {', '.join(missing[:5])}")
+            except Exception as e:
+                issues.append(f"scheduler: could not verify registration ({e})")
     except Exception:
         pass
 
@@ -1434,6 +1456,9 @@ def get_health(request: Request):
             "disk": disk_ok,
             "scheduler": sched_ok,
         },
+        # "<registered>/<enabled>" — lets an upgrade or a monitor assert that
+        # scheduled archiving survived, not merely that the scheduler is alive.
+        "schedules_registered": schedules_registered,
         "disk_free_mb": disk_free_mb,
         "issues": issues,
     }

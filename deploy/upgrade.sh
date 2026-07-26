@@ -243,8 +243,27 @@ echo "=== Upgrade Complete ==="
 echo "  $CURRENT → $NEW"
 echo "  Health: $STATUS"
 
+# Principle 3: an upgrade must NEVER stop scheduled archiving. "scheduler
+# running" is not enough — an enabled schedule that failed to register never
+# fires, while the Schedules page still shows a plausible "next run" computed
+# from the cron expression. /api/health reports "<registered>/<enabled>".
+SCHED=$(echo "$HEALTH" | python3 -c "import sys,json;print(json.load(sys.stdin).get('schedules_registered') or '?')" 2>/dev/null || echo "?")
+echo "  Schedules registered: $SCHED"
+
 if [ "$STATUS" != "healthy" ]; then
     echo ""
     echo "⚠ Service may not be healthy. Check: journalctl -u $SERVICE -f"
+    echo "$HEALTH" | python3 -c "import sys,json;[print('   -',i) for i in json.load(sys.stdin).get('issues',[])]" 2>/dev/null || true
     exit 1
 fi
+
+case "$SCHED" in
+    ?*/?*)
+        if [ "${SCHED%%/*}" != "${SCHED##*/}" ]; then
+            echo ""
+            echo "⚠ Some enabled schedules are NOT registered — they will never run."
+            echo "  Check the Schedules page and journalctl -u $SERVICE for the reason."
+            exit 1
+        fi
+        ;;
+esac

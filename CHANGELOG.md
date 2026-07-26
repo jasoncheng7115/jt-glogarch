@@ -2,6 +2,25 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.58] - 2026-07-26
+
+### Added
+
+- **`/api/health` now proves scheduled archiving actually survived an upgrade.**
+  `scheduler: true` only meant the APScheduler loop was alive — it said nothing
+  about whether the SCHEDULES were registered. An enabled schedule that failed to
+  register never fires, while the Schedules page still shows a plausible "next
+  run" computed from its cron expression, so the UI looks correct while archiving
+  has quietly stopped (one site's export sat un-run for about six weeks exactly
+  this way, and an unrecognised `job_type` is skipped with only a log warning).
+  Health now compares enabled schedules against the jobs actually registered,
+  reports `schedules_registered: "<registered>/<enabled>"`, and turns UNHEALTHY —
+  naming the schedules — when any enabled one is missing.
+- **`deploy/upgrade.sh` fails the upgrade if any enabled schedule is not
+  registered**, and now prints the health `issues` list when the service is
+  unhealthy. This enforces the third upgrade principle — an upgrade must never
+  stop scheduled archiving — rather than trusting that it held.
+
 ## [1.13.57] - 2026-07-26
 
 ### Fixed
