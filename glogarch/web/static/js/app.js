@@ -285,6 +285,7 @@ async function loadDashboard() {
                 cores_below_recommended: t('sizing_w_cores'),
                 jvm_heaps_too_large: t('sizing_w_heaps'),
                 graylog_heap_low: t('sizing_w_glheap'),
+                archive_disk_below_retention: t('sizing_w_archdisk'),
             };
             const warns = (sz.warnings || []).map(w => W[w]).filter(Boolean);
             const colour = sz.level === 'critical' ? 'status-failed'
@@ -302,6 +303,20 @@ async function loadDashboard() {
                                                 .replace('{os}', rec.opensearch_heap_gb);
             }
             html += `<div class="mt8"><span class="${colour}">${esc(recLine)}</span></div>`;
+            // Archive DISK is the real capacity driver on an archive host — show
+            // what the CONFIGURED retention needs at the measured growth rate.
+            const ad = sz.archive_disk;
+            if (ad && ad.available) {
+                const line = t('sizing_archive_disk')
+                    .replace('{months}', formatNumber(ad.retention_months))
+                    .replace('{days}', formatNumber(ad.retention_days))
+                    .replace('{need}', formatBytes(ad.required_bytes))
+                    .replace('{rate}', formatBytes(ad.bytes_per_month))
+                    .replace('{have}', ad.current_total_bytes ? formatBytes(ad.current_total_bytes) : '?')
+                    .replace('{holds}', ad.months_current_disk_holds != null ? formatNumber(ad.months_current_disk_holds) : '?');
+                const cls = ad.sufficient === false ? 'status-failed' : 'status-completed';
+                html += `<div class="cap-warn"><span class="${cls}">${esc(line)}</span></div>`;
+            }
             if (warns.length) {
                 html += warns.map(w => `<div class="cap-warn"><span class="${sz.level === 'critical' ? 'status-failed' : 'u030'}">${esc(w)}</span></div>`).join('');
             } else {

@@ -2,6 +2,25 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.52] - 2026-07-26
+
+### Added
+
+- **Sizing advice now covers the archive DISK, not just RAM/cores** — disk is the
+  archive host's real capacity driver. Using the measured growth rate and the
+  configured `retention.retention_days`, the Hardware Sizing card reports how
+  much archive storage that retention actually needs, how many months the current
+  disk really holds, and flags `archive_disk_below_retention` when they disagree.
+  This exposes a silent trap: `retention_days` defaults to **1095 (3 years)**, so
+  a site archiving ~557 GB/month needs ~19.6 TB — on a 2.8 TB disk the cleanup
+  job quietly deletes data at ~5 months, nowhere near the configured policy, with
+  nothing in the UI previously saying so. No growth rate yet (fresh install) means
+  no disk advice and no false warning.
+- **`scripts/e2e-archive-test.sh` cleans up after itself**, calling the product's
+  own `streams-cleanup` for the bulk step's Stream + Index Set. Every run used to
+  leave one behind permanently — and until 1.13.51 that command could not delete
+  them at all.
+
 ## [1.13.51] - 2026-07-26
 
 ### Fixed

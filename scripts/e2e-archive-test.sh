@@ -146,7 +146,12 @@ else
     echo "$bulk_out" | tail -15
     FAIL=1
 fi
-osc -X DELETE "$OS_URL/${BIDX}*" >/dev/null 2>&1   # clean up the throwaway indices
+# Clean up after ourselves. Bulk import creates a Graylog Stream + Index Set per
+# target pattern, so without this every run leaves one behind for good. Use the
+# product's own command (it deletes the stream first, then the index set —
+# Graylog refuses to drop an index set a stream still writes to).
+$PYO streams-cleanup --prefix "$BIDX" --yes 2>&1 | grep -iE 'deleted|failed' | sed 's/^/  /'
+osc -X DELETE "$OS_URL/${BIDX}*" >/dev/null 2>&1   # any index the cleanup missed
 
 echo ""
 echo "=== RESULT: $([ $FAIL -eq 0 ] && echo 'ALL PASS' || echo 'FAILURES') ==="

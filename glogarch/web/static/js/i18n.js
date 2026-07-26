@@ -57,6 +57,9 @@ const I18N = {
         original_size: 'Original Size',
         storage_used: 'Compressed',
         sizing_title: 'Hardware Sizing',
+        sizing_archive_disk: 'Archive disk: retention is {days} days (~{months} months) and archives grow ~{rate}/month, so it needs ~{need}. This disk holds {have} (~{holds} months).',
+        sizing_w_archdisk: 'Archive disk cannot hold the configured retention — expand it, or lower retention_days so cleanup is not deleting data early.',
+
         sizing_current: 'This host: {ram} GB RAM · {cpu} cores',
         sizing_detected: 'Co-located JVMs detected — Graylog heap {gl} GB · OpenSearch heap {os} GB',
         sizing_detected_none: 'No co-located Graylog/OpenSearch detected (archive-only node)',
@@ -738,6 +741,9 @@ const I18N = {
         original_size: '歸檔前大小',
         storage_used: '壓縮後大小',
         sizing_title: '硬體規格建議',
+        sizing_archive_disk: '歸檔磁碟：保留設定為 {days} 天（約 {months} 個月）,而歸檔每月約增加 {rate},因此需要約 {need}。此磁碟容量為 {have}（約可存 {holds} 個月）。',
+        sizing_w_archdisk: '歸檔磁碟無法容納目前設定的保留期間——請擴充磁碟,或調低 retention_days,以免清理作業提早刪除資料。',
+
         sizing_current: '本機：記憶體 {ram} GB · {cpu} 核心',
         sizing_detected: '偵測到同機 JVM——Graylog heap {gl} GB · OpenSearch heap {os} GB',
         sizing_detected_none: '未偵測到同機的 Graylog／OpenSearch（純歸檔主機）',

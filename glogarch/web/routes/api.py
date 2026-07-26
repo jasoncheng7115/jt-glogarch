@@ -1485,12 +1485,38 @@ def get_sizing(request: Request):
     found by scanning /proc. Sized against the archive corpus (big corpora mean
     big imports, the peak-memory event)."""
     from glogarch.core.sizing import recommend_spec
+    from glogarch.core.retention_estimate import estimate_archive_retention
     db = _db(request)
+    settings = _settings(request)
+    stats = {}
     try:
-        archive_count = int((db.get_archive_stats() or {}).get("total") or 0)
+        stats = db.get_archive_stats() or {}
     except Exception:
-        archive_count = 0
-    return recommend_spec(archive_count=archive_count)
+        pass
+    archive_count = int(stats.get("total") or 0)
+
+    # Feed the MEASURED archive growth rate + configured retention in, so the
+    # advice covers disk (the archive host's real capacity driver), not just RAM.
+    bytes_per_month = None
+    free_bytes = used_bytes = None
+    try:
+        sstats = ArchiveStorage(settings.export).get_storage_stats()
+        free_bytes = int((sstats.get("available_mb") or 0) * 1024 * 1024)
+        used_bytes = int(stats.get("total_bytes") or 0)
+        est = estimate_archive_retention(
+            used_bytes, stats.get("earliest"), stats.get("latest"), free_bytes)
+        if est.get("available"):
+            bytes_per_month = est.get("bytes_per_month")
+    except Exception:
+        pass
+
+    return recommend_spec(
+        archive_count=archive_count,
+        archive_bytes_per_month=bytes_per_month,
+        retention_days=getattr(settings.retention, "retention_days", None),
+        archive_free_bytes=free_bytes,
+        archive_used_bytes=used_bytes,
+    )
 
 
 def _get_sparkline_data(db: ArchiveDB) -> dict:

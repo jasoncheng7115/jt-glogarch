@@ -30,6 +30,7 @@ import os
 import re
 
 _GB = 1024.0
+_DAYS_PER_MONTH = 30.44   # keep in sync with core/retention_estimate.py
 
 # Baseline working sets (MiB).
 _MONGO_AND_OS_BASE_MB = 2048.0     # MongoDB + kernel + journald/agents
@@ -112,11 +113,23 @@ def detect_local_jvms() -> dict:
 
 
 def recommend_spec(host: dict | None = None, jvms: dict | None = None,
-                   archive_count: int = 0) -> dict:
+                   archive_count: int = 0,
+                   archive_bytes_per_month: float | None = None,
+                   retention_days: int | None = None,
+                   archive_free_bytes: int | None = None,
+                   archive_used_bytes: int | None = None) -> dict:
     """Recommend RAM/cores for THIS box and flag what is currently wrong.
 
     archive_count drives the "heavy" classification (large corpora mean large
     imports, which are the peak-memory events).
+
+    When the caller supplies the measured archive growth rate
+    (`archive_bytes_per_month`, from the retention estimate) plus the configured
+    `retention_days`, a **disk** recommendation is added too: how much archive
+    storage the CONFIGURED retention actually needs at the CURRENT rate. Disk is
+    the archive host's real capacity driver, and a 3-year default retention on a
+    disk sized for months is a silent trap — the cleanup job just deletes data
+    early, or the disk fills.
     """
     host = host if host is not None else read_host_resources()
     jvms = jvms if jvms is not None else detect_local_jvms()
@@ -189,8 +202,31 @@ def recommend_spec(host: dict | None = None, jvms: dict | None = None,
     if colocated and gl and gl / _GB < 4:
         warnings.append("graylog_heap_low")
 
+    # --- Archive disk: what the CONFIGURED retention actually needs ---
+    archive: dict = {"available": False}
+    if archive_bytes_per_month and archive_bytes_per_month > 0 and retention_days:
+        months = retention_days / _DAYS_PER_MONTH
+        need = archive_bytes_per_month * months
+        have = (archive_free_bytes or 0) + (archive_used_bytes or 0)
+        archive = {
+            "available": True,
+            "retention_days": int(retention_days),
+            "retention_months": round(months, 1),
+            "bytes_per_month": archive_bytes_per_month,
+            "required_bytes": need,
+            "current_total_bytes": have or None,
+            "free_bytes": archive_free_bytes,
+            # Months the CURRENT disk can actually hold (used + free).
+            "months_current_disk_holds": round(have / archive_bytes_per_month, 1) if have else None,
+            "sufficient": (have >= need) if have else None,
+        }
+        if have and have < need:
+            warnings.append("archive_disk_below_retention")
+
     level = "ok"
-    if "swap_in_use" in warnings or "ram_below_recommended" in warnings or "jvm_heaps_too_large" in warnings:
+    if ("swap_in_use" in warnings or "ram_below_recommended" in warnings
+            or "jvm_heaps_too_large" in warnings
+            or "archive_disk_below_retention" in warnings):
         level = "critical"
     elif warnings:
         level = "warn"
@@ -226,6 +262,7 @@ def recommend_spec(host: dict | None = None, jvms: dict | None = None,
             "opensearch_heap_gb": min(31, max(4, int(rec_gb * 0.25))) if osh else None,
             "required_ram_gb_raw": round(required / _GB, 1),
         },
+        "archive_disk": archive,
         "warnings": warnings,
-        "level": level,     # ok | warn | critical
+        "level": level,     # ok | warn | critical | unknown
     }
