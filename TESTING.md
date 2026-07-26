@@ -199,6 +199,150 @@ GL_PASS='<graylog-admin-pw>' bash scripts/e2e-archive-test.sh
 
 ---
 
+## Design-Review Pitfall Checklist
+
+Every item below has actually shipped as a bug in this project — the incident is
+cited so the check is concrete rather than abstract. Walk this list for any
+change to export, import, de-duplication, storage or progress reporting. It is
+much cheaper than the incident.
+
+### 1. Scale — does the cost grow with the DATA, or with the WORK?
+
+- [ ] Does the work scale with the amount of NEW work, or with total data volume?
+  *De-duplication ran only after each document had been fetched and parsed, so a
+  re-export dragged an entire 344M-document index across the network just to
+  discover it was already archived. Progress sat at "0%" for 14 h at several
+  unrelated sites (v1.13.53).*
+- [ ] Any `fetchall()` or list comprehension over a whole table?
+  *70K archive rows were materialized to render one page (v1.13.47).*
+- [ ] Any whole-file `json.load()` / read-into-memory?
+  *Bulk import loaded an entire 1.2 GB archive as Python objects (v1.13.47).*
+- [ ] Is a per-item query or HTTP call issued inside a loop over millions of items?
+- [ ] Does a "check" get more expensive as history accumulates? Merge/aggregate it
+  so it scales with the number of RANGES, not the number of records.
+
+### 2. First run and empty state
+
+- [ ] Fresh install, nothing configured, zero archives: no crash, no false warning.
+  *The sizing advisor reported "ok" when `/proc/meminfo` was unreadable — a claim
+  it could not support (v1.13.50).*
+- [ ] The FIRST use of a new target/resource, not just the steady state.
+  *The first bulk import to a new index pattern ALWAYS failed: creating a Graylog
+  index set only writes MongoDB metadata; the index and deflector alias are not
+  provisioned until the deflector is cycled (v1.13.53).*
+- [ ] Does a newly created remote resource need time to become usable? Poll for
+  readiness — do not assume, and do not just sleep a fixed amount.
+  *Writing <1 s after the cycle put documents into an index Graylog then replaced;
+  they were reported as indexed and were silently gone (v1.13.54).*
+
+### 3. Mode and topology switching
+
+- [ ] Run the same job in the OTHER mode: is state written by mode A understood by
+  mode B?
+  *API-mode archives store `stream_id = NULL`; the dedup rule
+  `stream_id NOT LIKE '<prefix>%'` never matched them, so switching between API
+  and OpenSearch archiving stored the same logs twice (v1.13.55).*
+- [ ] Do the two modes agree on BOUNDARIES?
+  *API chunks start at the requested time (10:43:58-11:43:58) while OpenSearch
+  chunks are hour-aligned (11:00-12:00), so "one archive fully contains this
+  chunk" could never hold across modes (v1.13.55).*
+- [ ] Co-located versus separate hosts.
+  *Sizing budgeted ~8 GB for an OpenSearch that was running on another host
+  (v1.13.47).*
+- [ ] A fast path that "bypasses" a component still loads the same machine.
+  *Bulk import was deliberately built with "no back-pressure" because it bypasses
+  Graylog — but it drives the same OpenSearch and the same RAM, 5-10x faster
+  (v1.13.48).*
+- [ ] Is a partial view being treated as complete? A stream-filtered archive or a
+  sister index holds only part of the hour; counting it as coverage skips an
+  export and loses the rest (v1.13.55).
+
+### 4. NULL, boundaries and formats
+
+- [ ] SQL three-valued logic: `NULL NOT LIKE 'x%'` is NULL, **not true**. Match
+  `IS NULL` explicitly or wrap in `COALESCE` (v1.13.55).
+- [ ] Is `0` a legitimate value being treated as "unknown"?
+  *`if remaining:` discarded a count of 0, so a fully-archived index still ran a
+  guaranteed-empty scan (v1.13.53).*
+- [ ] The date/time FORMAT the remote system expects.
+  *Graylog maps `timestamp` as `uuuu-MM-dd HH:mm:ss.SSS` and rejects an ISO-8601
+  value with `parse_exception`; a range filter must carry an explicit `format`,
+  or it errors — or worse, filters nothing (v1.13.53).*
+- [ ] Timezone: archive times are naive local, and re-imported messages land ~8 h
+  earlier on Asia/Taipei. Any time assertion must account for it.
+- [ ] Off-by-one on grid alignment (`k = max(0, floor((first - t_from)/step))`).
+
+### 5. Interruption and inconsistency
+
+- [ ] Cancel must be polled INSIDE long operations, not only between units.
+  *A 500-message batch takes tens of seconds on a loaded box, so Cancel looked
+  dead (v1.13.45).*
+- [ ] Long sleeps must be interruptible (a flat `sleep(5)`/30 s pause loop ignored
+  cancel and user resume).
+- [ ] The database says one thing, the disk another: an archive row whose FILE was
+  deleted must not be skipped forever.
+  *`verify` marks it `missing` and dedup counts only `completed` rows, so the next
+  export re-archives exactly that range — asserted by e2e step [6].*
+- [ ] A corrupt or truncated single item must fail THAT item, not abort the run.
+- [ ] Locks, claims and in-memory registries released in `finally`.
+
+### 6. Resource ceilings
+
+- [ ] Is the REQUEST SIZE bounded, or only the item count?
+  *`batch_docs=10000` produced a ~93 MB `_bulk` request for 9 KB Windows Event Log
+  documents; OpenSearch's default `http.max_content_length` is 100 MB, and the
+  whole request is held in the coordinating node's heap (v1.13.49).*
+- [ ] The same question on the READ side.
+  *A 10,000-document search page is ~90 MB for wide documents — a fetch-phase heap
+  spike plus an equally large parse on our side (v1.13.49).*
+- [ ] PEAK memory, not just steady state — the peak is what the OOM killer sees.
+- [ ] Disk: does the CONFIGURED retention actually fit?
+  *`retention_days` defaults to 1095 (3 years); at a measured ~557 GB/month that
+  needs ~19.6 TB, so on a 2.8 TB disk cleanup silently deletes at ~5 months
+  (v1.13.52).*
+
+### 7. Silent failure
+
+- [ ] No `except: pass` around anything load-bearing — log it.
+  *A missing `import json` disabled the page-size guard entirely while every test
+  still passed (v1.13.50).*
+- [ ] Does a failure actually SURFACE to the operator?
+  *The scheduled export's failure path called `create_job` inside a try/except
+  that always failed, so a broken export left nothing in Task Log — only
+  `last_run` moved.*
+- [ ] Does "success" mean the data is really there? Verify at the DESTINATION.
+  *Bulk reported 4,900 documents indexed that Graylog then replaced (v1.13.54).*
+- [ ] Does a cleanup/maintenance command actually delete what it created?
+  *`streams-cleanup` matched stream TITLES, but bulk names its stream
+  "jt-glogarch Restored (&lt;prefix&gt;)" — it found 0 streams and silently failed at
+  its only job (v1.13.51).*
+
+### 8. Progress and perception
+
+- [ ] Does the progress DENOMINATOR match what will actually be processed, and
+  does the numerator advance for SKIPPED work too? *("0%" for 14 h — v1.13.53.)*
+- [ ] Never gate the UI on a single transport.
+  *The progress bar updated only from the SSE stream, so when the stream stalled
+  the bar froze although the job was advancing and the poll had fresh data
+  (v1.13.44).*
+- [ ] Does a paused or throttled state SAY so? A frozen bar reads as "stuck"
+  (v1.13.42).
+- [ ] Colour must convey severity: informational text must not look like a warning
+  (orange info lines alarmed a customer — v1.13.41).
+
+### 9. Test blind spots
+
+- [ ] Is there an e2e step for EVERY import/export path?
+  *Bulk was never covered, so a whole-file `json.load()` OOM risk survived many
+  releases (v1.13.48).*
+- [ ] Does the test set up state that the PRODUCT should create itself?
+  *The e2e pre-created the bulk index and alias, which both masked the
+  first-import bug and raced with Graylog's own provisioning (v1.13.54).*
+- [ ] Would the test still pass if the feature were silently disabled? If yes, it
+  is not testing the feature.
+- [ ] Does the test clean up after itself? Leftover state changes the next run's
+  code path — and hid a first-import bug for several releases.
+
 ## Running Tests
 
 ```bash
