@@ -2,6 +2,59 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.53] - 2026-07-26
+
+### Fixed
+
+- **OpenSearch export appearing stuck at "0%" for many hours.** Reported from
+  several unrelated sites — e.g. `export 0% · 14h2m — querying filesrv_36
+  (344,688,080 docs)...` and `0 / 983,871,258`. Cause: de-duplication ran only
+  AFTER a document had been fetched and parsed, so re-running an export dragged
+  the ENTIRE index across the network just to discover each hour was already
+  archived and throw the documents away. Nothing was written, and because
+  progress counts only WRITTEN messages the bar stayed at 0% while the job
+  ground through hundreds of millions of documents.
+
+  Already-archived time is now excluded **in the OpenSearch query**: the merged
+  covered ranges are fetched from the database and applied as a `bool.must_not`
+  range filter, and an index with nothing left to export is skipped outright
+  (with a clear "already archived, skipped" note instead of a silent 0%).
+
+  Notes on correctness, all verified against a live cluster:
+  - **Gaps are preserved.** Ranges are merged from the actual archive records,
+    so an unarchived hour in the middle is still exported — this is precisely
+    why OpenSearch mode never used a simple resume point.
+  - **Empty hours do not defeat it.** An hour with no data has no archive, so an
+    "advance to the first uncovered hour" probe would stop at the first empty gap
+    and re-scan everything after it; excluding ranges has no such flaw.
+  - **The range value carries an explicit `format`.** Graylog maps `timestamp` as
+    `uuuu-MM-dd HH:mm:ss.SSS` and rejects an ISO-8601 value with a
+    `parse_exception`, which would error or silently filter nothing.
+  - A `count` of 0 after filtering means every existing document is archived, so
+    the scan is skipped rather than run empty.
+  - Above 100 merged ranges the filter is skipped and the old per-chunk dedup
+    path is used, with a warning that the scan will be slow.
+
+  Verified end-to-end: a re-run that previously re-scanned the whole index now
+  logs "Nothing left to export" and finishes in ~1s with the archive count
+  unchanged (no loss, no duplication), while newly ingested data is still picked
+  up (2,000 new records exported on the next run).
+
+- **The FIRST OpenSearch Bulk import to a new target pattern always failed.**
+  It aborted with `Graylog deflector alias '<prefix>_deflector' does not exist on
+  OpenSearch`. Creating a Graylog index set only writes MongoDB metadata — the
+  first OpenSearch index and its deflector alias are not provisioned until the
+  deflector is **cycled**, which nothing did, so waiting could never help.
+  Preflight now cycles a newly created index set, and bulk waits (up to 60s) for
+  the alias instead of failing on the first probe. Verified on a clean cluster:
+  a first-ever import to a brand-new pattern now provisions the index and writes
+  all 6,400 documents.
+
+  This had been invisible because `scripts/e2e-archive-test.sh` pre-created the
+  index and alias itself — which both masked the bug and raced with Graylog's own
+  provisioning, so documents reported as indexed were silently replaced. The e2e
+  no longer pre-creates anything and exercises the real first-import path.
+
 ## [1.13.52] - 2026-07-26
 
 ### Added

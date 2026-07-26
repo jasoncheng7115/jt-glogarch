@@ -412,6 +412,90 @@ class OpenSearchExporter:
 
         log.info("Single-scan export starting", index=index_name, batch_size=os_batch)
 
+        # --- Skip already-archived time BEFORE scanning (not after fetching) ---
+        # Dedup used to be applied only once a document had already been pulled
+        # from OpenSearch and parsed. Re-running an export therefore dragged the
+        # ENTIRE index across the network just to discover each hour was already
+        # archived and throw the documents away. On a 344M-document index that is
+        # many hours of work producing zero output — and because progress counts
+        # only WRITTEN messages, the job sat at "0%" the whole time (real customer
+        # report, reproduced at several sites).
+        #
+        # The covered time is excluded as a QUERY FILTER rather than by walking
+        # hour by hour: an hour that simply had no data has no archive, so a
+        # "first uncovered hour" probe stops at the first empty gap and re-scans
+        # everything after it. Excluding the merged covered ranges is exact —
+        # empty hours are irrelevant because they contain no documents — and it
+        # still honours gaps, which is why OpenSearch mode never used a resume
+        # point in the first place.
+        _MAX_EXCLUDE_RANGES = 100
+        covered = self.db.covered_ranges(
+            self.server_config.name, index_name,
+            exclude_stream_id_prefix=prefix, time_from=idx_from, time_to=idx_to)
+        fully_covered = any(a <= idx_from and b >= idx_to for a, b in covered)
+
+        if fully_covered:
+            log.info("Index already fully archived — skipping scan entirely",
+                     index=index_name, ranges_covered=len(covered), docs=total_docs)
+            if progress_callback:
+                progress_callback({
+                    "phase": "skipping", "chunk_index": idx_num + 1,
+                    "total_chunks": total_indices, "index": index_name,
+                    "messages_done": result.messages_total, "messages_total": total_docs,
+                    "pct": 0,
+                    "detail": f"{index_name}: already archived, skipped",
+                })
+            return 0
+
+        # Fetch ONLY the uncovered tail. The value MUST carry an explicit
+        # `format`: Graylog maps `timestamp` as `uuuu-MM-dd HH:mm:ss.SSS` and an
+        # ISO-8601 value is rejected with a parse_exception (verified against a
+        # live cluster) — which would either error or silently filter nothing.
+        def _os_ts(dt: datetime) -> str:
+            return dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+        scan_query = None
+        if covered and len(covered) <= _MAX_EXCLUDE_RANGES:
+            scan_query = {"bool": {"must_not": [
+                {"range": {"timestamp": {"gte": _os_ts(a), "lt": _os_ts(b),
+                                         "format": "yyyy-MM-dd HH:mm:ss.SSS"}}}
+                for a, b in covered
+            ]}}
+            # Re-count against the filter so progress is a percentage of what we
+            # will ACTUALLY export, not of the whole index.
+            counted = None
+            try:
+                cnt = await os_client.post(f"/{index_name}/_count", json={"query": scan_query})
+                counted = int(cnt.get("count", 0))
+                total_docs = counted
+            except Exception as e:
+                log.warning("Could not count the uncovered range",
+                            index=index_name, error=str(e))
+            # counted == 0 means the archived ranges cover every document that
+            # actually exists — even if they don't span the index's full nominal
+            # time range (empty hours). Skip the scan entirely; treating 0 as
+            # "unknown" here would run a guaranteed-empty scan over the index.
+            if counted == 0:
+                log.info("Nothing left to export after excluding archived ranges",
+                         index=index_name, ranges_excluded=len(covered))
+                if progress_callback:
+                    progress_callback({
+                        "phase": "skipping", "chunk_index": idx_num + 1,
+                        "total_chunks": total_indices, "index": index_name,
+                        "messages_done": result.messages_total,
+                        "messages_total": total_docs, "pct": 0,
+                        "detail": f"{index_name}: already archived, skipped",
+                    })
+                return 0
+            log.info("Excluding already-archived ranges from the scan",
+                     index=index_name, ranges_excluded=len(covered),
+                     docs_to_export=total_docs)
+        elif covered:
+            log.warning("Too many archived ranges to exclude — scanning the whole "
+                        "index and de-duplicating per chunk (slow)",
+                        index=index_name, ranges=len(covered),
+                        limit=_MAX_EXCLUDE_RANGES)
+
         # Current chunk tracking
         current_chunk_from = None
         current_chunk_to = None
@@ -487,6 +571,7 @@ class OpenSearchExporter:
                 index_name=index_name,
                 batch_size=os_batch,
                 delay_between_requests_ms=2,
+                query=scan_query,
             ):
                 if self._cancelled:
                     break

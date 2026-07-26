@@ -1318,6 +1318,21 @@ class PreflightChecker:
                     if set_created:
                         log.info("Created Graylog index set for restored data",
                                  id=set_id, prefix=bulk_target_pattern)
+                        # Creating the index set only writes MongoDB metadata —
+                        # Graylog does NOT provision the first OpenSearch index or
+                        # the `<prefix>_deflector` alias until the deflector is
+                        # cycled. Without this the very FIRST bulk import to a new
+                        # target pattern aborted with "deflector alias does not
+                        # exist" (reproduced on a clean cluster); waiting alone
+                        # never helps, because nothing triggers the provisioning.
+                        try:
+                            await self.cycle_index(set_id)
+                            log.info("Cycled the new index set so Graylog creates "
+                                     "its first write index", id=set_id)
+                        except Exception as e:
+                            log.warning("Could not cycle the new index set — the "
+                                        "first bulk write may fail until Graylog "
+                                        "provisions it", id=set_id, error=str(e))
                     else:
                         log.info("Graylog index set already exists",
                                  id=set_id, prefix=bulk_target_pattern)

@@ -124,9 +124,12 @@ osc() {   # curl against OpenSearch, with auth only if the cluster needs it
 }
 BIDX="jt_e2e_bulk"
 osc -X DELETE "$OS_URL/${BIDX}*" >/dev/null 2>&1
-# Bulk writes through the Graylog-managed deflector alias; create it for the test.
-osc -X PUT "$OS_URL/${BIDX}_0" -H 'Content-Type: application/json' \
-    -d "{\"aliases\":{\"${BIDX}_deflector\":{}}}" -o /dev/null
+# Do NOT pre-create the index/alias. Preflight must provision the Graylog index
+# set AND cycle it so Graylog creates the first write index — that is the real
+# first-import path, and it was broken (every first bulk import to a new pattern
+# failed with "deflector alias does not exist"). Pre-creating it here both hid
+# that bug and raced with Graylog's own provisioning, which silently replaced
+# the index we had just written into.
 bulk_out="$($PYO import --mode bulk --from "$yest" \
     --target-index-pattern "$BIDX" \
     --target-api-url "$GL_URL" --target-api-username "$GL_USER" \

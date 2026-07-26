@@ -597,6 +597,52 @@ class ArchiveDB:
         rows = self.conn.execute(query, params).fetchall()
         return [self._row_to_archive(r) for r in rows]
 
+    def covered_ranges(
+        self,
+        server_name: str,
+        index_name: str,
+        exclude_stream_id_prefix: str | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+    ) -> list[tuple[datetime, datetime]]:
+        """Merged, disjoint time ranges already archived for this index.
+
+        Mirrors the per-chunk dedup rule used during export: a chunk counts as
+        covered when an archive exists for THIS index, or when any archive from a
+        different index prefix covers it (cross-mode). Returned ranges let the
+        exporter exclude that time at the QUERY level instead of fetching every
+        document and discarding it.
+        """
+        sql = ("SELECT time_from, time_to FROM archives "
+               "WHERE server_name = ? AND status = 'completed' "
+               "AND (stream_id = ? OR stream_id NOT LIKE ?)")
+        params: list = [server_name, index_name,
+                        f"{exclude_stream_id_prefix or index_name}%"]
+        if time_to:
+            sql += " AND time_from <= ?"
+            params.append(_dt_to_str(time_to))
+        if time_from:
+            sql += " AND time_to >= ?"
+            params.append(_dt_to_str(time_from))
+        sql += " ORDER BY time_from"
+
+        spans: list[tuple[datetime, datetime]] = []
+        for r in self.conn.execute(sql, params).fetchall():
+            a, b = _str_to_dt(r[0]), _str_to_dt(r[1])
+            if a and b and b > a:
+                spans.append((a, b))
+        if not spans:
+            return []
+
+        merged: list[list[datetime]] = [list(spans[0])]
+        for a, b in spans[1:]:
+            if a <= merged[-1][1]:                 # overlapping / contiguous
+                if b > merged[-1][1]:
+                    merged[-1][1] = b
+            else:
+                merged.append([a, b])
+        return [(m[0], m[1]) for m in merged]
+
     def count_archives(
         self,
         server: str | None = None,

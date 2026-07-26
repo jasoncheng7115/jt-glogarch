@@ -58,6 +58,9 @@ class BulkImportResult:
 class BulkImporter:
     """Direct OpenSearch _bulk writer."""
 
+    # Graylog provisions the OpenSearch index + deflector alias asynchronously
+    # after the index set is created; wait this long for it on a first import.
+    DEFLECTOR_WAIT_SEC = 60
     DEFAULT_BATCH_DOCS = 10000
     # Hard cap on the SIZE of one _bulk request. `batch_docs` bounds the doc
     # count only, which says nothing about bytes: measured at the default 10,000
@@ -343,10 +346,26 @@ class BulkImporter:
         if r.status_code == 200:
             return
         if index_name.endswith("_deflector"):
+            # Preflight creates the index set in Graylog (MongoDB) but the actual
+            # OpenSearch index + deflector alias are provisioned ASYNCHRONOUSLY.
+            # Failing on the first HEAD made the very first bulk import to a new
+            # target pattern abort outright ("deflector alias does not exist"),
+            # reproducible on a clean cluster. Wait for Graylog to finish.
+            for _ in range(self.DEFLECTOR_WAIT_SEC):
+                await asyncio.sleep(1)
+                r = await client.head(f"{self.opensearch_url}/{index_name}")
+                if r.status_code == 200:
+                    log.info("Deflector alias became ready", alias=index_name)
+                    # Give Graylog a moment to finish provisioning before writing:
+                    # writing into an index it is still setting up risks the docs
+                    # landing in an index it then replaces.
+                    await asyncio.sleep(2)
+                    return
             raise RuntimeError(
-                f"Graylog deflector alias '{index_name}' does not exist on "
-                f"OpenSearch. Preflight should have created the index set + "
-                f"initial write index — check the import set up on Graylog."
+                f"Graylog deflector alias '{index_name}' did not appear on "
+                f"OpenSearch within {self.DEFLECTOR_WAIT_SEC}s. Preflight should "
+                f"have created the index set + initial write index — check the "
+                f"import set up on Graylog."
             )
         # PUT to create
         r = await client.put(
