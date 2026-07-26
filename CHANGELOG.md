@@ -2,6 +2,32 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.57] - 2026-07-26
+
+### Fixed
+
+- **An upgrade must never delete data the previous version was keeping.**
+  1.13.56 made cleanup schedules honour their own `retention_days` — correct, but
+  on its own that turns the first cleanup after the upgrade into a deletion: a
+  site whose Schedules page showed "200 Days" while `config.yaml` said 1095 was
+  keeping 3 years, and would have lost every archive between 200 and 1095 days
+  old at the next 04:00 run. Startup now reconciles this: a stored value SHORTER
+  than the retention actually in force is rewritten to the in-force value, so
+  behaviour is byte-for-byte what it was and the number on screen finally matches
+  reality. A warning names both values and tells the operator to set it again in
+  the UI if the shorter retention is genuinely wanted. A LONGER stored value is
+  applied as-is — that only retains more.
+
+### Changed
+
+- **`retention.retention_days` stays at 1095 (3 years) — deliberately.** Lowering
+  the default would silently shorten retention for every site that never set it
+  explicitly, and the next cleanup would delete data those sites still expect.
+  The trap is surfaced instead of changed: the Dashboard's Hardware Sizing card
+  reports what the configured retention actually needs versus what the disk
+  holds, and both READMEs now carry a FAQ entry explaining why cleanup can expire
+  data years earlier than the policy suggests.
+
 ## [1.13.56] - 2026-07-26
 
 ### Fixed

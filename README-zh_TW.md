@@ -1,4 +1,4 @@
-# jt-glogarch v1.13.56
+# jt-glogarch v1.13.57
 
 **語言**： [English](README.md) | **繁體中文**  
 **網站**： <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.13.56-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.13.57-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -1122,7 +1122,7 @@ API Token:        你的_TOKEN          ← 用 Token...
 
 最常見的部署方式，是把 jt-glogarch 與目標 Graylog + OpenSearch（＋MongoDB）放在**同一台 VM**。此時**記憶體是關鍵瓶頸**：兩個 JVM 加上 OpenSearch 所依賴的檔案快取，很容易超出一台小主機的容量；一旦執行大量匯入，就會落入**使用 swap**（匯入變得極慢）或被 **OOM killer** 終止（工作顯示為「Interrupted by service restart」）。
 
-**jt-glogarch 會直接為您這台主機算出建議規格**——請見儀表板的**硬體規格建議**卡片（或 `GET /api/sizing`）。它會讀取 `/proc/meminfo`、CPU 核心數,以及執行中的 Graylog／OpenSearch `-Xmx`,並依您的歸檔份數估算。概略對照：
+**jt-glogarch 會直接為您這台主機算出建議規格**——請見儀表板的**硬體規格建議**卡片（或 `GET /api/sizing`）。它會讀取 `/proc/meminfo`、CPU 核心數，以及執行中的 Graylog／OpenSearch `-Xmx`，並依您的歸檔份數估算。概略對照：
 
 | 部署型態 | 記憶體 | 核心數 |
 |---|---|---|
@@ -1228,6 +1228,16 @@ sudo -u jt-glogarch glogarch import \
 
 
 ## 疑難排解 / 常見問題
+
+### 清理作業遠比我設定的保留期更早刪除資料——或是磁碟被塞爆
+
+`retention.retention_days` 預設為 **1095 天（3 年）**，而幾乎沒有歸檔磁碟真的放得下。兩個限制先碰到哪一個就以哪一個為準，而落敗的那一方是無聲的：
+
+- **磁碟放不下該保留政策。** 以實測每月約 557 GB 計算，三年需要約 19.6 TB。在 2.8 TB 的磁碟上，清理作業實際上約 5 個月就會讓資料過期——與設定的政策相差甚遠，而過去介面上完全沒有任何提示。儀表板的**硬體規格建議**卡片現在會明確報告：目前設定的保留期需要多少空間、磁碟真正能存幾個月，以及兩者不符時的警告。請擴充磁碟，或調低 `retention_days` 讓政策誠實反映現況。
+- **確認真正生效的值。** 排程頁會顯示清理排程自身的 `retention_days`。在 v1.13.56 之前，該數值只是顯示、從未被套用——實際採用的是 `config.yaml` 中的值。升級時，若畫面上顯示的值**短於**真正生效的值，系統會將其對齊為生效值（並記錄警告），因此升級不會刪除前一版本原本保留的歸檔。若您確實想要較短的保留期，請在介面中重新設定一次。
+
+預設值刻意維持 1095：調低它會讓所有未曾明確設定過的站台，保留期被無聲縮短，而下一次清理作業就會刪掉這些站台仍預期存在的資料。
+
 
 
 ### OS 升級後服務起不來 — `ModuleNotFoundError: No module named 'glogarch'`

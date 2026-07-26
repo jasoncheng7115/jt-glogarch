@@ -476,6 +476,57 @@ class ArchiveScheduler:
         except JobLookupError:
             pass
 
+    def _reconcile_cleanup_retention(self, existing: dict) -> None:
+        """One-time safety net for the upgrade that made cleanup schedules honour
+        their OWN retention_days.
+
+        Until 1.13.56 a cleanup schedule stored `retention_days` and the UI showed
+        it, but the scheduler always used `settings.retention.retention_days`.
+        Simply starting to honour the stored value would make the FIRST cleanup
+        after the upgrade delete everything between the two — e.g. a site showing
+        "200 Days" whose config said 1095 would lose 200-1095-day-old archives at
+        the next 04:00 run. An upgrade must never delete data that the previous
+        version was keeping.
+
+        So on startup, any stored value SHORTER than the retention actually in
+        force is rewritten to the in-force value: behaviour is byte-for-byte what
+        it was, and the number on screen finally matches reality. The operator can
+        then set it deliberately in the UI, and from that point it is honoured.
+        A LONGER stored value is applied as-is — that only keeps more data.
+        """
+        import json as _json
+        in_force = int(getattr(self.settings.retention, "retention_days", 0) or 0)
+        if in_force <= 0:
+            return
+        for name, sched in existing.items():
+            if sched.job_type != "cleanup" or not sched.config_json:
+                continue
+            try:
+                cfg = _json.loads(sched.config_json) or {}
+            except Exception:
+                continue
+            stored = cfg.get("retention_days")
+            try:
+                stored = int(stored) if stored else None
+            except (TypeError, ValueError):
+                stored = None
+            if stored is None or stored >= in_force:
+                continue
+            cfg["retention_days"] = in_force
+            sched.config_json = _json.dumps(cfg)
+            try:
+                self.db.save_schedule(sched)
+                log.warning(
+                    "Cleanup schedule retention reconciled on upgrade — the value "
+                    "shown in the UI was never actually applied, and honouring it "
+                    "now would have deleted archives this version was keeping. "
+                    "Set it again in the Schedules page if the shorter retention "
+                    "is what you want.",
+                    schedule=name, was_shown=stored, now_in_force=in_force)
+            except Exception as e:
+                log.error("Could not reconcile cleanup schedule retention",
+                          schedule=name, error=str(e))
+
     def setup(self) -> None:
         """Configure scheduled jobs from settings.
 
@@ -485,6 +536,7 @@ class ArchiveScheduler:
         import json
         sched_config = self.settings.schedule
         existing = {s.name: s for s in self.db.list_schedules()}
+        self._reconcile_cleanup_retention(existing)
 
         # Bootstrap auto-export from config.yaml on first run
         if sched_config.export_cron and "auto-export" not in existing:

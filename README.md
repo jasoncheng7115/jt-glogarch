@@ -1,4 +1,4 @@
-# jt-glogarch v1.13.56
+# jt-glogarch v1.13.57
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.13.56-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.13.57-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -1345,6 +1345,31 @@ sudo -u jt-glogarch glogarch -c /opt/jt-glogarch/config.yaml import \
 
 ## Troubleshooting / FAQ
 
+
+### Cleanup deletes far earlier than my retention setting — or the disk fills up
+
+`retention.retention_days` defaults to **1095 (3 years)**, which almost no archive
+disk can actually hold. Whichever limit is reached first wins, and the loser is
+silent:
+
+- **Disk too small for the policy.** At a measured ~557 GB/month, three years
+  needs ~19.6 TB. On a 2.8 TB disk the cleanup job effectively expires data at
+  ~5 months — nowhere near the configured policy, and nothing used to say so.
+  The Dashboard's **Hardware Sizing** card now reports exactly this: what the
+  configured retention needs, how many months the disk really holds, and a
+  warning when they disagree. Either expand the disk or lower `retention_days`
+  so the policy is honest.
+- **Check what is actually in force.** The Schedules page shows the cleanup
+  schedule's own `retention_days`. Before v1.13.56 that number was displayed but
+  never applied — the value from `config.yaml` was used instead. On upgrade, a
+  displayed value SHORTER than the one really in force is reconciled to the value
+  in force (logged as a warning), so the upgrade cannot delete archives the
+  previous version was keeping. Set it again in the UI if you do want the shorter
+  retention.
+
+The default is deliberately left at 1095: lowering it would silently shorten
+retention for every site that never set it explicitly, and the next cleanup run
+would delete data those sites still expect to have.
 
 ### Service won't start after an OS upgrade — `ModuleNotFoundError: No module named 'glogarch'`
 
