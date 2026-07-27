@@ -106,7 +106,7 @@ class HealthGuard:
         """Feed the trackers and return the list of tripped-signal descriptions
         (empty = healthy). health is None → fail-safe pressure."""
         if health is None:
-            return ["Graylog 無回應（保守暫停）"]
+            return ["Graylog not responding (pausing to be safe)"]
         out: list[str] = []
         # Two-tier JVM heap: back off well before the ceiling, but don't let a
         # single GC-sawtooth peak cause a needless pause.
@@ -117,21 +117,21 @@ class HealthGuard:
         need = max(1, getattr(self.cfg, "health_heap_sustained_samples", 2))
         hp = health.get("jvm_pct", 0)
         if hp >= hard:
-            out.append(f"JVM heap {hp:.0f}%（超過硬上限 {hard:.0f}%）")
+            out.append(f"JVM heap {hp:.0f}% (over the hard limit {hard:.0f}%)")
             self._heap_streak = 0
         elif hp >= soft:
             self._heap_streak += 1
             if self._heap_streak >= need:
-                out.append(f"JVM heap {hp:.0f}%（持續高於軟門檻 {soft:.0f}%）")
+                out.append(f"JVM heap {hp:.0f}% (sustained above the soft limit {soft:.0f}%)")
         else:
             self._heap_streak = 0
         self.trackers["journal"].add(health.get("journal_uncommitted", 0))
         if self.trackers["journal"].rising():
-            out.append(f"disk journal 積壓上升（{int(self.trackers['journal'].latest()):,}）")
+            out.append(f"disk journal backlog rising ({int(self.trackers['journal'].latest()):,})")
         for tkey, hkey, name in _BUFFERS:
             self.trackers[tkey].add(health.get(hkey, 0))
             if self.trackers[tkey].rising():
-                out.append(f"{name} 持續上升（{int(self.trackers[tkey].latest()):,}）")
+                out.append(f"{name} rising steadily ({int(self.trackers[tkey].latest()):,})")
         return out
 
     async def checkpoint(self, progress: dict | None = None) -> None:
@@ -153,7 +153,8 @@ class HealthGuard:
     async def _pause_until_clear(self, tripped: list[str], progress: dict | None) -> None:
         self.pause_count += 1
         log.warning("export paused — Graylog backpressure", signals=tripped)
-        self._emit(progress, "偵測到高負載，暫停中：" + "；".join(tripped) + " → 等待降載")
+        self._emit(progress, "Source Graylog under load, pausing: "
+                   + "; ".join(tripped) + " — waiting for it to drain")
         interval = getattr(self.cfg, "health_pause_interval_sec", 15)
         max_wait = getattr(self.cfg, "health_max_pause_min", 30) * 60
         drain = getattr(self.cfg, "health_resume_drain_ratio", 0.7)
@@ -165,7 +166,7 @@ class HealthGuard:
             self.total_paused_sec += interval
             health = await self._read()
             if health is None:
-                self._emit(progress, f"Graylog 無回應，續等降載（已暫停 {waited}s）")
+                self._emit(progress, f"Graylog not responding; still waiting (paused {waited}s)")
                 continue
             for mkey in _DRAIN_METRICS:
                 peak[mkey] = max(peak.get(mkey, 0), health.get(mkey, 0))
@@ -176,12 +177,14 @@ class HealthGuard:
             )
             if not now_tripped and drained:
                 log.info("export resumed — backpressure cleared", waited_sec=waited)
-                self._emit(progress, f"負載已降，續跑（暫停 {waited}s）")
+                self._emit(progress, f"Load has drained, resuming (paused {waited}s)")
                 return
-            self._emit(progress, "仍在等待降載：" + "；".join(now_tripped or ["尚未回落"])
-                       + f"（已暫停 {waited}s）")
-        msg = (f"高負載持續超過 {max_wait // 60} 分鐘未降（{'；'.join(tripped)}），已停止匯出。"
-               f"建議改用 OpenSearch 直連、調高 Graylog heap，或縮小匯出範圍。")
+            self._emit(progress, "Still waiting to drain: "
+                       + "; ".join(now_tripped or ["not yet down"])
+                       + f" (paused {waited}s)")
+        msg = (f"Source load did not drain for over {max_wait // 60} minutes "
+               f"({'; '.join(tripped)}); export stopped. Consider OpenSearch-direct "
+               f"mode, a larger Graylog heap, or a smaller export range.")
         log.error("export stopped — backpressure did not clear", signals=tripped, waited_sec=waited)
         try:
             from glogarch.notify.sender import notify_error

@@ -2163,15 +2163,33 @@ def get_audit_detail(request: Request, entry_id: int):
 
 
 @router.get("/logs/realtime")
-def get_realtime_log(request: Request, lines: int = 100):
-    """Get recent journalctl log lines."""
+def get_realtime_log(request: Request, lines: int = 100, app_only: bool = True):
+    """Recent journalctl lines for the service.
+
+    `app_only` (default ON) drops the uvicorn HTTP access lines. The UI polls
+    `/api/jobs` every few seconds, so those access lines alone can fill the whole
+    window and push the actual application events out of view — twice now that
+    has blocked diagnosing a stuck job from this page. Ask journalctl for a
+    bigger slab and filter, so the requested number of APPLICATION lines is what
+    comes back.
+    """
     import subprocess
+    import re as _re
+    want = min(lines, 1000)
+    # Over-fetch, because most lines are usually access noise.
+    fetch = min(want * 12, 12000) if app_only else want
     try:
         result = subprocess.run(
-            ["journalctl", "-u", "jt-glogarch", "-n", str(min(lines, 1000)), "--no-pager"],
-            capture_output=True, text=True, timeout=5,
+            ["journalctl", "-u", "jt-glogarch", "-n", str(fetch), "--no-pager"],
+            capture_output=True, text=True, timeout=15,
         )
-        return {"lines": result.stdout}
+        out = result.stdout
+        if app_only:
+            # uvicorn access format: '<ip>:<port> - "GET /path HTTP/1.1" 200 OK'
+            noise = _re.compile(r'"\s*(GET|POST|PUT|DELETE|HEAD|PATCH)\s+\S+\s+HTTP/[\d.]+"\s+\d{3}')
+            kept = [ln for ln in out.splitlines() if not noise.search(ln)]
+            out = "\n".join(kept[-want:])
+        return {"lines": out}
     except Exception as e:
         return {"lines": f"Error reading log: {e}"}
 

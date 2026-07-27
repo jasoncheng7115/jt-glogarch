@@ -1670,3 +1670,8 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
    SOP hint) so they don't read as a warning — only real "insufficient" lines
    keep the orange/red warning color. */
 .capacity-estimate .cap-info { color: var(--text-muted); }
+
+/* A running-but-throttled job. Amber, not red: pausing on backpressure is the
+   designed protective behaviour, not a failure — but it must be visible from the
+   sidebar and Job History, not only inside the progress dialog. */
+.job-paused { color: var(--warning); font-size: 0.85em; font-weight: 600; }

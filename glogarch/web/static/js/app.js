@@ -2232,7 +2232,7 @@ async function loadJobs() {
         return `<tr class="${j.status === 'completed' && j.messages_done === 0 ? 'job-row-dim' : ''}">
             <td title="${j.id}">${j.id.substring(0, 8)}</td>
             <td>${j.job_type} ${srcHtml}</td>
-            <td>${statusBadge(j.status)}</td>
+            <td>${statusBadge(j.status)}${jobPausedLabel(j) ? `<div class="job-paused" title="${esc(j.current_detail || '')}">⏸ ${esc(jobPausedLabel(j))}</div>` : ''}</td>
             <td class="u149">
                 <div class="progress-bar u155">
                     <div class="progress-fill" data-style="width:${j.progress_pct}%"></div>
@@ -3279,6 +3279,19 @@ function sortTable(th) {
     rows.forEach(r => tbody.appendChild(r));
 }
 
+// A running job that is THROTTLED must say so wherever it is shown. Export pauses
+// itself when the source Graylog is under load (phase `backpressure_wait`) and
+// import pauses on target backpressure (`paused`); in both cases the record
+// counter simply stops. Without a label the row reads as "stuck at 0%", which is
+// exactly how a healthy, deliberately-waiting job gets mistaken for a hung one.
+function jobPausedLabel(j) {
+    if (!j || j.status !== 'running') return '';
+    const p = j.phase || '';
+    if (p === 'backpressure_wait') return t('job_paused_source');
+    if (p === 'paused') return t('job_paused_target');
+    return '';
+}
+
 // ---- Sidebar Job Status ----
 async function checkRunningJobs() {
     try {
@@ -3314,8 +3327,14 @@ async function checkRunningJobs() {
             const msgs = j.messages_done ? formatNumber(j.messages_done) : '0';
             const total = j.messages_total ? formatNumber(j.messages_total) : '?';
             const detail = j.current_detail || j.phase || '';
-            const statusLine = indet ? (t('job_running') || 'Running…')
-                                     : (detail && !j.messages_done ? esc(detail) : `${msgs} / ${total}`);
+            // A paused job must SAY paused even after it has processed records —
+            // the counter freezes, so "170,691 / 377,835,339" alone looks stuck.
+            const paused = jobPausedLabel(j);
+            let statusLine = indet ? (t('job_running') || 'Running…')
+                                   : (detail && !j.messages_done ? esc(detail) : `${msgs} / ${total}`);
+            if (paused) {
+                statusLine = `<span class="job-paused">⏸ ${esc(paused)}</span><br>${statusLine}`;
+            }
             const head = indet ? esc(j.job_type) : `${esc(j.job_type)} <strong>${pct}%</strong>`;
             const bar = indet ? `<div class="progress-fill indet"></div>`
                               : `<div class="progress-fill" data-style="width:${pct}%"></div>`;

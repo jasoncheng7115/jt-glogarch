@@ -2,6 +2,31 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.61] - 2026-07-27
+
+### Fixed
+
+- **The System Logs page is usable for diagnosis again.** The UI polls
+  `/api/jobs` every few seconds, so uvicorn HTTP access lines filled the window
+  (measured: 57% of the last 100 lines) and pushed the actual application events
+  out of view — twice this blocked diagnosing a stuck export from the UI.
+  `/api/logs/realtime` now takes `app_only` (default ON), over-fetches from
+  journalctl and drops access lines, so the requested number of APPLICATION lines
+  is what comes back.
+- **Export backpressure messages are no longer hardcoded Chinese.** The health
+  guard emitted its pause/resume detail in Chinese regardless of UI language, so
+  an English UI showed Chinese text on the running job. All guard messages are
+  now English.
+
+### Added
+
+- **A throttled job now says so wherever it is shown.** Export pauses itself when
+  the source Graylog is loaded (`backpressure_wait`) and import on target
+  backpressure (`paused`); in both cases the record counter simply stops, so the
+  sidebar and Job History looked identical to a hung job. Both now show an amber
+  "⏸ Paused — source/target under load" label. Previously the sidebar showed the
+  detail only while `messages_done` was 0, i.e. never once work had started.
+
 ## [1.13.60] - 2026-07-26
 
 ### Fixed
