@@ -2,6 +2,28 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.63] - 2026-07-27
+
+### Fixed
+
+- **One Graylog server's export could starve another's completely.** The
+  scheduler's overlap guard was keyed by JOB TYPE, not by schedule, so a site
+  with one export schedule per server (`auto-export` 03:00 for server A,
+  `auto-export-th` 03:40 for server B) had B skipped entirely whenever A was
+  still running — and a large export runs for hours. The only trace was an
+  info-level "skipping this run", so one server simply stopped being archived
+  with nothing in Job History. The guard is now per-schedule; concurrent exports
+  against the SAME server are still prevented by the per-server lock in
+  `exporter.py`, which guards the actual resource.
+- **Notification webhook URLs are now SSRF-checked.** `POST /api/notify/config`
+  accepted Discord/Slack/Teams `webhook_url` and the Nextcloud Talk `server_url`
+  with no validation, while every other URL the UI accepts (server test,
+  OpenSearch test, import target, flush) goes through `ssrf_block_reason()`. A
+  channel could be pointed at localhost or a cloud metadata endpoint and used to
+  probe the internal network from the service's own network position.
+- **The archive path is escaped before being written into innerHTML**
+  (defence-in-depth; the value comes from config, not user input).
+
 ## [1.13.62] - 2026-07-27
 
 ### Fixed

@@ -2,6 +2,14 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.13.63] - 2026-07-27
+
+### 修正
+
+- **某一台 Graylog 的匯出可能讓另一台完全排不到。** 排程的重疊防護是以**工作類型**為 key,而非以排程為單位,因此若站台為每台伺服器各設一個匯出排程（`auto-export` 03:00 對應伺服器 A、`auto-export-th` 03:40 對應伺服器 B）,只要 A 還在執行,B 就會被整個略過——而大型匯出會跑數小時。唯一的痕跡只是一行 info 等級的「skipping this run」,於是其中一台伺服器就這樣停止被歸檔,作業歷程中也看不到任何紀錄。防護現已改為**以排程為單位**;針對**同一台伺服器**的並行匯出,仍由 `exporter.py` 中的 per-server 鎖擋下——那才是真正需要保護的資源。
+- **通知的 webhook 網址現在會進行 SSRF 檢查。** `POST /api/notify/config` 先前接受 Discord／Slack／Teams 的 `webhook_url` 與 Nextcloud Talk 的 `server_url` 而完全不做驗證,但介面上其他所有接受網址的地方（伺服器測試、OpenSearch 測試、匯入目標、疏通）都會經過 `ssrf_block_reason()`。攻擊者可將通知管道指向 localhost 或雲端 metadata 端點,藉由服務本身的網路位置探測內部網路。
+- **歸檔路徑寫入 innerHTML 前會先跳脫**（縱深防禦;該值來自設定檔而非使用者輸入）。
+
 ## [1.13.62] - 2026-07-27
 
 ### 修正

@@ -2270,6 +2270,13 @@ async def save_notify_config(request: Request):
     }
     # Secret fields that are masked in GET responses — skip if unchanged
     _SECRET_FIELDS = {"bot_token", "webhook_url", "token", "password", "smtp_password"}
+    # Outbound URLs must pass the same SSRF check as every other URL the UI
+    # accepts (server test, OpenSearch test, import target, flush). This endpoint
+    # was the one place that skipped it, so a notification channel could be
+    # pointed at localhost or a cloud metadata endpoint and used to probe the
+    # internal network from the service's own network position.
+    _URL_FIELDS = {"webhook_url", "server_url"}
+    from glogarch.utils.netguard import ssrf_block_reason
     for ch_name, ch_obj in channel_map.items():
         if ch_name in body:
             ch_data = body[ch_name]
@@ -2278,6 +2285,11 @@ async def save_notify_config(request: Request):
                     # Don't overwrite with masked value
                     if k in _SECRET_FIELDS and isinstance(v, str) and "***" in v:
                         continue
+                    if k in _URL_FIELDS and isinstance(v, str) and v.strip():
+                        reason = ssrf_block_reason(v.strip())
+                        if reason:
+                            return JSONResponse(
+                                {"error": f"{ch_name}.{k}: {reason}"}, status_code=400)
                     setattr(ch_obj, k, v)
 
     # Save to config.yaml — persist the RECONCILED model (with real secrets),

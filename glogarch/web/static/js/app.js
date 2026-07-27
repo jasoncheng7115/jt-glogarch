@@ -1040,7 +1040,7 @@ async function loadArchivePath() {
     try {
         const data = await fetchJSON(`${API}/settings/archive-path`);
         const el = document.getElementById('archive-path-info');
-        if (el) el.innerHTML = `${icon('disk')} ${t('archive_path')}: <code>${data.base_path}</code>`;
+        if (el) el.innerHTML = `${icon('disk')} ${t('archive_path')}: <code>${esc(data.base_path)}</code>`;
         const input = document.getElementById('new-archive-path');
         if (input) input.value = data.base_path;
     } catch (e) {}

@@ -110,11 +110,20 @@ class ArchiveScheduler:
         than the cron interval.
         Records a failed job on final failure so it appears in Job History.
         """
-        if self._running_jobs.get("export"):
-            log.info("Previous scheduled export still running, skipping this run")
+        # Key the overlap guard by SCHEDULE, not by job type. Keyed by type, a
+        # site with one export schedule per Graylog server (auto-export at 03:00
+        # for server A, auto-export-th at 03:40 for server B) had B skipped
+        # entirely whenever A was still running — one server's export starved
+        # the other's, and the only trace was an info-level "skipping this run".
+        # Concurrent exports against the SAME server are still prevented by the
+        # per-server lock in exporter.py, which guards the real resource.
+        _key = f"export:{schedule_name}"
+        if self._running_jobs.get(_key):
+            log.info("This export schedule is still running, skipping this run",
+                     schedule=schedule_name)
             return
 
-        self._running_jobs["export"] = True
+        self._running_jobs[_key] = True
         last_error = None
         skipped_due_to_running = False
         try:
@@ -150,7 +159,7 @@ class ArchiveScheduler:
                 self._finish_run_job(job_id, JobStatus.FAILED,
                                      error_message=sanitize(str(last_error)))
         finally:
-            self._running_jobs["export"] = False
+            self._running_jobs[_key] = False
             if not skipped_due_to_running:
                 self._update_schedule_last_run(schedule_name)
 
