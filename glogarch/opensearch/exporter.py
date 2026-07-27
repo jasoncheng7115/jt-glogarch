@@ -614,19 +614,29 @@ class OpenSearchExporter:
                         current_chunk_from = c_from
                         current_chunk_to = c_to
 
-                        # Check dedup before opening new writer.
-                        # exclude_stream_id_prefix=prefix prevents sister indices in
-                        # the SAME OpenSearch run from blocking each other when an
-                        # hourly chunk spans an index rotation boundary. API-mode
-                        # archives (which use stream UUIDs as stream_id) still block.
-                        existing = self.db.find_archive(
-                            self.server_config.name, index_name, c_from, c_to
-                        )
-                        cross_covered = self.db.is_time_range_covered(
-                            self.server_config.name, c_from, c_to,
-                            exclude_stream_id_prefix=prefix,
-                        )
-                        if (existing and existing.status == ArchiveStatus.COMPLETED) or cross_covered:
+                        # Dedup from the SAME merged ranges the query filter used.
+                        #
+                        # These were two different rules, and the gap was severe.
+                        # The loop asked `is_time_range_covered(...,
+                        # exclude_stream_id_prefix=prefix)`, i.e. "does ANY archive
+                        # whose stream_id doesn't start with this prefix cover the
+                        # chunk" — so on a site with 27 index sets a `graylog_147`
+                        # archive counted as coverage for `filesrv_33`, which is a
+                        # completely different log stream. Two consequences, both
+                        # bad: filesrv data was skipped and never archived at all
+                        # (silent loss), and because the query filter did NOT share
+                        # that rule the scan still pulled the whole index — 13.9M
+                        # documents fetched and discarded, the job sitting at "0%"
+                        # for eight hours.
+                        #
+                        # Reusing `covered` makes the two paths agree by
+                        # construction: only an archive that holds the FULL data for
+                        # its range counts (this very index, or an API export of all
+                        # streams). Anything the loop skips was already excluded
+                        # from the query, so nothing is fetched just to be thrown
+                        # away, and nothing is skipped that was not genuinely
+                        # archived.
+                        if any(a <= c_from and b >= c_to for a, b in covered):
                             writer = None
                             chunk_count += 1
                             continue

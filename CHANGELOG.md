@@ -2,6 +2,34 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.62] - 2026-07-27
+
+### Fixed
+
+- **Logs from one index set were treated as archived because a DIFFERENT index
+  set had archives for the same hour — they were never archived at all.** The
+  per-chunk dedup asked `is_time_range_covered(..., exclude_stream_id_prefix=
+  <prefix>)`: "does ANY archive whose stream_id does not start with this prefix
+  cover the chunk?" On a site with 27 index sets, a `graylog_147` archive
+  therefore counted as coverage for `filesrv_33`, which is a completely different
+  log stream. Two consequences, both silent:
+  - **Data loss** — those logs were skipped every run and never archived.
+  - **The "0%" stall** — the query-level filter (1.13.53) did NOT share that
+    rule, so the scan still pulled the whole index: in a customer log, 13.9M
+    documents fetched from one index and every chunk discarded, the job showing
+    `0%` for eight hours while it was in fact working hard on nothing.
+
+  The chunk loop now reuses the SAME merged ranges the query filter is built
+  from, so the two agree by construction: only an archive holding the FULL data
+  for its range counts (this very index, or an API export of all streams).
+  Nothing is fetched merely to be discarded, and nothing is skipped that was not
+  genuinely archived.
+
+  **After upgrading, expect a large catch-up export**: data that was being
+  wrongly skipped will now be archived for the first time. This is the missing
+  data being recovered, not a duplicate — re-running is still a no-op (verified:
+  a second run adds 0 records in ~1s).
+
 ## [1.13.61] - 2026-07-27
 
 ### Fixed
