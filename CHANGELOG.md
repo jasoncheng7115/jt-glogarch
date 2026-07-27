@@ -2,6 +2,42 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.64] - 2026-07-27
+
+### Fixed
+
+- **Operation Audit resource cache grew for the life of the process.**
+  `_refresh_resource_cache()` mutated the live dict, so IDs of Graylog resources
+  that had since been deleted were never removed. It now builds a fresh dict and
+  swaps it in atomically — clearing first would have left a window where
+  lookups returned blanks.
+- **The audit listener dropped records silently when its batch was full.** The
+  10,000-entry overflow guard returned without a word, so a syslog rate the DB
+  could not keep up with quietly lost compliance records. It now warns (once per
+  flush, so a burst cannot flood the log).
+- **Notification channel names are escaped before innerHTML** (defence in depth).
+
+### Added
+
+- **`DEFECTS.md` / `DEFECTS-zh_TW.md` — a defect register.** Every defect found
+  and fixed, with its root cause and, more importantly, **what now prevents it
+  recurring** (the test or check that holds the fix in place). Grouped by class:
+  data integrity, silent failure, scale, visibility, security, and the testing
+  gaps that let them survive. It closes with the three rules these keep landing
+  on: one decision = one rule; a failure must be able to become visible; cost
+  must scale with the work, not the data.
+
+### Notes
+
+Two earlier audit claims were investigated and **deliberately not changed**:
+- *Cleanup deletes the file before updating the DB row* — real, but self-healing:
+  verify marks the row `MISSING`, `covered_ranges()` counts only `completed`, so
+  the next export re-archives that range (e2e step [6] proves the chain).
+- *An orphaned archive file should be auto-deleted by verify* — **rejected**.
+  `glogarch db-rebuild` exists to rebuild the DB **from** those files; deleting
+  them automatically would destroy what the disaster-recovery path is for.
+  Detect and report, let a human decide.
+
 ## [1.13.63] - 2026-07-27
 
 ### Fixed

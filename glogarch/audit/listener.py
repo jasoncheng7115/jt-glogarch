@@ -562,6 +562,11 @@ class AuditSyslogListener:
 
     async def _refresh_resource_cache(self) -> None:
         """Cache Graylog resource IDs → names (inputs, streams, etc.)."""
+        # Build into a FRESH dict and swap at the end. Mutating the live
+        # cache in place never removed anything, so IDs of deleted Graylog
+        # resources accumulated for the life of the process; clearing it
+        # first would instead leave a window where lookups return blanks.
+        _new: dict[str, str] = {}
         import httpx
         for srv in self.settings.servers:
             try:
@@ -578,74 +583,74 @@ class AuditSyslogListener:
                     r = await client.get(f"{srv.url.rstrip('/')}/api/system/inputs")
                     if r.status_code == 200:
                         for inp in r.json().get("inputs", []):
-                            self._resource_cache[f"input:{inp['id']}"] = inp.get("title", inp["id"])
+                            _new[f"input:{inp['id']}"] = inp.get("title", inp["id"])
                     # Streams
                     r = await client.get(f"{srv.url.rstrip('/')}/api/streams")
                     if r.status_code == 200:
                         for s in r.json().get("streams", []):
-                            self._resource_cache[f"stream:{s['id']}"] = s.get("title", s["id"])
+                            _new[f"stream:{s['id']}"] = s.get("title", s["id"])
                     # Index sets
                     r = await client.get(f"{srv.url.rstrip('/')}/api/system/indices/index_sets")
                     if r.status_code == 200:
                         for s in r.json().get("index_sets", []):
-                            self._resource_cache[f"indexset:{s['id']}"] = s.get("title", s["id"])
+                            _new[f"indexset:{s['id']}"] = s.get("title", s["id"])
                     # Views / Dashboards
                     r = await client.get(f"{srv.url.rstrip('/')}/api/views?per_page=100")
                     if r.status_code == 200:
                         for v in r.json().get("views", r.json().get("elements", [])):
-                            self._resource_cache[f"view:{v['id']}"] = v.get("title", v["id"])
+                            _new[f"view:{v['id']}"] = v.get("title", v["id"])
                     # Lookup tables, adapters, caches
                     r = await client.get(f"{srv.url.rstrip('/')}/api/system/lookup/tables?per_page=100")
                     if r.status_code == 200:
                         for t in r.json().get("lookup_tables", []):
-                            self._resource_cache[f"lookup:{t['id']}"] = t.get("title", t["id"])
+                            _new[f"lookup:{t['id']}"] = t.get("title", t["id"])
                     r = await client.get(f"{srv.url.rstrip('/')}/api/system/lookup/adapters?per_page=100")
                     if r.status_code == 200:
                         for a in r.json().get("data_adapters", []):
-                            self._resource_cache[f"lookup:{a['id']}"] = a.get("title", a["id"])
+                            _new[f"lookup:{a['id']}"] = a.get("title", a["id"])
                     r = await client.get(f"{srv.url.rstrip('/')}/api/system/lookup/caches?per_page=100")
                     if r.status_code == 200:
                         for c in r.json().get("caches", []):
-                            self._resource_cache[f"lookup:{c['id']}"] = c.get("title", c["id"])
+                            _new[f"lookup:{c['id']}"] = c.get("title", c["id"])
                     # Pipelines
                     r = await client.get(f"{srv.url.rstrip('/')}/api/system/pipelines/pipeline")
                     if r.status_code == 200:
                         for p in (r.json() if isinstance(r.json(), list) else []):
-                            self._resource_cache[f"pipeline_pipeline:{p['id']}"] = p.get("title", p["id"])
+                            _new[f"pipeline_pipeline:{p['id']}"] = p.get("title", p["id"])
                     # Pipeline rules
                     r = await client.get(f"{srv.url.rstrip('/')}/api/system/pipelines/rule")
                     if r.status_code == 200:
                         for p in (r.json() if isinstance(r.json(), list) else []):
-                            self._resource_cache[f"pipeline_rule:{p['id']}"] = p.get("title", p["id"])
+                            _new[f"pipeline_rule:{p['id']}"] = p.get("title", p["id"])
                     # Event definitions
                     r = await client.get(f"{srv.url.rstrip('/')}/api/events/definitions?per_page=100")
                     if r.status_code == 200:
                         for e in r.json().get("event_definitions", []):
-                            self._resource_cache[f"event:{e['id']}"] = e.get("title", e["id"])
+                            _new[f"event:{e['id']}"] = e.get("title", e["id"])
                     # Event notifications
                     r = await client.get(f"{srv.url.rstrip('/')}/api/events/notifications?per_page=100")
                     if r.status_code == 200:
                         for n in r.json().get("notifications", []):
-                            self._resource_cache[f"event_notif:{n['id']}"] = n.get("title", n["id"])
+                            _new[f"event_notif:{n['id']}"] = n.get("title", n["id"])
                     # Outputs
                     r = await client.get(f"{srv.url.rstrip('/')}/api/system/outputs")
                     if r.status_code == 200:
                         for o in r.json().get("outputs", []):
-                            self._resource_cache[f"output:{o['id']}"] = o.get("title", o["id"])
+                            _new[f"output:{o['id']}"] = o.get("title", o["id"])
                     # Authentication service backends
                     r = await client.get(f"{srv.url.rstrip('/')}/api/system/authentication/services/backends")
                     if r.status_code == 200:
                         for b in r.json().get("backends", []):
                             bid = b.get("id", "")
                             if bid:
-                                self._resource_cache[f"auth_backend:{bid}"] = b.get("title", bid)
+                                _new[f"auth_backend:{bid}"] = b.get("title", bid)
                     # Content packs (UUID with dashes)
                     r = await client.get(f"{srv.url.rstrip('/')}/api/system/content_packs?per_page=100")
                     if r.status_code == 200:
                         for cp in r.json().get("content_packs", []):
                             cpid = cp.get("id", "")
                             if cpid:
-                                self._resource_cache[f"content_pack:{cpid}"] = cp.get("name", cpid)
+                                _new[f"content_pack:{cpid}"] = cp.get("name", cpid)
                     # Users (ID → username, for share grantee resolution)
                     r = await client.get(f"{srv.url.rstrip('/')}/api/users")
                     if r.status_code == 200:
@@ -654,11 +659,14 @@ class AuditSyslogListener:
                             uname = u.get("username", "")
                             if uid and uname:
                                 full = u.get("full_name") or uname
-                                self._resource_cache[f"user:{uid}"] = full
+                                _new[f"user:{uid}"] = full
                     log.debug("Resource cache refreshed", total=len(self._resource_cache))
                 return
             except Exception:
                 pass
+
+        if _new:
+            self._resource_cache = _new
 
     def _resolve_token_username(self, username: str) -> str:
         """If username is token:XXXXXXXX..., try to resolve from cache."""
@@ -724,6 +732,7 @@ class AuditSyslogListener:
                 return
             batch = self._batch[:]
             self._batch.clear()
+            self._overflow_logged = False   # re-arm the drop warning
         try:
             count = self.db.insert_api_audit_batch(batch)
             if count:
@@ -793,6 +802,14 @@ class AuditSyslogListener:
         if len(data) > self._MAX_PACKET_SIZE:
             return
         if len(self._batch) > self._MAX_BATCH_PENDING:
+            # Dropping an audit record must never be silent — this is a
+            # compliance trail. Log at most once per flush so a burst cannot
+            # itself flood the log.
+            if not getattr(self, "_overflow_logged", False):
+                self._overflow_logged = True
+                log.warning("Audit batch full — DISCARDING records; the DB is not "
+                            "keeping up with the syslog rate",
+                            pending=len(self._batch), limit=self._MAX_BATCH_PENDING)
             return
 
         self.received_count += 1

@@ -560,7 +560,7 @@ async function loadNotifyStatus() {
         const btn = document.querySelector('#notify-card .btn-secondary');
         if (!el) return;
         if (data.channels.length > 0) {
-            const names = data.channels.map(c => c.name).join(', ');
+            const names = data.channels.map(c => esc(c.name)).join(', ');
             el.innerHTML = `${t('enabled_channels')}: <strong>${names}</strong>`;
             if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
         } else {
