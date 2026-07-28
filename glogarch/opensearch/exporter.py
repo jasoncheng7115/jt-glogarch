@@ -250,11 +250,27 @@ class OpenSearchExporter:
                         # count is 0. That is exact, costs one `_count`, and can
                         # never skip a gap.
                         # Accurate doc count via _count (not _cat which includes deleted docs)
+                        # Count only what is NOT already archived, so the
+                        # progress denominator reflects the real work. Counting
+                        # the whole index made a mostly-archived corpus sit at
+                        # "0% of 1,948,570,498" while it was in fact fine.
+                        _, _plan_filter = self._covered_and_filter(
+                            index_name, prefix, idx_from, idx_to)
                         try:
-                            resp = await os_client.post(f"/{index_name}/_count", json={"query": {"match_all": {}}})
+                            resp = await os_client.post(
+                                f"/{index_name}/_count",
+                                json={"query": _plan_filter or {"match_all": {}}})
                             real_count = resp.get("count", docs_count)
                         except Exception:
                             real_count = docs_count
+                        if real_count <= 0:
+                            # Already fully archived — skipped in the PLAN, so it
+                            # never reaches the scan and contributes nothing to
+                            # the denominator.
+                            log.info("Nothing left to export after excluding "
+                                     "archived ranges", index=index_name)
+                            result.chunks_skipped += 1
+                            continue
                         export_plan.append((prefix, index_name, idx_from, idx_to, real_count))
                         grand_total_docs += real_count
 
@@ -385,6 +401,34 @@ class OpenSearchExporter:
 
         return result
 
+    _MAX_EXCLUDE_RANGES = 100
+
+    def _covered_and_filter(self, index_name: str, prefix: str,
+                            idx_from: datetime, idx_to: datetime):
+        """Return (merged already-archived ranges, matching OpenSearch filter).
+
+        ONE source of truth. Three places must agree about what is already
+        archived: the plan phase (which sets the progress DENOMINATOR), the scan
+        query (what is fetched) and the per-chunk skip. When they disagreed, the
+        job fetched data it then discarded and reported "0%" while working.
+        Returns filter=None when there is nothing to exclude, or when there are
+        too many fragments to express as a query.
+        """
+        covered = self.db.covered_ranges(
+            self.server_config.name, index_name,
+            exclude_stream_id_prefix=prefix, time_from=idx_from, time_to=idx_to)
+        if not covered or len(covered) > self._MAX_EXCLUDE_RANGES:
+            return covered, None
+
+        def _os_ts(dt: datetime) -> str:
+            return dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+        return covered, {"bool": {"must_not": [
+            {"range": {"timestamp": {"gte": _os_ts(a), "lt": _os_ts(b),
+                                     "format": "yyyy-MM-dd HH:mm:ss.SSS"}}}
+            for a, b in covered
+        ]}}
+
     async def _export_index(
         self,
         os_client: OpenSearchClient,
@@ -433,10 +477,8 @@ class OpenSearchExporter:
         # empty hours are irrelevant because they contain no documents — and it
         # still honours gaps, which is why OpenSearch mode never used a resume
         # point in the first place.
-        _MAX_EXCLUDE_RANGES = 100
-        covered = self.db.covered_ranges(
-            self.server_config.name, index_name,
-            exclude_stream_id_prefix=prefix, time_from=idx_from, time_to=idx_to)
+        covered, scan_query = self._covered_and_filter(
+            index_name, prefix, idx_from, idx_to)
         fully_covered = any(a <= idx_from and b >= idx_to for a, b in covered)
 
         if fully_covered:
@@ -456,16 +498,7 @@ class OpenSearchExporter:
         # `format`: Graylog maps `timestamp` as `uuuu-MM-dd HH:mm:ss.SSS` and an
         # ISO-8601 value is rejected with a parse_exception (verified against a
         # live cluster) — which would either error or silently filter nothing.
-        def _os_ts(dt: datetime) -> str:
-            return dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-
-        scan_query = None
-        if covered and len(covered) <= _MAX_EXCLUDE_RANGES:
-            scan_query = {"bool": {"must_not": [
-                {"range": {"timestamp": {"gte": _os_ts(a), "lt": _os_ts(b),
-                                         "format": "yyyy-MM-dd HH:mm:ss.SSS"}}}
-                for a, b in covered
-            ]}}
+        if scan_query is not None:
             # Re-count against the filter so progress is a percentage of what we
             # will ACTUALLY export, not of the whole index.
             counted = None
@@ -499,7 +532,7 @@ class OpenSearchExporter:
             log.warning("Too many archived ranges to exclude — scanning the whole "
                         "index and de-duplicating per chunk (slow)",
                         index=index_name, ranges=len(covered),
-                        limit=_MAX_EXCLUDE_RANGES)
+                        limit=self._MAX_EXCLUDE_RANGES)
 
         # Current chunk tracking
         current_chunk_from = None

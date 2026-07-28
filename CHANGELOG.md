@@ -2,6 +2,25 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.65] - 2026-07-28
+
+### Fixed
+
+- **Export progress showed "0%" of the WHOLE corpus instead of the work left.**
+  The plan phase counted every document in every index, so a mostly-archived site
+  sat at `0% — 62,007 / 1,948,570,498` while it was working normally: the
+  denominator was the entire corpus, but only WRITTEN messages advance the
+  numerator, and already-archived time is skipped. The plan now counts each index
+  **through the same already-archived filter the scan uses**, and an index with
+  nothing left is skipped in the plan (logged), contributing nothing to the
+  denominator. Verified: a re-run over fully-archived data now reports
+  `messages_total = 0` and completes, instead of `0 of 20,401` at 0%.
+- **One rule, one place.** The merged covered ranges and their OpenSearch filter
+  are now built by a single helper, `_covered_and_filter()`, used by all three
+  consumers — the plan (denominator), the scan query (what is fetched) and the
+  per-chunk skip. These had drifted apart before, and every time they did the job
+  fetched data it then discarded while reporting no progress.
+
 ## [1.13.64] - 2026-07-27
 
 ### Fixed
