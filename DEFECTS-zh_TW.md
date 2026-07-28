@@ -38,6 +38,8 @@
 | 9 | 清理排程的保留天數形同裝飾（v1.13.56） | 介面儲存並顯示 `retention_days`，排程器卻永遠使用 `config.yaml` | 執行時採用排程自身的值，並記錄採用了哪個來源。`test_schedule_retention_days_is_used` |
 | 10 | 一台伺服器的匯出讓另一台完全排不到（v1.13.63） | 重疊防護以工作**類型**為 key，因此第一個排程執行期間（可長達數小時），第二個匯出排程一律被略過，且僅留一行 info 記錄 | 改為以**排程**為單位；針對同一伺服器仍由 per-server 鎖保護真正的資源。`test_a_second_schedule_is_not_blocked_by_the_first` |
 | 11 | 排程匯出失敗，作業歷程卻空無一物 | 失敗路徑的 `create_job` 本身被包在一個總是失敗的 try/except 中 | 失敗會被記錄；`/api/health` 另外回報 `schedules_registered` |
+| 27 | 每個索引組都顯示「0 個索引、0 位元組」——清除操作看起來會像是無害的空動作（發版前攔截，1.13.66） | Graylog 的 `indices/{id}/list` 會把每個群組包成 `{"all": {"indices": [...]}}`；直接迭代 `data["all"]` 走的是字典的鍵，什麼也沒產出。容量則位於 `all_shards.store_size_bytes`，而非 `size.bytes` | `_iter_indices()` 成為唯一的解析點，並以測試釘住真實回應結構、裸列表的相容處理與畸形內容。回應結構現在是「被斷言」而非「被假設」 |
+| 28 | 清除操作可能刪掉正在寫入的索引，導致目標無法接收它正要騰出空間的那批匯入（發版前攔截，1.13.66） | deflector 查詢被包在 `except: pass` 中，因此讀不到 deflector 時 `write_index` 為 None——而「保留除了 None 以外的全部」等於什麼都不保留 | 無法辨識寫入索引時，會在**任何刪除動作之前中止**。`test_unknown_write_index_aborts_without_deleting` |
 
 ## 規模——成本隨資料量而非工作量成長
 
@@ -73,6 +75,7 @@
 | 24 | e2e **預先建立**了 Bulk 索引 | 既遮蔽「對新名稱首次匯入必失敗」的錯誤，又與 Graylog 的建置產生競爭 | 測試不再代勞產品本身應建立的狀態 |
 | 25 | 沒有升級測試 | 升級安全性只是假設 | `scripts/upgrade-compat-test.sh`——已驗證 1.7.9 至 1.13.40 |
 | 26 | 功能被停用時測試仍會通過 | 見 #8 | 斷言**失敗路徑未被觸發**，而不只是「沒有拋出例外」 |
+| 29 | 發版推送會把**必要的 UI smoke 閘門從已發布的儲存庫中刪除**（發版前攔截，1.13.66） | `github/scripts/` 從未與 `scripts/` 保持同步，而推送時是以 `--delete` 把 `github/` rsync 覆蓋到 clone 上。`ui-smoke.py` 會被刪除，`run-tests.sh` 也會退回到沒有無頭瀏覽器閘門的版本 | `test_github_scripts_match_source` 逐位元組比對兩棵樹。鏡像檢查不再只涵蓋 `glogarch/` |
 
 ---
 

@@ -40,6 +40,8 @@ these into questions to ask **before** writing code.
 | 9 | A cleanup schedule's retention was decorative (v1.13.56) | The UI stored and displayed `retention_days`; the scheduler always used `config.yaml` | The run reads the schedule's own value and logs which source it used. `test_schedule_retention_days_is_used` |
 | 10 | One server's export starved another's (v1.13.63) | Overlap guard keyed by job TYPE, so a second export schedule was skipped whenever the first was running — for hours, with only an info log | Guard is per-schedule; the per-server lock still protects the real resource. `test_a_second_schedule_is_not_blocked_by_the_first` |
 | 11 | A scheduled export failed with nothing in Job History | The failure path's `create_job` was itself inside a try/except that always failed | Failures are recorded; `/api/health` also reports `schedules_registered` |
+| 27 | "0 indices, 0 bytes" for every index set — a clear would have looked like a harmless no-op (caught pre-release, 1.13.66) | Graylog's `indices/{id}/list` wraps each group as `{"all": {"indices": [...]}}`; iterating `data["all"]` walked dict KEYS and yielded nothing. The size is at `all_shards.store_size_bytes`, not `size.bytes` | `_iter_indices()` is the single parser, with tests pinning the real response shape, the bare-list fallback and malformed payloads. A response shape is now asserted, not assumed |
+| 28 | A clear could have deleted the live write index, leaving the target unable to ingest the import it was clearing space for (caught pre-release, 1.13.66) | The deflector lookup was wrapped in `except: pass`, so an unreadable deflector meant `write_index = None` — and "keep everything except None" keeps nothing | Unknown write index **aborts before any delete**. `test_unknown_write_index_aborts_without_deleting` |
 
 ## Scale — cost growing with data, not with work
 
@@ -75,6 +77,7 @@ these into questions to ask **before** writing code.
 | 24 | The e2e **pre-created** the bulk index | Masked the "first import to a new pattern always fails" bug AND raced with Graylog's provisioning | The test no longer sets up what the product must create |
 | 25 | No upgrade test | Upgrade safety was assumed | `scripts/upgrade-compat-test.sh` — verified from 1.7.9 through 1.13.40 |
 | 26 | Tests passed with the feature disabled | See #8 | Assert the failure path is *not* taken, not just that nothing raised |
+| 29 | The release push would have **deleted the mandatory UI-smoke gate** from the published repo (caught pre-release, 1.13.66) | `github/scripts/` was never kept in sync with `scripts/`, and the push rsyncs `github/` over the clone with `--delete`. `ui-smoke.py` would have been removed and `run-tests.sh` reverted to a version without the headless-browser gate | `test_github_scripts_match_source` compares both trees byte-for-byte. The mirror check no longer covers only `glogarch/` |
 
 ---
 

@@ -1675,3 +1675,24 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
    designed protective behaviour, not a failure — but it must be visible from the
    sidebar and Job History, not only inside the progress dialog. */
 .job-paused { color: var(--warning); font-size: 0.85em; font-weight: 600; }
+
+/* Destructive "clear target indices" block in the import dialog. Collapsed by
+   default and visually fenced off so it cannot be mistaken for a normal option. */
+.danger-zone {
+    border: 1px solid var(--danger, #c0392b);
+    border-radius: 6px;
+    margin: 12px 0;
+    background: rgba(192, 57, 43, 0.04);
+}
+.danger-zone > summary {
+    cursor: pointer;
+    padding: 8px 12px;
+    font-weight: 600;
+    color: var(--danger, #c0392b);
+    list-style: none;
+}
+.danger-zone > summary::-webkit-details-marker { display: none; }
+.danger-zone > summary::before { content: '\25B8'; margin-right: 6px; }
+.danger-zone[open] > summary::before { content: '\25BE'; }
+.danger-zone-body { padding: 0 12px 12px; }
+.danger-zone-body .form-hint { display: block; margin-bottom: 10px; }

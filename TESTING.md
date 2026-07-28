@@ -134,7 +134,24 @@ GL_PASS='<graylog-admin-pw>' bash scripts/e2e-archive-test.sh
       OS-direct export always skips the active write index)
 - [ ] **[3] GELF import back into the Graylog TCP input** — importer reports
       `Messages sent: N` (N>0) and **0 indexer failures** (compliance pass)
+- [ ] **[4] OpenSearch Bulk import** — docs actually land in OpenSearch. Bulk
+      bypasses Graylog entirely, so [3] does not cover it. The script must NOT
+      pre-create the index: provisioning it is the product's job and the bug
+      hid there (DEFECTS #4, #24)
+- [ ] **[5] Re-export dedup** — a re-export over archived time adds **0** records,
+      yet a punched gap comes back **exactly once** (DEFECTS #1–#3)
+- [ ] **[6] Deleted archive file** — `verify` reports it missing and the next
+      export re-archives exactly that range
+- [ ] **[7] Clear target index set, then import into it** — the clear leaves
+      exactly **one empty** index, internal `gl-*` sets are never listed, and a
+      following import still succeeds (a clear that wedges ingestion is worse
+      than no clear at all)
 - [ ] Script prints `RESULT: ALL PASS`
+
+> **Run it ON the Graylog host.** `GL_URL`/`OS_URL` default to `localhost`, and
+> the GELF seed connects to `127.0.0.1` — running it from a different machine
+> fails immediately with `ConnectionRefusedError` / `FAIL: seed not indexed`.
+> Override `GL_URL`/`OS_URL` only if you also have a route to the GELF port.
 
 > Note: re-imported messages land ~8h earlier than the run time on Asia/Taipei
 > systems (naive-Taipei-vs-UTC timestamp offset — see CLAUDE.md "Restore /
@@ -191,6 +208,27 @@ GL_PASS='<graylog-admin-pw>' bash scripts/e2e-archive-test.sh
 - [ ] Non-static responses carry `Cache-Control: no-store`
 - [ ] `Server` response header is absent (uvicorn banner stripped)
 - [ ] Any accepted ZAP rule in `.zap/rules.tsv` has a written justification
+
+### Destructive operations — clear target index set (v1.13.66)
+
+Any feature that DELETES customer data must be re-verified every release; a
+regression here is not recoverable by the customer.
+
+- [ ] Import dialog → "Clear target indices before import" is **collapsed** by default
+- [ ] "Load index sets" lists the target's sets with a **non-zero** index count and
+      size (a zero here means the response shape changed — see DEFECTS #27; a clear
+      would then look like a harmless no-op)
+- [ ] The target's **default** index set is pre-selected
+- [ ] Graylog-internal sets (`gl-events`, `gl-system-events`) are **not listed**,
+      and are refused by the API even when their ID is posted directly
+- [ ] Typing the wrong prefix is rejected client-side AND server-side (`confirm`)
+- [ ] After a clear: the set holds exactly **one** index, and it is the **new, empty
+      write index** — the target can still ingest
+- [ ] An import into the cleared set succeeds afterwards (this is the whole point:
+      a bad field mapping from older data is gone)
+- [ ] The action appears in Operation Audit as `graylog_index_set_cleared` with
+      prefix, count and bytes freed
+- [ ] jt-glogarch's own archives are untouched (archive list unchanged)
 
 ### Test Results
 

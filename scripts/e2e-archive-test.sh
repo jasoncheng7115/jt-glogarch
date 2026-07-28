@@ -257,5 +257,78 @@ PY
 fi
 
 echo ""
+echo "=== [7] Clear target index set, then import into it ==="
+# This DELETES data on the target, so it is verified every release on a
+# throwaway index set of our own — never on the real one. Three properties:
+#   (a) the clear leaves exactly ONE index and it is empty (the fresh write index),
+#   (b) the target can still ingest afterwards — the whole point,
+#   (c) Graylog-internal event index sets are refused outright.
+CIDX="jt_e2e_clear"
+gql() { curl -s -u "$GL_USER:$GL_PASS" -H 'X-Requested-By: jt-glogarch' "$@"; }
+
+# Provision the set + data by doing a real bulk import into it.
+$PYO import --mode bulk --from "$yest" --target-index-pattern "$CIDX" \
+    --target-api-url "$GL_URL" --target-api-username "$GL_USER" \
+    --target-api-password "$GL_PASS" >/dev/null 2>&1
+sleep 5
+before_docs="$(osc "$OS_URL/${CIDX}*/_count" \
+    | python3 -c 'import sys,json;print(json.load(sys.stdin).get("count",0))' 2>/dev/null || echo 0)"
+echo "  seeded index set $CIDX with $before_docs docs"
+
+clear_out="$(GL_URL="$GL_URL" GL_USER="$GL_USER" GL_PASS="$GL_PASS" CIDX="$CIDX" python3 - <<'PYEOF'
+import asyncio, os, json
+from glogarch.graylog.maintenance import GraylogIndexCleaner
+c = GraylogIndexCleaner(api_url=os.environ["GL_URL"],
+                        api_username=os.environ["GL_USER"],
+                        api_password=os.environ["GL_PASS"])
+async def main():
+    sets = await c.list_index_sets()
+    mine = next((s for s in sets if s["index_prefix"] == os.environ["CIDX"]), None)
+    if not mine:
+        print(json.dumps({"error": "test index set not listed"})); return
+    # (c) internal event sets must never even be offered
+    leaked = [s["index_prefix"] for s in sets if s["index_prefix"].startswith("gl-")]
+    r = await c.clear_index_set(mine["id"])
+    print(json.dumps({"before_count": mine["index_count"], "before_bytes": mine["size_bytes"],
+                      "deleted": r["deleted_count"], "kept": r["write_index_kept"],
+                      "leaked_internal": leaked}))
+asyncio.run(main())
+PYEOF
+)"
+echo "  clear -> $clear_out"
+sleep 3
+after_docs="$(osc "$OS_URL/${CIDX}*/_count" \
+    | python3 -c 'import sys,json;print(json.load(sys.stdin).get("count",-1))' 2>/dev/null || echo -1)"
+after_idx="$(osc "$OS_URL/_cat/indices/${CIDX}*?format=json" \
+    | python3 -c 'import sys,json;print(len(json.load(sys.stdin)))' 2>/dev/null || echo -1)"
+echo "  after clear: $after_idx index(es), $after_docs docs (expect 1 index, 0 docs)"
+
+if echo "$clear_out" | grep -q '"leaked_internal": \[\]' \
+   && [ "${before_docs:-0}" -gt 0 ] 2>/dev/null \
+   && [ "$after_docs" = "0" ] && [ "$after_idx" = "1" ]; then
+    echo "  PASS: clear emptied the index set and kept one fresh write index"
+else
+    echo "FAIL: clear did not leave exactly one empty index (or listed an internal set)"
+    FAIL=1
+fi
+
+# (b) the target must still accept an import — a clear that wedges ingestion
+# would be worse than not clearing at all.
+$PYO import --mode bulk --from "$yest" --target-index-pattern "$CIDX" \
+    --target-api-url "$GL_URL" --target-api-username "$GL_USER" \
+    --target-api-password "$GL_PASS" >/dev/null 2>&1
+sleep 5
+reimp="$(osc "$OS_URL/${CIDX}*/_count" \
+    | python3 -c 'import sys,json;print(json.load(sys.stdin).get("count",0))' 2>/dev/null || echo 0)"
+echo "  re-import after clear: $reimp docs"
+if [ "${reimp:-0}" -gt 0 ] 2>/dev/null; then
+    echo "  PASS: import into the cleared index set works"
+else
+    echo "FAIL: target could not ingest after the clear"; FAIL=1
+fi
+$PYO streams-cleanup --prefix "$CIDX" --yes >/dev/null 2>&1
+osc -X DELETE "$OS_URL/${CIDX}*" >/dev/null 2>&1
+
+echo ""
 echo "=== RESULT: $([ $FAIL -eq 0 ] && echo 'ALL PASS' || echo 'FAILURES') ==="
 exit $FAIL

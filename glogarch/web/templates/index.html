@@ -377,6 +377,30 @@
                          rotation/retention hold this batch? Auto-computed. -->
                     <div id="import-capacity-estimate" class="capacity-estimate"></div>
 
+                    <!-- DESTRUCTIVE, therefore collapsed by default. Rotates then
+                         deletes every index of ONE index set on the target so an
+                         import starts from a known-empty state. Graylog-internal
+                         event index sets are never listed. Requires typing the
+                         index prefix to confirm; written to the Operation Audit. -->
+                    <details class="danger-zone" id="import-clear-target">
+                        <summary data-i18n="clear_idx_title" data-icon="warning">Clear target indices before import</summary>
+                        <div class="danger-zone-body">
+                            <small class="form-hint" data-i18n="clear_idx_hint">Deletes all existing messages in the selected index set on the target Graylog, so this import starts from an empty state. The write index is rotated first and the new empty one is kept. This cannot be undone.</small>
+                            <div class="form-group">
+                                <label data-i18n="clear_idx_set">Index set</label>
+                                <select id="clear-idx-select" data-act-change="onClearIdxSelect"></select>
+                                <small class="form-hint" id="clear-idx-info"></small>
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="clear_idx_confirm_label">Type the index prefix to confirm</label>
+                                <input type="text" id="clear-idx-confirm" autocomplete="off" data-i18n-placeholder="clear_idx_confirm_ph" placeholder="index prefix">
+                            </div>
+                            <button class="btn-sm btn-secondary" data-act="loadClearIdxSets" data-i18n="clear_idx_load" data-icon="refresh">Load index sets</button>
+                            <button class="btn-sm btn-danger" id="clear-idx-btn" data-act="clearTargetIndexSet" data-i18n="clear_idx_run" data-icon="trash" disabled>Clear now</button>
+                            <div class="u105" id="clear-idx-result"></div>
+                        </div>
+                    </details>
+
                     <div class="u048">
                         <button class="btn-primary" id="modal-import-btn" data-act="doImportSingle" data-i18n="btn_start_import" data-icon="play">Start Import</button>
                         <button class="btn-secondary" data-act="closeImportModal" data-i18n="btn_cancel" data-icon="close">Cancel</button>

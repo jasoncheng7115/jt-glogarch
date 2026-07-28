@@ -4046,6 +4046,96 @@ async function flushImportTarget() {
     });
 }
 
+// --- Clear target index set before an import (destructive) -----------------
+// The dialog's own target fields win over the stored import defaults, so an
+// operator importing to a one-off target clears THAT target, not the saved one.
+function _clearIdxBody(extra) {
+    const v = id => (document.getElementById(id)?.value || '').trim();
+    return Object.assign({
+        target_api_url: v('modal-target-api-url'),
+        target_api_token: v('modal-target-api-token'),
+        target_api_username: v('modal-target-api-user'),
+        target_api_password: v('modal-target-api-pass'),
+    }, extra || {});
+}
+
+let _clearIdxSets = [];
+
+async function loadClearIdxSets() {
+    const sel = document.getElementById('clear-idx-select');
+    const info = document.getElementById('clear-idx-info');
+    const btn = document.getElementById('clear-idx-btn');
+    if (!sel) return;
+    const res = document.getElementById('clear-idx-result');
+    if (res) res.innerHTML = '';
+    if (info) info.textContent = t('clear_idx_loading');
+    const r = await fetchJSON(`${API}/graylog/index-sets`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(_clearIdxBody()),
+    });
+    sel.innerHTML = '';
+    _clearIdxSets = r.error ? [] : (r.index_sets || []);
+    if (r.error || !_clearIdxSets.length) {
+        if (info) {
+            info.innerHTML = r.error
+                ? `<span class="status-failed">${esc(r.error)}</span>` : esc(t('clear_idx_none'));
+        }
+        btn?.setAttribute('disabled', '');
+        return;
+    }
+    // Default to the default index set — that is what "clean slate before an
+    // import" almost always means.
+    sel.innerHTML = _clearIdxSets.map(s =>
+        `<option value="${esc(s.id)}"${s.is_default ? ' selected' : ''}>`
+        + `${esc(s.title)} (${esc(s.index_prefix)})${s.is_default ? ' ★' : ''}</option>`).join('');
+    btn?.removeAttribute('disabled');
+    onClearIdxSelect();
+}
+
+function onClearIdxSelect() {
+    const sel = document.getElementById('clear-idx-select');
+    const info = document.getElementById('clear-idx-info');
+    if (!sel || !info) return;
+    const s = _clearIdxSets.find(x => x.id === sel.value);
+    if (!s) { info.textContent = ''; return; }
+    info.innerHTML = `${esc(t('clear_idx_count'))}: <strong>${s.index_count}</strong>`
+        + ` &nbsp; ${esc(t('clear_idx_size'))}: <strong>${esc(formatBytes(s.size_bytes))}</strong>`;
+    const ph = document.getElementById('clear-idx-confirm');
+    if (ph) ph.placeholder = s.index_prefix;
+}
+
+async function clearTargetIndexSet() {
+    const sel = document.getElementById('clear-idx-select');
+    const res = document.getElementById('clear-idx-result');
+    const s = _clearIdxSets.find(x => x.id === sel?.value);
+    if (!s) return;
+    // Type-the-prefix: a mis-click must not be able to wipe an index set.
+    const typed = (document.getElementById('clear-idx-confirm')?.value || '').trim();
+    if (typed !== s.index_prefix) {
+        if (res) res.innerHTML = `<span class="status-failed">${esc(t('clear_idx_mismatch').replace('{prefix}', s.index_prefix))}</span>`;
+        return;
+    }
+    const msg = t('clear_idx_confirm_msg').replace('{prefix}', s.index_prefix)
+        .replace('{count}', s.index_count).replace('{size}', formatBytes(s.size_bytes));
+    showConfirm(t('clear_idx_confirm_title'), msg, async () => {
+        if (res) res.innerHTML = `<span class="u022">${esc(t('clear_idx_running'))}</span>`;
+        const r = await fetchJSON(`${API}/graylog/clear-index-set`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(_clearIdxBody({ index_set_id: s.id, confirm: typed })),
+        });
+        if (!res) return;
+        if (r.error) { res.innerHTML = `<span class="status-failed">${esc(r.error)}</span>`; return; }
+        const failed = (r.failed || []).length
+            ? `<div class="status-failed">${esc(t('clear_idx_failed'))}: ${esc((r.failed || []).join(', '))}</div>` : '';
+        res.innerHTML = `<span class="status-completed">${esc(t('clear_idx_done')
+            .replace('{count}', r.deleted_count).replace('{size}', formatBytes(r.bytes_freed))
+            .replace('{kept}', r.write_index_kept || ''))}</span>${failed}`;
+        const ci = document.getElementById('clear-idx-confirm');
+        if (ci) ci.value = '';
+        await loadClearIdxSets();   // reflect the new state
+    });
+}
+
 async function saveExportMode(mode) {
     toggleMaxResultHint(mode);
     const r = await fetchJSON(`${API}/config/general`, {

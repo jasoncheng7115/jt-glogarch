@@ -2,6 +2,34 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.66] - 2026-07-28
+
+### Added
+
+- **Clear the target's indices before an import (one click, opt-in).** Re-importing
+  into an index set that still holds old data means the old field mappings are
+  still in force — which is how a bad mapping from an earlier archive keeps
+  breaking a re-import even after the archive itself is fine. The import dialog
+  now has a collapsed **"Clear target indices before import"** section that lists
+  the target's index sets with **how many indices exist and how much space they
+  occupy**, defaulting to the target's default index set. Clearing **rotates the
+  write index first**, then deletes what the rotation left behind, so the target
+  keeps a fresh, empty write index and can still ingest.
+
+  Guards, because this deletes data:
+  - Graylog's internal event index sets (`gl-events`, `gl-system-events`) are
+    never listed and are refused outright even if requested by ID; an unknown or
+    blank prefix fails closed.
+  - The live write index is never deleted; if it cannot be identified the whole
+    operation aborts **without deleting anything** rather than risk wedging the
+    target.
+  - The operator must type the index prefix exactly, then confirm.
+  - The action is recorded in the Operation Audit (`graylog_index_set_cleared`)
+    with the prefix, index count and bytes freed.
+
+  Archived data in jt-glogarch is never touched — this only clears the import
+  target.
+
 ## [1.13.65] - 2026-07-28
 
 ### Fixed

@@ -2918,6 +2918,99 @@ async def save_admin_password(request: Request):
     return {"status": "saved", "enabled": bool(pw)}
 
 
+def _target_creds(request: Request, body: dict):
+    """Resolve the import-target Graylog credentials the same way /graylog/flush
+    does: a configured server by exact name, else the import defaults reconciled
+    with any masked secrets in the body. Returns (url, token, user, pw, verify)
+    or raises ValueError with a message for the caller to return as 400/404."""
+    settings = _settings(request)
+    server_name = (body.get("server") or "").strip()
+    if server_name:
+        srv = next((s for s in settings.servers if s.name == server_name), None)
+        if srv is None:
+            raise ValueError(f"Unknown server: {server_name}")
+        return (srv.url, srv.auth_token or "", srv.username or "",
+                srv.password or "", srv.verify_ssl)
+    ic = settings.import_config
+    url = (body.get("target_api_url") or "").strip() or (ic.target_api_url or "")
+    token = reconcile_secret(body.get("target_api_token"), ic.target_api_token) or ""
+    user = (body.get("target_api_username") or "").strip() or (ic.target_api_username or "")
+    pw = reconcile_secret(body.get("target_api_password"), ic.target_api_password) or ""
+    if not url:
+        raise ValueError("target_api_url or server is required")
+    from glogarch.utils.netguard import ssrf_block_reason
+    reason = ssrf_block_reason(url)
+    if reason:
+        raise ValueError(reason)
+    if not token and not (user and pw):
+        raise ValueError("Provide a token or username + password")
+    return url, token, user, pw, False
+
+
+@router.post("/graylog/index-sets")
+async def list_target_index_sets(request: Request):
+    """Index sets on the IMPORT TARGET that may be cleared, with index count and
+    total size. Graylog's internal event index sets are never listed."""
+    from glogarch.graylog.maintenance import GraylogIndexCleaner
+    from glogarch.utils.sanitize import sanitize
+    body = await request.json()
+    try:
+        url, token, user, pw, verify = _target_creds(request, body)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    cleaner = GraylogIndexCleaner(api_url=url, api_token=token,
+                                  api_username=user, api_password=pw, verify_ssl=verify)
+    try:
+        return {"index_sets": await cleaner.list_index_sets()}
+    except Exception as e:
+        return JSONResponse({"error": sanitize(str(e))}, status_code=502)
+
+
+@router.post("/graylog/clear-index-set")
+async def clear_target_index_set(request: Request):
+    """DESTRUCTIVE. Rotate, then delete every index of ONE index set on the
+    import target so an import starts from a known-empty state.
+
+    Guards: the caller must echo back the exact `index_prefix` as `confirm`
+    (so a mis-click cannot wipe an index set), Graylog-internal event index sets
+    are refused outright, and the freshly created write index is always kept so
+    ingestion is not wedged. The action is written to the Operation Audit.
+    """
+    from glogarch.graylog.maintenance import GraylogIndexCleaner
+    from glogarch.utils.sanitize import sanitize
+    body = await request.json()
+    index_set_id = (body.get("index_set_id") or "").strip()
+    confirm = (body.get("confirm") or "").strip()
+    if not index_set_id:
+        return JSONResponse({"error": "index_set_id is required"}, status_code=400)
+    try:
+        url, token, user, pw, verify = _target_creds(request, body)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    cleaner = GraylogIndexCleaner(api_url=url, api_token=token,
+                                  api_username=user, api_password=pw, verify_ssl=verify)
+    try:
+        sets = await cleaner.list_index_sets()
+        target = next((x for x in sets if x["id"] == index_set_id), None)
+        if target is None:
+            return JSONResponse(
+                {"error": "That index set cannot be cleared (unknown, or a "
+                          "Graylog-internal event index set)."}, status_code=400)
+        if confirm != target["index_prefix"]:
+            return JSONResponse(
+                {"error": f"Confirmation does not match. Type the index prefix "
+                          f"'{target['index_prefix']}' to confirm."}, status_code=400)
+        report = await cleaner.clear_index_set(index_set_id)
+    except Exception as e:
+        return JSONResponse({"error": sanitize(str(e))}, status_code=500)
+
+    _audit(request, "graylog_index_set_cleared",
+           f"prefix={report['index_prefix']} deleted={report['deleted_count']} "
+           f"bytes_freed={report['bytes_freed']}")
+    return report
+
+
 @router.get("/setup/status")
 def setup_status(request: Request):
     """First-run wizard state. Public (read-only booleans)."""
