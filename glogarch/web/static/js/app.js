@@ -888,6 +888,18 @@ async function _autofillImportModal() {
     setIf('modal-target-api-user', c.target_api_username);
     if (c.has_token) setIf('modal-target-api-token', c.target_api_token);
     if (c.has_password) setIf('modal-target-api-pass', c.target_api_password);
+
+    // The stored defaults often carry a GELF host but no API URL (only the GELF
+    // side was ever configured). The API URL is REQUIRED, so derive it from the
+    // host we just filled in — the same rule that applies when the operator
+    // types the host by hand. Left as a suggestion (userEdited stays false) so
+    // changing the host still updates it.
+    const apiEl = document.getElementById('modal-target-api-url');
+    const host = (document.getElementById('modal-gelf-host')?.value || '').trim();
+    if (apiEl && !apiEl.value && host) {
+        apiEl.value = `http://${host}:9000`;
+        apiEl.dataset.userEdited = 'false';
+    }
 }
 
 // Pre-import capacity estimate: does the target index set's rotation + retention

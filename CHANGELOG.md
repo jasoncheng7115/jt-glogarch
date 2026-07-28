@@ -2,6 +2,21 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.67] - 2026-07-29
+
+### Fixed
+
+- **The Batch Delay box cut off its own value.** At 88 px the field now fits the
+  4-digit maximum (2000) plus the number-spinner Chrome draws inside the box; at
+  62 px, with the text hard against the right edge, the last digit sat under the
+  spinner and `100` read as `10(`.
+- **The target Graylog API URL is now derived from the GELF host.** It is a
+  REQUIRED field, but the stored import defaults often carry only a GELF host —
+  so the dialog opened with the host filled in and the API URL empty, even
+  though the answer was already known. It now defaults to
+  `http://<gelf-host>:9000` when no API URL is stored, exactly as typing the
+  host by hand does, and still follows any later change to the host.
+
 ## [1.13.66] - 2026-07-28
 
 ### Added

@@ -666,11 +666,14 @@
     background-position: right 9px center;
 }
 
-/* Editable numeric entry for batch delay (keyboard-friendly, beside the slider) */
+/* Editable numeric entry for batch delay (keyboard-friendly, beside the slider).
+   Must fit the 4-digit maximum (2000) AND the number-spinner Chrome draws
+   inside the box: at 62px with text hard against the right edge the last digit
+   sat under the spinner and read as "10(" instead of "100". */
 .rate-num {
-    width: 62px;
+    width: 88px;
     text-align: right;
-    padding: 2px 6px;
+    padding: 2px 20px 2px 8px;
     border: 1px solid var(--border);
     border-radius: 5px;
     background: var(--input-bg);
@@ -1643,7 +1646,7 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
    (flex:1) fills the row. `.form-group input{width:100%}` (higher specificity
    than `.rate-num`) was stretching it to full width and squeezing the slider to
    a sliver — this wins it back. */
-.form-group input.rate-num { width: 62px; flex: 0 0 auto; box-sizing: border-box; }
+.form-group input.rate-num { width: 88px; flex: 0 0 auto; box-sizing: border-box; }
 
 /* Dashboard disk-card sub-line: projected remaining archive retention. Muted by
    default; the .low variant (red) only when below the alert threshold. */
