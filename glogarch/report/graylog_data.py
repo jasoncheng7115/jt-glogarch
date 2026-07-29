@@ -1001,7 +1001,6 @@ def _widget_autotitle(w):
 def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool = False,
                      heatmap_values: bool = False, date_fields: set | None = None) -> dict | None:
     """Map a Graylog pivot result to one of our report widgets."""
-    from glogarch.report import builder
     rows = res.get("rows") or []
     viz = cfg.get("visualization") or "table"
     row_pivots = cfg.get("row_pivots") or []
@@ -1181,7 +1180,6 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
 
 
 def _parse_ts(ts):
-    from datetime import datetime
     s = str(ts).strip()
     try:
         return datetime.fromisoformat(s.replace("Z", "+00:00"))
@@ -1192,7 +1190,6 @@ def _parse_ts(ts):
 def _interval_from_cfg(cfg):
     """An EXPLICIT timeunit interval from a time row-pivot config → timedelta.
     Returns None for 'auto' (never guess) or when absent/unknown."""
-    from datetime import timedelta
     try:
         rp = (cfg.get("row_pivots") or [])[0]
         iv = (rp.get("config") or {}).get("interval") or {}
@@ -1222,7 +1219,6 @@ def _normalize_time_rows(drows, eff=None, cfg=None):
          the leading/trailing empty buckets appear (data clustered at one end),
          exactly like Graylog — not just the span between first and last data.
     """
-    from datetime import timedelta, timezone
     parsed = []
     any_naive = False
     for r in drows:
@@ -1350,7 +1346,6 @@ def _range_label(secs, lang="zh-TW", start=None, end=None):
     parentheses, e.g. 最近 24 小時（2026-07-03 18:50 ~ 2026-07-04 18:50）.
     If start/end (the widget's effective range) are given, they drive the label
     so it matches exactly what Graylog used for that widget."""
-    from datetime import datetime, timedelta
     if start is not None and end is not None:
         # Graylog's effective_timerange comes back in UTC (…Z). Show it in the
         # server's LOCAL timezone so the caption doesn't look hours/days off.
@@ -1755,7 +1750,6 @@ def _messages_to_table(cfg, title, res, max_rows, max_cols=0, date_fields=None, 
 
 def _pivot_to_map(title, drows):
     """Build a bubble world-map widget from a geo pivot (row key = 'lat,long')."""
-    from glogarch.report import builder
     points = []
     skipped = 0
     for r in drows:

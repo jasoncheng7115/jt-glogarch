@@ -123,8 +123,8 @@ def _cleanup_stale_jobs(db):
         count = db.cleanup_stale_running_jobs()
         if count:
             log.info("Cleaned up stale running jobs", count=count)
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Stale-job crash recovery failed — interrupted jobs may stay 'running'", error=str(e))
     # An import killed mid-flight (e.g. a service restart during an upgrade)
     # leaves its archive row stuck IMPORTING, which the per-archive lock then
     # makes permanently un-importable. Recover them on startup too.
@@ -132,8 +132,8 @@ def _cleanup_stale_jobs(db):
         recovered = db.recover_stuck_importing()
         if recovered:
             log.info("Recovered stuck importing archives", count=recovered)
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Stuck-IMPORTING recovery failed — affected archives stay locked from import", error=str(e))
 
 
 def create_app() -> FastAPI:

@@ -213,7 +213,6 @@ class AuditSyslogListener:
         Returns: "ok", "nginx_unreachable", or "no_nginx_url".
         """
         import httpx
-        from urllib.parse import urlparse
 
         probed = False
         for srv in self.settings.servers:

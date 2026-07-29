@@ -2,6 +2,34 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.73] - 2026-07-29
+
+### Fixed — systematic audit of shipped failure classes
+
+Every class below produced a real released bug; each is now both fixed AND
+held closed by a permanent gate (`tests/test_static_sweeps.py`).
+
+- **28 DANGEROUS silent `except: pass` sites now log what they swallow.** A
+  full audit classified all 153 such sites (28 dangerous / 49 silently
+  degrading / 76 benign). The dangerous cluster was job/status DB writes
+  swallowed whole — a failed status write left a job showing "running"
+  forever; schema migrations that could silently break audit and
+  report-history inserts; verify's HMAC tamper check erroring and the archive
+  still reported by SHA256 alone; cancel claiming success while the bulk
+  import kept running; report cron registration failing so a saved schedule
+  never fired. A count ratchet (budget 125, down only) blocks new ones.
+- **Backup prune reported files it failed to delete as deleted.** The count
+  now reflects only what was actually removed, and failures are logged.
+- **24 function-local imports shadowing module-level imports removed** — the
+  exact pattern that made `datetime` local to a whole function and broke the
+  wide-window report path.
+- **i18n: the setup wizard showed the literal text `setup_saving` while
+  saving**; `t('error')` rendered its raw key. Both defined in en + zh-TW.
+- New permanent gates: pyflakes undefined-name sweep, local-import-shadowing
+  sweep, i18n both-languages completeness, and data-act handler existence
+  (a `data-act` pointing at a nonexistent function is a button that silently
+  does nothing — the import-dialog Cancel failure mode).
+
 ## [1.13.72] - 2026-07-29
 
 ### Fixed

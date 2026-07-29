@@ -184,8 +184,6 @@ def delete_archive(request: Request, archive_id: int):
     if not archive:
         return JSONResponse({"error": "Archive not found"}, status_code=404)
 
-    from glogarch.archive.storage import ArchiveStorage
-    from glogarch.core.models import ArchiveStatus
     storage = ArchiveStorage(settings.export)
     try:
         storage.delete_archive_file(archive.file_path)
@@ -989,8 +987,8 @@ def cancel_job(request: Request, job_id: str):
         ifc = get_import_control(job_id)
         if ifc:
             ifc.cancel()
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Bulk cancel trigger failed — API claims cancelled but import may keep running", error=str(e))
 
     # Check in-memory jobs first (Web UI triggered)
     if job_id in _job_progress:
@@ -1007,7 +1005,6 @@ def cancel_job(request: Request, job_id: str):
         return JSONResponse({"error": "Job not found"}, status_code=404)
     if job.status.value not in ("running", "pending"):
         return JSONResponse({"error": "Job is not running"}, status_code=400)
-    from glogarch.core.models import JobStatus
     db.update_job(job_id, status=JobStatus.CANCELLED, completed_at=datetime.utcnow())
     _audit(request, "job_cancelled", f"job={job_id}")
     return {"status": "cancelled", "id": job_id}
@@ -1146,8 +1143,8 @@ async def toggle_schedule(request: Request, name: str):
                     elif name == "auto-cleanup":
                         sch["cleanup_cron"] = s.cron_expr if enabled else None
                 update_config(config_path, _mut)
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("config.yaml cron write failed — schedule toggle will revert on restart", error=str(e))
 
     _audit(request, "schedule_toggled", f"{name} enabled={enabled}")
     return {"status": "ok", "name": name, "enabled": enabled}
@@ -1176,7 +1173,6 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
             cfg = _json.loads(sched.config_json) if sched.config_json else {}
         except Exception:
             cfg = {}
-        from glogarch.cleanup.cleaner import Cleaner
         from glogarch.core.models import JobRecord, JobStatus, JobType
         from glogarch.utils.sanitize import sanitize as _sanitize
         job_id = str(uuid.uuid4())
@@ -1199,16 +1195,16 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
                                   progress_pct=100.0,
                                   completed_at=datetime.utcnow(),
                                   error_message=f"Deleted {result.files_deleted} files ({mb:.1f} MB)")
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("Cleanup job COMPLETED write failed — job may show 'running' forever", error=str(e))
         except Exception as e:
             if job_id:
                 try:
                     db.update_job(job_id, status=JobStatus.FAILED,
                                   error_message=_sanitize(str(e)),
                                   completed_at=datetime.utcnow())
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("Cleanup job FAILED write failed — failure invisible in Job History", error=str(e))
             raise
         db.update_schedule_last_run(name)
         _audit(request, "schedule_run_now", f"{name} cleanup deleted={result.files_deleted}")
@@ -1216,7 +1212,6 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
 
     # Verify: run synchronously
     if sched.job_type == "verify":
-        from glogarch.verify.verifier import Verifier
         from glogarch.core.models import JobRecord, JobStatus, JobType
         from glogarch.utils.sanitize import sanitize as _sanitize
         job_id = str(uuid.uuid4())
@@ -1243,16 +1238,16 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
                                   progress_pct=100.0,
                                   completed_at=datetime.utcnow(),
                                   error_message=note)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("Verify job status write failed — corrupt/missing result not recorded", error=str(e))
         except Exception as e:
             if job_id:
                 try:
                     db.update_job(job_id, status=JobStatus.FAILED,
                                   error_message=_sanitize(str(e)),
                                   completed_at=datetime.utcnow())
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("Verify job FAILED write failed", error=str(e))
             raise
         db.update_schedule_last_run(name)
         _audit(request, "schedule_run_now", f"{name} verify total={result.total_checked} corrupted={len(result.corrupted)}")
@@ -1263,8 +1258,8 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
     if sched.config_json:
         try:
             cfg = _json.loads(sched.config_json)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Corrupt schedule config ignored — run-now export uses DEFAULTS", error=str(e))
 
     export_mode = cfg.get("mode", settings.export_mode)
     export_days = cfg.get("days", settings.schedule.export_days)
@@ -1316,8 +1311,8 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
             finally:
                 try:
                     db.update_schedule_last_run(name)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("Schedule last_run write failed — schedule state now wrong in UI", error=str(e))
     else:
         exporter = Exporter(server_config, settings.export, settings.rate_limit, db, integrity=settings.integrity)
         first_stream = stream_ids[0] if stream_ids else None
@@ -1344,8 +1339,8 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
             finally:
                 try:
                     db.update_schedule_last_run(name)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("Schedule last_run write failed — schedule state now wrong in UI", error=str(e))
 
     asyncio.get_event_loop().run_in_executor(None, _run_in_thread)
     _audit(request, "schedule_run_now", f"{name} mode={export_mode} job={job_id}")
@@ -1732,7 +1727,6 @@ def rescan_archive_path(request: Request):
             meta = data.get("metadata", {})
             msgs = data.get("messages", [])
 
-            from datetime import datetime
             def _parse(s):
                 for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%S"):
                     try: return datetime.strptime(s, fmt)
@@ -2415,7 +2409,6 @@ def _schedule_to_dict(s) -> dict:
         try:
             from apscheduler.triggers.cron import CronTrigger
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
-            from datetime import datetime
             from glogarch.scheduler.scheduler import posix_cron_to_apscheduler
             # Use the scheduler's local timezone for display
             tz = AsyncIOScheduler().timezone
@@ -3135,8 +3128,8 @@ async def save_report(request: Request):
             if old_name and old_name != name:
                 sched.remove_report(old_name)
             sched.apply_report(name)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Report cron registration failed — saved schedule will NOT fire until restart", error=str(e))
     _audit(request, "report_saved", f"report={name}")
     return {"status": "saved", "name": name}
 
@@ -3249,13 +3242,13 @@ async def generate_report_now(request: Request, name: str):
                 try:
                     db.update_job(job_id, status=JobStatus.FAILED, completed_at=_dt.utcnow(),
                                   error_message=sanitize(str(e)))
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("Report job FAILED-status write failed — job stuck 'running'", error=str(e))
             try:
                 db.record_report_history(name, "", "", 0, "failed", sanitize(str(e)),
                                          triggered_by="manual")
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Report failure history record failed — failure leaves no trace", error=str(e))
         finally:
             _reports_running.discard(name)
 

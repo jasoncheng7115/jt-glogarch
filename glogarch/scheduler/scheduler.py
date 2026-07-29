@@ -176,8 +176,8 @@ class ArchiveScheduler:
         if sched_rec and sched_rec.config_json:
             try:
                 cfg = _json.loads(sched_rec.config_json)
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Corrupt schedule config_json — scheduled export will run with DEFAULTS", error=str(e))
 
         export_mode = cfg.get("mode", self.settings.export_mode)
         export_days = cfg.get("days", self.settings.schedule.export_days)
@@ -355,8 +355,8 @@ class ArchiveScheduler:
                 if s.name == schedule_name and s.config_json:
                     try:
                         days = int(_json.loads(s.config_json).get("days", 720))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.warning("Could not parse report retention — falling back to 720 days", error=str(e))
                     break
             paths = self.db.prune_report_history(days=days)
             deleted = 0
@@ -365,8 +365,8 @@ class ArchiveScheduler:
                     try:
                         if f and _os.path.exists(f):
                             _os.remove(f)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.warning("Report file delete failed during prune", error=str(e))
                 deleted += 1
             log.info("Scheduled report cleanup completed", deleted=deleted, days=days)
             self._finish_run_job(job_id, JobStatus.COMPLETED, messages_done=deleted,
@@ -388,8 +388,8 @@ class ArchiveScheduler:
                     s.last_run_at = datetime.utcnow()
                     self.db.save_schedule(s)
                     break
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Schedule last_run DB write failed — schedule state now wrong in UI", error=str(e))
 
     def _create_run_job(self, job_type: JobType, source: str) -> str:
         """Create a Job History row for a scheduled run; returns job_id (uuid)
@@ -419,8 +419,8 @@ class ArchiveScheduler:
                 completed_at=datetime.utcnow(),
                 **fields,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Job status write failed — job may show 'running' forever", error=str(e))
 
     _JOB_NAMES = {
         "export": "Automatic Export",
@@ -655,7 +655,6 @@ class ArchiveScheduler:
             from datetime import datetime as _dt
             from glogarch.report import generator
             from glogarch.utils.sanitize import sanitize
-            from glogarch.core.models import JobRecord, JobType, JobStatus
             rep = self.db.get_report(name)
             if not rep:
                 return
@@ -682,13 +681,13 @@ class ArchiveScheduler:
                     try:
                         self.db.update_job(job_id, status=JobStatus.FAILED, completed_at=_dt.utcnow(),
                                            error_message=sanitize(str(e)))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.warning("Report job FAILED-status write failed — job stuck 'running' in history", error=str(e))
                 try:
                     self.db.record_report_history(name, "", "", 0, "failed", sanitize(str(e)),
                                                   triggered_by="scheduled")
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("Report failure history record failed — failure leaves no trace", error=str(e))
 
         threading.Thread(target=_work, daemon=True).start()
 

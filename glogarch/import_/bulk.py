@@ -33,7 +33,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Awaitable
 
 import httpx
 

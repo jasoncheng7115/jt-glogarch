@@ -334,7 +334,6 @@ _MSG = {
 def _t(key: str, **kwargs) -> str:
     lang = "en"
     try:
-        from glogarch.core.config import get_settings
         lang = get_settings().notify.language or "en"
     except Exception:
         pass

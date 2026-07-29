@@ -312,8 +312,8 @@ class PreflightChecker:
                             f"Graylog is behind on indexing. The import will auto-throttle; "
                             f"consider resolving OpenSearch capacity first."
                         )
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Backpressure abort-gate check failed — proceeding WITHOUT the wedged-target guard", error=str(e))
 
             # 2. GELF input on the configured port: exists & RUNNING + matches us
             if self.gelf_port:
@@ -1335,8 +1335,8 @@ class PreflightChecker:
                             # starting <1s after the cycle).
                             try:
                                 await self.wait_for_index_ready(set_id, timeout_sec=60)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                log.warning("Index-ready wait failed — bulk may start during provisioning (data-loss window)", error=str(e))
                             await asyncio.sleep(3)
                             log.info("Cycled the new index set so Graylog creates "
                                      "its first write index", id=set_id)

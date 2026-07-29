@@ -1,6 +1,9 @@
 """SQLite database for archive tracking."""
 
 from __future__ import annotations
+from glogarch.utils.logging import get_logger
+
+log = get_logger(__name__)
 
 import sqlite3
 from datetime import datetime, timedelta
@@ -260,8 +263,8 @@ class ArchiveDB:
             existing_audit = {row[1] for row in conn.execute("PRAGMA table_info(api_audit)").fetchall()}
             if existing_audit and "target_name" not in existing_audit:
                 conn.execute("ALTER TABLE api_audit ADD COLUMN target_name TEXT NOT NULL DEFAULT ''")
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Schema migration failed (api_audit.target_name) — audit inserts may break", error=str(e))
         # report_history: triggered_by column (manual vs scheduled)
         try:
             existing_rh = {row[1] for row in conn.execute("PRAGMA table_info(report_history)").fetchall()}
@@ -269,8 +272,8 @@ class ArchiveDB:
                 conn.execute("ALTER TABLE report_history ADD COLUMN triggered_by TEXT NOT NULL DEFAULT 'manual'")
             if existing_rh and "sha256" not in existing_rh:
                 conn.execute("ALTER TABLE report_history ADD COLUMN sha256 TEXT NOT NULL DEFAULT ''")
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Schema migration failed (report_history.triggered_by) — history inserts may break", error=str(e))
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -933,7 +936,6 @@ class ArchiveDB:
     def prune_report_history(self, days: int = 180) -> list[str]:
         """Delete report_history rows older than `days` and return the file paths
         that were removed (so the caller can unlink the PDFs + sidecars)."""
-        from datetime import timedelta
         cutoff = _dt_to_str(datetime.utcnow() - timedelta(days=days))
         with self._lock:
             try:

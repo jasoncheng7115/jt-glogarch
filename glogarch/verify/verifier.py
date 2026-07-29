@@ -71,8 +71,8 @@ class Verifier:
                     verdict, _ = verify_archive_integrity(self.integrity, archive)
                     if verdict == "tampered":
                         return ("tampered", archive, actual)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("HMAC tamper check errored — archive reported by SHA256 only, NOT tamper-verified", error=str(e))
             return ("valid" if is_valid else "corrupted", archive, actual)
 
         if workers > 1:
@@ -186,8 +186,8 @@ class Verifier:
                 if verdict == "tampered":
                     self.db.update_archive_status(archive.id, ArchiveStatus.TAMPERED)
                     return False, "TAMPERED: keyed HMAC mismatch (file and/or DB checksum was altered)"
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("HMAC tamper check errored — archive reported by SHA256 only, NOT tamper-verified", error=str(e))
         if is_valid:
             return True, f"OK (SHA256: {actual[:16]}...)"
         return False, f"Corrupted: expected {archive.checksum_sha256[:16]}... got {actual[:16]}..."

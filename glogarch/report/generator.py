@@ -326,7 +326,6 @@ def _email_pdf(settings, recipients, subject_title, pdf: bytes, filename: str, l
     if not e.smtp_host:
         raise RuntimeError("SMTP not configured (notify.email)")
     import html as _html
-    from datetime import datetime
     msg = EmailMessage()
     prefix = e.subject_prefix or "[jt-glogarch]"
     msg["Subject"] = f"{prefix} {subject_title}"

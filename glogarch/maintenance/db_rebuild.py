@@ -168,9 +168,13 @@ def prune_backups(dest_dir: Path, keep: int = 14) -> int:
         return 0
     files = sorted(dest_dir.glob("*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
     to_delete = files[keep:]
+    deleted = 0
     for f in to_delete:
         try:
             f.unlink()
-        except OSError:
-            pass
-    return len(to_delete)
+            deleted += 1
+        except OSError as e:
+            # Counting a failed delete as deleted reported success while the
+            # disk kept filling — the count must reflect what actually landed.
+            log.warning("Backup prune could not delete file", file=str(f), error=str(e))
+    return deleted
