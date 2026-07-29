@@ -173,7 +173,11 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
                         heatmap_values=bool(cfg.get("heatmap_values", False)),
                         use_dashboard_time=use_dash_time,
                         abs_from=abs_from, abs_to=abs_to,
-                        snap_midnight=snap_per_widget)
+                        snap_midnight=snap_per_widget,
+                        # A wide window (e.g. three months) makes the dashboard's
+                        # search far heavier than the interactive one it was built
+                        # for; if it expires the report is PARTIAL and says so.
+                        search_wait_seconds=int(cfg.get("search_wait_seconds", 300) or 300))
                 if built:
                     sections.extend(built)
                 else:

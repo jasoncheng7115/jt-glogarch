@@ -2,6 +2,71 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.70] - 2026-07-29
+
+### Fixed
+
+- **Cancel in the import dialog did nothing.** The handler's first line called
+  `customConfirm(...)` — a function that does not exist anywhere in the
+  codebase — so it died with a ReferenceError before ever reaching the API.
+  Pause (a different handler) worked, and Cancel from Job History (a different
+  code path) worked, which is why only this button was dead. Verified end to
+  end: a real click now stops a running import within one batch
+  (5,925 of 374,106 messages sent, then stopped).
+- **A cancelled import is now recorded as `cancelled`.** It used to be written
+  as `completed` at 100%, so Job History showed "completed — 5,925/374,106",
+  which reads as massive data loss instead of "you pressed Cancel". Progress
+  now also reflects how far it actually got.
+- **The clear-target-indices dropdown rendered empty even after loading.** The
+  custom dropdown skin is built at page load, when the select has no options;
+  filling it later updates only the hidden native element. The skin is now
+  repainted after load. Expanding the section also auto-connects and loads
+  (with a visible "reading index sets…" state), instead of waiting for a
+  separate button press.
+
+### Added
+
+- **Wide-window reports are now tractable — and honest** (`report/bigrange.py`).
+  A widget saved with a fixed 5-minute interval asks Graylog for 25,920 buckets
+  over 90 days, multiplied by every widget in the same search — the root cost
+  behind the truncated 3-month report. Two mechanisms:
+  - *Interval coarsening*: exploding fixed intervals are scaled to keep <=500
+    buckets, and the widget's caption states "interval adjusted 5m -> 6h".
+    `auto` intervals are untouched (Graylog already scales those).
+  - *Time slicing*: windows over 21 days are split into 7-day queries and
+    merged — ONLY for aggregations that merge exactly (count/sum/min/max,
+    timelines, message lists). avg / cardinality / percentiles cannot be
+    derived from slices and are never stitched: those widgets run as one
+    whole-window query and say so on the widget. Verified against a live
+    Graylog: a sliced 90-day run produced byte-identical per-source counts to
+    a single-query run over the same data.
+
+- **Release gate: JS undefined-identifier check** (`scripts/js-undefined-check.js`).
+  `node --check` validates syntax only — `customConfirm(...)` was syntactically
+  perfect and undefined everywhere, invisible to every existing gate. The new
+  check strips comments/strings and flags calls to names defined nowhere in the
+  bundle; reintroducing the bug fails the build.
+
+## [1.13.69] - 2026-07-29
+
+### Fixed
+
+- **A 3-month report rendered ~2 days of data and still looked complete.**
+  Graylog's dashboard search is polled to completion, but on expiry the report
+  used whatever PARTIAL results had arrived, with only a log line; the chart
+  axes then clamp to the data extent (a deliberate sparse-widget fix), so the
+  shortened data filled the page with no visible sign of truncation. A cut-off
+  search now inserts a prominent red **"This report is incomplete"** notice as
+  the report's first section, naming the cause and the remedies. The template
+  previously understood only `image`/`charts` sections, so the notice itself
+  would have rendered as a blank page — that class is covered by tests now.
+
+### Added
+
+- **"Search wait (seconds)" report setting** (default 300, previously a
+  hardcoded cap). A 3-month window makes the dashboard search far heavier than
+  the interactive use it was designed for; raise this for wide windows.
+
 ## [1.13.68] - 2026-07-29
 
 ### Fixed

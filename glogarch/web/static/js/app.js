@@ -1363,7 +1363,7 @@ function importSingle(archiveId) {
     document.getElementById('modal-import-result').innerHTML = '';
     modal.style.display = 'flex';
     applyI18n();
-    _autofillImportModal();
+    _autofillImportModal().then(() => maybeLoadClearIdxSets());
     _applyImportDataNodeLock();
     setTimeout(estimateImportCapacity, 400);
 }
@@ -1617,21 +1617,28 @@ async function doImportSingle() {
     }
 }
 
-async function cancelActiveImport() {
+function cancelActiveImport() {
     if (!_activeImportJobId) return;
-    if (!await customConfirm(t('confirm_cancel_import') || 'Cancel this import?')) return;
-    // Immediate feedback: cancellation may take a moment to take effect (the
-    // backend checks the cancel flag between preflight steps / message batches).
-    const resultEl = document.getElementById('modal-import-result');
-    if (resultEl) resultEl.innerHTML = `<span class="spinner-text">${t('import_cancelling')}</span>`;
-    const cancelBtn = document.getElementById('import-cancel-btn');
-    if (cancelBtn) { cancelBtn.disabled = true; cancelBtn.style.opacity = '0.5'; }
-    try {
-        await fetchJSON(`${API}/jobs/${_activeImportJobId}/cancel`, {method: 'POST'});
-    } catch (e) {
-        showAlert(t('error') + ': ' + (e && e.message ? e.message : e));
-        if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.style.opacity = '1'; }
-    }
+    // NOTE: this used to call `customConfirm(...)`, which does not exist anywhere
+    // in the codebase. It threw ReferenceError on the very first line, so the
+    // handler died before reaching the API and Cancel silently did NOTHING —
+    // while the identical action on the Job History page worked. `node --check`
+    // cannot see this: the syntax is valid, the name is only missing at runtime.
+    showConfirm(t('btn_cancel'), t('confirm_cancel_import') || 'Cancel this import?',
+        async () => {
+            // Cancellation is not instant: the backend checks the flag between
+            // preflight steps and message batches.
+            const resultEl = document.getElementById('modal-import-result');
+            if (resultEl) resultEl.innerHTML = `<span class="spinner-text">${t('import_cancelling')}</span>`;
+            const cancelBtn = document.getElementById('import-cancel-btn');
+            if (cancelBtn) { cancelBtn.disabled = true; cancelBtn.style.opacity = '0.5'; }
+            try {
+                await fetchJSON(`${API}/jobs/${_activeImportJobId}/cancel`, {method: 'POST'});
+            } catch (e) {
+                showAlert(t('error') + ': ' + (e && e.message ? e.message : e));
+                if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.style.opacity = '1'; }
+            }
+        });
 }
 
 async function toggleImportPause() {
@@ -4082,6 +4089,22 @@ function _clearIdxCredsReady() {
         (b.target_api_username && b.target_api_password));
 }
 
+// Expanding the section should just work. The credential autofill is async, so
+// an operator who expands immediately can arrive before it lands — retry a few
+// times rather than parking on "fill in the credentials" forever.
+function maybeLoadClearIdxSets(attempt = 0) {
+    if (_clearIdxSets.length) return;
+    const cz = document.getElementById('import-clear-target');
+    if (!cz || !cz.open) return;
+    if (_clearIdxCredsReady()) { loadClearIdxSets(); return; }
+    if (attempt < 6) {
+        setTimeout(() => maybeLoadClearIdxSets(attempt + 1), 500);
+        return;
+    }
+    const info = document.getElementById('clear-idx-info');
+    if (info) info.textContent = t('clear_idx_need_creds');
+}
+
 async function loadClearIdxSets() {
     const sel = document.getElementById('clear-idx-select');
     const info = document.getElementById('clear-idx-info');
@@ -4089,12 +4112,20 @@ async function loadClearIdxSets() {
     if (!sel) return;
     const res = document.getElementById('clear-idx-result');
     if (res) res.innerHTML = '';
+    // Visible "loading" state: reading index sets off a busy Graylog can take a
+    // few seconds, and a blank dropdown during that time reads as "there is
+    // nothing here" rather than "not fetched yet".
     if (info) info.textContent = t('clear_idx_loading');
+    sel.innerHTML = `<option>${esc(t('clear_idx_loading'))}</option>`;
+    sel.disabled = true;
+    btn?.setAttribute('disabled', '');
+    if (typeof initCustomSelects === 'function') initCustomSelects();
     const r = await fetchJSON(`${API}/graylog/index-sets`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(_clearIdxBody()),
     });
     sel.innerHTML = '';
+    sel.disabled = false;
     _clearIdxSets = r.error ? [] : (r.index_sets || []);
     if (r.error || !_clearIdxSets.length) {
         if (info) {
@@ -4102,6 +4133,7 @@ async function loadClearIdxSets() {
                 ? `<span class="status-failed">${esc(r.error)}</span>` : esc(t('clear_idx_none'));
         }
         btn?.setAttribute('disabled', '');
+        if (typeof initCustomSelects === 'function') initCustomSelects();
         return;
     }
     // Default to the default index set — that is what "clean slate before an
@@ -4110,6 +4142,11 @@ async function loadClearIdxSets() {
         `<option value="${esc(s.id)}"${s.is_default ? ' selected' : ''}>`
         + `${esc(s.title)} (${esc(s.index_prefix)})${s.is_default ? ' ★' : ''}</option>`).join('');
     btn?.removeAttribute('disabled');
+    // The custom dropdown skin (`select:not(.no-custom)`) is built once at page
+    // load — at which point this select is still empty. Filling `innerHTML`
+    // updates only the hidden native element, so the visible control stays
+    // blank while `.value` is perfectly correct. Repaint it.
+    if (typeof initCustomSelects === 'function') initCustomSelects();
     onClearIdxSelect();
 }
 
@@ -4289,11 +4326,7 @@ async function saveAdminPassword() {
         // "nothing has been fetched yet". The button stays as a manual refresh.
         const cz = document.getElementById('import-clear-target');
         if (cz) cz.addEventListener('toggle', () => {
-            if (!cz.open || _clearIdxSets.length) return;
-            const info = document.getElementById('clear-idx-info');
-            if (_clearIdxCredsReady()) { loadClearIdxSets(); return; }
-            // Tell them what is missing instead of firing a doomed request.
-            if (info) info.textContent = t('clear_idx_need_creds');
+            if (cz.open) maybeLoadClearIdxSets();
         });
     });
 })();
@@ -4471,6 +4504,7 @@ async function openReportModal(name) {
         <div class="text-muted fs-08 mt3">${t('reports_usedbtime_hint')}</div></div>
       <div class="u037">
         <div class="form-group flex1${cfg.use_dashboard_time!==false?' hidden':''}" id="rp-hours-g"><label>${t('reports_f_hours')}</label><input type="text" id="rp-hours" value="${esc(String(Math.round((cfg.time_range_seconds||86400)/3600)))}" placeholder="24"></div>
+        <div class="form-group flex1"><label>${t('reports_f_searchwait')}</label><input type="text" id="rp-searchwait" value="${esc(String(cfg.search_wait_seconds||300))}" placeholder="300"><small class="form-hint">${t('reports_f_searchwait_hint')}</small></div>
         <div class="form-group flex1" id="rp-maxw-g"><label>${t('reports_f_maxw')}</label>${_mwSelect}</div>
       </div>
       <div id="rp-rebuild-opts">
@@ -4753,6 +4787,7 @@ function _gatherReport() {
             bar_horizontal: v('rp-bardir') === 'h',
             heatmap_values: ck('rp-heatval'),
             use_dashboard_time: ck('rp-usedbtime'),
+            search_wait_seconds: parseInt(document.getElementById('rp-searchwait')?.value, 10) || 300,
         },
     };
 }

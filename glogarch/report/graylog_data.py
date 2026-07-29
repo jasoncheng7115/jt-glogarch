@@ -12,7 +12,7 @@ list of Graylog dashboards for the picker.
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -604,7 +604,8 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                                      use_dashboard_time: bool = True,
                                      abs_from: str | None = None,
                                      abs_to: str | None = None,
-                                     snap_midnight: bool = False) -> list[dict]:
+                                     snap_midnight: bool = False,
+                                     search_wait_seconds: int = 300) -> list[dict]:
     """Return report `sections` reconstructed from a Graylog dashboard's widgets.
     Empty list on failure (caller degrades)."""
     auth = _basic_auth(server)
@@ -612,6 +613,11 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
     hdr = {"Accept": "application/json", "Content-Type": "application/json", "X-Requested-By": "jt-glogarch"}
     # max_widgets <= 0 (or unset) means "no limit — render every widget".
     cap = max_widgets if (max_widgets and max_widgets > 0) else 10 ** 9
+    # A wide report window (e.g. 3 months) makes the dashboard's search far
+    # heavier than the interactive one it was designed for, so the wait must be
+    # raisable rather than a hardcoded 300 s.
+    search_wait_seconds = max(int(search_wait_seconds or 0), 30)
+    incomplete: dict = {}
     try:
         async with httpx.AsyncClient(verify=server.verify_ssl, timeout=60.0) as c:
             view = (await c.get(f"{base}/api/views/{dashboard_id}", auth=auth, headers=hdr)).json()
@@ -641,7 +647,7 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                 # round so a timeout still yields as-complete-as-possible data
                 # (an early cut-off previously left aggregations like the geo map
                 # with only a couple of rows).
-                while not dn and jb and w8 < 300:
+                while not dn and jb and w8 < search_wait_seconds:
                     await __import_asyncio_sleep(2.0)
                     w8 += 2.0
                     pj = (await c.get(f"{base}/api/views/search/status/{jb}", auth=auth, headers=hdr)).json()
@@ -650,8 +656,18 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                     if latest:
                         res = latest
                 if not dn:
-                    log.warning("dashboard search did not finish in time",
-                                dashboard=dashboard_id, waited=w8)
+                    # PARTIAL RESULTS. Returning them silently is how a 3-month
+                    # report rendered ~2 days and still looked complete: the
+                    # unfinished buckets simply never arrived, and the chart axis
+                    # then clamps to the data extent (see _normalize_time_rows),
+                    # so nothing on the page says it was cut off. Record it so the
+                    # caller can put it in front of the reader.
+                    incomplete["hit"] = True
+                    incomplete["waited"] = w8
+                    log.warning("dashboard search did not finish in time — the "
+                                "report will be INCOMPLETE",
+                                dashboard=dashboard_id, waited=w8,
+                                limit=search_wait_seconds)
                 return res
 
             # Time range priority: an explicit absolute window (e.g. the
@@ -664,7 +680,113 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                 exec_body = {}
             else:
                 exec_body = {"global_override": {"timerange": {"type": "relative", "range": time_range_seconds}}}
-            results = await _exec_and_wait(exec_body)
+
+            # ---- Wide-window machinery (see bigrange.py) ------------------
+            # Only when a REPORT-wide window overrides every widget: that is the
+            # case where a widget tuned for "last day" gets asked for 90 days.
+            from glogarch.report import bigrange as _br
+            widget_notes: dict[str, str] = {}     # search_type id -> caption line
+            _fmt_abs = "%Y-%m-%dT%H:%M:%S.000Z"
+            window_secs = 0
+            win_from = win_to = None
+            if not use_dashboard_time:
+                if abs_from and abs_to:
+                    win_from, win_to = _parse_ts(abs_from), _parse_ts(abs_to)
+                    if win_from and win_to:
+                        window_secs = int((win_to - win_from).total_seconds())
+                else:
+                    window_secs = int(time_range_seconds or 0)
+                    win_to = datetime.utcnow()
+                    win_from = win_to - timedelta(seconds=window_secs)
+
+            sdef = None
+            if window_secs > 0:
+                try:
+                    sdef = (await c.get(f"{base}/api/views/search/{sid}",
+                                        auth=auth, headers=hdr)).json()
+                except Exception as e:
+                    log.warning("could not fetch search definition", error=str(e))
+                # Phase 1 — coarsen exploding fixed intervals, announce each one.
+                if sdef:
+                    new_def, coarsen_notes = _br.coarsen_intervals(
+                        sdef, window_secs, lang=lang)
+                    if coarsen_notes:
+                        try:
+                            cr = await c.post(f"{base}/api/views/search",
+                                              auth=auth, headers=hdr, json=new_def)
+                            new_id = (cr.json() or {}).get("id") if cr.status_code < 300 else None
+                            if new_id:
+                                sid = new_id          # execute the coarsened copy
+                                widget_notes.update(coarsen_notes)
+                                log.info("coarsened wide-range intervals",
+                                         widgets=len(coarsen_notes), window_s=window_secs)
+                        except Exception as e:
+                            log.warning("interval coarsening skipped", error=str(e))
+
+            # Phase 2 — slice a wide window into bounded queries and merge
+            # EXACTLY-mergeable search types; the rest run un-sliced (whole
+            # window, one query) and say so on the widget. Never stitch
+            # avg/cardinality/percentiles from slices.
+            _SLICE_THRESHOLD_S = 21 * 86400
+            _SLICE_SECONDS = 7 * 86400
+            sliceable, unsliceable, st_kind = set(), set(), {}
+            if (sdef and window_secs >= _SLICE_THRESHOLD_S
+                    and win_from and win_to):
+                for q in sdef.get("queries") or []:
+                    for st in q.get("search_types") or []:
+                        stid = st.get("id")
+                        if not stid:
+                            continue
+                        if st.get("type") == "messages":
+                            sliceable.add(stid); st_kind[stid] = "messages"
+                        elif _br.mergeable_functions(st.get("series") or []):
+                            sliceable.add(stid); st_kind[stid] = "pivot"
+                        else:
+                            unsliceable.add(stid)
+
+            if sliceable:
+                merged: dict[str, dict] = {}      # state_id -> {"search_types": {...}}
+                per_st: dict[tuple, list] = {}
+                for a, b in _br.slice_windows(win_from, win_to, _SLICE_SECONDS):
+                    body = {"global_override": {
+                        "timerange": {"type": "absolute",
+                                      "from": a.strftime(_fmt_abs),
+                                      "to": b.strftime(_fmt_abs)},
+                        "keep_search_types": sorted(sliceable)}}
+                    part = await _exec_and_wait(body)
+                    for st_state, blob in (part or {}).items():
+                        for stid, r in ((blob or {}).get("search_types") or {}).items():
+                            if stid in sliceable:
+                                per_st.setdefault((st_state, stid), []).append(r)
+                for (st_state, stid), parts in per_st.items():
+                    if st_kind.get(stid) == "messages":
+                        m = _br.merge_message_results(parts, message_rows)
+                    else:
+                        m = _br.merge_search_type_results(parts)
+                    merged.setdefault(st_state, {}).setdefault("search_types", {})[stid] = m
+                # One whole-window pass for the non-mergeable search types.
+                if unsliceable:
+                    body = dict(exec_body)
+                    body.setdefault("global_override", {})
+                    body["global_override"] = dict(body["global_override"])
+                    body["global_override"]["keep_search_types"] = sorted(unsliceable)
+                    rest = await _exec_and_wait(body)
+                    for st_state, blob in (rest or {}).items():
+                        for stid, r in ((blob or {}).get("search_types") or {}).items():
+                            if stid in unsliceable:
+                                merged.setdefault(st_state, {}).setdefault(
+                                    "search_types", {})[stid] = r
+                                widget_notes.setdefault(stid, (
+                                    "此圖表的統計（平均值／不重複計數／百分位數）無法分段合併，"
+                                    "已改以單次完整範圍查詢執行。" if lang == "zh-TW" else
+                                    "This widget's aggregation (avg / cardinality / "
+                                    "percentile) cannot be merged from slices; it ran "
+                                    "as one whole-window query."))
+                results = merged
+                log.info("wide-window slicing done", sliced=len(sliceable),
+                         whole=len(unsliceable), window_s=window_secs)
+            else:
+                results = await _exec_and_wait(exec_body)
 
             # Per-widget snap-to-midnight (used together with use_dashboard_time):
             # keep each widget's OWN duration but move its window to end at today
@@ -673,7 +795,9 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
             # distinct whole-day duration (an absolute [midnight-D, midnight]
             # window) and copy those results over the base ones.
             if snap_midnight and use_dashboard_time and not (abs_from and abs_to) and results:
-                from datetime import datetime, timezone, timedelta
+                # (datetime/timezone/timedelta imported at module level —
+                # a function-local import here made `datetime` LOCAL to the
+                # whole function and broke earlier references.)
                 midnight_utc = (datetime.now().astimezone()
                                 .replace(hour=0, minute=0, second=0, microsecond=0)
                                 .astimezone(timezone.utc))
@@ -795,6 +919,14 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                 es = _parse_ts(eff.get("from")) if eff.get("from") else None
                 ee = _parse_ts(eff.get("to")) if eff.get("to") else None
                 widget["range_label"] = _range_label(time_range_seconds, lang, start=es, end=ee)
+                # Wide-window transparency: if this widget's interval was
+                # coarsened or it could not be sliced, SAY SO on the widget.
+                _notes = [widget_notes[m] for m in (wmap.get(wid) or [wid])
+                          if m in widget_notes]
+                if _notes:
+                    prev = widget.get("description") or ""
+                    widget["description"] = (prev + ("　" if prev else "") +
+                                             " / ".join(dict.fromkeys(_notes)))
                 # Attach a trend badge to single-value widgets that enable it.
                 if widget.get("kind") == "single" and wid in trend_prev:
                     _wcfg = w.get("config") or {}
@@ -812,7 +944,37 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                                  "description": _rebuild_desc(lang, len(tab_widgets), time_range_seconds),
                                  "widgets": tab_widgets})
 
+    # A truncated search must not render as a finished report. Put the warning
+    # FIRST so the reader sees it before any chart whose axis has already been
+    # clamped to the shortened data extent.
+    if incomplete.get("hit") and sections_out:
+        sections_out.insert(0, {
+            "type": "note",
+            "level": "warning",
+            "title": _incomplete_title(lang),
+            "description": _incomplete_desc(lang, incomplete.get("waited", 0),
+                                            search_wait_seconds),
+        })
     return sections_out
+
+
+def _incomplete_title(lang):
+    return ("報表資料不完整" if lang == "zh-TW"
+            else "This report is incomplete")
+
+
+def _incomplete_desc(lang, waited, limit):
+    if lang == "zh-TW":
+        return (f"Graylog 的搜尋在 {int(limit)} 秒內沒有完成，因此本報表只包含當時已回傳的"
+                f"部分結果，圖表的時間軸也會自動縮到實際有資料的範圍——看起來像是完整報表，"
+                f"其實不是。時間範圍越大（例如三個月），越容易發生。"
+                f"請縮小時間範圍、減少 widget 數量，或提高搜尋等待秒數後重跑。")
+    return (f"Graylog's search did not finish within {int(limit)}s, so this report contains "
+            f"only the partial results available at that point, and chart axes have been "
+            f"clamped to the shortened data extent — it looks complete but is not. "
+            f"Wider windows (e.g. three months) make this far more likely. "
+            f"Narrow the time range, reduce the widget count, or raise the search wait "
+            f"and run it again.")
 
 
 async def __import_asyncio_sleep(sec):

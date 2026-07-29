@@ -35,6 +35,17 @@ else
     echo "⚠ node not found — SKIPPING JS syntax check (install node to gate JS)."
 fi
 
+# --- JS undefined-identifier check ---------------------------------------
+# `node --check` validates SYNTAX only. `customConfirm(...)` was valid syntax and
+# defined nowhere, so Cancel in the import dialog threw ReferenceError on its
+# first line and silently did nothing (v1.13.70). This catches that class.
+if command -v node >/dev/null 2>&1; then
+    if ! node scripts/js-undefined-check.js glogarch/web/static/js; then
+        echo "❌ JS UNDEFINED-CALL CHECK FAILED — refusing to release."
+        exit 1
+    fi
+fi
+
 # --- Headless UI smoke ------------------------------------------------------
 # node --check catches JS *syntax* errors; this drives a REAL headless browser
 # against a running instance to catch RUNTIME/render breakage (i18n not

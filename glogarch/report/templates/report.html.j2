@@ -122,6 +122,14 @@
   .kpi .v { font-size: 26px; font-weight:800; color: var(--brand); }
   .kpi .l { font-size: 11px; color: var(--muted); margin-top: 2mm; }
   .empty { color: var(--muted); font-size: 12px; font-style: italic; }
+  /* Report-level warning (e.g. the search was cut off and the data is partial).
+     Deliberately loud and placed first: a truncated report otherwise looks
+     complete, because the chart axes clamp to whatever data did arrive. */
+  .notice { display: flex; gap: 10mm; align-items: flex-start;
+            border: 1.2pt solid #c0392b; border-left-width: 6pt;
+            background: #fdf3f2; border-radius: 3pt; padding: 8mm 9mm; }
+  .notice-mark { font-size: 28pt; line-height: 1; color: #c0392b; }
+  .notice-body { font-size: 12pt; line-height: 1.7; color: #7b241c; }
 </style>
 </head>
 <body>
@@ -169,9 +177,15 @@
   {% for sec in sections %}
   <div class="page">
     <h1 class="section">{{ sec.title }}</h1>
-    {% if sec.description %}<div class="desc">{{ sec.description }}</div>{% endif %}
+    {% if sec.description and sec.type != 'note' %}<div class="desc">{{ sec.description }}</div>{% endif %}
 
-    {% if sec.type == 'image' %}
+    {% if sec.type == 'note' %}
+      <div class="notice notice-{{ sec.level|default('warning') }}">
+        <div class="notice-mark">⚠</div>
+        <div class="notice-body">{{ sec.description }}</div>
+      </div>
+
+    {% elif sec.type == 'image' %}
       {% if sec.img_slices %}
         {% for s in sec.img_slices %}<img class="shot" src="{{ s }}" alt="">{% if not loop.last %}<div class="page-break"></div>{% endif %}{% endfor %}
       {% elif sec.img_data_uri %}<img class="shot" src="{{ sec.img_data_uri }}" alt="">{% else %}<div class="empty">⚠ {{ sec.capture_error|default(t.no_capture) }}</div>{% endif %}

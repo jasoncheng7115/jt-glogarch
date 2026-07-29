@@ -753,7 +753,11 @@ class Importer:
                                        progress_pct=(result.messages_sent / max(total_messages, 1)) * 100)
 
             # === Post-import reconciliation: zero indexer failures required ===
-            final_status = JobStatus.COMPLETED
+            # A user-cancelled run must be recorded as CANCELLED. It used to fall
+            # through to COMPLETED, so Job History showed e.g. "completed
+            # 5,925/374,106" — which reads as massive data loss instead of "you
+            # pressed Cancel". progress_pct=100 on that row compounded the lie.
+            final_status = JobStatus.CANCELLED if fc.cancelled else JobStatus.COMPLETED
             recon_msg = ""
             if self.preflight is not None and preflight_result is not None:
                 # Give Graylog a moment to flush remaining buffered messages —
@@ -834,7 +838,9 @@ class Importer:
 
             import json as _json_rj
             self.db.update_job(
-                job_id, status=final_status, progress_pct=100.0,
+                job_id, status=final_status,
+                progress_pct=100.0 if final_status != JobStatus.CANCELLED else (
+                    (result.messages_sent / max(total_messages, 1)) * 100),
                 messages_done=result.messages_sent, completed_at=datetime.utcnow(),
                 error_message=recon_msg or None,
                 result_json=_json_rj.dumps({
