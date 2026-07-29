@@ -1699,3 +1699,7 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
 .danger-zone[open] > summary::before { content: '\25BE'; }
 .danger-zone-body { padding: 0 12px 12px; }
 .danger-zone-body .form-hint { display: block; margin-bottom: 10px; }
+
+/* Schedules: human-readable cron first, raw expression small and muted. */
+.cron-human { font-weight: 600; white-space: nowrap; }
+.cron-raw { display: block; font-size: 0.72em; opacity: 0.55; margin-top: 2px; }

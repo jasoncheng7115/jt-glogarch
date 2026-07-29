@@ -2396,7 +2396,7 @@ async function loadSchedules() {
         return `<tr>
             <td>${esc(s.name)}</td>
             <td>${esc(s.job_type)}</td>
-            <td><code>${esc(s.cron_expr)}</code></td>
+            <td title="${esc(s.cron_expr)}"><span class="cron-human">${esc(cronHuman(s.cron_expr))}</span> <code class="u030 cron-raw">${esc(s.cron_expr)}</code></td>
             <td>${modeHtml}</td>
             <td>${configHtml}</td>
             <td>${s.enabled ? '<span class="status-completed">' + t('yes') + '</span>' : '<span class="status-failed">' + t('no') + '</span>'}</td>
@@ -4235,6 +4235,51 @@ async function clearTargetIndexSet() {
         if (ci) ci.value = '';
         await loadClearIdxSets();   // reflect the new state
     });
+}
+
+// Human-readable cron for the schedules table. Raw expression stays in the
+// tooltip — the label is for scanning, the tooltip for precision.
+// Day-of-week names use APScheduler semantics (0=Mon .. 6=Sun), NOT POSIX —
+// the backend parses these expressions with CronTrigger.from_crontab().
+function cronHuman(expr) {
+    const zh = getLang() === 'zh-TW';
+    const p = (expr || '').trim().split(/\s+/);
+    if (p.length !== 5) return expr || '';
+    const [min, hr, dom, mon, dow] = p;
+    const DOW = zh ? ['一', '二', '三', '四', '五', '六', '日']
+                   : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const num = v => /^\d+$/.test(v);
+    const pad = v => String(v).padStart(2, '0');
+    const hhmm = (num(hr) && num(min)) ? `${pad(hr)}:${pad(min)}` : null;
+    const dowName = v => {
+        const one = x => num(x) && +x <= 6 ? (zh ? '週' + DOW[+x] : DOW[+x]) : null;
+        if (num(v)) return one(v);
+        const r = v.match(/^(\d)-(\d)$/);
+        if (r && one(r[1]) && one(r[2])) return one(r[1]) + (zh ? '至' : '–') + (zh ? DOW[+r[2]] : DOW[+r[2]]);
+        return null;
+    };
+    const domTxt = v => {
+        if (num(v)) return zh ? `${+v} 日` : `day ${+v}`;
+        const r = v.match(/^(\d+)-(\d+)$/);
+        if (r) return zh ? `${+r[1]}–${+r[2]} 日` : `days ${+r[1]}–${+r[2]}`;
+        return null;
+    };
+    let m;
+    if ((m = min.match(/^\*\/(\d+)$/)) && hr === '*' && dom === '*' && mon === '*' && dow === '*')
+        return zh ? `每 ${+m[1]} 分鐘` : `every ${+m[1]} min`;
+    if (min === '0' && (m = hr.match(/^\*\/(\d+)$/)) && dom === '*' && mon === '*' && dow === '*')
+        return zh ? `每 ${+m[1]} 小時` : `every ${+m[1]} h`;
+    if (!hhmm) return expr;
+    if (dom === '*' && mon === '*' && dow === '*')
+        return zh ? `每天 ${hhmm}` : `daily ${hhmm}`;
+    if (dom === '*' && mon === '*' && dowName(dow))
+        return (zh ? `每${dowName(dow)} ` : `${dowName(dow)} `) + hhmm;
+    if (mon === '*' && dow === '*' && domTxt(dom))
+        return (zh ? `每月 ${domTxt(dom)} ` : `monthly ${domTxt(dom)} `) + hhmm;
+    if (mon === '*' && domTxt(dom) && dowName(dow))
+        return zh ? `每月 ${domTxt(dom)} 且${dowName(dow)} ${hhmm}`
+                  : `${domTxt(dom)} & ${dowName(dow)} ${hhmm}`;
+    return expr;
 }
 
 async function saveExportMode(mode) {

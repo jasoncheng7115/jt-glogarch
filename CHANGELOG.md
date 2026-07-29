@@ -2,6 +2,17 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.75] - 2026-07-29
+
+### Changed
+
+- **Schedules: the Cron column is now human-readable.** `0 3 * * *` renders
+  as "daily 03:00", `0 4 1 * *` as "monthly day 1 04:00", `*/15 * * * *` as
+  "every 15 min"; the raw expression stays underneath in small type and in the
+  tooltip. Day-of-week names follow APScheduler semantics (0=Mon .. 6=Sun) —
+  the same way the backend actually parses these expressions, which differs
+  from POSIX cron. Unrecognised patterns fall back to the raw expression.
+
 ## [1.13.74] - 2026-07-29
 
 ### Fixed

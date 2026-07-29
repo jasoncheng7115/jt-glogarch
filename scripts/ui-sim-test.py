@@ -102,6 +102,17 @@ async def main():
             check("no JS errors during import-dialog flow", len(errs) == n0,
                   "; ".join(errs[n0:][:2]))
 
+        # 2b) schedules: cron shown human-readable (raw only as small/tooltip)
+        await pg.goto(f"{BASE}/schedules", wait_until="networkidle")
+        await pg.wait_for_timeout(1500)
+        rows = await pg.evaluate(
+            "document.querySelectorAll('table tbody tr').length")
+        if rows:
+            human = await pg.evaluate(
+                "!!document.querySelector('.cron-human') && "
+                "(document.querySelector('.cron-human').textContent||'').trim().length > 0")
+            check("schedules cron is human-readable", bool(human))
+
         # 3) settings: suggestion follows host, typed value never overwritten
         await pg.goto(f"{BASE}/settings", wait_until="networkidle")
         await pg.wait_for_timeout(2000)
