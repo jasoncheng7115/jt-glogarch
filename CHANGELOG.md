@@ -15,6 +15,11 @@ All notable changes to jt-glogarch will be documented in this file.
   GELF now preselects the default set, Bulk preselects its target pattern's
   set, switching modes re-picks, and a first bulk import to a not-yet-existing
   pattern says "nothing to clear" instead.
+- **Bulk mode never falls back to the default index set.** When the bulk
+  target pattern does not exist yet, the dropdown now preselects nothing and
+  "Clear now" stays disabled (with the "nothing to clear" hint) — previously
+  it fell back to preselecting the default set, which is almost never the
+  right thing to clear for a bulk import.
 - **Settings → Import defaults now suggests the Graylog API URL from the GELF
   host too.** v1.13.67 added the rule to the import dialog only, so the
   settings form still showed a filled-in GELF host next to an empty (required)

@@ -4162,11 +4162,15 @@ async function loadClearIdxSets() {
     // the bad mappings in the real destination survive.
     const mode = document.querySelector('input[name="import-mode"]:checked')?.value || 'gelf';
     const bulkPattern = (document.getElementById('modal-bulk-index-pattern')?.value || '').trim() || 'jt_restored';
+    // In bulk mode there is NO fallback to the default set: clearing the
+    // default set is almost never right for a bulk import, so when the target
+    // pattern does not exist yet nothing is preselected and Clear stays
+    // disabled — the operator must choose a set deliberately.
     const pick = (mode === 'bulk')
-        ? (_clearIdxSets.find(x => x.index_prefix === bulkPattern) ||
-           _clearIdxSets.find(x => x.is_default))
+        ? _clearIdxSets.find(x => x.index_prefix === bulkPattern)
         : _clearIdxSets.find(x => x.is_default);
-    sel.innerHTML = _clearIdxSets.map(s =>
+    sel.innerHTML = (pick ? '' : '<option value="" selected>—</option>')
+        + _clearIdxSets.map(s =>
         `<option value="${esc(s.id)}"${pick && s.id === pick.id ? ' selected' : ''}>`
         + `${esc(s.title)} (${esc(s.index_prefix)})${s.is_default ? ' ★' : ''}</option>`).join('');
 
@@ -4192,6 +4196,8 @@ function onClearIdxSelect() {
     const info = document.getElementById('clear-idx-info');
     if (!sel || !info) return;
     const s = _clearIdxSets.find(x => x.id === sel.value);
+    const btn = document.getElementById('clear-idx-btn');
+    if (btn) btn.toggleAttribute('disabled', !s);
     if (!s) { info.textContent = ''; return; }
     info.innerHTML = `${esc(t('clear_idx_count'))}: <strong>${s.index_count}</strong>`
         + ` &nbsp; ${esc(t('clear_idx_size'))}: <strong>${esc(formatBytes(s.size_bytes))}</strong>`;
