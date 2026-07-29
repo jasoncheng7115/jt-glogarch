@@ -1447,6 +1447,12 @@ function onGelfHostChange(host) {
 
 // Switch between GELF and OpenSearch Bulk import modes
 function onImportModeChange(mode) {
+    // The clear-before-import preselection depends on the mode (GELF -> default
+    // index set, bulk -> its target pattern) — refresh it if already loaded.
+    if (document.getElementById('import-clear-target')?.open) {
+        _clearIdxSets = [];
+        loadClearIdxSets();
+    }
     const gelfFields = document.getElementById('gelf-mode-fields');
     const bulkFields = document.getElementById('bulk-mode-fields');
     const bulkWarning = document.getElementById('bulk-mode-warning');
@@ -3753,12 +3759,24 @@ async function loadSettingsPage() {
     applyI18n();
 }
 
+// Settings form twin of onGelfHostChange: the API URL is required for every
+// import, and the answer is almost always http://<gelf-host>:9000 — suggest it
+// while the field is empty or still carrying our own suggestion, but never
+// overwrite something the operator typed.
+function onSettingsImpHostInput(host) {
+    const api = document.getElementById('settings-imp-api-url');
+    if (!api) return;
+    if (api.value && api.dataset.suggested !== '1') return;
+    api.value = (host || '').trim() ? `http://${host.trim()}:9000` : '';
+    api.dataset.suggested = '1';
+}
+
 function renderImportDefaultsForm(c) {
     const el = document.getElementById('settings-import-form');
     if (!el) return;
     el.innerHTML = `
       <div class="form-group"><label>${t('settings_imp_gelf_host')}</label>
-        <input type="text" id="settings-imp-host" value="${esc(c.gelf_host || '')}" placeholder="192.168.1.10"></div>
+        <input type="text" id="settings-imp-host" value="${esc(c.gelf_host || '')}" placeholder="192.168.1.10" data-act-input="onSettingsImpHostInput"></div>
       <div class="u039">
         <div class="form-group"><label>${t('settings_imp_gelf_port')}</label>
           <input type="text" id="settings-imp-port" value="${esc(String(c.gelf_port || 32202))}"></div>
@@ -3769,7 +3787,7 @@ function renderImportDefaultsForm(c) {
           </select></div>
       </div>
       <div class="form-group"><label>${t('settings_imp_api_url')}</label>
-        <input type="text" id="settings-imp-api-url" value="${esc(c.target_api_url || '')}" placeholder="http://192.168.1.10:9000"></div>
+        <input type="text" id="settings-imp-api-url" value="${esc(c.target_api_url || (c.gelf_host ? `http://${c.gelf_host}:9000` : ''))}" data-suggested="${c.target_api_url ? '' : '1'}" placeholder="http://192.168.1.10:9000"></div>
       <div class="form-group"><label>${t('settings_imp_api_token')}</label>${_secretField('settings-imp-token', c.target_api_token)}</div>
       <div class="form-group"><label>${t('settings_imp_api_user')}</label>
         <input type="text" id="settings-imp-user" value="${esc(c.target_api_username || '')}" autocomplete="off"></div>
@@ -4136,11 +4154,22 @@ async function loadClearIdxSets() {
         if (typeof initCustomSelects === 'function') initCustomSelects();
         return;
     }
-    // Default to the default index set — that is what "clean slate before an
-    // import" almost always means.
+    // Preselect where THIS import will actually land — the two modes differ:
+    // GELF goes through Graylog's pipeline into the DEFAULT index set (no
+    // stream rules match), while Bulk writes straight into the index set of
+    // its target pattern (default jt_restored). Preselecting the default set
+    // for a bulk import would have the operator delete unrelated data while
+    // the bad mappings in the real destination survive.
+    const mode = document.querySelector('input[name="import-mode"]:checked')?.value || 'gelf';
+    const bulkPattern = (document.getElementById('modal-bulk-index-pattern')?.value || '').trim() || 'jt_restored';
+    const pick = (mode === 'bulk')
+        ? (_clearIdxSets.find(x => x.index_prefix === bulkPattern) ||
+           _clearIdxSets.find(x => x.is_default))
+        : _clearIdxSets.find(x => x.is_default);
     sel.innerHTML = _clearIdxSets.map(s =>
-        `<option value="${esc(s.id)}"${s.is_default ? ' selected' : ''}>`
+        `<option value="${esc(s.id)}"${pick && s.id === pick.id ? ' selected' : ''}>`
         + `${esc(s.title)} (${esc(s.index_prefix)})${s.is_default ? ' ★' : ''}</option>`).join('');
+
     btn?.removeAttribute('disabled');
     // The custom dropdown skin (`select:not(.no-custom)`) is built once at page
     // load — at which point this select is still empty. Filling `innerHTML`
@@ -4148,6 +4177,14 @@ async function loadClearIdxSets() {
     // blank while `.value` is perfectly correct. Repaint it.
     if (typeof initCustomSelects === 'function') initCustomSelects();
     onClearIdxSelect();
+    if (mode === 'bulk' && !_clearIdxSets.some(x => x.index_prefix === bulkPattern)) {
+        // First bulk import to this pattern: the set does not exist yet, so
+        // there is nothing of it to clear. Append AFTER onClearIdxSelect —
+        // that call rewrites the info line with the fallback selection's
+        // counts and used to swallow this hint entirely.
+        const info = document.getElementById('clear-idx-info');
+        if (info) info.innerHTML += `<br><span class="status-failed">${esc(t('clear_idx_bulk_new').replace('{p}', bulkPattern))}</span>`;
+    }
 }
 
 function onClearIdxSelect() {
@@ -4309,6 +4346,7 @@ async function saveAdminPassword() {
     document.addEventListener('input', e => {
         const el = e.target;
         if (el.matches && el.matches('[data-mark-edited]')) el.dataset.userEdited = 'true';
+        if (el.id === 'settings-imp-api-url') el.dataset.suggested = '';
         const host = el.closest && el.closest('[data-act-input]');
         if (host) { const fn = window[host.dataset.actInput]; if (typeof fn === 'function') fn(host.value); }
     });

@@ -2,6 +2,26 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.72] - 2026-07-29
+
+### Fixed
+
+- **The clear-before-import preselection now follows the import mode.** The
+  two modes land in DIFFERENT index sets: GELF goes through Graylog's pipeline
+  into the default index set, while Bulk writes straight into its target
+  pattern's set (default `jt_restored`). The dropdown used to preselect the
+  default set unconditionally — a bulk operator following it would delete
+  unrelated data while the bad mappings in the real destination survived.
+  GELF now preselects the default set, Bulk preselects its target pattern's
+  set, switching modes re-picks, and a first bulk import to a not-yet-existing
+  pattern says "nothing to clear" instead.
+- **Settings → Import defaults now suggests the Graylog API URL from the GELF
+  host too.** v1.13.67 added the rule to the import dialog only, so the
+  settings form still showed a filled-in GELF host next to an empty (required)
+  API URL. Same rule, same field precedence: the suggestion tracks the host
+  while the URL field is empty or still carrying the suggestion, and never
+  overwrites anything the operator typed.
+
 ## [1.13.71] - 2026-07-29
 
 ### Fixed
