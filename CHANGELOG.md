@@ -2,6 +2,26 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.71] - 2026-07-29
+
+### Fixed
+
+- **Wide-window coarsening and slicing silently never fired on real data.**
+  Both were live-schema mismatches: Graylog's search definition writes
+  intervals as `{"timeunit":"5m"}` and series as `{"type":"count"}`, while the
+  code parsed only the widget-config shapes (`{"value":5,"unit":"minutes"}` /
+  `{"function":"count()"}`). Every unit test stayed green, and the previous
+  "sliced equals unsliced" verification passed because BOTH runs were
+  unsliced. Both schemas are now understood and pinned by tests.
+
+### Added
+
+- **Standard live test `scripts/report-bigrange-test.py`** — creates a
+  throwaway dashboard (fixed-5m timeline + avg widget), runs a 90-day rebuild
+  and asserts: coarsening announced on the widget, the unsliceable aggregation
+  labelled, sliced totals exactly equal to an unsliced control, and a real PDF
+  renders. Mandatory for report-affecting changes (see TESTING.md).
+
 ## [1.13.70] - 2026-07-29
 
 ### Fixed

@@ -161,6 +161,25 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
 - [ ] 操作稽核中出現 `graylog_index_set_cleared`，並記錄前置碼、索引數與釋出容量
 - [ ] jt-glogarch 自身的歸檔未受影響（歸檔列表不變）
 
+### 大範圍報表——影響報表的變更必測
+
+對線上 Graylog 執行 `GL_PASS=<pw> python3 scripts/report-bigrange-test.py [GL_URL]`
+——必須印出 `RESULT: ALL PASS`。指令碼會建立（並刪除）一個拋棄式儀表板，內含
+此機制必須處理的兩種 widget 形態。
+
+為什麼單元測試不夠：這支指令碼能攔到的兩個 bug 都是**線上 schema 不符**——搜尋
+定義的間隔寫成 `{"timeunit":"5m"}`、序列寫成 `{"type":"count"}`（而非 widget 設定
+的 `{"value":5,"unit":"minutes"}`／`{"function":"count()"}`），因此粗化與切片各自
+無聲地從未觸發，所有單元測試卻都是綠的；而天真的「切片＝未切片」比對也會通過，
+因為兩次其實都沒切片。
+
+- [ ] 粗化有觸發——固定 5 分鐘的時間圖說明標註「時間間隔已由 5 分鐘調整為 6 小時」
+- [ ] avg widget 帶有「無法分段合併」說明（平均值／不重複計數／百分位數**絕不**拼接）
+- [ ] 切片 90 天的筆數總計與未切片對照組完全相等
+- [ ] 章節能渲染成真實 PDF（需渲染引擎）
+- [ ] 記錄中同時出現 `coarsened wide-range intervals` 與 `wide-window slicing done`
+      ——若兩個機制都沒啟動，數字相等本身不能證明任何事
+
 ### 測試結果
 
 - [ ] `./scripts/run-tests.sh` 通過 — `TEST-RESULTS.md` 已產生

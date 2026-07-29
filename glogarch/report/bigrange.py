@@ -42,9 +42,29 @@ _NICE_STEPS = [
 DEFAULT_MAX_BUCKETS = 500
 
 
+_ABBR_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+
+
 def _interval_seconds(iv: dict) -> int | None:
-    """Seconds of a fixed `timeunit` interval; None for auto/unknown."""
+    """Seconds of a fixed `timeunit` interval; None for auto/unknown.
+
+    Graylog uses TWO schemas for the same thing (verified against a live 6.3
+    API — creating a search with the widget-config schema is rejected with
+    "Known properties include: timeunit, type"):
+      - search definition (/api/views/search): {"type":"timeunit","timeunit":"5m"}
+      - widget config (view state):            {"type":"timeunit","value":5,"unit":"minutes"}
+    We coarsen the SEARCH DEFINITION, so the combined-string form is the one
+    that matters — parsing only the widget form made coarsening silently never
+    fire on real data.
+    """
     if not isinstance(iv, dict) or iv.get("type") != "timeunit":
+        return None
+    tu = iv.get("timeunit")
+    if isinstance(tu, str) and len(tu) >= 2:
+        unit = _ABBR_SECONDS.get(tu[-1].lower())
+        num = tu[:-1]
+        if unit and num.isdigit() and int(num) > 0:
+            return int(num) * unit
         return None
     val = iv.get("value")
     unit = _UNIT_SECONDS.get(str(iv.get("unit") or "").lower())
@@ -72,11 +92,13 @@ def _fmt_interval(seconds: int, lang: str = "en") -> str:
 
 
 def _seconds_to_timeunit(seconds: int) -> dict:
-    """A timeunit dict Graylog accepts for the given number of seconds."""
-    for unit, div in (("days", 86400), ("hours", 3600), ("minutes", 60), ("seconds", 1)):
+    """A timeunit dict in the SEARCH-DEFINITION schema ("6h"), which is the
+    document we rewrite and re-POST. The widget-config schema would be
+    rejected by /api/views/search (see _interval_seconds)."""
+    for abbr, div in (("d", 86400), ("h", 3600), ("m", 60), ("s", 1)):
         if seconds % div == 0 and seconds >= div:
-            return {"type": "timeunit", "value": seconds // div, "unit": unit}
-    return {"type": "timeunit", "value": seconds, "unit": "seconds"}
+            return {"type": "timeunit", "timeunit": f"{seconds // div}{abbr}"}
+    return {"type": "timeunit", "timeunit": f"{seconds}s"}
 
 
 def coarsen_intervals(search_def: dict, window_seconds: int,
@@ -140,11 +162,20 @@ def mergeable_functions(series: list) -> bool:
 
     avg/card(inality)/percentile/stddev/variance/latest cannot be derived from
     per-slice values — a search type containing any of them must NOT be sliced.
+
+    Schema note (the second live-schema trap in this file): the SEARCH
+    DEFINITION writes a series as {"type": "count", "field": ...} while the
+    widget config writes {"function": "count()"}. Reading only `function`
+    classified every real search type as unmergeable, so slicing silently
+    never engaged — and the "verification" compared two identical unsliced
+    runs. Prefer `type`, fall back to parsing `function`.
     """
     if not series:
         return False
     for s in series:
-        if _fn_name((s or {}).get("function")) not in _MERGE_EXACT:
+        s = s or {}
+        name = str(s.get("type") or "").strip().lower() or _fn_name(s.get("function"))
+        if name not in _MERGE_EXACT:
             return False
     return True
 

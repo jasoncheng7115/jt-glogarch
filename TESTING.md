@@ -230,6 +230,30 @@ regression here is not recoverable by the customer.
       prefix, count and bytes freed
 - [ ] jt-glogarch's own archives are untouched (archive list unchanged)
 
+### Wide-Window Reports — MANDATORY for report-affecting changes
+
+`GL_PASS=<pw> python3 scripts/report-bigrange-test.py [GL_URL]` against a live
+Graylog — must print `RESULT: ALL PASS`. Creates (and deletes) a throwaway
+dashboard with exactly the two widget shapes the machinery must handle.
+
+Why a unit suite is NOT enough here: both bugs this script would have caught
+were LIVE-SCHEMA mismatches invisible to tests built on assumed JSON — the
+search definition writes intervals as `{"timeunit":"5m"}` and series as
+`{"type":"count"}` (not the widget-config `{"value":5,"unit":"minutes"}` /
+`{"function":"count()"}`), so coarsening and slicing each silently never fired
+while every unit test stayed green, and a naive "sliced == unsliced" comparison
+passed because BOTH runs were unsliced.
+
+- [ ] Coarsening fired — the fixed-5m timeline's caption announces
+      "interval adjusted 5m -> 6h"
+- [ ] The avg widget carries the "cannot be merged from slices" caption
+      (avg / cardinality / percentiles are NEVER stitched)
+- [ ] The sliced 90-day count total exactly equals an unsliced control run
+- [ ] The sections render to a real PDF (needs the render engine)
+- [ ] Log shows BOTH `coarsened wide-range intervals` and
+      `wide-window slicing done` — equal numbers alone prove nothing if
+      neither mechanism engaged
+
 ### Test Results
 
 - [ ] `./scripts/run-tests.sh` passes — `TEST-RESULTS.md` generated
