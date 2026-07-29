@@ -584,7 +584,11 @@ class Exporter:
         self, time_from: datetime, time_to: datetime
     ) -> list[tuple[datetime, datetime]]:
         """Split time range into chunks."""
-        chunk_minutes = self.export_config.chunk_duration_minutes
+        # chunk_duration_minutes <= 0 (a hand-edited config) would make this
+        # loop NEVER advance: chunk_end == current, the list grows forever and
+        # the export pegs CPU+RAM. Clamp instead of rejecting the config —
+        # an upgrade must never refuse to start over an old bad value.
+        chunk_minutes = max(1, self.export_config.chunk_duration_minutes)
         chunks = []
         current = time_from
         while current < time_to:

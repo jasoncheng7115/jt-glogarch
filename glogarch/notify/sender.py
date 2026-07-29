@@ -262,6 +262,7 @@ _MSG = {
                         "Duration: {duration}\n"
                         "Mode: {mode}"),
         "import_ok": "✅ Import Complete",
+        "import_cancelled": "⏹️ Import Cancelled by User",
         "import_err": "⚠️ Import Completed with Errors",
         "import_body": ("Archives: {archives}\n"
                         "Records: {records}\n"
@@ -301,6 +302,7 @@ _MSG = {
                         "耗時: {duration}\n"
                         "模式: {mode}"),
         "import_ok": "✅ 匯入成功",
+        "import_cancelled": "⏹️ 匯入已由使用者取消",
         "import_err": "⚠️ 匯入完成（有錯誤）",
         "import_body": ("歸檔數: {archives}\n"
                         "記錄數: {records}\n"
@@ -380,8 +382,17 @@ async def notify_export_complete(
 
 
 async def notify_import_complete(archives: int, records: int, errors: list[str],
-                                 duration_seconds: float = 0):
-    title = _t("import_err") if errors else _t("import_ok")
+                                 duration_seconds: float = 0,
+                                 cancelled: bool = False):
+    # A user-initiated cancel is not an error and must not be reported as
+    # "completed (with errors)" — a customer read exactly that mail as a
+    # failed/partial import. The cancel pseudo-error is dropped from the list;
+    # any REAL errors that happened before the cancel are still shown.
+    if cancelled:
+        errors = [e for e in errors if "cancelled by user" not in e.lower()]
+        title = _t("import_cancelled")
+    else:
+        title = _t("import_err") if errors else _t("import_ok")
     def _fmt_dur(s):
         if s < 60: return f"{int(s)}s"
         m = int(s // 60)

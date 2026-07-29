@@ -568,9 +568,10 @@ class Importer:
                     await notify_import_complete(
                         result.archives_processed, result.messages_sent, result.errors,
                         duration_seconds=result.duration_seconds,
+                        cancelled=fc.cancelled,
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("Notification send failed", error=str(e))
                 return result
 
             # === GELF MODE (default) ===
@@ -858,6 +859,7 @@ class Importer:
                 await notify_import_complete(
                     result.archives_processed, result.messages_sent, result.errors,
                     duration_seconds=result.duration_seconds,
+                    cancelled=fc.cancelled,
                 )
             except Exception as nerr:
                 # Surface notification failures so they're not silently lost.

@@ -31,6 +31,41 @@ UI_SMOKE_URL=https://192.0.2.36:8990 ./scripts/run-tests.sh
 
 ---
 
+## Rule 0 — the checklist grows with the product (MANDATORY)
+
+**Every new feature or behaviour change MUST update this checklist in the same
+release**: add the item that would catch its breakage, extend the matching
+script (`ui-sim-test.py` for UI flows, `e2e-archive-test.sh` for data paths,
+`test_static_sweeps.py` for a new failure class), and note WHY (which bug
+class it guards). A feature without a checklist entry is effectively
+untested — that is exactly how the bulk-import OOM survived many releases.
+Reviewers: reject any feature change that does not touch this file.
+
+## One-command release check
+
+```bash
+UI_URL=https://<staging>:8990 UI_USER=localadmin UI_PASS=... \
+GL_HOST=<graylog-ip> GL_USER=admin GL_PASS=... \
+GL_SSH=root@<graylog-ip> REPO=<git-clone> \
+bash scripts/release-check.sh        # ALL PASS = ok to ship
+```
+
+Layers it runs, and the shipped bug class each one exists for:
+
+| # | Layer | Command | Guards against |
+|---|-------|---------|----------------|
+| 1 | Static + unit gates | `./scripts/run-tests.sh` | JS syntax (broken i18n.js shipped 2 releases); undefined identifiers (dead Cancel button); pytest incl. static sweeps (unimported names, import shadowing, i18n gaps, XSS-unescaped errors, silent-except ratchet) and perf regressions (45 s/run dedup, 7%-of-a-core polling) |
+| 2 | Browser simulation | `scripts/ui-sim-test.py` | every page + zh/en switch renders with zero JS errors; import dialog autofill; custom dropdown PAINTS (options existed while the user saw blank); danger section collapsed; settings suggestion contracts |
+| 3 | Real-click actions | `scripts/ui-cancel-test.py` | the layer below lied three times: class vs route, `<option>` vs painted skin, syntax vs runtime. Asserts modal opens, job stops, status = `cancelled` |
+| 4 | Live report machinery | `scripts/report-bigrange-test.py` | live-schema mismatches units cannot see (coarsening and slicing silently never fired while every unit test was green) |
+| 5 | Archive round-trip | `scripts/e2e-archive-test.sh` ON the Graylog host | the 7 data-path steps incl. bulk (whole-file OOM survived many releases untested), dedup/gap refill, self-heal, clear-then-import |
+| 6 | Upgrade compatibility | `REPO=... scripts/upgrade-compat-test.sh` | the three upgrade principles; MANDATORY for any schema / config-default / scheduler change |
+
+Manual items that cannot be scripted are in the sections below (ZAP scan for
+larger releases, eyeballing UI changes, reading the actual notification text,
+customer-facing docs). `RESULT/RELEASE CHECK: ALL PASS` on all six layers plus
+the manual sections below = ship.
+
 ## Automated Tests (202 tests)
 
 ### Unit Tests
@@ -253,6 +288,45 @@ passed because BOTH runs were unsliced.
 - [ ] Log shows BOTH `coarsened wide-range intervals` and
       `wide-window slicing done` — equal numbers alone prove nothing if
       neither mechanism engaged
+
+### UI Actions — real-click verification (MANDATORY for changed UI actions)
+
+Three consecutive bugs in ONE feature each passed a check one layer below what
+the user experiences: the endpoint 500'd while unit tests called the class
+directly; the dropdown rendered empty while `<option>` elements existed; the
+Cancel button was dead (`customConfirm` undefined — valid syntax, defined
+nowhere) while the API, the flag and every unit test were fine. The rule:
+**verify the user's actual action at the layer the user sees.**
+
+- [ ] Every UI action CHANGED in this release is clicked in a real browser
+      against a live instance — not asserted via markup/`<option>`/route alone
+- [ ] `UI_URL=... UI_USER=... UI_PASS=... GL_HOST=... GL_PASS=...
+      python3 scripts/ui-cancel-test.py` — must print `RESULT: ALL PASS`
+      (confirm modal opens, job stops, status records `cancelled` not
+      `completed`). Mandatory whenever import/cancel/job-status paths change
+- [ ] Any notification path touched: read the ACTUAL message produced — a
+      user-initiated cancel must notify as cancelled, never as
+      "completed with errors"
+
+### Performance & liveness at scale (for export/import/DB/polling changes)
+
+Costs that grow with TOTAL data (not with the work) surface only at customer
+scale: `covered_ranges` cost 45 s/run at 200K archives; Job History polling
+cost 7% of a core forever at 50K job rows. Both were invisible at test-size.
+
+- [ ] `tests/test_perf_covered_ranges.py` passes (scale-pattern regression
+      bounds; seeds 30K synthetic archives)
+- [ ] For new hot-path queries: benchmark against a synthetic 200K-archive DB
+      before shipping, and state the measured number in the changelog
+- [ ] No config value used as a loop step/divisor without a clamp
+      (`chunk_duration_minutes <= 0` used to hang the export forever)
+- [ ] Static sweeps pass (`tests/test_static_sweeps.py`): undefined names,
+      import shadowing, i18n both-languages + zh punctuation/terminology,
+      data-act handlers, innerHTML error-escaping, silent-except ratchet
+
+> Staging note: .36 has REAL notification channels configured — import/export
+> tests there deliver actual mails. Announce test noise, or disable channels
+> first.
 
 ### Test Results
 

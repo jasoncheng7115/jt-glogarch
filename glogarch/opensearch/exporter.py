@@ -58,6 +58,7 @@ class OpenSearchExporter:
         self.db = db
         self.integrity = integrity   # IntegrityConfig or None (optional sealing)
         self._cancelled = False
+        self._null_spans_run = None   # per-run cache (see _covered_and_filter)
 
     def cancel(self) -> None:
         self._cancelled = True
@@ -414,9 +415,17 @@ class OpenSearchExporter:
         Returns filter=None when there is nothing to exclude, or when there are
         too many fragments to express as a query.
         """
+        # PERFORMANCE at scale (measured, 200K archives / 27 index sets): the
+        # NULL-stream (API-mode) spans are identical for every index yet were
+        # re-fetched inside all 54 covered_ranges calls of a run — ~45 s of DB
+        # scanning per scheduled run, linear in archive count. Fetch them once
+        # per run; per-index rows are then a direct index seek.
+        if getattr(self, "_null_spans_run", None) is None:
+            self._null_spans_run = self.db.covered_null_spans(self.server_config.name)
         covered = self.db.covered_ranges(
             self.server_config.name, index_name,
-            exclude_stream_id_prefix=prefix, time_from=idx_from, time_to=idx_to)
+            exclude_stream_id_prefix=prefix, time_from=idx_from, time_to=idx_to,
+            null_spans=self._null_spans_run)
         if not covered or len(covered) > self._MAX_EXCLUDE_RANGES:
             return covered, None
 
@@ -455,7 +464,9 @@ class OpenSearchExporter:
         into hourly archive files. Each file is recorded in DB immediately.
         If interrupted, completed files are preserved and skipped on retry via dedup.
         """
-        chunk_minutes = self.export_config.chunk_duration_minutes
+        # <=0 would make every message open its own archive file (see the
+        # API exporter's clamp for the full rationale).
+        chunk_minutes = max(1, self.export_config.chunk_duration_minutes)
         os_batch = max(self.export_config.batch_size, 10000)
         total_msgs_this_index = 0
         index_remaining = 0        # this index's outstanding docs (NOT the denominator)

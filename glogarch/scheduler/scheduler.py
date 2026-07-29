@@ -695,6 +695,14 @@ class ArchiveScheduler:
         """Daily internal check: estimate remaining archive-disk retention and
         notify when it drops below retention.disk_alert_months. Not a user
         schedule — a fixed internal heartbeat registered in start()."""
+        # Piggy-back the daily heartbeat: prune old TERMINAL job-history rows
+        # (they grow forever otherwise; the UI polls the jobs table every ~2 s,
+        # so its size is a permanent CPU tax on the co-located VM).
+        try:
+            self.db.prune_jobs(int(getattr(self.settings.retention,
+                                           "job_history_days", 365) or 0))
+        except Exception as e:
+            log.warning("Job-history prune failed", error=str(e))
         try:
             threshold = float(getattr(self.settings.retention, "disk_alert_months", 0) or 0)
             if threshold <= 0:

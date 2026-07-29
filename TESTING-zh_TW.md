@@ -10,6 +10,37 @@
 
 ---
 
+## 規則 0——測試清單必須跟著產品長大（強制）
+
+**每個新功能或行為異動，必須在同一版更新本清單**：加入能抓到它壞掉的檢查項、
+擴充對應的指令碼（UI 流程→`ui-sim-test.py`、資料路徑→`e2e-archive-test.sh`、
+新失效類別→`test_static_sweeps.py`），並註明**為什麼**（防的是哪一類 bug）。
+沒有清單項目的功能等同未測——bulk 匯入的 OOM 正是這樣潛伏了許多版。
+審查者：任何未動到本檔的功能變更一律退回。
+
+## 一條指令的發版總檢
+
+```bash
+UI_URL=https://<staging>:8990 UI_USER=localadmin UI_PASS=... \
+GL_HOST=<graylog-ip> GL_USER=admin GL_PASS=... \
+GL_SSH=root@<graylog-ip> REPO=<git-clone> \
+bash scripts/release-check.sh        # ALL PASS 即可出貨
+```
+
+執行的層次，以及每層對應的實際出貨過的 bug 類別：
+
+| # | 層次 | 指令 | 防範 |
+|---|------|------|------|
+| 1 | 靜態＋單元閘門 | `./scripts/run-tests.sh` | JS 語法（壞掉的 i18n.js 出貨了兩版）；未定義識別字（死掉的取消鍵）；pytest 含靜態掃描（未匯入名稱、import 遮蔽、i18n 缺漏、錯誤字串未跳脫、無聲 except 棘輪）與效能回歸（每輪 45 秒的重複資料刪除、永久 7% 核心的輪詢） |
+| 2 | 瀏覽器模擬 | `scripts/ui-sim-test.py` | 每頁＋中英切換零 JS 錯誤；匯入對話框自動帶入；自訂下拉**有畫出來**（`<option>` 存在但使用者看到空白）；危險區摺疊；設定頁建議值契約 |
+| 3 | 實際點擊操作 | `scripts/ui-cancel-test.py` | 低一層的檢查騙過我們三次：類別 vs 路由、`<option>` vs 皮膚、語法 vs 執行期。斷言確認視窗開啟、作業停止、狀態＝`cancelled` |
+| 4 | 線上報表機制 | `scripts/report-bigrange-test.py` | 單元測試看不見的線上 schema 不符（粗化與切片無聲失效而所有單元測試全綠） |
+| 5 | 歸檔往返 | 在 Graylog 主機上跑 `scripts/e2e-archive-test.sh` | 七個資料路徑步驟，含 bulk（整檔 OOM 潛伏多版未測）、重複資料刪除／補缺、自癒、清除後匯入 |
+| 6 | 升級相容 | `REPO=... scripts/upgrade-compat-test.sh` | 三大升級原則；任何 schema／設定預設值／排程器變更**必跑** |
+
+無法指令碼化的手動項目在下方各節（較大版本的 ZAP 掃描、UI 變更目視、閱讀實際
+通知內容、對客戶文件）。六層全部 `ALL PASS` 加上下方手動節次完成＝可出貨。
+
 ## 自動化測試（157 筆）
 
 ### 單元測試
@@ -179,6 +210,41 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
 - [ ] 章節能渲染成真實 PDF（需渲染引擎）
 - [ ] 記錄中同時出現 `coarsened wide-range intervals` 與 `wide-window slicing done`
       ——若兩個機制都沒啟動，數字相等本身不能證明任何事
+
+### UI 操作——實際點擊驗證（本版有變更的 UI 操作必測）
+
+同一個功能連續三個 bug，都通過了比使用者體驗低一層的檢查：端點回 500 但單元測試
+直接呼叫類別；下拉畫面空白但 `<option>` 元素存在；取消按鈕死掉（`customConfirm`
+未定義——語法合法、無處定義）但 API、旗標與所有單元測試都正常。規則：
+**在使用者看到的那一層，驗證使用者實際的操作。**
+
+- [ ] 本版**有變更**的每個 UI 操作，都在真實瀏覽器對線上實例實際點擊過——
+      不能只斷言標記／`<option>`／路由
+- [ ] `UI_URL=... UI_USER=... UI_PASS=... GL_HOST=... GL_PASS=...
+      python3 scripts/ui-cancel-test.py` 必須印出 `RESULT: ALL PASS`
+      （確認視窗開啟、作業停止、狀態記為 `cancelled` 而非 `completed`）。
+      凡動到匯入／取消／作業狀態路徑皆必跑
+- [ ] 動到任何通知路徑：閱讀**實際產生的訊息**——使用者主動取消必須以「已取消」
+      通知，絕不能是「完成（有錯誤）」
+
+### 大規模下的效能與活性（匯出／匯入／資料庫／輪詢變更適用）
+
+隨**資料總量**（而非工作量）成長的成本，只在客戶規模才會現形：20 萬份歸檔時
+`covered_ranges` 每輪 45 秒；5 萬筆作業列時作業歷程輪詢永久占用一顆核心的 7%。
+兩者在測試規模下都看不見。
+
+- [ ] `tests/test_perf_covered_ranges.py` 通過（規模模式回歸界限；植入 3 萬份
+      合成歸檔）
+- [ ] 新增熱路徑查詢：出貨前對 20 萬份合成歸檔的資料庫實測，並把量測數字寫進
+      CHANGELOG
+- [ ] 任何當作迴圈步長／除數的設定值都必須鉗制
+      （`chunk_duration_minutes <= 0` 曾讓匯出永久卡死）
+- [ ] 靜態掃描通過（`tests/test_static_sweeps.py`）：未定義名稱、import 遮蔽、
+      i18n 雙語＋zh 標點／術語、data-act 處理函式、innerHTML 錯誤字串跳脫、
+      無聲 except 棘輪
+
+> 測試機注意：.36 設有**真實**通知管道——在其上跑匯入／匯出測試會寄出真的郵件。
+> 請先告知會有測試噪音，或先停用通知管道。
 
 ### 測試結果
 

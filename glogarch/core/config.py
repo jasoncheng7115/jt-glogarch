@@ -106,6 +106,14 @@ class RetentionConfig(BaseModel):
     # disk headroom (compressed footprint per month of log × free disk) falls
     # below this, a notification is sent by the daily internal check. 0 = off.
     disk_alert_months: float = 1.0
+    # Job-history rows grow forever (every scheduled run adds one); prune
+    # TERMINAL rows older than this. Default 0 = keep forever: pruning is
+    # OPT-IN because a nonzero default would have an upgrade silently delete
+    # history the previous version was keeping (the automate-only-the-safe-
+    # direction rule). The polling cost is solved by idx_jobs_created either
+    # way; set e.g. 365 if the table's size itself becomes a concern.
+    job_history_days: int = 0
+
 
 
 class RateLimitConfig(BaseModel):

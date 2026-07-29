@@ -46,6 +46,12 @@ CREATE INDEX IF NOT EXISTS idx_archives_time
 CREATE INDEX IF NOT EXISTS idx_archives_status
     ON archives (status);
 
+-- Export dedup hot path: covered_ranges() seeks (server, stream_id) directly.
+-- At 200K archives the OR-form scan cost 475 ms per call x54 calls per
+-- scheduled run; with this index + split queries it is a direct range seek.
+CREATE INDEX IF NOT EXISTS idx_archives_srv_stream_time
+    ON archives (server_name, stream_id, time_from);
+
 CREATE TABLE IF NOT EXISTS jobs (
     id              TEXT PRIMARY KEY,
     job_type        TEXT NOT NULL,
@@ -60,6 +66,11 @@ CREATE TABLE IF NOT EXISTS jobs (
     created_at      TEXT NOT NULL,
     source          TEXT NOT NULL DEFAULT ''
 );
+
+-- Job History polling: the UI reads the newest 50 jobs every ~2 s. Without
+-- this index that is a full-table sort — measured 140 ms/call at 50K job rows
+-- (7% of a core, forever, on the co-located VM); 2.9 ms with it.
+CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs (created_at DESC);
 
 CREATE TABLE IF NOT EXISTS schedules (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -600,6 +611,28 @@ class ArchiveDB:
         rows = self.conn.execute(query, params).fetchall()
         return [self._row_to_archive(r) for r in rows]
 
+    def covered_null_spans(
+        self,
+        server_name: str,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+    ) -> list[tuple[datetime, datetime]]:
+        """Merged ranges of API-mode (stream_id IS NULL) archives only.
+
+        These are IDENTICAL for every index of a server, yet the export used
+        to re-fetch them inside every covered_ranges() call — 54 times per
+        scheduled run on a 27-index-set site. Compute once per run and pass
+        the result to covered_ranges(null_spans=...)."""
+        sql = ("SELECT time_from, time_to FROM archives "
+               "WHERE server_name = ? AND status = 'completed' "
+               "AND stream_id IS NULL")
+        params: list = [server_name]
+        if time_to:
+            sql += " AND time_from <= ?"; params.append(_dt_to_str(time_to))
+        if time_from:
+            sql += " AND time_to >= ?"; params.append(_dt_to_str(time_from))
+        return self._merge_span_rows(self.conn.execute(sql, params).fetchall())
+
     def covered_ranges(
         self,
         server_name: str,
@@ -607,6 +640,7 @@ class ArchiveDB:
         exclude_stream_id_prefix: str | None = None,
         time_from: datetime | None = None,
         time_to: datetime | None = None,
+        null_spans: list[tuple[datetime, datetime]] | None = None,
     ) -> list[tuple[datetime, datetime]]:
         """Merged, disjoint time ranges already archived for this index.
 
@@ -629,9 +663,17 @@ class ArchiveDB:
         # archives — the main cross-mode case — were invisible and the same logs
         # got archived twice when switching modes; and it accepted partial,
         # stream-filtered archives as if they covered everything.
-        sql = ("SELECT time_from, time_to FROM archives "
-               "WHERE server_name = ? AND status = 'completed' "
-               "AND (stream_id IS NULL OR stream_id = ?)")
+        if null_spans is not None:
+            # Caller precomputed the (identical-for-every-index) NULL spans:
+            # fetch only THIS index's rows — a direct seek on
+            # idx_archives_srv_stream_time instead of a 70K-row scan.
+            sql = ("SELECT time_from, time_to FROM archives "
+                   "WHERE server_name = ? AND status = 'completed' "
+                   "AND stream_id = ?")
+        else:
+            sql = ("SELECT time_from, time_to FROM archives "
+                   "WHERE server_name = ? AND status = 'completed' "
+                   "AND (stream_id IS NULL OR stream_id = ?)")
         params: list = [server_name, index_name]
         if time_to:
             sql += " AND time_from <= ?"
@@ -641,17 +683,64 @@ class ArchiveDB:
             params.append(_dt_to_str(time_from))
         sql += " ORDER BY time_from"
 
-        spans: list[tuple[datetime, datetime]] = []
-        for r in self.conn.execute(sql, params).fetchall():
+        rows = self.conn.execute(sql, params).fetchall()
+        own = self._merge_span_rows(rows)
+        if not null_spans:
+            return own
+        # merge the per-index spans with the precomputed NULL spans
+        allspans = sorted(list(null_spans) + own)
+        merged: list[list[datetime]] = [list(allspans[0])] if allspans else []
+        for a, b in allspans[1:]:
+            if a <= merged[-1][1]:
+                if b > merged[-1][1]:
+                    merged[-1][1] = b
+            else:
+                merged.append([a, b])
+        return [(m[0], m[1]) for m in merged]
+
+    @staticmethod
+    def _merge_span_rows(rows) -> list[tuple[datetime, datetime]]:
+        """Merge sorted (time_from, time_to) rows into disjoint ranges.
+
+        PERFORMANCE (measured at 200K archives / 74K matching rows): strptime
+        on every row made this 1.05 s per call; the canonical storage format
+        %Y-%m-%dT%H:%M:%SZ is fixed-width so its LEXICOGRAPHIC order equals
+        its time order — merge on the raw strings (62 ms) and parse only the
+        few merged spans. Any non-canonical row (pre-1.x data) falls back to
+        the parse-everything path; correctness never depends on the fast path.
+        """
+        if not rows:
+            return []
+        if all(isinstance(a, str) and isinstance(b, str)
+               and len(a) == 20 and len(b) == 20 and a[10] == "T" and b[10] == "T"
+               for a, b in rows):
+            sspans = sorted((a, b) for a, b in rows if b > a)
+            if not sspans:
+                return []
+            sm: list[list[str]] = [list(sspans[0])]
+            for a, b in sspans[1:]:
+                if a <= sm[-1][1]:
+                    if b > sm[-1][1]:
+                        sm[-1][1] = b
+                else:
+                    sm.append([a, b])
+            out = []
+            for a, b in sm:
+                da, db_ = _str_to_dt(a), _str_to_dt(b)
+                if da and db_:
+                    out.append((da, db_))
+            return out
+        spans = []
+        for r in rows:
             a, b = _str_to_dt(r[0]), _str_to_dt(r[1])
             if a and b and b > a:
                 spans.append((a, b))
+        spans.sort()
         if not spans:
             return []
-
         merged: list[list[datetime]] = [list(spans[0])]
         for a, b in spans[1:]:
-            if a <= merged[-1][1]:                 # overlapping / contiguous
+            if a <= merged[-1][1]:
                 if b > merged[-1][1]:
                     merged[-1][1] = b
             else:
@@ -781,6 +870,31 @@ class ArchiveDB:
             "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
         return [self._row_to_job(r) for r in rows]
+
+    def prune_jobs(self, keep_days: int) -> int:
+        """Delete TERMINAL job rows older than keep_days. 0 disables.
+
+        Job rows grow forever otherwise (every scheduled run adds one).
+        Running/pending rows are never touched, whatever their age — pruning
+        must not be able to erase a live job's state.
+        """
+        if not keep_days or keep_days <= 0:
+            return 0
+        cutoff = _dt_to_str(datetime.utcnow() - timedelta(days=keep_days))
+        with self._lock:
+            try:
+                cur = self.conn.execute(
+                    "DELETE FROM jobs WHERE created_at < ? "
+                    "AND status IN ('completed','failed','cancelled')", (cutoff,))
+                self.conn.commit()
+                if cur.rowcount:
+                    log.info("Pruned old job-history rows",
+                             deleted=cur.rowcount, keep_days=keep_days)
+                return cur.rowcount or 0
+            except Exception as e:
+                self._rollback_safely()
+                log.warning("Job-history prune failed", error=str(e))
+                return 0
 
     # --- Schedules ---
 

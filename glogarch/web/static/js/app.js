@@ -1316,7 +1316,7 @@ async function saveArchivePath() {
             <div class="form-hint u114">${msg}</div>`;
         loadArchivePath();
     } else {
-        resultEl.innerHTML = `<span class="status-failed">${data.error || 'Failed'}</span>`;
+        resultEl.innerHTML = `<span class="status-failed">${esc(data.error || 'Failed')}</span>`;
     }
 }
 
@@ -1335,7 +1335,7 @@ async function rescanArchives() {
             el.innerHTML = `<span class="status-completed">${parts.join(' ')}</span>`;
             if (data.registered > 0 || data.removed > 0) loadArchives();
         } else {
-            el.innerHTML = `<span class="status-failed">${data.error || 'Failed'}</span>`;
+            el.innerHTML = `<span class="status-failed">${esc(data.error || 'Failed')}</span>`;
         }
     } finally {
         btn.disabled = false;
@@ -2179,7 +2179,7 @@ async function startExport() {
                     const text = document.getElementById('export-progress-text');
                     if (bar) bar.style.width = '100%';
                     if (job.status === 'failed') {
-                        if (text) text.innerHTML = `<span class="status-failed">${t('progress_error')}${job.error_message || ''}</span>`;
+                        if (text) text.innerHTML = `<span class="status-failed">${t('progress_error')}${esc(job.error_message || '')}</span>`;
                     } else if ((job.messages_done || 0) === 0) {
                         if (text) text.innerHTML = `<span class="u030">${t('export_no_data')}</span>`;
                     } else {
@@ -3045,7 +3045,7 @@ async function saveNotifySettings(evt) {
     if (data.status === 'saved') {
         el.innerHTML = `<span class="status-completed">${t('notify_save_success')}</span>`;
     } else {
-        el.innerHTML = `<span class="status-failed">${data.error || 'Failed'}</span>`;
+        el.innerHTML = `<span class="status-failed">${esc(data.error || 'Failed')}</span>`;
     }
 }
 

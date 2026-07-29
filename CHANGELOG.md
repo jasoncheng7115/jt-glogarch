@@ -2,6 +2,53 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.74] - 2026-07-29
+
+### Fixed
+
+- **A user-cancelled import no longer notifies as "Import Completed with
+  Errors".** The operator pressed Cancel and received a mail listing
+  "Import failed for archive NNNN: Job cancelled by user" as an ERROR — which
+  reads as a failed/partial import. A cancel now sends its own
+  "⏹️ Import Cancelled by User" notification; the cancel pseudo-error is
+  dropped from the error list while any REAL errors that happened before the
+  cancel are still shown.
+
+- **Job History polling was a permanent CPU tax that grew with history.** The
+  UI reads the newest 50 jobs every ~2 s; without an index that is a
+  full-table sort — measured 140 ms/call at 50K job rows (7% of a core,
+  forever, on the co-located VM), 2.9 ms with the new `idx_jobs_created`
+  (auto-migration). Job rows also grew unboundedly — every scheduled run adds
+  one; TERMINAL rows older than `retention.job_history_days` are pruned by the
+  daily internal heartbeat — **opt-in (default 0 = keep forever)**, because a
+  nonzero default would have an upgrade silently delete history the previous
+  version was keeping. Running
+  rows are never touched, whatever their age.
+
+- **Export dedup cost grew linearly with total archives — measured 8x faster
+  at 200K archives.** `covered_ranges()` was re-fetching the ~70K API-mode
+  (stream_id IS NULL) rows inside every one of a run's 54 calls on a
+  27-index-set site: ~45 s of DB scanning per scheduled run, growing with
+  archive count. Now: canonical fixed-width timestamps merge lexicographically
+  (only merged spans are parsed), the identical-for-every-index NULL spans are
+  fetched once per run, per-index rows are a direct seek on a new
+  `idx_archives_srv_stream_time` index (added by auto-migration). Measured:
+  44 s -> 5.2 s per run at 200K archives; results verified byte-identical to
+  the unoptimised path. Perf regression tests pin the run pattern.
+- **`chunk_duration_minutes <= 0` in a hand-edited config could hang the
+  export forever.** The chunk splitter's loop never advanced (infinite loop,
+  unbounded list, CPU+RAM pegged); the OpenSearch path would have opened one
+  archive file per message. Clamped to >=1 at both use sites — clamping, not
+  config rejection, so an upgrade can never refuse to start over an old value.
+
+- **Four XSS sites: API/job error strings rendered into innerHTML without
+  `esc()`.** Error strings can embed remote-server response text. Same class
+  as the shipped OpenSearch-test XSS; now also a permanent gate.
+- **i18n.js zh-TW strings: 8 lines of half-width punctuation adjacent to CJK
+  fixed, 1 PRC term (去重 → 重複資料刪除).** Both rules were documented but
+  never machine-checked in i18n.js; now gated (punctuation + terminology
+  sweeps in `test_static_sweeps.py`).
+
 ## [1.13.73] - 2026-07-29
 
 ### Fixed — systematic audit of shipped failure classes
