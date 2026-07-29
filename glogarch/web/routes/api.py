@@ -2923,6 +2923,7 @@ def _target_creds(request: Request, body: dict):
     does: a configured server by exact name, else the import defaults reconciled
     with any masked secrets in the body. Returns (url, token, user, pw, verify)
     or raises ValueError with a message for the caller to return as 400/404."""
+    from glogarch.core.config_writer import reconcile_secret
     settings = _settings(request)
     server_name = (body.get("server") or "").strip()
     if server_name:

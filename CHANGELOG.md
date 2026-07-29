@@ -2,6 +2,34 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.68] - 2026-07-29
+
+### Fixed
+
+- **An OpenSearch export ran 40 hours pinned at "99%" showing
+  `313,167,381 / 11,802,463`** — a numerator 26x its denominator. Nothing was
+  stuck. `_export_index` reassigned its `total_docs` parameter — the STABLE
+  job-wide denominator fixed once by the plan phase — to the *current index's*
+  remaining count. Every later progress update then divided job-wide progress by
+  one index's total, and `min(pct, 99)` capped the nonsense at 99%. Per-index
+  counts now live in a separate `index_remaining`; the reported pair is always
+  measured over the same population. (The 1.13.65 fix corrected the plan-phase
+  denominator and missed this second, per-index overwrite.)
+- **The "clear target indices" panel returned HTTP 500 on Load.** `_target_creds`
+  used `reconcile_secret` without importing it, so every call raised `NameError`.
+  The feature was completely broken in 1.13.66/67: every test called
+  `GraylogIndexCleaner` directly and never went through the HTTP route. There are
+  now route-level tests (`test_clear_index_set_route.py`) that fail without the
+  import.
+- **The index-set dropdown was empty until you pressed "Load".** It now loads as
+  soon as the section is expanded — and, when the target URL/credentials are not
+  filled in yet, says so instead of firing a request that can only fail.
+
+### Changed
+
+- **Terminology (zh-TW)**: `index set` is now consistently 索引集合 (previously a
+  mix of 索引組 and 索引集).
+
 ## [1.13.67] - 2026-07-29
 
 ### Fixed

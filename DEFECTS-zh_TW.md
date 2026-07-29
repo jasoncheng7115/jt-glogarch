@@ -22,7 +22,7 @@
 
 | # | 缺陷 | 根因 | 防止再犯的機制 |
 |---|---|---|---|
-| 1 | 某索引集的歸檔壓制了另一個索引集，那些日誌**從未被歸檔**（v1.13.62） | 區塊重複判斷問的是「**任何**非此前置碼的歸檔是否涵蓋？」，於是 27 個索引集的站台上 `graylog_147` 涵蓋了 `filesrv_33` | 區塊迴圈與查詢篩選改用**同一份合併區間**（`covered_ranges`），結構上不可能分歧。`test_chunk_dedup_and_query_filter_use_the_same_ranges` |
+| 1 | 某索引集合的歸檔壓制了另一個索引集合，那些日誌**從未被歸檔**（v1.13.62） | 區塊重複判斷問的是「**任何**非此前置碼的歸檔是否涵蓋？」，於是 27 個索引集合的站台上 `graylog_147` 涵蓋了 `filesrv_33` | 區塊迴圈與查詢篩選改用**同一份合併區間**（`covered_ranges`），結構上不可能分歧。`test_chunk_dedup_and_query_filter_use_the_same_ranges` |
 | 2 | API ⇄ OpenSearch 切換時同一批日誌被歸檔**兩次**（v1.13.55） | SQL 中 `NULL NOT LIKE 'x%'` 結果為 NULL，使 API 歸檔（`stream_id IS NULL`）完全隱形；且涵蓋判定要求**單一**歸檔完整包含區塊，跨模式邊界永遠不吻合 | 只採計完整涵蓋該時段的歸檔（`stream_id IS NULL` 或該索引本身）並合併。`test_api_all_streams_archive_covers`、`test_stream_filtered_archive_does_not_cover` |
 | 3 | 已歸檔約 95% 的索引，破洞**永遠**補不回（v1.13.56） | `coverage >= 0.95 → 整個索引跳過`，且比例以整台伺服器的時間範圍計算，姊妹索引互相灌高 | 移除該啟發式；僅在篩選後筆數**恰為 0** 時跳過。e2e 步驟 [5] 會打缺口並要求補回 |
 | 4 | 對新名稱的首次 Bulk 匯入**間歇性遺失文件**（v1.13.60） | 寫入在 Graylog 仍在建置寫入索引時開始；OpenSearch 接受後，索引隨即被取代 | `_wait_for_stable_alias()`（連續三次解析到同一實體索引）**加上**執行後的目的端計數——目的端為 0 即判定失敗 |
@@ -33,12 +33,12 @@
 
 | # | 缺陷 | 根因 | 防止再犯的機制 |
 |---|---|---|---|
-| 7 | `streams-cleanup` 刪不掉自己建立的物件（v1.13.51） | 以串流**名稱**前置碼比對，但 Bulk 建立的串流名為 `jt-glogarch Restored (<前置碼>)` | 改以串流所寫入的索引集比對。e2e 步驟 [4] 每次發版都會執行該指令 |
+| 7 | `streams-cleanup` 刪不掉自己建立的物件（v1.13.51） | 以串流**名稱**前置碼比對，但 Bulk 建立的串流名為 `jt-glogarch Restored (<前置碼>)` | 改以串流所寫入的索引集合比對。e2e 步驟 [4] 每次發版都會執行該指令 |
 | 8 | 分頁大小防護被無聲停用（v1.13.50） | 裸 `except: pass` 內少了 `import json`——所有測試仍全過 | 改為記錄警告而非吞掉；`test_adaptation_does_not_raise` 斷言該警告不得出現 |
 | 9 | 清理排程的保留天數形同裝飾（v1.13.56） | 介面儲存並顯示 `retention_days`，排程器卻永遠使用 `config.yaml` | 執行時採用排程自身的值，並記錄採用了哪個來源。`test_schedule_retention_days_is_used` |
 | 10 | 一台伺服器的匯出讓另一台完全排不到（v1.13.63） | 重疊防護以工作**類型**為 key，因此第一個排程執行期間（可長達數小時），第二個匯出排程一律被略過，且僅留一行 info 記錄 | 改為以**排程**為單位；針對同一伺服器仍由 per-server 鎖保護真正的資源。`test_a_second_schedule_is_not_blocked_by_the_first` |
 | 11 | 排程匯出失敗，作業歷程卻空無一物 | 失敗路徑的 `create_job` 本身被包在一個總是失敗的 try/except 中 | 失敗會被記錄；`/api/health` 另外回報 `schedules_registered` |
-| 27 | 每個索引組都顯示「0 個索引、0 位元組」——清除操作看起來會像是無害的空動作（發版前攔截，1.13.66） | Graylog 的 `indices/{id}/list` 會把每個群組包成 `{"all": {"indices": [...]}}`；直接迭代 `data["all"]` 走的是字典的鍵，什麼也沒產出。容量則位於 `all_shards.store_size_bytes`，而非 `size.bytes` | `_iter_indices()` 成為唯一的解析點，並以測試釘住真實回應結構、裸列表的相容處理與畸形內容。回應結構現在是「被斷言」而非「被假設」 |
+| 27 | 每個索引集合都顯示「0 個索引、0 位元組」——清除操作看起來會像是無害的空動作（發版前攔截，1.13.66） | Graylog 的 `indices/{id}/list` 會把每個群組包成 `{"all": {"indices": [...]}}`；直接迭代 `data["all"]` 走的是字典的鍵，什麼也沒產出。容量則位於 `all_shards.store_size_bytes`，而非 `size.bytes` | `_iter_indices()` 成為唯一的解析點，並以測試釘住真實回應結構、裸列表的相容處理與畸形內容。回應結構現在是「被斷言」而非「被假設」 |
 | 28 | 清除操作可能刪掉正在寫入的索引，導致目標無法接收它正要騰出空間的那批匯入（發版前攔截，1.13.66） | deflector 查詢被包在 `except: pass` 中，因此讀不到 deflector 時 `write_index` 為 None——而「保留除了 None 以外的全部」等於什麼都不保留 | 無法辨識寫入索引時，會在**任何刪除動作之前中止**。`test_unknown_write_index_aborts_without_deleting` |
 
 ## 規模——成本隨資料量而非工作量成長

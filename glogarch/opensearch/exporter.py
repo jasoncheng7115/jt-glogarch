@@ -444,6 +444,11 @@ class OpenSearchExporter:
         total_docs: int = 0,
         guard=None,
     ) -> int:
+        # NOTE: `total_docs` is the JOB-WIDE denominator fixed by the plan phase,
+        # and it must stay that way. It is reported next to `result.messages_total`
+        # (job-wide progress), so overwriting it with this one index's count makes
+        # the pair incomparable — a customer saw "313,167,381 / 11,802,463" pinned
+        # at 99% for 40 h. Per-index counts live in `index_remaining`.
         """Export an OpenSearch index using single scan + split write by time.
 
         Scans the entire index once (fast, one search context), but splits output
@@ -453,6 +458,7 @@ class OpenSearchExporter:
         chunk_minutes = self.export_config.chunk_duration_minutes
         os_batch = max(self.export_config.batch_size, 10000)
         total_msgs_this_index = 0
+        index_remaining = 0        # this index's outstanding docs (NOT the denominator)
 
         # Pre-check disk space
         has_space, avail_mb = self.storage.check_disk_space(required_mb=50)
@@ -505,7 +511,7 @@ class OpenSearchExporter:
             try:
                 cnt = await os_client.post(f"/{index_name}/_count", json={"query": scan_query})
                 counted = int(cnt.get("count", 0))
-                total_docs = counted
+                index_remaining = counted
             except Exception as e:
                 log.warning("Could not count the uncovered range",
                             index=index_name, error=str(e))
@@ -527,7 +533,7 @@ class OpenSearchExporter:
                 return 0
             log.info("Excluding already-archived ranges from the scan",
                      index=index_name, ranges_excluded=len(covered),
-                     docs_to_export=total_docs)
+                     docs_to_export=index_remaining)
         elif covered:
             log.warning("Too many archived ranges to exclude — scanning the whole "
                         "index and de-duplicating per chunk (slow)",
@@ -722,7 +728,7 @@ class OpenSearchExporter:
                     }
                     # Keep detail visible while first batch is still loading
                     if not current_done:
-                        cb_info["detail"] = f"querying {index_name} ({total_docs:,} docs)..."
+                        cb_info["detail"] = f"querying {index_name} ({index_remaining:,} docs)..."
                     progress_callback(cb_info)
                 self.db.update_job(job_id, progress_pct=min(current_pct, 99), messages_done=current_done)
 

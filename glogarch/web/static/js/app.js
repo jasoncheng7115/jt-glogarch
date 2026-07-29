@@ -4073,6 +4073,15 @@ function _clearIdxBody(extra) {
 
 let _clearIdxSets = [];
 
+// Enough to even attempt a call: a URL plus some credential. Auto-load must not
+// fire before these exist, or merely expanding the section greets the operator
+// with a red "Provide a token or username + password" they have not earned yet.
+function _clearIdxCredsReady() {
+    const b = _clearIdxBody();
+    return !!b.target_api_url && !!(b.target_api_token ||
+        (b.target_api_username && b.target_api_password));
+}
+
 async function loadClearIdxSets() {
     const sel = document.getElementById('clear-idx-select');
     const info = document.getElementById('clear-idx-info');
@@ -4274,6 +4283,18 @@ async function saveAdminPassword() {
         if (tt) tt.addEventListener('click', () => toggleTheme());
         const ls = document.getElementById('lang-select');
         if (ls) ls.addEventListener('change', e => setLang(e.target.value));
+        // Expanding the "clear target indices" section loads the target's index
+        // sets straight away. Requiring a separate "Load" click left the dropdown
+        // empty on open, which reads as "there are no index sets" rather than
+        // "nothing has been fetched yet". The button stays as a manual refresh.
+        const cz = document.getElementById('import-clear-target');
+        if (cz) cz.addEventListener('toggle', () => {
+            if (!cz.open || _clearIdxSets.length) return;
+            const info = document.getElementById('clear-idx-info');
+            if (_clearIdxCredsReady()) { loadClearIdxSets(); return; }
+            // Tell them what is missing instead of firing a doomed request.
+            if (info) info.textContent = t('clear_idx_need_creds');
+        });
     });
 })();
 
