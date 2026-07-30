@@ -2,6 +2,16 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.13.76] - 2026-07-30
+
+### 變更
+
+- **硬體規格建議卡：匯入模式指引同時列出兩種還原路徑。** 單一的 heap 建議會誤導
+  共置站台，因為兩種匯入模式壓的元件不同。卡片現在明示：GELF 匯入吃 Graylog
+  （heap／journal／緩衝——優先調高 Graylog `-Xmx`，OpenSearch 影響較小）；
+  Bulk 匯入直寫 OpenSearch（heap＋等量 page cache——Graylog heap 幾乎不影響）。
+  偵測到同機 JVM 時即顯示。
+
 ## [1.13.75] - 2026-07-29
 
 ### 變更

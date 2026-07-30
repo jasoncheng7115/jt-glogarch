@@ -2,6 +2,18 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.76] - 2026-07-30
+
+### Changed
+
+- **Hardware Sizing card: import-mode guidance shows BOTH restore paths.** The
+  single heap recommendation misled co-located sites because the two import
+  modes stress different components. The card now states: GELF import loads
+  Graylog (heap / journal / buffers — raise Graylog `-Xmx` first, OpenSearch
+  matters less), while Bulk import writes straight to OpenSearch (heap plus an
+  equal amount of page cache — Graylog heap barely matters). Shown whenever
+  co-located JVMs are detected.
+
 ## [1.13.75] - 2026-07-29
 
 ### Changed

@@ -317,6 +317,15 @@ async function loadDashboard() {
                 const cls = ad.sufficient === false ? 'status-failed' : 'status-completed';
                 html += `<div class="cap-warn"><span class="${cls}">${esc(line)}</span></div>`;
             }
+            // Import-mode guidance: the two restore paths stress DIFFERENT
+            // components, so a single heap line misleads — GELF loads Graylog
+            // (pipeline/journal/heap), Bulk writes straight to OpenSearch
+            // (heap + page cache). Show both; the operator picks their mode.
+            if (sz.colocated) {
+                html += `<div class="cap-info mt8">${esc(t('sizing_import_hdr'))}<br>` +
+                        `　${esc(t('sizing_import_gelf'))}<br>` +
+                        `　${esc(t('sizing_import_bulk'))}</div>`;
+            }
             if (warns.length) {
                 html += warns.map(w => `<div class="cap-warn"><span class="${sz.level === 'critical' ? 'status-failed' : 'u030'}">${esc(w)}</span></div>`).join('');
             } else {
