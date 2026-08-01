@@ -928,6 +928,8 @@ async function estimateImportCapacity() {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 archive_ids: ids,
+                mode: document.querySelector('input[name="import-mode"]:checked')?.value || 'gelf',
+                target_index_pattern: document.getElementById('modal-bulk-index-pattern')?.value?.trim() || 'jt_restored',
                 target_api_url: url,
                 target_api_token: document.getElementById('modal-target-api-token')?.value || '',
                 target_api_username: document.getElementById('modal-target-api-user')?.value || '',
@@ -945,6 +947,16 @@ async function estimateImportCapacity() {
         .replace('{gb}', gb)
         .replace('{n}', formatNumber(r.estimated_indices))}`;
     const lines = [`<div>${head}</div>`];
+    // Capacity risk differs BY MODE: GELF mixes restored data into the LIVE
+    // default set (over-capacity rotation deletes the oldest LIVE indices);
+    // bulk is isolated in its own set but still consumes the same cluster disk.
+    if (r.mode === 'bulk') {
+        lines.push(`<div class="cap-warn cap-info">${r.bulk_new_set
+            ? esc(t('cap_bulk_new').replace('{p}', r.index_pattern || 'jt_restored'))
+            : esc(t('cap_bulk_isolated').replace('{p}', r.index_pattern || 'jt_restored'))}</div>`);
+    } else {
+        lines.push(`<div class="cap-warn"><span class="u030">${esc(t('cap_gelf_mix'))}</span></div>`);
+    }
 
     if (r.os_disk_reachable) {
         // Disk-aware sizing: read the real OpenSearch data-path disk + measured
@@ -1462,6 +1474,8 @@ function onImportModeChange(mode) {
         _clearIdxSets = [];
         loadClearIdxSets();
     }
+    // The landing index set differs per mode — recompute the capacity estimate.
+    setTimeout(estimateImportCapacity, 200);
     const gelfFields = document.getElementById('gelf-mode-fields');
     const bulkFields = document.getElementById('bulk-mode-fields');
     const bulkWarning = document.getElementById('bulk-mode-warning');
@@ -4248,20 +4262,23 @@ async function clearTargetIndexSet() {
 
 // Human-readable cron for the schedules table. Raw expression stays in the
 // tooltip — the label is for scanning, the tooltip for precision.
-// Day-of-week names use APScheduler semantics (0=Mon .. 6=Sun), NOT POSIX —
-// the backend parses these expressions with CronTrigger.from_crontab().
+// Day-of-week names use POSIX semantics (0/7=Sun .. 6=Sat): the backend runs
+// every user cron through posix_cron_to_apscheduler() BEFORE from_crontab, so
+// what the operator types (and what we label) is plain POSIX cron. Verified
+// against real firings: '0 3 1-7 * 6' fires Saturdays. (v1.13.75 labelled it
+// 週日 by reading the raw-from_crontab pitfall note and missing the wrapper.)
 function cronHuman(expr) {
     const zh = getLang() === 'zh-TW';
     const p = (expr || '').trim().split(/\s+/);
     if (p.length !== 5) return expr || '';
     const [min, hr, dom, mon, dow] = p;
-    const DOW = zh ? ['一', '二', '三', '四', '五', '六', '日']
-                   : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const DOW = zh ? ['日', '一', '二', '三', '四', '五', '六', '日']
+                   : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const num = v => /^\d+$/.test(v);
     const pad = v => String(v).padStart(2, '0');
     const hhmm = (num(hr) && num(min)) ? `${pad(hr)}:${pad(min)}` : null;
     const dowName = v => {
-        const one = x => num(x) && +x <= 6 ? (zh ? '週' + DOW[+x] : DOW[+x]) : null;
+        const one = x => num(x) && +x <= 7 ? (zh ? '週' + DOW[+x] : DOW[+x]) : null;
         if (num(v)) return one(v);
         const r = v.match(/^(\d)-(\d)$/);
         if (r && one(r[1]) && one(r[2])) return one(r[1]) + (zh ? '至' : '–') + (zh ? DOW[+r[2]] : DOW[+r[2]]);

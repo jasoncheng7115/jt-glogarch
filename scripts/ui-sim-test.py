@@ -102,6 +102,25 @@ async def main():
             check("no JS errors during import-dialog flow", len(errs) == n0,
                   "; ".join(errs[n0:][:2]))
 
+        # 2a2) capacity estimate is MODE-aware: GELF warns about mixing into
+        # the live default set; bulk states isolation (it used to compute
+        # against the default set for BOTH modes).
+        if GL["host"] and GL["pw"]:
+            await pg.wait_for_timeout(4000)
+            cap = await pg.evaluate(
+                "(document.getElementById('import-capacity-estimate')||{}).textContent||''")
+            if cap.strip():
+                check("GELF capacity estimate warns about live-set mixing",
+                      ("正式" in cap) or ("LIVE" in cap), cap[:80])
+                await pg.evaluate("() => { document.querySelector('input[name=\"import-mode\"][value=\"bulk\"]').checked = true; onImportModeChange('bulk'); }")
+                await pg.wait_for_timeout(4000)
+                cap2 = await pg.evaluate(
+                    "(document.getElementById('import-capacity-estimate')||{}).textContent||''")
+                check("bulk capacity estimate states isolation",
+                      ("隔離" in cap2) or ("尚未存在" in cap2) or ("isolated" in cap2)
+                      or ("does not exist" in cap2), cap2[:80])
+                await pg.evaluate("() => { document.querySelector('input[name=\"import-mode\"][value=\"gelf\"]').checked = true; onImportModeChange('gelf'); }")
+
         # 2b) schedules: cron shown human-readable (raw only as small/tooltip)
         await pg.goto(f"{BASE}/schedules", wait_until="networkidle")
         await pg.wait_for_timeout(1500)

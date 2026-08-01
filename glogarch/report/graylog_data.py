@@ -1120,21 +1120,30 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
                 pr = sorted(zip(disp, values), key=lambda t: _numkey(t[0]))
                 d2 = [d for d, _ in pr]; v2 = [v for _, v in pr]
             if viz == "scatter":
-                chart_cfg = builder.scatter_chart(d2, [{"label": title, "data": v2}], axis_type=axis)
+                chart_cfg = builder.scatter_chart(d2, [{"label": title, "data": v2}], axis_type=axis,
+                                                  time_axis=bool(is_time))
             else:
                 chart_cfg = builder.line_chart(d2, [{"label": title, "data": v2}], axis_type=axis,
-                                               fill=(viz == "area"), interpolation=_interpolation(cfg))
+                                               fill=(viz == "area"), interpolation=_interpolation(cfg),
+                                               time_axis=bool(is_time))
             return {"kind": "chart", "title": title, "tall": True, "unit": unit, "config": chart_cfg}
         if is_time and viz == "bar":
             return {"kind": "chart", "title": title, "tall": True, "unit": unit,
-                    "config": _bar_multi(disp, [{"label": title, "data": values}], _barmode(cfg), axis_type=axis)}
+                    "config": _bar_multi(disp, [{"label": title, "data": values}], _barmode(cfg), axis_type=axis, time_axis=True)}
         # non-time bar (cap to top 15). Preserve Graylog's returned row order
         # (already the widget's configured sort + limit) instead of re-sorting by
         # value desc — re-sorting reordered bars away from what Graylog shows.
         top = list(zip(disp, values))[:15]
+        # No silent caps: 40 hosts capped to 15 bars must SAY so, or the chart
+        # reads as the complete population.
+        cap_note = None
+        if len(disp) > 15:
+            cap_note = f"僅顯示前 15 名（共 {len(disp)} 項）/ top 15 of {len(disp)}"
         return {"kind": "chart", "title": title, "unit": unit,
+                "description": cap_note,
                 "config": _bar_multi([l for l, _ in top], [{"label": title, "data": [v for _, v in top]}],
-                                     _barmode(cfg), axis_type=axis, horizontal=bar_horizontal)}
+                                     _barmode(cfg), axis_type=axis, horizontal=bar_horizontal,
+                                     time_axis=False)}
 
     # column pivots -> multiple series (data keyed by raw rowkey, displayed via disp)
     col_skip = any((cp.get("config") or {}).get("skip_empty_values") for cp in col_pivots)
@@ -1166,17 +1175,18 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
     legend_heavy = len(series) > 15
     if viz == "scatter":
         return {"kind": "chart", "title": title, "tall": True, "unit": unit, "legend_heavy": legend_heavy,
-                "config": builder.scatter_chart(disp, series, axis_type=axis)}
+                "config": builder.scatter_chart(disp, series, axis_type=axis, time_axis=bool(is_time))}
     if viz in ("line", "area") or (is_time and viz != "bar"):
         return {"kind": "chart", "title": title, "tall": True, "unit": unit, "legend_heavy": legend_heavy,
                 "config": builder.line_chart(disp, series, axis_type=axis,
                                              fill=(viz == "area"), interpolation=_interpolation(cfg),
-                                             stacked=(viz == "area"))}
+                                             stacked=(viz == "area"), time_axis=bool(is_time))}
     # bar: preserve Graylog's bar mode (grouped / stacked / overlay). A time bar
     # must stay vertical/chronological, so only a categorical bar may go horizontal.
     return {"kind": "chart", "title": title, "tall": bool(is_time), "unit": unit, "legend_heavy": legend_heavy,
             "config": _bar_multi(disp, series, _barmode(cfg), axis_type=axis,
-                                 horizontal=(bar_horizontal and not is_time))}
+                                 horizontal=(bar_horizontal and not is_time),
+                                 time_axis=bool(is_time))}
 
 
 def _parse_ts(ts):
@@ -1549,7 +1559,8 @@ def _y_scale(stacked: bool, axis_type: str) -> dict:
     return {"beginAtZero": True, "stacked": stacked}
 
 
-def _bar_multi(labels, series, barmode="group", axis_type="linear", horizontal=False):
+def _bar_multi(labels, series, barmode="group", axis_type="linear", horizontal=False,
+               time_axis=True):
     """Multi-series bar chart honouring Graylog's bar mode.
 
     - stack / relative -> stacked bars
@@ -1580,9 +1591,21 @@ def _bar_multi(labels, series, barmode="group", axis_type="linear", horizontal=F
         else:
             d["backgroundColor"] = c
         datasets.append(d)
-    cat_scale = {"stacked": stacked,
-                 "ticks": {"autoSkip": True, "maxTicksLimit": 12,
-                           "maxRotation": 0, "minRotation": 0}}
+    # The thin-to-12-horizontal-ticks treatment is for TIME buckets (a 96-
+    # bucket day). On a CATEGORY axis (host ranking, top-N terms) autoSkip +
+    # maxRotation:0 silently DROPPED most bar names — a 12-host「主機告警排行」
+    # rendered with only 3 labelled bars. Every category keeps its name; long
+    # names slant to fit. (Horizontal bars label on the y axis, which always
+    # fits — no rotation needed there.)
+    if time_axis:
+        cat_ticks = {"autoSkip": True, "maxTicksLimit": 12,
+                     "maxRotation": 0, "minRotation": 0}
+    elif horizontal:
+        cat_ticks = {"autoSkip": False}
+    else:
+        cat_ticks = {"autoSkip": False, "maxRotation": 60, "minRotation": 40,
+                     "font": {"size": 10}}
+    cat_scale = {"stacked": stacked, "ticks": cat_ticks}
     val_scale = _y_scale(stacked, axis_type)
     # Horizontal: category axis = y, value axis = x (Chart.js indexAxis='y').
     scales = ({"y": cat_scale, "x": val_scale} if horizontal

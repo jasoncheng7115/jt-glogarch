@@ -108,8 +108,23 @@ def bar_chart(labels, values, label="", horizontal=False, axis_type="linear"):
     }
 
 
+def _cat_ticks(time_axis: bool) -> dict:
+    """Category-axis tick config, shared by every chart type.
+
+    TIME buckets: thin to ~12 horizontal ticks (a 96-bucket day must not be
+    crammed at a slant). CATEGORY values (hosts, top-N terms): every entry
+    keeps its label, slanted to fit — autoSkip on a category axis silently
+    DROPPED most names (a 12-host ranking rendered with 3 labelled bars).
+    """
+    if time_axis:
+        return {"autoSkip": True, "maxTicksLimit": 12,
+                "maxRotation": 0, "minRotation": 0}
+    return {"autoSkip": False, "maxRotation": 60, "minRotation": 40,
+            "font": {"size": 10}}
+
+
 def line_chart(labels, series, axis_type="linear", fill=False,
-               interpolation="linear", stacked=False):
+               interpolation="linear", stacked=False, time_axis=True):
     """series: list of {label, data}.
 
     fill=True → area chart (line = stroke only). interpolation: 'linear' (straight
@@ -132,8 +147,7 @@ def line_chart(labels, series, axis_type="linear", fill=False,
         if stepped:
             d["stepped"] = stepped
         ds.append(d)
-    xscale = {"ticks": {"autoSkip": True, "maxTicksLimit": 12,
-                        "maxRotation": 0, "minRotation": 0}}
+    xscale = {"ticks": _cat_ticks(time_axis)}
     yscale = _value_axis(axis_type)
     if stacked:
         xscale["stacked"] = True
@@ -150,7 +164,7 @@ def line_chart(labels, series, axis_type="linear", fill=False,
                                    "x": xscale}}}
 
 
-def scatter_chart(labels, series, axis_type="linear"):
+def scatter_chart(labels, series, axis_type="linear", time_axis=True):
     """Scatter: points only, no connecting line (Chart.js line + showLine:false
     over a categorical x-axis). series: list of {label, data}."""
     ds = []
@@ -166,8 +180,7 @@ def scatter_chart(labels, series, axis_type="linear"):
                                                "align": "start",
                                                "labels": {"padding": 14, "boxWidth": 12, "boxHeight": 12}}},
                         "scales": {"y": _value_axis(axis_type),
-                                   "x": {"ticks": {"autoSkip": True, "maxTicksLimit": 12,
-                                                   "maxRotation": 0, "minRotation": 0}}}}}
+                                   "x": {"ticks": _cat_ticks(time_axis)}}}}
 
 
 def _strip_full_width_bands(svg: str) -> str:

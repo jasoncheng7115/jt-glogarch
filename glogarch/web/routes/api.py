@@ -568,11 +568,34 @@ async def import_capacity_estimate(request: Request):
 
     pf = PreflightChecker(api_url=url, api_token=token, api_username=user,
                           api_password=pw, verify_ssl=False)
+    # The two import modes LAND in different index sets, so the capacity math
+    # must target the right one: GELF goes through Graylog's pipeline into the
+    # DEFAULT set (restored data MIXES with live data there — over-capacity
+    # rotation deletes the oldest LIVE indices); Bulk writes into its target
+    # pattern's own set (isolated; may not exist yet on a first import).
+    mode = (body.get("mode") or "gelf").strip().lower()
+    pattern = (body.get("target_index_pattern") or "jt_restored").strip() or "jt_restored"
+    bulk_new_set = False
     try:
-        idx_id, idx_title = await pf.find_target_index_set()
-        async with pf._client() as c:
-            r = await c.get(f"{pf.api_url}/api/system/indices/index_sets/{idx_id}")
-            iset = r.json() if r.status_code == 200 else {}
+        if mode == "bulk":
+            async with pf._client() as c:
+                r = await c.get(f"{pf.api_url}/api/system/indices/index_sets?limit=200")
+                sets = (r.json() or {}).get("index_sets", []) or []
+            match = next((x for x in sets if x.get("index_prefix") == pattern), None)
+            if match is None:
+                # Fresh isolated set: nothing to overflow yet — report the
+                # incoming volume and the default cap it will be created with.
+                return {"total_messages": total_messages, "total_bytes": total_bytes,
+                        "mode": mode, "bulk_new_set": True, "index_pattern": pattern,
+                        "estimated_indices": 0, "warnings": [], "max_indices": 30,
+                        "os_disk_reachable": False, "index_set_title": pattern}
+            idx_id, idx_title = match.get("id"), match.get("title")
+            iset = match
+        else:
+            idx_id, idx_title = await pf.find_target_index_set()
+            async with pf._client() as c:
+                r = await c.get(f"{pf.api_url}/api/system/indices/index_sets/{idx_id}")
+                iset = r.json() if r.status_code == 200 else {}
         estimated, warnings = await pf.check_capacity(idx_id, total_messages, total_bytes)
     except Exception as e:
         return JSONResponse({"error": sanitize(str(e))}, status_code=500)
@@ -643,6 +666,8 @@ async def import_capacity_estimate(request: Request):
 
     return {
         "total_messages": total_messages,
+        "mode": mode, "bulk_new_set": bulk_new_set,
+        "index_pattern": pattern,
         "total_bytes": total_bytes,
         "index_set_id": idx_id,
         "index_set_title": idx_title,

@@ -2,6 +2,44 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.78] - 2026-08-01
+
+### Fixed
+
+- **Category charts silently dropped labels — fixed as a CLASS.** The
+  thin-to-12-horizontal-ticks axis treatment exists for TIME buckets; applied
+  to CATEGORY axes it let Chart.js skip whatever did not fit horizontally — a
+  12-host alert ranking rendered with 3 labelled bars, a 13-country ranking
+  with 7. Every chart type over category keys (bar, line, area, scatter,
+  single- and multi-series, via a single shared `_cat_ticks()` helper) now
+  labels EVERY entry, slanted to fit; time axes keep the thinned treatment.
+  Related silent truncation in the same sweep: a categorical bar capped to 15
+  bars now says "top 15 of N" instead of posing as the complete population.
+
+- **The human-readable cron label used the wrong day-of-week numbering.**
+  v1.13.75 labelled `... * 6` as Sunday, following APScheduler's raw
+  `from_crontab` semantics — but the backend already runs every user cron
+  through `posix_cron_to_apscheduler()`, so what the operator types is plain
+  POSIX (0/7=Sun, 6=Sat). Verified against three real scheduled firings
+  (all Saturdays). The label now uses POSIX numbering, and accepts `7` for
+  Sunday.
+
+## [1.13.77] - 2026-07-31
+
+### Fixed
+
+- **The pre-import capacity estimate now targets the index set the chosen mode
+  actually lands in.** It always computed against the DEFAULT index set — for
+  Bulk mode that is simply the wrong set (bulk writes into its target
+  pattern's own set, e.g. `jt_restored`, which may not even exist yet).
+  Switching modes now recomputes the estimate; a not-yet-existing bulk target
+  reports "will be created on import (isolated, 30-index cap)".
+- **The capacity risk is now stated per mode.** GELF: restored data MIXES into
+  the live default set — if the batch exceeds the set's retention, rotation
+  deletes the OLDEST LIVE indices; for large restores prefer Bulk or raise max
+  indices first. Bulk: isolated in its own set and easy to delete afterwards,
+  but it still consumes the same cluster disk.
+
 ## [1.13.76] - 2026-07-30
 
 ### Changed
