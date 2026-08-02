@@ -69,6 +69,7 @@
     <div class="tabs" role="tablist">
       <button class="tab active" data-target="tab-quick" type="button">Quick install</button>
       <button class="tab" data-target="tab-manual" type="button">Manual</button>
+      <button class="tab" data-target="tab-offline" type="button">Air-gapped</button>
     </div>
     <p class="prereq-note">
       <strong>Prerequisites.</strong>
@@ -90,6 +91,19 @@ sudo cp deploy/jt-glogarch.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now jt-glogarch</code></pre>
     </div>
+    <div class="code-block" hidden id="tab-offline-wrap">
+      <button class="copy-btn" data-copy="offline">Copy</button>
+      <pre id="tab-offline"><code id="cmd-offline"># 1) On any internet-connected Linux (same Python 3.10 / x86_64 as the target)
+curl -L -o src.tar.gz \
+  https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz
+tar xzf src.tar.gz && cd jt-glogarch-main
+bash scripts/build-offline-bundle.sh        # -> dist/jt-glogarch-<ver>-offline.tar.gz
+sha256sum dist/jt-glogarch-*-offline.tar.gz # note it, verify after transfer
+
+# 2) Carry the bundle in (USB / scp), verify the sha256, then on the host:
+tar xzf jt-glogarch-*-offline.tar.gz && cd jt-glogarch-*-offline
+sudo bash upgrade-offline.sh                # pip never touches the network; DB backed up first</code></pre>
+    </div>
     <dl class="post-note">
       <dt>Web UI</dt>
       <dd><code class="kbd">https://&lt;server-ip&gt;:8990</code> <span class="muted">(login with your Graylog credentials)</span></dd>
@@ -100,11 +114,7 @@ sudo systemctl enable --now jt-glogarch</code></pre>
       <dt>Upgrade</dt>
       <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/upgrade.sh</code> <span class="muted">(safe, takes a DB snapshot first)</span></dd>
       <dt>Air-gapped upgrade</dt>
-      <dd><span class="muted">On any internet-connected Linux (same Python 3.10 / x86_64):</span><br>
-          <code class="kbd">curl -L -o src.tar.gz https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz && tar xzf src.tar.gz && cd jt-glogarch-main && bash scripts/build-offline-bundle.sh</code><br>
-          <span class="muted">carry <code class="kbd">dist/jt-glogarch-&lt;ver&gt;-offline.tar.gz</code> in (USB / scp), then on the host:</span><br>
-          <code class="kbd">tar xzf jt-glogarch-*-offline.tar.gz && cd jt-glogarch-*-offline && sudo bash upgrade-offline.sh</code>
-          <span class="muted">(pip never touches the network; DB backed up first)</span></dd>
+      <dd><span class="muted">no-internet hosts — see the "Air-gapped" tab above (build on a connected box &rarr; carry in &rarr; install)</span></dd>
       <dt>Uninstall</dt>
       <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/uninstall.sh</code> <span class="muted">(prompts before deleting any data)</span></dd>
     </dl>

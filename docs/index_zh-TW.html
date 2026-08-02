@@ -72,6 +72,7 @@
     <div class="tabs" role="tablist">
       <button class="tab active" data-target="tab-quick" type="button">快速安裝</button>
       <button class="tab" data-target="tab-manual" type="button">手動</button>
+      <button class="tab" data-target="tab-offline" type="button">離線升級</button>
     </div>
     <p class="prereq-note">
       <strong>前置條件。</strong>
@@ -93,6 +94,19 @@ sudo cp deploy/jt-glogarch.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now jt-glogarch</code></pre>
     </div>
+    <div class="code-block" hidden id="tab-offline-wrap">
+      <button class="copy-btn" data-copy="offline">複製</button>
+      <pre id="tab-offline"><code id="cmd-offline"># ① 在任一台可上網的 Linux（Python 3.10／x86_64 需與目標主機相同）
+curl -L -o src.tar.gz \
+  https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz
+tar xzf src.tar.gz && cd jt-glogarch-main
+bash scripts/build-offline-bundle.sh        # → dist/jt-glogarch-<版本>-offline.tar.gz
+sha256sum dist/jt-glogarch-*-offline.tar.gz # 記下校驗值
+
+# ② 以 USB／scp 把離線包帶進無外網主機，核對 sha256 後：
+tar xzf jt-glogarch-*-offline.tar.gz && cd jt-glogarch-*-offline
+sudo bash upgrade-offline.sh                # pip 全程不連網；會先自動備份 DB</code></pre>
+    </div>
     <dl class="post-note">
       <dt>Web UI</dt>
       <dd><code class="kbd">https://&lt;伺服器 IP&gt;:8990</code> <span class="muted">（用您的 Graylog 帳密登入）</span></dd>
@@ -102,12 +116,8 @@ sudo systemctl enable --now jt-glogarch</code></pre>
       <dd><code class="kbd">journalctl -u jt-glogarch -f</code></dd>
       <dt>升級</dt>
       <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/upgrade.sh</code> <span class="muted">（會先快照備份 DB，不會破壞資料）</span></dd>
-      <dt>離線升級（無外網主機）</dt>
-      <dd><span class="muted">在任一台可上網的 Linux（Python 3.10／x86_64 需與目標主機相同）：</span><br>
-          <code class="kbd">curl -L -o src.tar.gz https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz && tar xzf src.tar.gz && cd jt-glogarch-main && bash scripts/build-offline-bundle.sh</code><br>
-          <span class="muted">把 <code class="kbd">dist/jt-glogarch-&lt;版本&gt;-offline.tar.gz</code> 以 USB／scp 帶進主機後：</span><br>
-          <code class="kbd">tar xzf jt-glogarch-*-offline.tar.gz && cd jt-glogarch-*-offline && sudo bash upgrade-offline.sh</code>
-          <span class="muted">（pip 全程不連網；會先自動備份 DB）</span></dd>
+      <dt>離線升級</dt>
+      <dd><span class="muted">無外網主機——見上方「離線升級」分頁（可上網機器打包 → USB 帶入 → 主機安裝）</span></dd>
       <dt>移除</dt>
       <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/uninstall.sh</code> <span class="muted">（每個刪除動作都會逐一詢問）</span></dd>
     </dl>
