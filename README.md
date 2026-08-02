@@ -449,10 +449,16 @@ locally — pip never touches the network (`--no-index`).
 arch as the target; e.g. CPython 3.10 on linux x86_64):
 
 ```bash
-# From a checkout of this repo:
+# Download the latest source (no git needed) and build — tested end to end:
+curl -L -o jt-glogarch-src.tar.gz \
+  https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz
+tar xzf jt-glogarch-src.tar.gz && cd jt-glogarch-main
 bash scripts/build-offline-bundle.sh
-# → produces dist/jt-glogarch-<version>-offline.tar.gz
+# → produces dist/jt-glogarch-<version>-offline.tar.gz  (~365 MB)
+sha256sum dist/jt-glogarch-*-offline.tar.gz   # note it — verify after transfer
 ```
+
+(Equivalent with git: `git clone https://github.com/jasoncheng7115/jt-glogarch.git && cd jt-glogarch`.)
 
 The bundle contains the jt-glogarch wheel **and every runtime dependency wheel**
 **and the source tree** and the offline installer — everything the upgrade needs.

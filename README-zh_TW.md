@@ -618,10 +618,16 @@ sudo bash /opt/jt-glogarch/deploy/upgrade.sh
 **步驟 1 —— 在可連外網的機器上**（Python 主版本與 CPU 架構需與目標主機相同，例如 CPython 3.10 + linux x86_64）：
 
 ```bash
-# 於本專案的原始碼目錄中：
+# 下載最新原始碼（不需要 git）並打包——已實測可用：
+curl -L -o jt-glogarch-src.tar.gz \
+  https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz
+tar xzf jt-glogarch-src.tar.gz && cd jt-glogarch-main
 bash scripts/build-offline-bundle.sh
-# → 產生 dist/jt-glogarch-<版本>-offline.tar.gz
+# → 產生 dist/jt-glogarch-<版本>-offline.tar.gz（約 365 MB）
+sha256sum dist/jt-glogarch-*-offline.tar.gz   # 記下校驗值，帶入後核對
 ```
+
+（有 git 時等價做法：`git clone https://github.com/jasoncheng7115/jt-glogarch.git && cd jt-glogarch`。）
 
 離線包內含 jt-glogarch wheel、**所有相依套件的 wheel**、**原始碼樹**與離線安裝指令碼 —— 升級所需的東西全部打包在內。
 
