@@ -872,3 +872,10 @@ footer .row { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap
 .chip-coral  { color: #ff9f43; border-color: rgba(255,159,67,0.4);  background: rgba(255,159,67,0.08);  }
 .chip-amber  { color: #ffd93d; border-color: rgba(255,217,61,0.4);  background: rgba(255,217,61,0.08);  }
 .chip-blue   { color: #7c8cff; border-color: rgba(124,140,255,0.4); background: rgba(124,140,255,0.08); }
+
+/* Shell syntax colouring for the install-card code blocks (no CDN — a tiny
+   inline highlighter in the page walks `pre code` and wraps these spans). */
+.sh-com  { color: #6b7f8a; font-style: italic; }
+.sh-kw   { color: var(--accent); }
+.sh-flag { color: var(--accent-2); }
+.sh-url  { color: #c7a7ff; }

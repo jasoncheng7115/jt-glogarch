@@ -333,6 +333,26 @@ sudo bash upgrade-offline.sh                # pip never touches the network; DB 
 <script>
   // Tab switcher — toggles the .code-block wrapper, not the inner <pre>,
   // so the copy button (positioned on the wrapper) is shown/hidden too.
+
+  // Tiny dependency-free shell highlighter for the install tabs. Operates on
+  // textContent and rebuilds innerHTML with spans, so the Copy buttons (which
+  // read innerText) are unaffected.
+  document.querySelectorAll('.install pre code').forEach(code => {
+    const esc = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    code.innerHTML = code.textContent.split('\n').map(line => {
+      const ci = line.indexOf('#');
+      let cmd = line, com = '';
+      if (ci >= 0) { cmd = line.slice(0, ci); com = line.slice(ci); }
+      let h = esc(cmd)
+        .replace(/(https?:\/\/[^\s]+)/g, '<span class="sh-url">$1</span>')
+        .replace(/(^|\s|&amp;&amp;\s*)(sudo|bash|curl|tar|git|pip|cd|cp|sha256sum|systemctl)(?=\s|$)/g,
+                 '$1<span class="sh-kw">$2</span>')
+        .replace(/(\s)(--?[A-Za-z][\w-]*)/g, '$1<span class="sh-flag">$2</span>');
+      if (com) h += '<span class="sh-com">' + esc(com) + '</span>';
+      return h;
+    }).join('\n');
+  });
+
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
