@@ -83,6 +83,19 @@ class PreflightResult:
     bulk_stream_title: str = ""
 
 
+
+def field_limit_for(field_count: int, floor: int = 10000) -> int:
+    """Index-mapping total_fields limit sized to the ACTUAL field population.
+
+    The hardcoded 10000 rejected a 25,015-archive site whose aggregated schema
+    exceeded it — the template PUT itself failed with "Limit of total fields
+    [10000] has been exceeded" and the whole import aborted. These fields exist
+    in the archives the operator chose to restore; the limit must follow the
+    data (with headroom for Graylog internals), not the other way around.
+    """
+    return max(floor, int(field_count * 1.2) + 500)
+
+
 class PreflightChecker:
     def __init__(
         self,
@@ -701,6 +714,8 @@ class PreflightChecker:
                 if r.status_code in (200, 201, 204):
                     log.info("Field limit override template installed",
                              os_url=os_url, limit=limit)
+                    await self._raise_limit_on_existing_indices(
+                        c, os_url, index_prefix, limit)
                     return
                 log.warning(
                     "Could not PUT field limit template via OpenSearch endpoint",
@@ -958,6 +973,31 @@ class PreflightChecker:
 
     # ----------------------------- Bulk-mode OpenSearch template setup
 
+    @staticmethod
+    async def _raise_limit_on_existing_indices(client, os_url: str,
+                                               pattern: str, limit: int) -> None:
+        """Templates only apply at index CREATION — indices that already exist
+        keep their old total_fields limit, so a retry into them would still be
+        rejected. Push the setting onto every existing <pattern>_* index too.
+        Best-effort: no indices yet (404) is normal on a first import.
+        """
+        try:
+            r = await client.put(
+                f"{os_url.rstrip('/')}/{pattern}_*/_settings",
+                content=json.dumps({"index": {"mapping": {"total_fields": {"limit": str(limit)}}}}),
+                headers={"Content-Type": "application/json"},
+            )
+            if r.status_code in (200, 201):
+                log.info("Field limit applied to existing indices",
+                         pattern=f"{pattern}_*", limit=limit)
+            elif r.status_code != 404:
+                log.warning("Could not raise field limit on existing indices",
+                            pattern=f"{pattern}_*", status=r.status_code,
+                            body=r.text[:150])
+        except Exception as e:
+            log.warning("Could not raise field limit on existing indices",
+                        pattern=f"{pattern}_*", error=str(e))
+
     async def apply_bulk_template(
         self,
         opensearch_url: str,
@@ -965,6 +1005,7 @@ class PreflightChecker:
         os_password: str,
         target_pattern: str,
         fields_to_keyword: list[str],
+        field_limit: int = 10000,
     ) -> None:
         """For bulk-mode imports: write an OpenSearch index template that
         controls the mapping for `<target_pattern>_*` indices.
@@ -985,7 +1026,7 @@ class PreflightChecker:
             "order": 100,
             "settings": {
                 "index": {
-                    "mapping": {"total_fields": {"limit": "10000"}},
+                    "mapping": {"total_fields": {"limit": str(field_limit)}},
                     # Bulk import has no concurrent search load, optimise for write
                     "refresh_interval": "30s",
                     "number_of_replicas": 0,
@@ -1003,11 +1044,28 @@ class PreflightChecker:
                 content=json.dumps(body),
                 headers={"Content-Type": "application/json"},
             )
+            # Belt over the braces: OpenSearch may count more than we did
+            # (multi-fields, other matching templates). If it still says the
+            # limit is exceeded, double it ONCE and retry rather than abort a
+            # 25K-archive import over a validator disagreement.
+            if r.status_code == 400 and "total fields" in r.text.lower():
+                doubled = field_limit * 2
+                log.warning("Template rejected at field limit — retrying doubled",
+                            template=template_name, limit=field_limit, retry=doubled)
+                body["settings"]["index"]["mapping"]["total_fields"]["limit"] = str(doubled)
+                r = await c.put(
+                    f"{opensearch_url.rstrip('/')}/_template/{template_name}",
+                    content=json.dumps(body),
+                    headers={"Content-Type": "application/json"},
+                )
             if r.status_code not in (200, 201, 204):
                 raise RuntimeError(
                     f"Failed to PUT bulk index template '{template_name}': "
                     f"HTTP {r.status_code}: {r.text[:300]}"
                 )
+            final_limit = int(body["settings"]["index"]["mapping"]["total_fields"]["limit"])
+            await self._raise_limit_on_existing_indices(
+                c, opensearch_url, target_pattern, final_limit)
             log.info(
                 "Bulk index template installed",
                 template=template_name,
@@ -1298,6 +1356,7 @@ class PreflightChecker:
                         os_password=bulk_os_password or "",
                         target_pattern=bulk_target_pattern,
                         fields_to_keyword=bulk_pins,
+                        field_limit=field_limit_for(len(fields)),
                     )
                 except Exception as e:
                     result.aborted = True
@@ -1403,7 +1462,7 @@ class PreflightChecker:
                             prefix = r.json().get("index_prefix", "graylog")
                         else:
                             prefix = "graylog"
-                    await self.ensure_field_limit_template(prefix, limit=10000)
+                    await self.ensure_field_limit_template(prefix, limit=field_limit_for(len(fields)))
                 except Exception as e:
                     log.warning("Field limit template setup failed", error=str(e))
 

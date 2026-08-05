@@ -2,6 +2,25 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.81] - 2026-08-05
+
+### Fixed
+
+- **The mapping field limit now follows the data — a 25,015-archive site
+  aborted at the hardcoded 10,000.** The bulk template PUT itself was rejected
+  with "Limit of total fields [10000] has been exceeded" and the whole
+  2.4B-record import stopped. Three layers, all sized from the ACTUAL
+  aggregated field count (`max(10000, fields x 1.2 + 500)`):
+  1. the index template carries the computed limit (future rotated indices
+     inherit it),
+  2. if OpenSearch still rejects it (multi-fields, other templates), the
+     limit is doubled ONCE and retried instead of aborting,
+  3. the final limit is also pushed onto EXISTING `<pattern>_*` indices —
+     templates only bind at index creation, so a retry into already-created
+     indices would otherwise still fail.
+  The GELF path's field-limit template gets the same sizing and the same
+  existing-indices layer.
+
 ## [1.13.80] - 2026-08-05
 
 ### Fixed
