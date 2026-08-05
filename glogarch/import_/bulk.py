@@ -29,9 +29,10 @@ from __future__ import annotations
 import asyncio
 import gzip
 import json
+import re
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Awaitable
 
@@ -136,6 +137,36 @@ class BulkImporter:
         """
         return f"{target_pattern}_deflector"
 
+    _GRAYLOG_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$")
+
+    @staticmethod
+    def normalize_timestamp(value):
+        """Coerce a message `timestamp` into Graylog's indexed date format.
+
+        Graylog's index template maps `timestamp` as date with format
+        `uuuu-MM-dd HH:mm:ss.SSS` and REJECTS ISO-8601. Archives written by
+        the OpenSearch-direct exporter already carry the native format, but
+        API-mode archives store what the Graylog REST API returns — ISO-8601
+        (`2026-08-04T13:00:00.000Z`). Bulk-importing an API-mode archive
+        therefore failed with mapper_parsing_exception on EVERY document
+        (380,961/380,961 at a live site) until this normalisation.
+
+        Timezone-aware values are converted to UTC first (Graylog indexes
+        naive UTC). Unparseable values are returned unchanged — reconciliation
+        will then report them honestly instead of us guessing.
+        """
+        if not isinstance(value, str) or BulkImporter._GRAYLOG_TS_RE.match(value):
+            return value
+        v = value.strip()
+        try:
+            iso = v[:-1] + "+00:00" if v.endswith("Z") else v
+            dt = datetime.fromisoformat(iso.replace(" ", "T", 1) if "T" not in iso else iso)
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt.strftime("%Y-%m-%d %H:%M:%S.") + f"{dt.microsecond // 1000:03d}"
+        except (ValueError, TypeError):
+            return value
+
     def _build_bulk_body(
         self, docs: list[dict], max_bytes: int | None = None
     ) -> tuple[bytes, int]:
@@ -173,6 +204,11 @@ class BulkImporter:
             # Inject the marker field
             if self.marker_field:
                 doc[self.marker_field] = self.marker_value
+
+            # Graylog's `timestamp` mapping rejects ISO-8601 — normalise it
+            # (API-mode archives store ISO; see normalize_timestamp).
+            if "timestamp" in doc:
+                doc["timestamp"] = self.normalize_timestamp(doc["timestamp"])
 
             # Rewrite streams field to point to our target stream so Graylog
             # Search can find the doc. The source archive's streams field

@@ -159,6 +159,29 @@ fi
 $PYO streams-cleanup --prefix "$BIDX" --yes 2>&1 | grep -iE 'deleted|failed' | sed 's/^/  /'
 osc -X DELETE "$OS_URL/${BIDX}*" >/dev/null 2>&1   # any index the cleanup missed
 
+# [4b] Bulk import of an API-MODE archive. API archives store ISO-8601
+# timestamps (what the REST API returns); Graylog's index template REJECTS
+# ISO on the `timestamp` date field, so this exact combination once failed on
+# EVERY document (380,961/380,961 at a live site) while OS-export→bulk stayed
+# green — the only path e2e used to cover.
+echo "=== [4b] Bulk import of an API-mode archive (ISO timestamps) ==="
+BIDX2="jt_e2e_bulkapi"
+osc -X DELETE "$OS_URL/${BIDX2}*" >/dev/null 2>&1
+bulk2_out="$($PYA import --mode bulk --from "$yest"     --target-index-pattern "$BIDX2"     --target-api-url "$GL_URL" --target-api-username "$GL_USER"     --target-api-password "$GL_PASS" 2>&1)"
+echo "$bulk2_out" | grep -iE 'indexed|failed|import completed' | tail -3
+sleep 5
+b2count="$(osc "$OS_URL/${BIDX2}*/_count"     | python3 -c 'import sys,json;print(json.load(sys.stdin).get("count",-1))' 2>/dev/null || echo -1)"
+echo "  docs actually in OpenSearch (${BIDX2}*): $b2count"
+if [ "${b2count:-0}" -gt 0 ] 2>/dev/null && ! echo "$bulk2_out" | grep -qi 'mapper_parsing_exception'; then
+    echo "  PASS: API-mode archive bulk-imported ($b2count docs, no mapper_parsing)"
+else
+    echo "FAIL: API-archive bulk import wrote no docs / hit mapper_parsing_exception"
+    echo "$bulk2_out" | tail -8
+    FAIL=1
+fi
+$PYO streams-cleanup --prefix "$BIDX2" --yes >/dev/null 2>&1
+osc -X DELETE "$OS_URL/${BIDX2}*" >/dev/null 2>&1
+
 echo "=== [5] Re-export dedup: skip archived time, still refill gaps ==="
 # Guards the "export stuck at 0% for 14h" class of bug: de-dup must happen in the
 # QUERY (so an already-archived index is skipped instantly instead of dragging

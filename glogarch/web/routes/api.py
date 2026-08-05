@@ -583,11 +583,20 @@ async def import_capacity_estimate(request: Request):
                 sets = (r.json() or {}).get("index_sets", []) or []
             match = next((x for x in sets if x.get("index_prefix") == pattern), None)
             if match is None:
-                # Fresh isolated set: nothing to overflow yet — report the
-                # incoming volume and the default cap it will be created with.
+                # Fresh isolated set: nothing to overflow yet. Estimate against
+                # the parameters it WILL be created with (MessageCountRotation,
+                # 20M docs/index, deletion cap 30) — returning estimated=0 and
+                # omitting `sufficient` made the UI show "~0 indices" plus a
+                # spurious red MAY-NOT-FIT verdict (undefined is falsy).
+                # Match the parameters the set is ACTUALLY created with:
+                # SizeBased rotation, 32 GiB/index, and a deletion cap that
+                # preflight now auto-sizes to the batch (>= 30, ~est+20%).
+                _est = max(1, -(-total_bytes // (32 * 1024**3)))
+                _cap = max(30, int(_est * 1.2) + 1)
                 return {"total_messages": total_messages, "total_bytes": total_bytes,
                         "mode": mode, "bulk_new_set": True, "index_pattern": pattern,
-                        "estimated_indices": 0, "warnings": [], "max_indices": 30,
+                        "estimated_indices": _est, "warnings": [], "max_indices": _cap,
+                        "sufficient": True,
                         "os_disk_reachable": False, "index_set_title": pattern}
             idx_id, idx_title = match.get("id"), match.get("title")
             iset = match

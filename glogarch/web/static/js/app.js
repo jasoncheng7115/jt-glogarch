@@ -952,7 +952,7 @@ async function estimateImportCapacity() {
     // bulk is isolated in its own set but still consumes the same cluster disk.
     if (r.mode === 'bulk') {
         lines.push(`<div class="cap-warn cap-info">${r.bulk_new_set
-            ? esc(t('cap_bulk_new').replace('{p}', r.index_pattern || 'jt_restored'))
+            ? esc(t('cap_bulk_new').replace('{p}', r.index_pattern || 'jt_restored').replace('{cap}', formatNumber(r.max_indices || 30)))
             : esc(t('cap_bulk_isolated').replace('{p}', r.index_pattern || 'jt_restored'))}</div>`);
     } else {
         lines.push(`<div class="cap-warn"><span class="u030">${esc(t('cap_gelf_mix'))}</span></div>`);
@@ -987,6 +987,13 @@ async function estimateImportCapacity() {
         } else {
             lines.push(`<div class="cap-warn"><span class="status-completed">${t('cap_ok_disk')}</span></div>`);
         }
+    } else if (r.bulk_new_set) {
+        // Fresh isolated set: the cap verdict is against its CREATION defaults.
+        // The "cannot read the OS data-path disk" hint would be misleading —
+        // nothing was probed; the set does not exist yet.
+        const okNew = r.sufficient !== false;
+        lines.push(`<div><span class="${okNew ? 'status-completed' : 'status-failed'}">${
+            (okNew ? t('cap_ok') : t('cap_insufficient')).replace('{max}', formatNumber(r.max_indices))}</span></div>`);
     } else {
         // No OS disk access (Data Node / OS not configured) — retention-count only.
         let verdict, cls;

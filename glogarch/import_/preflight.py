@@ -1310,10 +1310,19 @@ class PreflightChecker:
                 # and won't query our jt_restored_* indices at all.
                 bulk_stream_title = f"jt-glogarch Restored ({bulk_target_pattern})"
                 try:
+                    # Size the deletion cap to THIS batch at creation time.
+                    # The fixed default (30) with SizeBased rotation (32 GiB)
+                    # means a 3.5 TB restore needs ~110 indices — retention
+                    # would start deleting freshly-imported data mid-import.
+                    # Only applied at CREATION: an existing set's cap is the
+                    # operator's setting and is never touched here.
+                    _est_idx = max(1, -(-int(total_bytes or 0) // (32 * 1024**3)))
+                    _cap = max(30, int(_est_idx * 1.2) + 1)
                     set_id, set_created = await self.find_or_create_index_set(
                         title=bulk_stream_title,
                         prefix=bulk_target_pattern,
                         description=f"Created by jt-glogarch bulk import. Indices: {bulk_target_pattern}_*",
+                        max_indices=_cap,
                     )
                     if set_created:
                         log.info("Created Graylog index set for restored data",

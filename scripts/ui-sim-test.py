@@ -119,6 +119,10 @@ async def main():
                 check("bulk capacity estimate states isolation",
                       ("隔離" in cap2) or ("尚未存在" in cap2) or ("isolated" in cap2)
                       or ("does not exist" in cap2), cap2[:80])
+                if "尚未存在" in cap2 or "does not exist" in cap2:
+                    check("new-set estimate is sane (no '0 indices', no spurious red)",
+                          ("0 個索引" not in cap2) and ("可能不足" not in cap2)
+                          and ("MAY NOT FIT" not in cap2), cap2[:110])
                 await pg.evaluate("() => { document.querySelector('input[name=\"import-mode\"][value=\"gelf\"]').checked = true; onImportModeChange('gelf'); }")
 
         # 2b) schedules: cron shown human-readable (raw only as small/tooltip)

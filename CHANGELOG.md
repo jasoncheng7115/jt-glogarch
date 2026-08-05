@@ -2,6 +2,41 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.80] - 2026-08-05
+
+### Fixed
+
+- **Bulk-importing an API-mode archive failed on EVERY document.** Graylog's
+  index template maps `timestamp` as date with format
+  `uuuu-MM-dd HH:mm:ss.SSS` and rejects ISO-8601 — and API-mode archives store
+  exactly what the REST API returns: ISO (`2026-08-04T13:00:00.000Z`). A live
+  bulk import failed 380,961 of 380,961 with `mapper_parsing_exception`. The
+  bulk writer now normalises `timestamp` to the native format (timezone-aware
+  values converted to UTC; unparseable values left for reconciliation to
+  report honestly). Verified live: the same archive re-imported
+  380,961/380,961 with zero failures. The e2e suite gains step [4b] —
+  bulk-importing an API-MODE archive — because only OS-export→bulk (native
+  timestamps) was ever covered, which is how this combination shipped broken.
+- **A new bulk target's deletion cap is now sized to the batch at creation.**
+  The fixed default (30 indices, SizeBased 32 GiB rotation) meant a 3.5 TB
+  restore (~111 indices) would have retention deleting freshly-imported data
+  mid-import. Preflight now creates the set with `max(30, estimate + 20%)`;
+  an EXISTING set's cap is the operator's setting and is never touched. The
+  pre-import estimate uses the same 32 GiB maths (it previously assumed a
+  20M-docs rotation the set is not actually created with).
+
+## [1.13.79] - 2026-08-05
+
+### Fixed
+
+- **Capacity estimate for a not-yet-existing bulk target showed "~0 indices"
+  plus a spurious red "MAY NOT FIT" verdict.** The fresh-set path omitted the
+  `sufficient` field (undefined is falsy) and returned 0 estimated indices.
+  It now estimates against the parameters the set WILL be created with
+  (20M docs/index, deletion cap 30), and the misleading "cannot read the
+  OpenSearch data-path disk" hint is no longer shown for a set that was never
+  probed because it does not exist yet.
+
 ## [1.13.78] - 2026-08-01
 
 ### Fixed
