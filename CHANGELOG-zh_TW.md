@@ -2,6 +2,17 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.13.84] - 2026-08-15
+
+### 變更
+
+- **授權由 Apache-2.0 變更為 AGPL-3.0-or-later。** `LICENSE` 檔現在收錄
+  GNU Affero General Public License v3 的官方逐字原文（取自 gnu.org），並附上
+  本專案的版權宣告。所有授權標示同步更新：`pyproject.toml`
+  （`license = "AGPL-3.0-or-later"`）、兩份 README（徽章、標頭、頁尾），以及
+  兩個文件頁面（en／zh-TW）。`THIRD-PARTY-LICENSES.md` 中相依套件的授權維持
+  不變（各自保留其原本條款）。
+
 ## [1.13.83] - 2026-08-15
 
 ### 修正

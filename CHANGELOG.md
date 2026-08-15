@@ -2,6 +2,18 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.84] - 2026-08-15
+
+### Changed
+
+- **License changed from Apache-2.0 to AGPL-3.0-or-later.** The `LICENSE` file
+  now carries the verbatim GNU Affero General Public License v3 text (fetched
+  from gnu.org) plus the project copyright notice. All license references were
+  updated in step: `pyproject.toml` (`license = "AGPL-3.0-or-later"`), both
+  READMEs (badge, header, footer), and both documentation pages (en / zh-TW).
+  Third-party dependency licenses in `THIRD-PARTY-LICENSES.md` are unchanged
+  (they retain their own terms).
+
 ## [1.13.83] - 2026-08-15
 
 ### Fixed

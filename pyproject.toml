@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "jt-glogarch - Graylog Open Archive, archive & restore logs for Graylog Open"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "Apache-2.0"}
+license = {text = "AGPL-3.0-or-later"}
 authors = [{name = "Jason Cheng", email = "jason@jason.tools"}]
 
 dependencies = [

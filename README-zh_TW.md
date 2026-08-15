@@ -1,12 +1,12 @@
-# jt-glogarch v1.13.83
+# jt-glogarch v1.13.84
 
 **語言**： [English](README.md) | **繁體中文**  
 **網站**： <https://jasoncheng7115.github.io/jt-glogarch/>
 
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.13.83-green.svg)]()
+[![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.13.84-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -18,7 +18,7 @@ Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
 匯出的記錄會壓縮為 `.json.gz` 並有 SHA256 完整性驗證，可透過 GELF (UDP / TCP) 還原回任何 Graylog 實例。
 
 > **作者：** Jason Cheng ([Jason Tools](https://github.com/jasoncheng7115))
-> **授權：** Apache 2.0
+> **授權：** AGPL-3.0-or-later
 
 
 
@@ -1443,7 +1443,7 @@ API 模式在 stream 上操作。OpenSearch Direct 模式在 index 上操作。
 
 ## 授權與作者
 
-**授權：** [Apache License 2.0](LICENSE)
+**授權：** [GNU AGPL v3 或更新版本](LICENSE)
 
 **作者：** Jason Cheng — [Jason Tools](https://github.com/jasoncheng7115)
 

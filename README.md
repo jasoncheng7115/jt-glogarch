@@ -1,12 +1,12 @@
-# jt-glogarch v1.13.83
+# jt-glogarch v1.13.84
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
 
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.13.83-green.svg)]()
+[![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.13.84-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -20,7 +20,7 @@ It exports logs to compressed archives (`.json.gz`) with SHA256 integrity verifi
 and can restore them back into any Graylog instance via GELF (UDP / TCP).
 
 > **Author:** Jason Cheng ([Jason Tools](https://github.com/jasoncheng7115))
-> **License:** Apache 2.0
+> **License:** AGPL-3.0-or-later
 
 
 
@@ -1593,7 +1593,7 @@ without OS-specific dependencies — a Dockerfile would be straightforward to ad
 
 ## License & Author
 
-**License:** [Apache License 2.0](LICENSE)
+**License:** [GNU AGPL v3 or later](LICENSE)
 
 **Author:** Jason Cheng — [Jason Tools](https://github.com/jasoncheng7115)
 
