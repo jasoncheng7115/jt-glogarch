@@ -42,6 +42,13 @@ class GraylogSearch:
         self.client = client
         self.system_monitor = system_monitor
         self._delay_ms = delay_between_requests_ms
+        # Timestamps where >RESULT_WINDOW messages shared one millisecond, so
+        # Graylog's offset-paginated REST API could not read past the first
+        # RESULT_WINDOW. We keep those, skip the rest of that one millisecond,
+        # and continue — instead of losing the WHOLE chunk. Each entry is
+        # {"timestamp": str, "kept": int}. The exporter surfaces these so the
+        # partial loss is precise and actionable, not a silent hole.
+        self.truncated_windows: list[dict] = []
 
     async def search_messages(
         self,
@@ -262,13 +269,36 @@ class GraylogSearch:
                              carry=len(carry_ids), fetched_so_far=fetched_total)
                     current_from = new_from
                 else:
-                    # The entire 10K result window is a single millisecond
-                    # (>RESULT_WINDOW messages share one ms) — offset pagination
-                    # cannot advance without risking loss. Surface it loudly.
-                    raise RuntimeError(
-                        f"More than {RESULT_WINDOW} messages share timestamp "
-                        f"{last_ts}; cannot paginate safely. Reduce "
-                        f"chunk_duration_minutes or use OpenSearch export mode.")
+                    # The entire result window is a SINGLE millisecond
+                    # (>RESULT_WINDOW messages share `last_ts`). Graylog's REST
+                    # API is offset-paginated and physically cannot read past
+                    # the first RESULT_WINDOW of them.
+                    #
+                    # Old behaviour raised here — which the caller turned into
+                    # "Chunk N failed" and DELETED the whole chunk's partial
+                    # file, losing everything before AND after this millisecond
+                    # (a whole hour by default) to save one over-full second.
+                    #
+                    # Instead: keep what we have, record the truncation, skip
+                    # exactly this one millisecond, and continue the chunk.
+                    # Blast radius shrinks from "the whole chunk" to "the
+                    # overflow of one millisecond", and the exporter reports it
+                    # precisely so the operator can re-fetch just that window in
+                    # OpenSearch Direct mode. Advancing by +1ms always makes
+                    # progress, so there is no infinite loop.
+                    self.truncated_windows.append(
+                        {"timestamp": last_ts, "kept": RESULT_WINDOW})
+                    log.warning(
+                        "Single-millisecond overflow during API export: more "
+                        "than %d messages share %s; Graylog's REST API cannot "
+                        "page past it. Kept the first %d, skipping the rest of "
+                        "this millisecond and continuing. Re-run this window in "
+                        "OpenSearch Direct mode to capture them all.",
+                        RESULT_WINDOW, last_ts, RESULT_WINDOW)
+                    boundary = self._parse_timestamp(last_ts)
+                    current_from = boundary + timedelta(milliseconds=1)
+                    carry_ids = set()
+                    carry_boundary = None
 
     @staticmethod
     def _fmt_ts(dt: datetime) -> str:

@@ -2,6 +2,45 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.83] - 2026-08-15
+
+### Fixed
+
+- **API export lost a WHOLE chunk (a full hour by default) when a single
+  timestamp held more than 10,000 messages — not just the overflow.** On a
+  high-volume second (common with syslog sources that emit whole-second
+  timestamps, e.g. `12:23:03.000`), Graylog's offset-paginated REST API cannot
+  read past the first 10,000. The old code raised, the exporter caught it as
+  "Chunk N failed" and DELETED the chunk's partial file — discarding every
+  message before AND after that millisecond that had already been fetched.
+  Now the export keeps everything it read, skips past that one millisecond,
+  continues the chunk, and records the truncation precisely (timestamp + count
+  kept) so the notification tells the operator exactly which sub-second window
+  to re-fetch in OpenSearch Direct mode. Blast radius: a whole hour → the
+  overflow of one millisecond. Verified against a live Graylog seeded with
+  12,000 messages at one second plus 5 after: the 5 "after" messages are
+  preserved and the overflow is reported, where the old behaviour lost all
+  12,005.
+
+## [1.13.82] - 2026-08-15
+
+### Fixed
+
+- **upgrade.sh / upgrade-offline.sh: the DB backup never ran.** The presence
+  probe `python3 -m glogarch db-backup --help` was executed from root's cwd;
+  `-m glogarch` loads config before argparse, so reading `./config.yaml`
+  raised `PermissionError` and the probe exited non-zero — every upgrade then
+  took the `skip: db-backup not available in current version` branch and
+  backed up NOTHING, while printing a benign-looking skip line. The probe now
+  runs inside `$INSTALL_DIR` (the actual backup call already did). Verified
+  live: `/var/backups/jt-glogarch/` went from 0 files to a real 9.6 MB
+  snapshot. Regression-pinned in `test_upgrade_script.py`.
+- **API export: the "single-millisecond >10000 messages" error suggested a
+  fix that cannot work.** It advised reducing `chunk_duration_minutes`, but
+  the collision is within one millisecond — no chunk size helps. The message
+  now names the only real remedy: switch the export to OpenSearch Direct mode
+  (`search_after`, no `max_result_window` limit).
+
 ## [1.13.81] - 2026-08-05
 
 ### Fixed

@@ -70,7 +70,7 @@ chown jt-glogarch:jt-glogarch /var/backups/jt-glogarch
 # Keep stderr visible: a genuine backup failure (disk full, permissions) must
 # NOT be silently swallowed — that backup is the safety net for this upgrade.
 # Only the "command not present in the old version" case is an acceptable skip.
-if sudo -u jt-glogarch python3 -m glogarch db-backup --help >/dev/null 2>&1; then
+if ( cd "$INSTALL_DIR" && sudo -u jt-glogarch python3 -m glogarch db-backup --help ) >/dev/null 2>&1; then
     # Run from INSTALL_DIR so db-backup finds ./config.yaml (and thus the DB).
     if ! ( cd "$INSTALL_DIR" && sudo -u jt-glogarch python3 -m glogarch db-backup ); then
         echo "  ⚠ WARNING: database backup FAILED (see error above)."

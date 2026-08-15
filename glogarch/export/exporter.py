@@ -307,6 +307,18 @@ class Exporter:
                             "pct": ((chunk_idx + 1) / total_chunks) * 100 if total_chunks else 0,
                         })
 
+            # Single-millisecond overflows: the chunk WAS exported (everything
+            # except the unreadable tail of one millisecond), so it is not a
+            # chunk failure — but it is a precise, actionable partial loss the
+            # operator must see. Surface each as an error line naming the exact
+            # timestamp and the fix (OpenSearch Direct mode).
+            for tw in getattr(search, "truncated_windows", []):
+                result.errors.append(
+                    f"Timestamp {tw['timestamp']} had more than {tw['kept']} "
+                    f"messages in one millisecond; kept {tw['kept']:,}, the rest "
+                    f"could not be read via Graylog's API. Re-run this window in "
+                    f"OpenSearch Direct mode to capture them all.")
+
             # Update job status with skip + failure info. A chunk that raised is
             # NOT recorded as an archive, so it is retried on the next run (dedup
             # won't skip it) — but the operator must still be told the run was

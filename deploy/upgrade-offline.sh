@@ -65,7 +65,7 @@ usermod -aG systemd-journal jt-glogarch 2>/dev/null || true
 echo "[1/5] Backing up database..."
 mkdir -p /var/backups/jt-glogarch
 chown jt-glogarch:jt-glogarch /var/backups/jt-glogarch
-if sudo -u jt-glogarch python3 -m glogarch db-backup --help >/dev/null 2>&1; then
+if ( cd "$INSTALL_DIR" && sudo -u jt-glogarch python3 -m glogarch db-backup --help ) >/dev/null 2>&1; then
     if ! ( cd "$INSTALL_DIR" && sudo -u jt-glogarch python3 -m glogarch db-backup ); then
         echo "  WARNING: database backup FAILED (see error above)."
         # Prompt only if a real terminal is attached; otherwise (scripted SOP)
