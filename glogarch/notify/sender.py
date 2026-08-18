@@ -253,6 +253,8 @@ _MSG = {
     "en": {
         "export_ok": "✅ Export Complete",
         "export_err": "⚠️ Export Completed with Errors",
+        "export_overflow": "⚠️ Export Complete (sub-second overflow — not a failure)",
+        "overflow_note": "Sub-second overflow: {n} timestamp(s) had more than 10,000 messages in one millisecond. Those chunks WERE archived and will NOT be retried; re-run these windows in OpenSearch Direct mode to capture the overflow:",
         "export_body": ("Exported: {chunks} chunks\n"
                         "Skipped: {skipped}\n"
                         "Records: {records}\n"
@@ -293,6 +295,8 @@ _MSG = {
     "zh-TW": {
         "export_ok": "✅ 匯出成功",
         "export_err": "⚠️ 匯出完成（有錯誤）",
+        "export_overflow": "⚠️ 匯出完成（次秒溢出，非失敗）",
+        "overflow_note": "次秒溢出：{n} 個時間戳在同一毫秒內超過 10000 筆。這些區段【已歸檔】、不會重試；請以 OpenSearch Direct 模式重跑這些時段以補回溢出部分：",
         "export_body": ("匯出區段: {chunks}\n"
                         "略過區段: {skipped}\n"
                         "記錄數: {records}\n"
@@ -349,8 +353,20 @@ async def notify_export_complete(
     chunks: int, records: int, skipped: int, errors: list[str],
     files: int = 0, original_bytes: int = 0, compressed_bytes: int = 0,
     duration_seconds: float = 0, mode: str = "api",
+    truncations: list[str] | None = None,
 ):
-    title = _t("export_err") if errors else _t("export_ok")
+    truncations = truncations or []
+    # Title precedence: a real failure outranks an overflow-only caveat, which
+    # outranks a clean success. A run that archived everything except a few
+    # over-full seconds is NOT "completed with errors" — that wording made a
+    # customer think exports were failing when 9.1M records were being saved
+    # every run. Give overflows their own accurate, non-alarming title.
+    if errors:
+        title = _t("export_err")
+    elif truncations:
+        title = _t("export_overflow")
+    else:
+        title = _t("export_ok")
     def _fmt_bytes(b):
         for u in ['B', 'KB', 'MB', 'GB', 'TB']:
             if b < 1024: return f"{b:.1f} {u}"
@@ -377,7 +393,20 @@ async def notify_export_complete(
             import re as _re
             short = _re.sub(r"https?://\S+", "<url>", str(e))
             lines.append(f"  - {short[:80]}")
-    event = NotifyEvent.ERROR if errors else NotifyEvent.EXPORT_COMPLETE
+    if truncations:
+        lines.append(_t("overflow_note", n=len(truncations)))
+        for tr in truncations[:5]:
+            # Just the timestamp — the full remedy is in the header note.
+            ts = tr.split(" had ")[0].replace("Timestamp ", "")
+            lines.append(f"  - {ts}")
+    # An overflow-only run is a warning, not an error event: everything that
+    # could be read WAS archived.
+    if errors:
+        event = NotifyEvent.ERROR
+    elif truncations:
+        event = NotifyEvent.WARNING if hasattr(NotifyEvent, "WARNING") else NotifyEvent.EXPORT_COMPLETE
+    else:
+        event = NotifyEvent.EXPORT_COMPLETE
     await send_notification(event, title, "\n".join(lines))
 
 

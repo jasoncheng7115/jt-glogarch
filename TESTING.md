@@ -66,7 +66,7 @@ larger releases, eyeballing UI changes, reading the actual notification text,
 customer-facing docs). `RESULT/RELEASE CHECK: ALL PASS` on all six layers plus
 the manual sections below = ship.
 
-## Automated Tests (202 tests)
+## Automated Tests (~485 tests)
 
 ### Unit Tests
 
@@ -135,6 +135,12 @@ Run these after all automated tests pass:
 - [ ] No half-width colons/semicolons in zh_TW CJK context
 - [ ] zh_TW uses Taiwan Traditional Chinese terminology
 - [ ] Upgrade instructions in README are current
+- [ ] **License references are consistent** — `LICENSE` is the verbatim GNU AGPL
+      v3 text (title + Section 13 "Remote Network Interaction" + copyright
+      notice), and every reference agrees: `pyproject.toml`
+      (`license = "AGPL-3.0-or-later"`), both README badges/headers/footers, and
+      both docs pages (en / zh-TW). Third-party dependency licenses in
+      `THIRD-PARTY-LICENSES.md` keep their own terms (v1.13.84)
 
 ### Deployment Verification
 
@@ -217,6 +223,11 @@ GL_PASS='<graylog-admin-pw>' bash scripts/e2e-archive-test.sh
 - [ ] `deploy/install.sh` references correct paths, systemd default = Yes
 - [ ] `deploy/install.sh` writes a minimal `config.yaml` with `servers: []` (triggers setup wizard)
 - [ ] `deploy/upgrade.sh` runs successfully (db-backup → git pull → install → restart → verify)
+- [ ] **The DB backup actually produced a file** — `/var/backups/jt-glogarch/` gains a
+      fresh `jt-glogarch-*.db` snapshot. The presence probe once ran from root's cwd,
+      hit `PermissionError` on `./config.yaml`, and SILENTLY skipped the backup while
+      printing a benign "not available" line (v1.13.82). `test_upgrade_script.py`
+      pins the probe running inside `$INSTALL_DIR`.
 - [ ] `deploy/upgrade.sh` never overwrites an existing `servers:` / `opensearch:` block
 
 ### WebUI Connection Settings + Setup Wizard (v1.8.0) — Feature ↔ Test
@@ -327,6 +338,29 @@ cost 7% of a core forever at 50K job rows. Both were invisible at test-size.
 > Staging note: .36 has REAL notification channels configured — import/export
 > tests there deliver actual mails. Announce test noise, or disable channels
 > first.
+
+### API export — single-millisecond overflow (v1.13.83 / 85)
+
+Whole-second syslog bursts (`12:23:03.000`, no sub-second precision) can put
+more than 10,000 messages at one timestamp — past Graylog's REST offset limit.
+This must degrade precisely, never lose the chunk, and never be mislabelled a
+failure.
+
+- [ ] `tests/test_export_pagination.py` passes, incl.
+      `test_overflow_ms_does_not_lose_messages_after_it` (everything AFTER the
+      over-full ms is still exported — the old code deleted the whole chunk)
+- [ ] A single-ms overflow is recorded in `search.truncated_windows` and lands
+      in `result.truncations`, NOT `result.errors`
+- [ ] `tests/test_notify_format.py` passes: an overflow-only run is titled
+      `export_overflow` (not `export_err`), routed `EXPORT_COMPLETE` (not
+      `ERROR`), and its body says "archived; NOT retried" — a real chunk
+      failure still outranks it and reports as an error
+- [ ] Testing any `notify_*` path: bypass conftest's autouse mute — capture the
+      REAL function at import (`_REAL = S.notify_export_complete`) then patch
+      `send_notification`; asserting against the stub passes vacuously
+- [ ] Live (optional): seed >10,000 messages at one second + a few after, run
+      the API export, confirm the "after" messages are archived and the overflow
+      is reported (not a chunk failure). Clean up the seed afterwards.
 
 ### Test Results
 

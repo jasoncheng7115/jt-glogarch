@@ -41,7 +41,7 @@ bash scripts/release-check.sh        # ALL PASS 即可出貨
 無法指令碼化的手動項目在下方各節（較大版本的 ZAP 掃描、UI 變更目視、閱讀實際
 通知內容、對客戶文件）。六層全部 `ALL PASS` 加上下方手動節次完成＝可出貨。
 
-## 自動化測試（157 筆）
+## 自動化測試（約 485 筆）
 
 ### 單元測試
 
@@ -108,6 +108,10 @@ bash scripts/release-check.sh        # ALL PASS 即可出貨
 - [ ] zh_TW 無半形冒號/分號（CJK 語境內）
 - [ ] zh_TW 使用台灣繁體中文用語
 - [ ] README 升級說明是最新的
+- [ ] **授權標示一致** —— `LICENSE` 為 GNU AGPL v3 官方逐字原文（標題＋第 13 條
+      「Remote Network Interaction」＋版權宣告），且所有引用一致：`pyproject.toml`
+      （`license = "AGPL-3.0-or-later"`）、兩份 README 的徽章／標頭／頁尾、以及兩個
+      文件頁面（en／zh-TW）。`THIRD-PARTY-LICENSES.md` 中相依套件的授權維持原條款（v1.13.84）
 
 ### 部署驗證
 
@@ -174,6 +178,10 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
 - [ ] 複製 `github/` 到暫存目錄 → `pip install` 成功
 - [ ] `deploy/install.sh` 路徑正確、systemd 預設 = Yes
 - [ ] `deploy/upgrade.sh` 可正常執行（db-backup → git pull → install → restart → verify）
+- [ ] **DB 備份確實產出檔案** —— 升級後 `/var/backups/jt-glogarch/` 會多一個新的
+      `jt-glogarch-*.db` 快照。偵測指令曾在 root 的工作目錄下執行、對 `./config.yaml`
+      拋 `PermissionError`，於是**靜默略過備份**卻印出看似正常的「not available」
+      （v1.13.82）。`test_upgrade_script.py` 已釘住偵測必須在 `$INSTALL_DIR` 下執行。
 
 ### 破壞性操作——清除目標索引集合（v1.13.66）
 
@@ -245,6 +253,26 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
 
 > 測試機注意：.36 設有**真實**通知管道——在其上跑匯入／匯出測試會寄出真的郵件。
 > 請先告知會有測試噪音，或先停用通知管道。
+
+### API 匯出——單一毫秒溢出（v1.13.83／85）
+
+整秒的 syslog 尖峰（`12:23:03.000`，無次秒精度）可讓單一時間戳超過 10000 筆，
+超出 Graylog REST 的 offset 上限。此情況必須精確降級：絕不丟失整個 chunk、
+也絕不被貼成失敗。
+
+- [ ] `tests/test_export_pagination.py` 通過，含
+      `test_overflow_ms_does_not_lose_messages_after_it`（過滿毫秒**之後**的資料仍
+      完整匯出——舊程式會刪掉整個 chunk）
+- [ ] 單一毫秒溢出被記錄進 `search.truncated_windows`，並落在 `result.truncations`
+      而非 `result.errors`
+- [ ] `tests/test_notify_format.py` 通過：僅有溢出的執行標題為 `export_overflow`
+      （非 `export_err`）、以 `EXPORT_COMPLETE`（非 `ERROR`）送出、內文寫「已歸檔、
+      不會重試」——真正的 chunk 失敗仍優先且以錯誤回報
+- [ ] 測試任何 `notify_*` 路徑：繞過 conftest 的自動靜音——在 import 時抓真函式
+      （`_REAL = S.notify_export_complete`）再 patch `send_notification`；對空殼斷言
+      會空過
+- [ ] 線上（選用）：對單一秒種入 >10000 筆＋之後幾筆，跑 API 匯出，確認「之後」的
+      訊息已歸檔、溢出被回報（而非 chunk 失敗）。事後清除種子。
 
 ### 測試結果
 

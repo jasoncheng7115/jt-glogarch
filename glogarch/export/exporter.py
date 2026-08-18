@@ -79,6 +79,13 @@ class ExportResult:
         self.messages_total: int = 0
         self.files_written: list[str] = []
         self.errors: list[str] = []
+        # Sub-second overflows: a chunk WAS archived, but one millisecond in it
+        # held >RESULT_WINDOW messages that Graylog's offset-paginated REST API
+        # cannot read past. These are NOT failures (the chunk is saved and will
+        # NOT be retried); they are a precise, non-retryable partial loss that
+        # needs OpenSearch Direct mode. Kept separate from `errors` so a run
+        # with only overflows is not mislabelled "chunks failed, will retry".
+        self.truncations: list[str] = []
         self.job_id: str = ""
         self.original_bytes: int = 0
         self.compressed_bytes: int = 0
@@ -313,7 +320,7 @@ class Exporter:
             # operator must see. Surface each as an error line naming the exact
             # timestamp and the fix (OpenSearch Direct mode).
             for tw in getattr(search, "truncated_windows", []):
-                result.errors.append(
+                result.truncations.append(
                     f"Timestamp {tw['timestamp']} had more than {tw['kept']} "
                     f"messages in one millisecond; kept {tw['kept']:,}, the rest "
                     f"could not be read via Graylog's API. Re-run this window in "
@@ -333,6 +340,17 @@ class Exporter:
                 note_parts.append(
                     f"⚠ {len(result.errors)} chunk(s) failed — data may be "
                     f"incomplete, will retry next run: {sample}")
+            if result.truncations:
+                # These are NOT failures and will NOT retry — say so, so the
+                # operator does not chase a "failing export" that is actually
+                # archiving everything except a handful of over-full seconds.
+                ts_list = "; ".join(
+                    t.split(" had ")[0].replace("Timestamp ", "")
+                    for t in result.truncations[:5])
+                note_parts.append(
+                    f"ℹ {len(result.truncations)} sub-second overflow(s) exceeded "
+                    f"Graylog's API limit (chunk archived; NOT retried) — re-run "
+                    f"these windows in OpenSearch Direct mode: {ts_list}")
             note = ". ".join(note_parts)
             self.db.update_job(
                 job_id,
@@ -360,9 +378,10 @@ class Exporter:
                     compressed_bytes=result.compressed_bytes,
                     duration_seconds=result.duration_seconds,
                     mode="api",
+                    truncations=result.truncations,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Export notification failed", error=str(e))
 
         except Exception as e:
             err_str = str(e)

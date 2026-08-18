@@ -2,6 +2,24 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.85] - 2026-08-18
+
+### Fixed
+
+- **Sub-second overflows were reported as "chunks failed, will retry next
+  run" — so a healthy export looked like it kept failing.** After 1.13.83 kept
+  the chunk (losing only the overflow of one over-full second), the overflow
+  notices were still put in `result.errors`, which the notification described
+  as failed chunks that would retry. A run that archived 9.1M records and hit
+  three over-full seconds (02:02:30, 12:52:08, 12:52:09) e-mailed
+  "⚠️ Export Completed with Errors — 3 chunk(s) failed, will retry", alarming
+  the operator. Overflows are now a SEPARATE category (`result.truncations`):
+  its own non-alarming title ("Export Complete — sub-second overflow, not a
+  failure"), routed as a normal export-complete event (not an ERROR alert),
+  and worded accurately — those chunks WERE archived and will NOT retry;
+  re-run just those windows in OpenSearch Direct mode to capture the overflow.
+  A real chunk failure still outranks an overflow and still reports as an error.
+
 ## [1.13.84] - 2026-08-15
 
 ### Changed
