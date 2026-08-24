@@ -276,6 +276,15 @@ regression here is not recoverable by the customer.
       prefix, count and bytes freed
 - [ ] jt-glogarch's own archives are untouched (archive list unchanged)
 
+- [ ] **Captions never understate the request** — a widget whose data spans
+      less than the requested window shows BOTH (e.g. "Last 6d (…) ⚠ requested
+      Last 90d; data exists only for the range shown"). A 90-day report whose
+      caption read "Last 6d" made the request itself vanish from the page
+      (v1.13.86)
+- [ ] **Every table states its total row count** — untruncated "12 rows",
+      truncated "showing first 40 of 128 rows". A reader must never have to
+      count rows by hand, and a truncated table must say what it is a subset OF
+
 ### Wide-Window Reports — MANDATORY for report-affecting changes
 
 `GL_PASS=<pw> python3 scripts/report-bigrange-test.py [GL_URL]` against a live

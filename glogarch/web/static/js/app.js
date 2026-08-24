@@ -2431,7 +2431,9 @@ async function loadSchedules() {
             <td>${configHtml}</td>
             <td>${s.enabled ? '<span class="status-completed">' + t('yes') + '</span>' : '<span class="status-failed">' + t('no') + '</span>'}</td>
             <td>${formatDT(s.last_run_at)}${runningHtml}</td>
-            <td>${s.enabled ? formatDT(s.next_run_at) : '<span class="u022">-</span>'}</td>
+            <td>${s.running_since
+                    ? `<span class="status-running" title="${t('sched_running_hint')}">${icon('refresh', 14)} ${t('sched_running_since').replace('{since}', esc(formatDT(s.running_since))).replace('{elapsed}', esc(formatElapsed(s.running_since)))}</span>`
+                    : (s.enabled ? formatDT(s.next_run_at) : '<span class="u022">-</span>')}</td>
             <td><div class="u051">
                 <button class="btn-sm btn-primary" data-act="editSchedule" data-arg="${esc(s.name)}">${icon('shield')} ${t('btn_edit')}</button>
                 ${(s.job_type === 'export' || s.job_type === 'cleanup' || s.job_type === 'verify') && !anyRunningExport ? `<button class="btn-sm btn-success" data-act="runScheduleNow" data-arg="${esc(s.name)}" title="${t('btn_run_now')}">${icon('play')} ${t('btn_run_now')}</button>` : ''}

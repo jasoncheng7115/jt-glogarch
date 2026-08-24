@@ -871,6 +871,17 @@ class ArchiveDB:
         ).fetchall()
         return [self._row_to_job(r) for r in rows]
 
+    def list_running_jobs(self) -> list:
+        """All jobs currently `running`, ANY age. A scheduled export of a large
+        historical backlog can run for weeks (throttled by the backpressure
+        guard); its row keeps status='running' with advancing progress, so it
+        would fall off `list_jobs(limit=50)` (newest-first) — this finds it
+        regardless of age, indexed by idx_jobs_created only for the sort."""
+        rows = self.conn.execute(
+            "SELECT * FROM jobs WHERE status = 'running' ORDER BY started_at ASC"
+        ).fetchall()
+        return [self._row_to_job(r) for r in rows]
+
     def prune_jobs(self, keep_days: int) -> int:
         """Delete TERMINAL job rows older than keep_days. 0 disables.
 

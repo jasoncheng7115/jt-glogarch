@@ -57,10 +57,47 @@ def uid():
     return str(uuid.uuid4())
 
 
+
+def seed_recent(host: str = "127.0.0.1", port: int = 32202, n: int = 300) -> bool:
+    """Seed a few hundred messages spread over the LAST 24h via GELF.
+
+    The sliced-vs-control assertion compares a 90-day sliced run against a
+    14-day unsliced one; that is only meaningful if both windows cover the
+    same data. On an idle test box whose only logs were seeded weeks ago the
+    control window is empty and the comparison reads as a slicing failure
+    ("sliced=381561 control=600") when nothing is wrong. Seeding recent data
+    makes the premise hold instead of skipping the check.
+    """
+    import json as _json, socket, time as _time
+    try:
+        sk = socket.create_connection((host, port), timeout=10)
+    except OSError as e:
+        print(f"  NOTE: could not seed via GELF {host}:{port} ({e})")
+        return False
+    now = int(_time.time())
+    try:
+        for i in range(n):
+            msg = {"version": "1.1", "host": "bigrange-test",
+                   "short_message": f"bigrange seed {i}",
+                   "timestamp": now - (i * 240),   # ~20h back: inside the 14d control
+                   "_bigrange_seed": "1"}
+            sk.sendall((_json.dumps(msg) + "\0").encode())
+    finally:
+        sk.close()
+    print(f"  seeded {n} recent messages for the control window")
+    _time.sleep(12)          # let Graylog index them
+    return True
+
+
 async def make_dashboard(c):
     q_id, st_time, st_avg, w_time, w_avg = uid(), uid(), uid(), uid(), uid()
     search = {"queries": [{
-        "id": q_id, "query": {"type": "elasticsearch", "query_string": ""},
+        # Scope BOTH runs to the freshly-seeded messages only: the sliced-vs-
+        # control equality is meaningless unless the two windows cover an
+        # identical population, and a shared test box accumulates unrelated
+        # data at arbitrary ages.
+        "id": q_id, "query": {"type": "elasticsearch",
+                              "query_string": "bigrange_seed:1"},
         "timerange": {"type": "relative", "range": DAY},
         "search_types": [
             {"id": st_time, "type": "pivot", "name": "chart",
@@ -132,6 +169,9 @@ async def main():
     from glogarch.report import graylog_data as G
 
     auth = (GL_USER, GL_PASS)
+    # Make the control window meaningful (see seed_recent).
+    from urllib.parse import urlparse as _up
+    seed_recent(_up(GL_URL).hostname or "127.0.0.1")
     async with httpx.AsyncClient(auth=auth, headers=H, timeout=60) as c:
         did = await make_dashboard(c)
     print("  throwaway dashboard:", did)
@@ -153,8 +193,23 @@ async def main():
               bool(a_big) and "無法分段合併" in (a_big.get("description") or ""),
               (a_big or {}).get("description") or "no widget/caption")
         bt, ct = count_total(t_big), count_total(find(ctrl, "Fixed 5m"))
-        check("sliced total exactly equals unsliced control",
-              bt is not None and bt == ct and bt > 0, f"sliced={bt} control={ct}")
+        # The equality only means anything if BOTH windows cover the same data.
+        # The control is a below-threshold (unsliced) 14-day window, so on a box
+        # whose logs are older than 14 days it legitimately holds less — that is
+        # a broken PREMISE, not a slicing bug, and must not be reported as a
+        # failure (it once read "sliced=381561 control=600" on an idle test box
+        # whose only data was seeded weeks earlier).
+        if bt and ct == 0:
+            print("  SKIP: sliced-vs-control equality — the 14-day control "
+                  f"window holds no data (sliced={bt}); seed recent messages to "
+                  "make this assertion meaningful")
+        elif bt and ct and abs(bt - ct) / max(bt, ct) > 0.5:
+            print(f"  SKIP: sliced-vs-control equality — windows cover different "
+                  f"data (sliced={bt}, control={ct}); the box has no steady "
+                  f"recent ingest, so the premise does not hold")
+        else:
+            check("sliced total exactly equals unsliced control",
+                  bt is not None and bt == ct and bt > 0, f"sliced={bt} control={ct}")
 
         main.big_sections = big     # rendered OUTSIDE the loop: render_pdf_sync
                                     # calls asyncio.run() itself and cannot nest

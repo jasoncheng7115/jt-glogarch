@@ -2,6 +2,35 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.86] - 2026-08-24
+
+### Fixed
+
+- **A report caption could make the requested window vanish.** When a widget's
+  data spans less than what was asked for, the caption showed only the DATA
+  extent — a 90-day report whose logs covered 6 days read "Last 6d
+  (2026-08-18 … 2026-08-24)", so the reader concluded only 6 days had been
+  requested (or that only 6 days of logs exist, with no way to tell which).
+  Both are now stated: "Last 6d (…) ⚠ requested Last 90d; data exists only for
+  the range shown". A 10% tolerance keeps the note off when the data really
+  does cover the request.
+
+- **A long-running scheduled export showed a misleading "next run" instead of
+  "running".** The Schedules page computed next-run from the cron expression
+  ALONE, and the UI's running-detection read `/api/jobs` (newest 50) — so an
+  export started weeks earlier had fallen off that list entirely. The row then
+  showed a stale last-run plus a future next-run, reading as "the schedule is
+  broken" while the export was in fact still working. `list_running_jobs()`
+  now finds a running job of any age and the row shows "running (since …)".
+
+### Changed
+
+- **Every report table now states its total row count.** Previously a table
+  said nothing at all unless it was truncated (and then only "first 40"), so
+  the reader had to count rows by hand to know how many entries a table
+  represented. Now: "12 rows" when complete, "showing first 40 of 128 rows"
+  when truncated — a truncated table always says what it is a subset OF.
+
 ## [1.13.85] - 2026-08-18
 
 ### Fixed

@@ -913,7 +913,8 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                 if not res.get("rows"):
                     continue
                 widget = _pivot_to_widget(w.get("config") or {}, wt, res, bar_horizontal=bar_horizontal,
-                                          heatmap_values=heatmap_values, date_fields=date_fields)
+                                          heatmap_values=heatmap_values, date_fields=date_fields,
+                                          lang=lang)
             if widget:
                 eff = res.get("effective_timerange") or {}
                 es = _parse_ts(eff.get("from")) if eff.get("from") else None
@@ -999,7 +1000,8 @@ def _widget_autotitle(w):
 
 
 def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool = False,
-                     heatmap_values: bool = False, date_fields: set | None = None) -> dict | None:
+                     heatmap_values: bool = False, date_fields: set | None = None,
+                     lang: str = "zh-TW") -> dict | None:
     """Map a Graylog pivot result to one of our report widgets."""
     rows = res.get("rows") or []
     viz = cfg.get("visualization") or "table"
@@ -1064,20 +1066,20 @@ def _pivot_to_widget(cfg: dict, title: str, res: dict, *, bar_horizontal: bool =
 
     # A Graylog data table stays a table.
     if viz == "table":
-        return _pivot_to_table(cfg, title, drows, col_pivots, date_fields=date_fields)
+        return _pivot_to_table(cfg, title, drows, col_pivots, date_fields=date_fields, lang=lang)
     # A geo/world-map is drawn as a self-contained SVG bubble map (the row key is
     # a "lat,long" geolocation string, the value is the count → bubble size).
     if viz in ("map", "world_map"):
         m = _pivot_to_map(title, drows)
         if m:
             return m
-        return _pivot_to_table(cfg, title, drows, col_pivots, date_fields=date_fields)   # fallback if no coords
+        return _pivot_to_table(cfg, title, drows, col_pivots, date_fields=date_fields, lang=lang)   # fallback if no coords
     # A heatmap stays a heatmap: a colour-graded grid of row-pivot × column-pivot.
     if viz == "heatmap":
         h = _pivot_to_heatmap(cfg, title, drows, col_pivots, show_values=heatmap_values)
         if h:
             return h
-        return _pivot_to_table(cfg, title, drows, col_pivots, date_fields=date_fields)   # fallback if 1-D
+        return _pivot_to_table(cfg, title, drows, col_pivots, date_fields=date_fields, lang=lang)   # fallback if 1-D
 
     labels = [_rowkey(r) for r in drows]                       # keys (for lookups)
     disp = _time_axis_labels(drows) if is_time else labels     # display labels
@@ -1355,7 +1357,16 @@ def _range_label(secs, lang="zh-TW", start=None, end=None):
     """Time-window caption: relative span + the actual absolute start~end in
     parentheses, e.g. 最近 24 小時（2026-07-03 18:50 ~ 2026-07-04 18:50）.
     If start/end (the widget's effective range) are given, they drive the label
-    so it matches exactly what Graylog used for that widget."""
+    so it matches exactly what Graylog used for that widget.
+
+    HONESTY RULE: `effective_timerange` is what Graylog actually covered — the
+    DATA extent, or (in sliced wide-window mode) the surviving slice. When the
+    operator ASKED for 90 days and the effective range is 6, labelling the
+    widget "最近 6 天" hides the fact that 90 days were requested: the reader
+    concludes only 6 days of logs exist. Both are stated whenever they differ
+    materially (see `_requested_vs_effective`).
+    """
+    requested_secs = int(secs or 0)
     if start is not None and end is not None:
         # Graylog's effective_timerange comes back in UTC (…Z). Show it in the
         # server's LOCAL timezone so the caption doesn't look hours/days off.
@@ -1368,14 +1379,30 @@ def _range_label(secs, lang="zh-TW", start=None, end=None):
         start_dt = now - timedelta(seconds=secs)
     fmt = "%Y-%m-%d %H:%M"
     span = f"{start_dt.strftime(fmt)} ~ {now.strftime(fmt)}"
+    base = _span_words(secs, lang)
+    label = f"{base}（{span}）" if lang == "zh-TW" else f"{base} ({span})"
+
+    # State the REQUESTED window too when the data covers materially less, so
+    # "asked 90 days, only 6 days of data exist" can never read as "only 6 days
+    # were asked for". 10% tolerance absorbs bucket-boundary rounding.
+    if requested_secs and secs and requested_secs > secs * 1.1:
+        want = _span_words(requested_secs, lang)
+        if lang == "zh-TW":
+            label += f"　⚠ 查詢範圍為{want}，此區間內僅有以上時段有資料"
+        else:
+            label += f"  ⚠ requested {want}; data exists only for the range shown"
+    return label
+
+
+def _span_words(secs: int, lang: str = "zh-TW") -> str:
+    """'最近 90 天' / 'Last 90d' for a span in seconds."""
+    secs = int(secs or 0)
     if secs and secs % 86400 == 0:
-        base = (f"最近 {secs // 86400} 天" if lang == "zh-TW" else f"Last {secs // 86400}d")
-    elif secs and secs % 3600 == 0:
-        base = (f"最近 {secs // 3600} 小時" if lang == "zh-TW" else f"Last {secs // 3600}h")
-    else:
-        n = max(1, secs // 60)
-        base = (f"最近 {n} 分鐘" if lang == "zh-TW" else f"Last {n}m")
-    return f"{base}（{span}）" if lang == "zh-TW" else f"{base} ({span})"
+        return f"最近 {secs // 86400} 天" if lang == "zh-TW" else f"Last {secs // 86400}d"
+    if secs and secs % 3600 == 0:
+        return f"最近 {secs // 3600} 小時" if lang == "zh-TW" else f"Last {secs // 3600}h"
+    n = max(1, secs // 60)
+    return f"最近 {n} 分鐘" if lang == "zh-TW" else f"Last {n}m"
 
 
 def _series_label(s):
@@ -1421,7 +1448,7 @@ def _col_alignments(raw, key_cols, ncols):
     return align
 
 
-def _pivot_to_table(cfg, title, drows, col_pivots, date_fields=None):
+def _pivot_to_table(cfg, title, drows, col_pivots, date_fields=None, lang="zh-TW"):
     """Render a Graylog table widget as a report table (columns + rows)."""
     date_fields = date_fields or set()
     total_rows = len(drows)          # for the "showing first N" truncation note
@@ -1492,8 +1519,7 @@ def _pivot_to_table(cfg, title, drows, col_pivots, date_fields=None):
         out = {"kind": "table", "title": title, "columns": columns,
                "rows": _grouped_rows(raw, len(rp_fields)), "numeric_from": len(rp_fields),
                "col_align": _col_alignments(raw, len(rp_fields), len(columns))}
-        if total_rows > 40:
-            out["rows_note"] = "僅顯示前 40 筆"
+        out["rows_note"] = _rows_note(total_rows, min(total_rows, 40), lang)
         return out
     # simple table: row-pivot key columns + one column per series. Map each
     # value to its series by KEY (the last key element is the series function),
@@ -1526,9 +1552,22 @@ def _pivot_to_table(cfg, title, drows, col_pivots, date_fields=None):
     out = {"kind": "table", "title": title, "columns": columns,
            "rows": _grouped_rows(raw, len(rp_fields)), "numeric_from": len(rp_fields),
            "col_align": _col_alignments(raw, len(rp_fields), len(columns))}
-    if total_rows > 40:
-        out["rows_note"] = "僅顯示前 40 筆"
+    out["rows_note"] = _rows_note(total_rows, min(total_rows, 40), lang)
     return out
+
+
+def _rows_note(total_rows: int, shown: int, lang: str = "zh-TW") -> str:
+    """Bottom-right note for a table: ALWAYS state the total row count.
+
+    Readers should never have to count rows by hand to know how many entries a
+    table represents, and a truncated table must say what it is a subset OF
+    ("40 of 128"), not merely that it was truncated.
+    """
+    zh = lang == "zh-TW"
+    if shown < total_rows:
+        return (f"顯示前 {shown:,} 筆，共 {total_rows:,} 筆"
+                if zh else f"showing first {shown:,} of {total_rows:,} rows")
+    return f"共 {total_rows:,} 筆" if zh else f"{total_rows:,} rows"
 
 
 def _barmode(cfg: dict) -> str:
@@ -1758,16 +1797,14 @@ def _messages_to_table(cfg, title, res, max_rows, max_cols=0, date_fields=None, 
     # every value is numeric; formatted dates (hyphens/colons) stay left-aligned.
     out = {"kind": "table", "title": title, "columns": list(cols), "rows": rows,
            "col_align": _col_alignments(raw, 0, len(cols))}
-    # Note row and/or column truncation bottom-right.
-    notes = []
-    if max_rows and max_rows > 0 and total > max_rows:
-        notes.append(f"僅顯示前 {max_rows:,} 筆" if lang == "zh-TW"
-                     else f"first {max_rows:,} of {total:,} rows")
+    # Note the total (ALWAYS — the reader must not have to count rows) plus any
+    # row/column truncation, bottom-right.
+    shown = min(total, max_rows) if (max_rows and max_rows > 0) else total
+    notes = [_rows_note(total, shown, lang)]
     if cols_omitted:
         notes.append(f"省略 {cols_omitted} 欄" if lang == "zh-TW"
                      else f"{cols_omitted} more column(s)")
-    if notes:
-        out["rows_note"] = ("、".join(notes) if lang == "zh-TW" else " · ".join(notes))
+    out["rows_note"] = ("、".join(notes) if lang == "zh-TW" else " · ".join(notes))
     return out
 
 

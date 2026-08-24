@@ -1105,7 +1105,25 @@ async def job_stream(request: Request, job_id: str):
 def list_schedules(request: Request):
     db = _db(request)
     schedules = db.list_schedules()
-    return {"items": [_schedule_to_dict(s) for s in schedules]}
+    # Map schedule name -> the started_at of its currently-running export, so
+    # the row can show "running (since …)" instead of a cron-computed next-run
+    # that will not actually fire while a previous run is still going. A large
+    # first-time backlog export can run for WEEKS (backpressure-throttled): the
+    # daily fire is skipped, last_run stays stale, and next_run alone reads as
+    # "the schedule is broken" when it is simply still working.
+    running = {}
+    try:
+        for j in db.list_running_jobs():
+            src = j.source or ""
+            if src.startswith("scheduled:") and src.count(":") >= 2:
+                sched_name = src.split(":", 2)[2]
+                # keep the earliest start if somehow more than one
+                if sched_name not in running and j.started_at:
+                    running[sched_name] = j.started_at.isoformat()
+    except Exception as e:
+        log.warning("Could not read running jobs for schedule list", error=str(e))
+    return {"items": [_schedule_to_dict(s, running_since=running.get(s.name))
+                      for s in schedules]}
 
 
 @router.post("/schedules")
@@ -2429,7 +2447,7 @@ def _job_to_dict(j) -> dict:
     return d
 
 
-def _schedule_to_dict(s) -> dict:
+def _schedule_to_dict(s, running_since: str | None = None) -> dict:
     import json as _json
     config = {}
     if s.config_json:
@@ -2465,6 +2483,10 @@ def _schedule_to_dict(s) -> dict:
         "config": config,
         "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
         "next_run_at": next_run,
+        # When this schedule's export is still running, the cron-computed
+        # next_run_at is misleading (the daily fire is skipped until the current
+        # run finishes). The UI shows "running since …" instead.
+        "running_since": running_since,
     }
 
 
