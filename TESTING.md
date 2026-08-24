@@ -284,6 +284,13 @@ regression here is not recoverable by the customer.
 - [ ] **Every table states its total row count** — untruncated "12 rows",
       truncated "showing first 40 of 128 rows". A reader must never have to
       count rows by hand, and a truncated table must say what it is a subset OF
+- [ ] **A long report shows progress while it runs** — generate a 90-day
+      report and watch Job History / the sidebar: the bar must advance per
+      finished slice (`3 / 13`), not sit at 0% until the PDF appears. It must
+      NOT reach 100% before the file exists (the render happens after the last
+      slice). A dozen sliced queries take minutes; a frozen 0% reads as a hang
+      and customers cancel a run that was working (v1.13.88).
+      Unit cover: `tests/test_report_progress.py`
 
 ### Wide-Window Reports — MANDATORY for report-affecting changes
 
@@ -327,6 +334,16 @@ nowhere) while the API, the flag and every unit test were fine. The rule:
 - [ ] Any notification path touched: read the ACTUAL message produced — a
       user-initiated cancel must notify as cancelled, never as
       "completed with errors"
+
+- [ ] **A scheduled export can be cancelled, and cancelling frees the lock** —
+      `tests/test_export_cancel_registry.py` passes. Cancellation used to work
+      only through `progress_callback` raising, which the scheduler never
+      supplies: the run kept going, kept the per-server lock, and every nightly
+      run afterwards was skipped with "Previous export still holds lock" —
+      archiving stopped for ~4 weeks with only info lines (v1.13.87)
+- [ ] **A sustained lock-skip streak escalates** — 3 consecutive skips log at
+      ERROR and notify. One or two skips is a genuinely long export; a streak
+      means the lock is stale and nothing is being archived
 
 ### Performance & liveness at scale (for export/import/DB/polling changes)
 

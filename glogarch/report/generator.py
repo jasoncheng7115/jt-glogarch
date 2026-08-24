@@ -20,8 +20,44 @@ def _reports_dir(settings) -> Path:
     return d
 
 
-async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manual") -> dict:
-    """cfg is the parsed report definition. Returns {ok, file_path, filename, error}."""
+async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manual",
+                          job_id: str | None = None) -> dict:
+    """cfg is the parsed report definition. Returns {ok, file_path, filename, error}.
+
+    `job_id`: when given, the job row is updated as each wide-window slice
+    completes. A 90-day report runs a dozen+ sliced queries over many minutes;
+    with no progress at all the job sat at 0% until the very end and read as a
+    hang or a failure (customer report).
+    """
+    # A report can cover SEVERAL dashboards, and each one restarts its own slice
+    # count at 0. Reported per-dashboard, the bar would run 13/13 and then jump
+    # back to 0/13 — worse than no progress, because a bar that goes backwards
+    # reads as a restart. Accumulate instead: each dashboard's slice count is
+    # added to a running total the first time we see it, so the numbers only
+    # ever climb (13/13 → 13/26 → 26/26).
+    _prog = {"done": 0, "total": 0, "cur": 0}
+
+    def _slice_progress(done: int, total: int, phase: str) -> None:
+        """Surface slice-by-slice progress on the job row (best-effort)."""
+        if not (job_id and total):
+            return
+        try:
+            if done == 0:                      # a new dashboard's slices start
+                _prog["total"] += total
+                _prog["done"] += _prog["cur"]  # bank the previous one in full
+                _prog["cur"] = 0
+            _prog["cur"] = done
+            done_all = _prog["done"] + done
+            pct = min(95.0, (done_all / _prog["total"]) * 95.0)  # 100% = written
+            # `current_detail` is derived from result_json by the API, not a
+            # column — update_job's whitelist would silently drop it. Use the
+            # real columns so Job History shows "3 / 13" while it works.
+            db.update_job(job_id, progress_pct=pct,
+                          messages_done=done_all, messages_total=_prog["total"])
+        except Exception as e:
+            log.warning("Could not update report job progress",
+                        job=job_id, error=str(e))
+
     name = cfg.get("name", "report")
     lang = cfg.get("lang", "zh-TW")
     now = datetime.now().astimezone()
@@ -177,7 +213,8 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
                         # A wide window (e.g. three months) makes the dashboard's
                         # search far heavier than the interactive one it was built
                         # for; if it expires the report is PARTIAL and says so.
-                        search_wait_seconds=int(cfg.get("search_wait_seconds", 300) or 300))
+                        search_wait_seconds=int(cfg.get("search_wait_seconds", 300) or 300),
+                        progress_cb=_slice_progress)
                 if built:
                     sections.extend(built)
                 else:

@@ -2,6 +2,44 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.88] - 2026-08-24
+
+### Fixed
+
+- **A long report no longer sits at 0% for its whole run.** A 90-day report is
+  split into a dozen or more 7-day queries that can take many minutes, and
+  nothing updated the job row until the PDF was written — Job History showed
+  0% the entire time, which reads as a hang or a failure. Each finished slice
+  now updates the job (`3 / 13`, capped at 95% so the bar can't claim "done"
+  before the PDF is rendered). A report covering several dashboards accumulates
+  instead of restarting each one at 0 — the count only ever climbs
+  (13/13 → 13/26 → 26/26), because a bar that goes backwards reads as a restart.
+  The sidebar's running-job bar no longer forces every report to an
+  indeterminate spinner; it shows the real slice count as soon as there is one.
+
+## [1.13.87] - 2026-08-24
+
+### Fixed
+
+- **Cancelling a SCHEDULED export left it running and its lock held — nightly
+  archiving then silently stopped for weeks.** Cancellation was implemented
+  ONLY by the `progress_callback` raising, which the Web UI supplies but the
+  scheduler does not. Cancelling a scheduled export therefore marked the job
+  "cancelled" in the UI while the coroutine kept running and kept the
+  per-server lock; every run afterwards logged an info-level "Previous export
+  still holds lock, skipping this scheduled run", the Schedules page still
+  showed a healthy cron-computed next run, and a customer's archiving stopped
+  for ~4 weeks (recovered only by a service restart, which clears the
+  in-memory lock). Both exporters now register themselves in a
+  `job_id -> exporter` registry (mirroring the import side's
+  `get_import_control`), `/jobs/{id}/cancel` signals the run directly, and the
+  exporter's own `_cancelled` checkpoints unwind it so `finally` releases the
+  lock.
+- **A stale lock can no longer hide.** Three consecutive lock-skips for the
+  same schedule now log at ERROR and send a notification naming the schedule
+  and the remedy. One or two skips is a genuinely long export; a streak means
+  nothing is being archived.
+
 ## [1.13.86] - 2026-08-24
 
 ### Fixed

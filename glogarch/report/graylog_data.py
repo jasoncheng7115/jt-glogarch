@@ -605,7 +605,8 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                                      abs_from: str | None = None,
                                      abs_to: str | None = None,
                                      snap_midnight: bool = False,
-                                     search_wait_seconds: int = 300) -> list[dict]:
+                                     search_wait_seconds: int = 300,
+                                     progress_cb=None) -> list[dict]:
     """Return report `sections` reconstructed from a Graylog dashboard's widgets.
     Empty list on failure (caller degrades)."""
     auth = _basic_auth(server)
@@ -747,13 +748,27 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
             if sliceable:
                 merged: dict[str, dict] = {}      # state_id -> {"search_types": {...}}
                 per_st: dict[tuple, list] = {}
-                for a, b in _br.slice_windows(win_from, win_to, _SLICE_SECONDS):
+                _slices = _br.slice_windows(win_from, win_to, _SLICE_SECONDS)
+                # A 90-day report runs a dozen+ sliced queries and can take many
+                # minutes. Without per-slice progress the job sits at 0% the
+                # whole time and reads as a hang or a failure (customer report).
+                if progress_cb:
+                    try:
+                        progress_cb(0, len(_slices), "slicing")
+                    except Exception:
+                        pass
+                for _si, (a, b) in enumerate(_slices, 1):
                     body = {"global_override": {
                         "timerange": {"type": "absolute",
                                       "from": a.strftime(_fmt_abs),
                                       "to": b.strftime(_fmt_abs)},
                         "keep_search_types": sorted(sliceable)}}
                     part = await _exec_and_wait(body)
+                    if progress_cb:
+                        try:
+                            progress_cb(_si, len(_slices), "slicing")
+                        except Exception:
+                            pass
                     for st_state, blob in (part or {}).items():
                         for stid, r in ((blob or {}).get("search_types") or {}).items():
                             if stid in sliceable:

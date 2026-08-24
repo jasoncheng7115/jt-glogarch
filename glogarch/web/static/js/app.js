@@ -3373,10 +3373,14 @@ async function checkRunningJobs() {
             if (imp && document.getElementById('import-modal')) reopenActiveImportModal();
             else window.location.href = '/jobs';
         };
-        // Render EVERY running job (export + report can run at once). A report job
-        // has no incremental progress (0% until it finishes) → show an
-        // indeterminate "running" bar rather than a stuck 0%.
-        const isIndet = (j) => j.job_type === 'report' || (j.progress_pct == null && !j.messages_total);
+        // Render EVERY running job (export + report can run at once). A job with
+        // nothing to count yet gets an indeterminate "running" bar rather than a
+        // stuck 0%. Reports used to be ALWAYS indeterminate because they had no
+        // incremental progress; a wide-window report now reports each finished
+        // slice, so honour that whenever it has a total to count against.
+        // `progress_pct` is 0 (not null) from the moment a job row is created, so
+        // "has a total to count" is the only honest signal that a bar is real.
+        const isIndet = (j) => !j.messages_total && !(Number(j.progress_pct) > 0);
         text.innerHTML = running.map(j => {
             const indet = isIndet(j);
             const pct = j.progress_pct != null ? Number(j.progress_pct).toFixed(0) : 0;

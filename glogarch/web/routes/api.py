@@ -1024,6 +1024,24 @@ def cancel_job(request: Request, job_id: str):
     except Exception as e:
         log.warning("Bulk cancel trigger failed — API claims cancelled but import may keep running", error=str(e))
 
+    # Exports: cancellation used to work ONLY via the progress_callback raising,
+    # which the Web UI supplies but the SCHEDULER does not. Cancelling a
+    # SCHEDULED export therefore marked the job "cancelled" while the coroutine
+    # kept running and held the per-server lock — every nightly run afterwards
+    # logged "Previous export still holds lock, skipping this scheduled run" and
+    # a customer's archiving silently stopped for ~4 weeks until a restart.
+    # Signal the exporter directly; its own _cancelled checkpoints then unwind
+    # it and the `finally` releases the lock.
+    try:
+        from glogarch.export.exporter import get_export_control
+        exp = get_export_control(job_id)
+        if exp:
+            exp.cancel()
+            log.info("Export cancel signalled to the running exporter", job=job_id)
+    except Exception as e:
+        log.warning("Export cancel trigger failed — the run may keep holding "
+                    "the per-server lock", job=job_id, error=str(e))
+
     # Check in-memory jobs first (Web UI triggered)
     if job_id in _job_progress:
         _job_progress.setdefault(job_id, []).append(
@@ -3282,7 +3300,7 @@ async def generate_report_now(request: Request, name: str):
         except Exception:
             job_id = None
         try:
-            _res = asyncio.run(generator.generate_report(db, settings, cfg, triggered_by="manual"))
+            _res = asyncio.run(generator.generate_report(db, settings, cfg, triggered_by="manual", job_id=job_id))
             _units = int((_res or {}).get("units", 0) or 0)
             _note = f"report={name}"
             if (_res or {}).get("email_error"):

@@ -32,6 +32,12 @@ log = get_logger("opensearch.export")
 
 _os_export_lock: dict[str, bool] = {}
 
+# Shared job_id -> exporter registry (see export/exporter.py) so cancelling a
+# SCHEDULED OpenSearch export actually reaches this coroutine; without it the
+# run kept going, held _os_export_lock, and every nightly run afterwards was
+# skipped with "Previous export still holds lock".
+from glogarch.export.exporter import register_exporter, unregister_exporter  # noqa: E402
+
 
 class _FatalExportError(RuntimeError):
     """A run-wide fatal condition (disk full) that must abort the WHOLE export,
@@ -97,6 +103,10 @@ class OpenSearchExporter:
             result = ExportResult()
             job_id = job_id or str(uuid.uuid4())
             result.job_id = job_id
+            # Register AFTER job_id is settled — registering the caller's
+            # (possibly empty) argument would leave a scheduled run, which
+            # passes no job_id, unreachable by cancel.
+            register_exporter(job_id, self)
 
             job = JobRecord(id=job_id, job_type=JobType.EXPORT, status=JobStatus.RUNNING,
                             source=source, started_at=datetime.utcnow())
@@ -393,6 +403,7 @@ class OpenSearchExporter:
             raise
         finally:
             _os_export_lock.pop(server_key, None)
+            unregister_exporter(job_id or "")   # job_id is settled inside try
             _gl = locals().get("_gl_client")
             if _gl is not None:
                 try:

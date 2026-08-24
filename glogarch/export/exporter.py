@@ -38,6 +38,30 @@ log = get_logger("export")
 # Global lock to prevent concurrent exports against the same Graylog server
 _export_lock: dict[str, bool] = {}
 
+# job_id -> live exporter, so /jobs/{id}/cancel can reach a run that has no
+# progress_callback. Cancellation used to work ONLY through the callback
+# raising, which the Web UI supplies but the SCHEDULER does not — so cancelling
+# a scheduled export marked the job "cancelled" in the UI while the coroutine
+# kept running and held the per-server lock. Every subsequent nightly run then
+# logged "Previous export still holds lock, skipping this scheduled run" and a
+# customer's archiving silently stopped for ~4 weeks (only a restart cleared
+# it). Mirrors the import side's get_import_control().
+_active_exporters: dict[str, object] = {}
+
+
+def register_exporter(job_id: str, exporter) -> None:
+    if job_id:
+        _active_exporters[job_id] = exporter
+
+
+def unregister_exporter(job_id: str) -> None:
+    _active_exporters.pop(job_id, None)
+
+
+def get_export_control(job_id: str):
+    """The live exporter for this job id, or None if it already finished."""
+    return _active_exporters.get(job_id)
+
 
 def normalize_index_set_ids(raw, config_index_sets=None):
     """Normalize a schedule/request ``index_set`` value into a list of index-set IDs
@@ -159,6 +183,8 @@ class Exporter:
             raise RuntimeError(f"Export already running for server '{server_key}'. "
                                "Concurrent exports are blocked to protect Graylog from OOM.")
         _export_lock[server_key] = True
+        # Reachable by /jobs/{id}/cancel even without a progress_callback.
+        register_exporter(job_id, self)
 
         try:
             # Create job record
@@ -404,6 +430,7 @@ class Exporter:
             raise
         finally:
             _export_lock.pop(server_key, None)
+            unregister_exporter(job_id)
 
         return result
 
