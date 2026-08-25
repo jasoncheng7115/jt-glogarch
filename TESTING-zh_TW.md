@@ -53,7 +53,7 @@ bash scripts/release-check.sh        # ALL PASS 即可出貨
 | 4 | `test_upgrade_script.py` | 9 | upgrade.sh 存在 + 5 步驟、root 檢查、版本顯示、README 引用、systemd 預設=Yes、git clone sudo、retention_days 遷移、op_audit retention_days 預設值 |
 | 5 | `test_repo_structure.py` | 8 | pyproject.toml 在根目錄、無 src/ 目錄、deploy 檔案、README/CHANGELOG/CONFIG 存在、版號同步、github/glogarch 與 source 一致 |
 | 6 | `test_bulk_import.py` | 7 | 保留欄位剝除、deflector alias、stream 改寫、marker 欄位、dedup id/none |
-| 7 | `test_notify_format.py` | 7 | 狀態 emoji（✅/⚠️/❌）、每行一項、URL 縮短、en/zh-TW key 一致 |
+| 7 | `test_notify_format.py` | 23 | 狀態 emoji（✅/⚠️/❌）、每行一項、URL 縮短、en/zh-TW key 一致、依顯示寬度對齊、全形冒號、Telegram HTML 跳脫、溢出時間本地化 |
 | 8 | `test_notify_test_endpoint.py` | 7 | Discord/Slack/Teams/Telegram/Nextcloud Talk/Email 送出函式參數、測試端點簽名匹配 |
 | 9 | `test_field_schema.py` | 6 | 純 JSON 通過、zlib 壓縮 round-trip、None/損毀處理、DB 儲存+讀取 |
 | 10 | `test_multi_server.py` | 6 | 多伺服器設定、依名稱取得伺服器、排程器讀取伺服器、UI 伺服器選擇器、JS 儲存/載入伺服器 |
@@ -291,6 +291,17 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
 - [ ] 測試任何 `notify_*` 路徑：繞過 conftest 的自動靜音——在 import 時抓真函式
       （`_REAL = S.notify_export_complete`）再 patch `send_notification`；對空殼斷言
       會空過
+- [ ] **溢出通知要能自己解釋清楚** —— 必須寫出成因（同一毫秒超過 10000 筆，而
+      10000 是 API 單次查詢上限）、影響範圍（其餘記錄都已歸檔、本次未失敗、不會
+      重試）與該做的事（只針對這些時段改用 OpenSearch Direct 重跑）。客戶看了舊的
+      術語開頭寫法，還得回頭問「這什麼意思」。
+- [ ] **溢出時間點要同時顯示本地時間與 UTC** —— Graylog 回傳 UTC，操作者卻在自己
+      時區的介面重跑；在 Asia/Taipei 只給 `...Z` 會讓他重跑錯誤的八小時，這則通知
+      唯一的目的就落空了
+- [ ] **通知統計要對齊為一欄** —— 標籤補齊到相同的**顯示寬度**（中日韓字元算兩欄），
+      匯出／匯入／清理／驗證四種、中英文皆需；且 zh 內文使用全形冒號
+- [ ] **Telegram 內文必須做 HTML 跳脫** —— `parse_mode=HTML` 會把錯誤訊息裡由網址
+      縮短產生的字面 `<url>` 當成不支援的標籤，Telegram 回 400，通知就無聲地送不出去
 - [ ] 線上（選用）：對單一秒種入 >10000 筆＋之後幾筆，跑 API 匯出，確認「之後」的
       訊息已歸檔、溢出被回報（而非 chunk 失敗）。事後清除種子。
 

@@ -103,11 +103,28 @@ async def send_notification(
 
 # --- Telegram ---
 
+def _telegram_text(message: str) -> str:
+    """Build the Telegram body for parse_mode=HTML.
+
+    Two things this must get right:
+    - ESCAPE. The text is parsed as HTML, and error lines substitute long URLs
+      with a literal "<url>" — Telegram rejects that as an unsupported tag with
+      HTTP 400, so the notification never arrives and the failure is swallowed
+      by the caller's except. Any '<' in a log line or error message does the
+      same thing.
+    - MONOSPACE. The stat labels are padded to a common width so the values
+      line up; that only shows in a fixed-width block, so wrap it in <pre>.
+    """
+    import html as _html
+    return f"<pre>{_html.escape(message)}</pre>"
+
+
 async def _send_telegram(client: httpx.AsyncClient, cfg, message: str) -> dict:
     try:
         resp = await client.post(
             f"https://api.telegram.org/bot{cfg.bot_token}/sendMessage",
-            json={"chat_id": cfg.chat_id, "text": message, "parse_mode": "HTML"},
+            json={"chat_id": cfg.chat_id, "text": _telegram_text(message),
+                  "parse_mode": "HTML"},
         )
         resp.raise_for_status()
         return {"channel": "telegram", "success": True}
@@ -253,32 +270,38 @@ _MSG = {
     "en": {
         "export_ok": "✅ Export Complete",
         "export_err": "⚠️ Export Completed with Errors",
-        "export_overflow": "⚠️ Export Complete (sub-second overflow — not a failure)",
-        "overflow_note": "Sub-second overflow: {n} timestamp(s) had more than 10,000 messages in one millisecond. Those chunks WERE archived and will NOT be retried; re-run these windows in OpenSearch Direct mode to capture the overflow:",
-        "export_body": ("Exported: {chunks} chunks\n"
-                        "Skipped: {skipped}\n"
-                        "Records: {records}\n"
-                        "Files: {files}\n"
-                        "Original: {original}\n"
+        "export_overflow": "⚠️ Export Complete (a few records exceeded the API per-query limit)",
+        "overflow_note": ("What this means: one single millisecond held more than 10,000 messages, "
+                          "and 10,000 is the most Graylog's API can return for one query. At the {n} "
+                          "timestamp(s) below, the messages past that limit could not be read.\n"
+                          "Everything else in those chunks WAS archived — this run did not fail, and "
+                          "these windows will NOT be retried.\n"
+                          "To collect the remainder, re-run just these windows in OpenSearch Direct "
+                          "mode, which has no such limit:"),
+        "export_body": ("Exported:   {chunks} chunks\n"
+                        "Skipped:    {skipped}\n"
+                        "Records:    {records}\n"
+                        "Files:      {files}\n"
+                        "Original:   {original}\n"
                         "Compressed: {compressed}\n"
-                        "Duration: {duration}\n"
-                        "Mode: {mode}"),
+                        "Duration:   {duration}\n"
+                        "Mode:       {mode}"),
         "import_ok": "✅ Import Complete",
         "import_cancelled": "⏹️ Import Cancelled by User",
         "import_err": "⚠️ Import Completed with Errors",
         "import_body": ("Archives: {archives}\n"
-                        "Records: {records}\n"
+                        "Records:  {records}\n"
                         "Duration: {duration}"),
         "cleanup_ok": "✅ Cleanup Complete",
         "cleanup_body": ("Deleted: {deleted} files\n"
-                         "Freed: {freed}"),
+                         "Freed:   {freed}"),
         "verify_ok": "✅ Verification Complete",
-        "verify_body": ("Valid: {valid}\n"
+        "verify_body": ("Valid:   {valid}\n"
                         "Checked: {total}"),
         "verify_fail": "❌ Verification Failed",
         "corrupted": "Corrupted: {n}",
         "tampered": "🚨 TAMPERED (HMAC mismatch): {n}",
-        "missing": "Missing: {n}",
+        "missing": "Missing:   {n}",
         "error_title": "❌ {op} Error",
         "errors": "Errors: {n}",
         "sensitive_title": "⚠️ {n} Sensitive Operation(s) Detected",
@@ -295,43 +318,47 @@ _MSG = {
     "zh-TW": {
         "export_ok": "✅ 匯出成功",
         "export_err": "⚠️ 匯出完成（有錯誤）",
-        "export_overflow": "⚠️ 匯出完成（次秒溢出，非失敗）",
-        "overflow_note": "次秒溢出：{n} 個時間戳在同一毫秒內超過 10000 筆。這些區段【已歸檔】、不會重試；請以 OpenSearch Direct 模式重跑這些時段以補回溢出部分：",
-        "export_body": ("匯出區段: {chunks}\n"
-                        "略過區段: {skipped}\n"
-                        "記錄數: {records}\n"
-                        "寫入檔案: {files}\n"
-                        "原始大小: {original}\n"
-                        "壓縮後: {compressed}\n"
-                        "耗時: {duration}\n"
-                        "模式: {mode}"),
+        "export_overflow": "⚠️ 匯出完成（少數記錄超出 API 單次上限）",
+        "overflow_note": ("這是什麼意思：同一毫秒內出現超過 10000 筆記錄，而 Graylog API 單次查詢"
+                          "最多只能回傳 10000 筆。以下 {n} 個時間點，超出上限的那些記錄無法讀取。\n"
+                          "這些區段的其餘記錄都已完整歸檔——本次匯出並未失敗，這些時段也不會重試。\n"
+                          "若要補回未讀取的部分，請只針對以下時段改用 OpenSearch Direct 模式重跑"
+                          "（該模式沒有這個上限）："),
+        "export_body": ("匯出區段：{chunks}\n"
+                        "略過區段：{skipped}\n"
+                        "記錄數　：{records}\n"
+                        "寫入檔案：{files}\n"
+                        "原始大小：{original}\n"
+                        "壓縮後　：{compressed}\n"
+                        "耗時　　：{duration}\n"
+                        "模式　　：{mode}"),
         "import_ok": "✅ 匯入成功",
         "import_cancelled": "⏹️ 匯入已由使用者取消",
         "import_err": "⚠️ 匯入完成（有錯誤）",
-        "import_body": ("歸檔數: {archives}\n"
-                        "記錄數: {records}\n"
-                        "耗時: {duration}"),
+        "import_body": ("歸檔數：{archives}\n"
+                        "記錄數：{records}\n"
+                        "耗時　：{duration}"),
         "cleanup_ok": "✅ 清理成功",
-        "cleanup_body": ("刪除檔案: {deleted}\n"
-                         "釋放空間: {freed}"),
+        "cleanup_body": ("刪除檔案：{deleted}\n"
+                         "釋放空間：{freed}"),
         "verify_ok": "✅ 驗證成功",
-        "verify_body": ("通過: {valid}\n"
-                        "總檢查: {total}"),
+        "verify_body": ("通過　：{valid}\n"
+                        "總檢查：{total}"),
         "verify_fail": "❌ 驗證失敗",
-        "corrupted": "損毀: {n}",
-        "tampered": "🚨 遭竄改（HMAC 不符）: {n}",
-        "missing": "遺失: {n}",
+        "corrupted": "損毀　：{n}",
+        "tampered": "🚨 遭竄改（HMAC 不符）：{n}",
+        "missing": "遺失　：{n}",
         "error_title": "❌ {op} 失敗",
-        "errors": "錯誤: {n}",
+        "errors": "錯誤：{n}",
         "sensitive_title": "⚠️ 偵測到 {n} 個敏感行為",
         "audit_alert_title": "⚠️ 行為稽核警告",
         "audit_alert_body": ("已超過 {minutes} 分鐘未收到稽核 syslog。\n"
                              "Graylog 可連線但 nginx 可能已停止轉送。\n"
-                             "最後收到: {last}\n"
+                             "最後收到：{last}\n"
                              "請檢查所有 Graylog 節點的 nginx 設定與 syslog 狀態。"),
         "disk_low_title": "⚠️ 歸檔磁碟可存時間偏低",
         "disk_low_body": ("依目前增長速度，歸檔空間大約只剩 ~{months} 個月。\n"
-                          "可用空間: {avail} · 每月約增加 {rate}。\n"
+                          "可用空間：{avail} · 每月約增加 {rate}。\n"
                           "請在空間用盡前擴充歸檔磁碟或調低保留設定。"),
     },
 }
@@ -345,6 +372,27 @@ def _t(key: str, **kwargs) -> str:
         pass
     tpl = _MSG.get(lang, _MSG["en"]).get(key, _MSG["en"].get(key, key))
     return tpl.format(**kwargs) if kwargs else tpl
+
+
+
+def _fmt_overflow_ts(ts: str) -> str:
+    """Render an overflow timestamp in BOTH local and UTC time.
+
+    Graylog's API returns UTC (`...Z`), but the operator re-runs the window in
+    a UI that shows THEIR timezone. On Asia/Taipei that is an 8-hour gap — the
+    whole point of listing these timestamps is that the window can be re-run,
+    and a bare UTC string invites re-running the wrong eight hours.
+    """
+    from datetime import datetime, timezone
+    raw = (ts or "").strip()
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        local = dt.astimezone()
+        return f"{local.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]} {local.strftime('%z')[:3]}:00  (UTC {raw})"
+    except Exception:
+        return raw
 
 
 # --- Convenience functions ---
@@ -387,6 +435,7 @@ async def notify_export_complete(
                 duration=_fmt_dur(duration_seconds),
                 mode=mode.upper())]
     if errors:
+        lines.append("")          # keep the stats block visually separate
         lines.append(_t("errors", n=len(errors)))
         for e in errors[:3]:
             # Strip long URLs from error strings to keep notifications compact
@@ -394,11 +443,12 @@ async def notify_export_complete(
             short = _re.sub(r"https?://\S+", "<url>", str(e))
             lines.append(f"  - {short[:80]}")
     if truncations:
+        lines.append("")          # keep the stats block visually separate
         lines.append(_t("overflow_note", n=len(truncations)))
         for tr in truncations[:5]:
             # Just the timestamp — the full remedy is in the header note.
             ts = tr.split(" had ")[0].replace("Timestamp ", "")
-            lines.append(f"  - {ts}")
+            lines.append(f"  - {_fmt_overflow_ts(ts)}")
     # An overflow-only run is a warning, not an error event: everything that
     # could be read WAS archived.
     if errors:

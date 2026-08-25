@@ -78,7 +78,7 @@ the manual sections below = ship.
 | 4 | `test_upgrade_script.py` | 9 | upgrade.sh exists + 5 steps, root check, version display, README refs, systemd default=Yes, git clone sudo, retention_days migration, op_audit retention_days default |
 | 5 | `test_repo_structure.py` | 8 | pyproject.toml at root, no src/ dir, deploy files, README/CHANGELOG/CONFIG exist, version sync, github/glogarch matches source |
 | 6 | `test_bulk_import.py` | 7 | Reserved field stripping, deflector alias, stream rewrite, marker field, dedup id/none |
-| 7 | `test_notify_format.py` | 7 | Status emoji (✅/⚠️/❌), per-line format, URL shortening, en/zh-TW key parity |
+| 7 | `test_notify_format.py` | 23 | Status emoji (✅/⚠️/❌), per-line format, URL shortening, en/zh-TW key parity, column alignment by display width, full-width colons, Telegram HTML escaping, overflow local-time |
 | 8 | `test_notify_test_endpoint.py` | 7 | Discord/Slack/Teams/Telegram/Nextcloud Talk/Email send function params, test endpoint signature match |
 | 9 | `test_field_schema.py` | 6 | Plain JSON passthrough, zlib round-trip, None/corrupted handling, DB store+read |
 | 10 | `test_multi_server.py` | 6 | Multi-server config, get-server-by-name, scheduler reads server, UI server selector, JS save/load server |
@@ -384,6 +384,20 @@ failure.
 - [ ] Testing any `notify_*` path: bypass conftest's autouse mute — capture the
       REAL function at import (`_REAL = S.notify_export_complete`) then patch
       `send_notification`; asserting against the stub passes vacuously
+- [ ] **The overflow notice explains itself** — it must state the CAUSE (one
+      millisecond held >10,000 messages; 10,000 is the API's per-query ceiling),
+      the BLAST RADIUS (everything else was archived, the run did not fail, no
+      retry), and the ACTION (re-run just these windows in OpenSearch Direct).
+      A customer read the old jargon-led wording and had to ask what it meant.
+- [ ] **Overflow timestamps show local time AND UTC** — Graylog returns UTC and
+      the operator re-runs in their own zone; on Asia/Taipei a bare `...Z` sends
+      them to the wrong eight hours, defeating the notice's only purpose
+- [ ] **Notification stats line up in one column** — labels padded to a common
+      DISPLAY width (CJK counts as two columns), export/import/cleanup/verify,
+      both languages; and zh bodies use full-width colons
+- [ ] **Telegram bodies are HTML-escaped** — `parse_mode=HTML` turns a literal
+      `<url>` (produced by URL shortening in error text) into an unsupported
+      tag, so Telegram 400s and the notification is silently never delivered
 - [ ] Live (optional): seed >10,000 messages at one second + a few after, run
       the API export, confirm the "after" messages are archived and the overflow
       is reported (not a chunk failure). Clean up the seed afterwards.

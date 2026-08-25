@@ -2,6 +2,35 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.89] - 2026-08-25
+
+### Fixed
+
+- **The sub-second overflow notice now explains itself.** It led with a coined
+  term ("sub-second overflow") and stated the mechanism without the meaning, so
+  the reader could not tell what had been lost or what to do. It now says plainly
+  that one millisecond held more than 10,000 messages, that 10,000 is the most
+  Graylog's API returns per query, that everything else WAS archived and the run
+  did not fail, and that only these windows need re-running in OpenSearch Direct.
+- **The listed overflow timestamps now show local time as well as UTC.** Graylog
+  returns UTC; the operator re-runs the window in a UI showing their own zone. On
+  Asia/Taipei that is an 8-hour gap, so a bare `...Z` invited re-running the wrong
+  eight hours — the one action the notice exists to prompt.
+- **Notification stats line up in one column.** Labels of different lengths
+  (`匯出區段` is 4 characters, `模式` is 2) left every value starting at a
+  different column in the monospace body. Labels are now padded to a common
+  DISPLAY width — CJK counts as two columns — for export, import, cleanup and
+  verify, in both languages. A blank line separates the stats from any
+  error/overflow explanation below them.
+- **Chinese notifications use full-width colons.** Every zh body used a
+  half-width `:` directly after CJK, against the project's own convention.
+- **Telegram notifications containing a URL were silently never delivered.**
+  The body is sent with `parse_mode=HTML`, and error text substitutes long URLs
+  with a literal `<url>`, which Telegram rejects as an unsupported tag (HTTP
+  400); the caller turned that into `success: False` and nothing surfaced it.
+  The body is now HTML-escaped, and wrapped in `<pre>` so the aligned columns
+  survive there too.
+
 ## [1.13.88] - 2026-08-24
 
 ### Fixed
