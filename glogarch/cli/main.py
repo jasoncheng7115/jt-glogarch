@@ -436,12 +436,17 @@ def import_cmd(archive_id: tuple[int, ...], time_from: str | None, time_to: str 
             db.close()
             return
 
+        # Same rule as the web path: inherit verify_ssl when the target is a
+        # configured server, otherwise keep the previous behaviour (off).
+        from glogarch.utils.tlsverify import verify_for_url
+        _target_verify = verify_for_url(settings, target_api_url)
         preflight = PreflightChecker(
             api_url=target_api_url,
             api_token=target_api_token or "",
             api_username=target_api_username or "",
             api_password=target_api_password or "",
             gelf_port=settings.import_config.gelf_port,
+            verify_ssl=_target_verify,
         )
         journal_monitor = JournalMonitor(
             mode="api",
@@ -449,6 +454,7 @@ def import_cmd(archive_id: tuple[int, ...], time_from: str | None, time_to: str 
             api_token=target_api_token or "",
             api_username=target_api_username or "",
             api_password=target_api_password or "",
+            verify_ssl=_target_verify,
         )
 
         # Bulk mode: build BulkImporter
@@ -1088,7 +1094,7 @@ def streams_cleanup(server: str | None, prefix: str, dry_run: bool, yes: bool):
         elif sc.username:
             auth = (sc.username, sc.password or "")
 
-        async with httpx.AsyncClient(verify=False, timeout=30, auth=auth, headers=headers) as c:
+        async with httpx.AsyncClient(verify=sc.verify_ssl, timeout=30, auth=auth, headers=headers) as c:
             # Index sets first — they are matched by `index_prefix`, which is
             # exactly what the user passes.
             r = await c.get(f"{sc.url}/api/system/indices/index_sets")

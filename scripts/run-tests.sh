@@ -46,6 +46,20 @@ if command -v node >/dev/null 2>&1; then
     fi
 fi
 
+# --- Bandit: source-level Python security ---------------------------------
+# ZAP is a DYNAMIC scan of the running web surface and structurally cannot see
+# `verify=False`, a hardcoded credential, or a concatenated SQL string. Bandit
+# reads the source. Policy and the LOW ratchet live in the script itself.
+# Exit 2 = not installed: report loudly, never pass silently (a security gate
+# that quietly does not run is worse than none).
+BANDIT_OUT=$(bash scripts/bandit-scan.sh 2>&1)
+BANDIT_RC=$?
+echo "$BANDIT_OUT"
+if [ $BANDIT_RC -eq 1 ]; then
+    echo "❌ BANDIT GATE FAILED — refusing to release."
+    exit 1
+fi
+
 # --- Headless UI smoke ------------------------------------------------------
 # node --check catches JS *syntax* errors; this drives a REAL headless browser
 # against a running instance to catch RUNTIME/render breakage (i18n not
@@ -108,6 +122,7 @@ cat > "$RESULT_FILE" << EOF
 | **Platform** | ${PLATFORM} / ${OS} |
 | **Results** | ${PASSED} ${FAILED:+/ $FAILED} ${SKIPPED:+/ $SKIPPED} ${DURATION} |
 | **Version Check** | $([ $VERSION_OK -eq 0 ] && echo "✅ OK" || echo "❌ FAIL") |
+| **Bandit (source security)** | $(echo "$BANDIT_OUT" | tail -1) |
 
 ## Test Output
 

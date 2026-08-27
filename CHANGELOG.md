@@ -2,6 +2,70 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.91] - 2026-08-27
+
+### Security
+
+- **A configured `verify_ssl` now reaches every HTTPS call.** Seven call sites
+  hardcoded `verify=False`, so an operator who had deliberately turned
+  certificate verification ON got it on most paths and silently NOT on those —
+  several of which transmit Graylog or OpenSearch credentials (the audit
+  listener's nginx probe, the journal monitor, two import-target routes, two
+  OpenSearch preflight calls, and `streams-cleanup`). `audit/listener.py` had
+  six sibling calls doing it correctly and one that did not. `PreflightChecker`
+  was ignoring its own `self.verify_ssl`. Paths that take an ad-hoc target URL
+  (no server config) now inherit the setting from a configured server with the
+  same host:port, and otherwise keep the previous behaviour — turning
+  verification on for a site that never asked is the direction that breaks a
+  working system.
+- **The audit syslog receiver's bind address is configurable** —
+  `op_audit.listen_host`, defaulting to the previous `0.0.0.0`. A multi-homed
+  box can now pin it to the one network its Graylog nodes reach it on. The IP
+  allowlist still applies either way.
+
+### Added
+
+- **Bandit is now a release gate** (`scripts/bandit-scan.sh`, run by
+  `run-tests.sh`). OWASP ZAP is a DYNAMIC scan of the running web surface and
+  structurally cannot see `verify=False`, a hardcoded credential, or a
+  concatenated SQL string; Bandit reads the source. HIGH and MEDIUM must be
+  ZERO — fix, or annotate the line with `# nosec <IDs> - <reason>`, never
+  disable a whole rule. LOW is ratcheted (budget 8, only ever down) EXCLUDING
+  B110/B112, which stay owned by `tests/test_static_sweeps.py` and its own
+  budget: two rules for one decision is how gates end up contradicting each
+  other. The first run found the seven `verify=False` sites above; the eleven
+  SQL-injection hits were all verified false positives (fixed literal fragments
+  with bound parameters, or whitelisted column names) and are annotated with
+  the reason each is safe.
+- `tests/test_tls_verify.py` — an AST check that no call hardcodes
+  `verify=False`, so the invariant holds in the ordinary test run even where
+  bandit is not installed.
+
+## [1.13.90] - 2026-08-27
+
+### Fixed
+
+- **A working multi-week export is no longer reported as stuck.** The escalation
+  added in 1.13.87 counted consecutive lock-skips only, so a first full backlog
+  — legitimately billions of records over weeks — would displace its daily run,
+  hit the streak, and alert the operator that "no data is being archived by this
+  schedule", inviting them to cancel the job or restart the service. Both would
+  have destroyed days of real work, and the claim was simply false. The skip
+  handler now looks at what the lock is protecting: no running export at all
+  means the lock really is stale (alert, restart clears it); running and
+  advancing is healthy (logged with its progress, never alerted); running but
+  NOT advancing across several runs gets its own message that says exactly that,
+  and warns that a throttled export is paused on purpose and resumes by itself.
+
+### Added
+
+- **Running jobs show how much longer they have.** A site sat at "4% · 58h26m"
+  on an 11.58-billion-record backlog with no way to tell whether that meant
+  another day or another two months — it was 53. Job History and the sidebar now
+  show a remaining estimate derived from the rate the job has actually averaged
+  (`~53d left`), deliberately coarse and suppressed until there is enough signal
+  to be worth showing. "Looks stuck" is what gets a working job cancelled.
+
 ## [1.13.89] - 2026-08-25
 
 ### Fixed

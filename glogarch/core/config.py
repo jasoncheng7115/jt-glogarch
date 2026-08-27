@@ -189,6 +189,11 @@ class NotifyConfig(BaseModel):
 
 class ApiAuditConfig(BaseModel):
     enabled: bool = True
+    # Interface the syslog receiver binds to. Default keeps the previous
+    # behaviour (all interfaces); a multi-homed box can pin it to the one
+    # network the Graylog nodes reach it on. The IP allowlist still applies
+    # either way — this narrows the exposed surface, it is not the control.
+    listen_host: str = "0.0.0.0"  # nosec B104 - documented default, configurable above
     listen_port: int = 8991
     retention_days: int = 180
     max_body_size: int = 65536
@@ -196,7 +201,7 @@ class ApiAuditConfig(BaseModel):
 
 
 class WebConfig(BaseModel):
-    host: str = "0.0.0.0"
+    host: str = "0.0.0.0"  # nosec B104 - a service listener; operator-configurable
     port: int = 8990
     ssl_certfile: str = "/opt/jt-glogarch/certs/server.crt"
     ssl_keyfile: str = "/opt/jt-glogarch/certs/server.key"

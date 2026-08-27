@@ -3,6 +3,9 @@
 
 const I18N = {
     en: {
+        eta_left: 'about {v} left',
+        eta_days: 'd',
+        eta_hint: 'Estimated from the rate this job has averaged so far',
         nav_dashboard: 'Dashboard',
         nav_archives: 'Archives',
         nav_export: 'Export Now',
@@ -720,6 +723,9 @@ const I18N = {
     },
 
     'zh-TW': {
+        eta_left: '剩餘約 {v}',
+        eta_days: ' 天',
+        eta_hint: '依此作業目前平均速率推估',
         nav_dashboard: '儀表板',
         nav_archives: '歸檔清單',
         nav_export: '立即匯出',

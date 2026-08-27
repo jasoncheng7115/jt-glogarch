@@ -150,6 +150,31 @@ function formatDT(iso) {
     return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${tzSign}${tzH}:${tzM}`;
 }
 
+// Coarse "time left" for a running job, from the rate it has actually averaged.
+// A backlog export can run for weeks; "4% · 58h26m" alone cannot tell the
+// operator whether that means another day or another two months (one real site
+// had 53 days left). Deliberately coarse — days/hours, never false precision.
+function formatEta(sec) {
+    if (sec == null || !isFinite(sec) || sec <= 0) return '';
+    const min = Math.round(sec / 60);
+    if (min < 60) return `${min}m`;
+    const hr = Math.floor(min / 60);
+    if (hr < 48) return `${hr}h${min % 60 ? (min % 60) + 'm' : ''}`;
+    const d = Math.round(hr / 24);
+    return `${d}${t('eta_days') || 'd'}`;
+}
+
+// The elapsed cell of a RUNNING job, with the remaining estimate beneath it.
+function elapsedWithEta(j) {
+    const el = formatElapsed(j.started_at, j.completed_at);
+    const eta = (j.status === 'running') ? formatEta(j.eta_seconds) : '';
+    if (!eta) return el;
+    // Whole phrase from i18n: word order differs (en "about 53d left" vs
+    // zh 「剩餘約 53 天」), so it cannot be assembled from fragments.
+    const label = (t('eta_left') || 'about {v} left').replace('{v}', eta);
+    return `${el}<br><span class="job-eta" title="${esc(t('eta_hint') || '')}">${esc(label)}</span>`;
+}
+
 function formatElapsed(startIso, endIso) {
     if (!startIso) return '-';
     let s = startIso;
@@ -2297,7 +2322,7 @@ async function loadJobs() {
             <td class="u147">${recordsHtml}</td>
             <td>${formatDT(j.started_at)}</td>
             <td>${formatDT(j.completed_at)}</td>
-            <td>${formatElapsed(j.started_at, j.completed_at)}</td>
+            <td>${elapsedWithEta(j)}</td>
             <td data-style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : (j.error_message || '').indexOf('Skipped') !== -1 ? 'var(--text-muted)' : 'var(--text-muted)'};font-size:0.85em;max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${esc(j.error_message || '')}">${coverageChip(j)}${esc(j.error_message || '')}</td>
             <td>${cancelBtn}${retryBtn}</td>
         </tr>`;
@@ -3397,12 +3422,17 @@ async function checkRunningJobs() {
                 statusLine = `<span class="job-paused">⏸ ${esc(paused)}</span><br>${statusLine}`;
             }
             const head = indet ? esc(j.job_type) : `${esc(j.job_type)} <strong>${pct}%</strong>`;
+            // A multi-week backlog export looks the same as a one-hour one here.
+            const _eta = (j.status === 'running') ? formatEta(j.eta_seconds) : '';
+            const etaSuffix = _eta
+                ? ` · <span class="job-eta">${esc((t('eta_left') || 'about {v} left').replace('{v}', _eta))}</span>`
+                : '';
             const bar = indet ? `<div class="progress-fill indet"></div>`
                               : `<div class="progress-fill" data-style="width:${pct}%"></div>`;
             // Wrap each job so consecutive jobs get a separator (see .sb-job CSS).
             return `<div class="sb-job">
                 <div class="job-detail-full u044">
-                    <span>${head} · ${elapsed}</span>
+                    <span>${head} · ${elapsed}${etaSuffix}</span>
                     <div class="progress-bar u099">${bar}</div>
                     <span class="u091">${statusLine}</span>
                 </div>

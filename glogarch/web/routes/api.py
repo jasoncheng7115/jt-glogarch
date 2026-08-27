@@ -13,6 +13,7 @@ from fastapi import APIRouter, BackgroundTasks, Query, Request
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
+from glogarch.utils.tlsverify import verify_for_url
 from glogarch.archive.storage import ArchiveStorage
 from glogarch.cleanup.cleaner import Cleaner
 from glogarch.core.config import Settings
@@ -430,12 +431,16 @@ async def trigger_import(request: Request, background_tasks: BackgroundTasks):
             )
 
     # Journal monitoring uses the same Graylog API credentials.
+    # An import target that IS one of the configured servers inherits that
+    # server's verify_ssl; anything else keeps the previous behaviour (off).
+    _target_verify = verify_for_url(settings, target_api_url)
     journal_monitor = JournalMonitor(
         mode="api",
         api_url=target_api_url,
         api_token=target_api_token,
         api_username=target_api_username,
         api_password=target_api_password,
+        verify_ssl=_target_verify,
     )
 
     # Pre-flight checker (mapping conflict resolver + post-import reconciliation)
@@ -445,6 +450,7 @@ async def trigger_import(request: Request, background_tasks: BackgroundTasks):
         api_username=target_api_username,
         api_password=target_api_password,
         gelf_port=import_cfg.gelf_port,
+        verify_ssl=_target_verify,
     )
 
     importer = Importer(
@@ -822,7 +828,7 @@ async def import_set_retention(request: Request):
     pw = reconcile_secret(body.get("target_api_password"), ic.target_api_password) or ""
     auth = _httpx.BasicAuth(token, "token") if token else _httpx.BasicAuth(user, pw)
     try:
-        async with _httpx.AsyncClient(verify=False, timeout=20,
+        async with _httpx.AsyncClient(verify=verify_for_url(settings, url), timeout=20,
                 headers={"X-Requested-By": "jt-glogarch", "Content-Type": "application/json"}) as c:
             r = await c.get(f"{url.rstrip('/')}/api/system/indices/index_sets/{idx_id}", auth=auth)
             if r.status_code != 200:
@@ -2237,13 +2243,16 @@ def get_realtime_log(request: Request, lines: int = 100, app_only: bool = True):
     bigger slab and filter, so the requested number of APPLICATION lines is what
     comes back.
     """
-    import subprocess
+    import subprocess  # nosec B404 - fixed argv below, no shell, no user input
     import re as _re
     want = min(lines, 1000)
     # Over-fetch, because most lines are usually access noise.
     fetch = min(want * 12, 12000) if app_only else want
     try:
-        result = subprocess.run(
+        # nosec: fixed argv, shell=False; the only interpolated value is an int
+        # already clamped to <= 12000, and journalctl is resolved from PATH
+        # because its location is distro-specific.
+        result = subprocess.run(  # nosec B603 B607
             ["journalctl", "-u", "jt-glogarch", "-n", str(fetch), "--no-pager"],
             capture_output=True, text=True, timeout=15,
         )
@@ -2462,7 +2471,43 @@ def _job_to_dict(j) -> dict:
             d["progress_pct"] = live_pct
         if last.get("messages_total"):
             d["messages_total"] = last["messages_total"]
+    d["eta_seconds"] = _job_eta_seconds(d)
     return d
+
+
+def _job_eta_seconds(d: dict) -> float | None:
+    """Seconds of work left at the rate this job has averaged so far.
+
+    A first full backlog can be billions of records. One site sat at
+    "4% · 58h26m" with no way to tell whether that meant another day or
+    another two months — it was 53 days. Elapsed time alone cannot answer the
+    only question the operator has, so derive the remainder from the job's own
+    measured rate. Deliberately naive (a flat average): the point is to tell
+    hours from months, and a throttled export's rate already reflects its
+    pauses. Returns None until there is enough signal to be worth showing.
+    """
+    if d.get("status") != "running" or d.get("completed_at"):
+        return None
+    done = int(d.get("messages_done") or 0)
+    total = int(d.get("messages_total") or 0)
+    started = d.get("started_at")
+    if not (done > 0 and total > done and started):
+        return None
+    try:
+        from datetime import datetime, timezone
+        st = datetime.fromisoformat(str(started).replace("Z", "+00:00"))
+        if st.tzinfo is None:
+            st = st.replace(tzinfo=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - st).total_seconds()
+    except Exception:
+        return None
+    # Under a minute of history, or a rate of zero, says nothing useful yet.
+    if elapsed < 60:
+        return None
+    rate = done / elapsed
+    if rate <= 0:
+        return None
+    return (total - done) / rate
 
 
 def _schedule_to_dict(s, running_since: str | None = None) -> dict:
@@ -2885,7 +2930,8 @@ async def test_config_import_defaults(request: Request):
     else:
         return JSONResponse({"connected": False, "error": "Provide a token or username + password"}, status_code=400)
     try:
-        async with httpx.AsyncClient(verify=False, timeout=10.0) as client:
+        async with httpx.AsyncClient(verify=verify_for_url(_settings(request), url),
+                                     timeout=10.0) as client:
             resp = await client.get(f"{url.rstrip('/')}/api/system", auth=auth,
                                     headers={"Accept": "application/json"})
             if resp.status_code == 200:

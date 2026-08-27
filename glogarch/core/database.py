@@ -362,7 +362,7 @@ class ArchiveDB:
             return {}
         placeholders = ",".join("?" * len(archive_ids))
         rows = self.conn.execute(
-            f"SELECT id, field_schema, file_path FROM archives WHERE id IN ({placeholders})",
+            f"SELECT id, field_schema, file_path FROM archives WHERE id IN ({placeholders})",  # nosec B608 - '?' placeholders generated from list length; ids bound as params
             archive_ids,
         ).fetchall()
         return {r["id"]: self.decompress_schema(r["field_schema"]) for r in rows}
@@ -387,7 +387,7 @@ class ArchiveDB:
         vals.append(archive_id)
         with self._lock:
             try:
-                self.conn.execute(f"UPDATE archives SET {', '.join(sets)} WHERE id = ?", vals)
+                self.conn.execute(f"UPDATE archives SET {', '.join(sets)} WHERE id = ?", vals)  # nosec B608 - column names are fixed literals in the branches above; values bound
                 self.conn.commit()
             except Exception:
                 self._rollback_safely()
@@ -582,7 +582,7 @@ class ArchiveDB:
         sort_col = sort if sort in ALLOWED_SORT else "time_from"
         sort_dir = "ASC" if order.upper() == "ASC" else "DESC"
         cols = "*" if include_schema else self._archive_cols_no_schema()
-        query = f"SELECT {cols} FROM archives WHERE 1=1"
+        query = f"SELECT {cols} FROM archives WHERE 1=1"  # nosec B608 - cols is internal; sort/order come from the ALLOWED_SORT whitelist
         params: list = []
         if server:
             query += " AND server_name = ?"
@@ -855,7 +855,7 @@ class ArchiveDB:
         vals.append(job_id)
         with self._lock:
             try:
-                self.conn.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE id = ?", vals)
+                self.conn.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE id = ?", vals)  # nosec B608 - column names filtered by ALLOWED_JOB_COLS; values bound
                 self.conn.commit()
             except Exception:
                 self._rollback_safely()
@@ -1325,9 +1325,9 @@ class ArchiveDB:
             params.append(time_to)
 
         w = " AND ".join(where)
-        total = self.conn.execute(f"SELECT COUNT(*) FROM api_audit WHERE {w}", params).fetchone()[0]
+        total = self.conn.execute(f"SELECT COUNT(*) FROM api_audit WHERE {w}", params).fetchone()[0]  # nosec B608 - w joins fixed literal fragments; every user value is bound in params
         rows = self.conn.execute(
-            f"SELECT * FROM api_audit WHERE {w} ORDER BY id DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM api_audit WHERE {w} ORDER BY id DESC LIMIT ? OFFSET ?",  # nosec B608 - w joins fixed literal fragments; every user value is bound in params
             params + [limit, offset],
         ).fetchall()
         return [dict(r) for r in rows], total
@@ -1343,16 +1343,16 @@ class ArchiveDB:
         else:
             where, params = "", ()
         total = self.conn.execute(
-            f"SELECT COUNT(*) FROM api_audit {where}", params
+            f"SELECT COUNT(*) FROM api_audit {where}", params  # nosec B608 - where is one of two fixed literals; cutoff bound in params
         ).fetchone()[0]
         users = self.conn.execute(
-            f"SELECT COUNT(DISTINCT username) FROM api_audit {where}", params
+            f"SELECT COUNT(DISTINCT username) FROM api_audit {where}", params  # nosec B608 - where is one of two fixed literals; cutoff bound in params
         ).fetchone()[0]
         login_failures = self.conn.execute(
-            f"SELECT COUNT(*) FROM api_audit {where + (' AND' if where else 'WHERE')} operation = 'auth.login' AND status_code >= 400", params
+            f"SELECT COUNT(*) FROM api_audit {where + (' AND' if where else 'WHERE')} operation = 'auth.login' AND status_code >= 400", params  # nosec B608 - where is one of two fixed literals; cutoff bound in params
         ).fetchone()[0]
         sensitive = self.conn.execute(
-            f"SELECT COUNT(*) FROM api_audit {where + (' AND' if where else 'WHERE')} is_sensitive = 1", params
+            f"SELECT COUNT(*) FROM api_audit {where + (' AND' if where else 'WHERE')} is_sensitive = 1", params  # nosec B608 - where is one of two fixed literals; cutoff bound in params
         ).fetchone()[0]
         # Hourly sparkline data (last 24 hours)
         sparkline = {"ops": [], "login_failures": [], "sensitive": []}

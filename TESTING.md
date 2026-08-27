@@ -246,6 +246,21 @@ GL_PASS='<graylog-admin-pw>' bash scripts/e2e-archive-test.sh
 | **Upgrade**: existing servers skip wizard | `test_upgrade_existing_servers_skip_wizard` | Existing customer config → `/` → `/login` (not `/setup`) |
 | **Upgrade**: partial edit preserves fields | `test_upgrade_partial_edit_preserves_untouched_fields` | Edit only a server URL → token/user/pass/per-server OS + other top-level keys intact |
 
+### Security — Bandit SAST (every release, automated)
+
+Run by `run-tests.sh`; ZAP is dynamic and structurally cannot see any of this.
+
+- [ ] `bash scripts/bandit-scan.sh` prints `Bandit: OK` — **HIGH and MEDIUM must
+      be ZERO**. Fix, or annotate the line `# nosec <IDs> - <why it is safe>`;
+      never disable a whole rule, or the next real one is invisible
+- [ ] The LOW ratchet (budget 8) did not grow. It EXCLUDES B110/B112 on purpose:
+      `try/except/pass` is owned by `tests/test_static_sweeps.py` and its own
+      budget — two rules for one decision is how gates start contradicting
+- [ ] **No call hardcodes `verify=False`** (`tests/test_tls_verify.py`, AST).
+      *Seven sites did, so an operator who turned `verify_ssl` ON got it on most
+      paths and silently not on those — several carrying credentials (v1.13.91).*
+- [ ] A raised budget or a new `# nosec` is justified in the commit message
+
 ### Security — OWASP ZAP DAST (must be 0 High / 0 Medium)
 
 - [ ] `scripts/zap-scan.sh` run against a live instance — **0 High, 0 Medium** alerts
@@ -341,9 +356,22 @@ nowhere) while the API, the flag and every unit test were fine. The rule:
       supplies: the run kept going, kept the per-server lock, and every nightly
       run afterwards was skipped with "Previous export still holds lock" —
       archiving stopped for ~4 weeks with only info lines (v1.13.87)
-- [ ] **A sustained lock-skip streak escalates** — 3 consecutive skips log at
-      ERROR and notify. One or two skips is a genuinely long export; a streak
-      means the lock is stale and nothing is being archived
+- [ ] **A lock-skip escalates only when work has actually stopped** — the streak
+      alone is NOT the signal. Check what the lock protects: no running export
+      at all → stale lock, alert and say restart clears it; running and
+      ADVANCING → healthy, log the progress and never alert; running but not
+      advancing across several runs → its own message saying that, warning that
+      a throttled export is paused on purpose and resumes by itself.
+      *A first full backlog can be billions of records over weeks and displaces
+      every daily run while archiving perfectly. Alerting on the streak told
+      such a site "no data is being archived" and invited them to cancel a job
+      that was 58 hours in — false, and destructive if believed (v1.13.90).*
+      Unit cover: `tests/test_schedule_lock_skip.py`
+- [ ] **A running job says how much longer it has** — Job History and the
+      sidebar show a remaining estimate from the job's own averaged rate
+      (`~53d left`), suppressed until there is signal, never on a finished job.
+      *"4% · 58h26m" on 11.58 billion records could not be told apart from a
+      hang; it had 53 days left.* Unit cover: `tests/test_job_eta.py`
 
 ### Performance & liveness at scale (for export/import/DB/polling changes)
 

@@ -194,7 +194,7 @@ class PreflightChecker:
         # Pull schema rows + file_path for fallback scanning
         placeholders = ",".join("?" * len(archive_ids))
         rows = db.conn.execute(
-            f"SELECT id, field_schema, file_path FROM archives WHERE id IN ({placeholders})",
+            f"SELECT id, field_schema, file_path FROM archives WHERE id IN ({placeholders})",  # nosec B608 - '?' placeholders generated from list length; ids bound as params
             archive_ids,
         ).fetchall()
 
@@ -827,7 +827,7 @@ class PreflightChecker:
             self.api_url.replace(":9000", ":9200"),
             self.api_url.replace(":9000", ":9201"),  # alt port some setups use
         ]
-        async with httpx.AsyncClient(verify=False, timeout=5) as c:
+        async with httpx.AsyncClient(verify=self.verify_ssl, timeout=5) as c:
             for url in candidates:
                 try:
                     r = await c.get(f"{url}/", auth=self._auth())
@@ -1038,7 +1038,7 @@ class PreflightChecker:
             body["mappings"] = {"properties": properties}
 
         auth = (os_username, os_password) if os_username else None
-        async with httpx.AsyncClient(verify=False, timeout=30, auth=auth) as c:
+        async with httpx.AsyncClient(verify=self.verify_ssl, timeout=30, auth=auth) as c:
             r = await c.put(
                 f"{opensearch_url.rstrip('/')}/_template/{template_name}",
                 content=json.dumps(body),

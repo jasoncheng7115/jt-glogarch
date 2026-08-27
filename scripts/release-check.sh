@@ -16,7 +16,7 @@ step() {
   if "$@"; then echo "--- [$id OK] ---"; else FAILED+=("$id"); echo "--- [$id FAILED] ---"; fi
 }
 
-step gate      "syntax + undefined-JS + UI smoke + pytest(+sweeps/perf) + version" ./scripts/run-tests.sh
+step gate      "syntax + undefined-JS + UI smoke + bandit + pytest(+sweeps/perf) + version" ./scripts/run-tests.sh
 step ui-sim    "browser simulation of the main user flows" python3 scripts/ui-sim-test.py
 step ui-cancel "real click: Cancel over a running import"  python3 scripts/ui-cancel-test.py
 if [ -n "${GL_HOST:-}" ] && [ -n "${GL_PASS:-}" ]; then

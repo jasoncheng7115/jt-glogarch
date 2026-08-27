@@ -68,7 +68,10 @@ class AuditSyslogListener:
         loop = asyncio.get_event_loop()
         transport, _ = await loop.create_datagram_endpoint(
             lambda: AuditSyslogProtocol(self),
-            local_addr=("0.0.0.0", self.config.listen_port),
+            # nosec B104 - operator-configurable via op_audit.listen_host; this is
+            # only the fallback for an explicitly blank value, and the receiver
+            # additionally enforces an IP allowlist.
+            local_addr=(self.config.listen_host or "0.0.0.0", self.config.listen_port),  # nosec B104
         )
         self.transport = transport
         log.info("API Audit listener started",
@@ -232,7 +235,7 @@ class AuditSyslogListener:
                     auth = (srv.username, srv.password or "")
 
                 async with httpx.AsyncClient(
-                    verify=False, timeout=10, auth=auth,
+                    verify=srv.verify_ssl, timeout=10, auth=auth,
                     headers={"Accept": "application/json"},
                 ) as client:
                     r = await client.get(f"{nginx_url}/api/system")

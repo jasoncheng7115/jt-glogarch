@@ -37,6 +37,7 @@ dev = [
     "pytest-asyncio>=0.23",
     "pytest-httpx>=0.30",
     "ruff>=0.2",
+    "bandit>=1.7",      # source-level security gate (scripts/bandit-scan.sh)
 ]
 # PDF Reports (beta) — headless-Chromium renderer + PyMuPDF for post-processing
 # (clearing the header/footer band off the cover page). Also requires

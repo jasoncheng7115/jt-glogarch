@@ -66,6 +66,7 @@ class JournalMonitor:
         ssh_password: str = "",
         ssh_key_path: str = "",
         journal_path: str = "/var/lib/graylog-server/journal",
+        verify_ssl: bool = False,
     ):
         self.mode = mode
         self.api_url = api_url.rstrip("/")
@@ -78,6 +79,7 @@ class JournalMonitor:
         self.ssh_password = ssh_password
         self.ssh_key_path = ssh_key_path
         self.journal_path = journal_path
+        self.verify_ssl = verify_ssl
         self._ssh_client = None
         # Trend/health state for stuck-journal detection.
         self._last_uncommitted: int | None = None
@@ -103,7 +105,7 @@ class JournalMonitor:
             elif self.api_username:
                 auth = (self.api_username, self.api_password)
 
-            async with httpx.AsyncClient(verify=False, timeout=10) as client:
+            async with httpx.AsyncClient(verify=self.verify_ssl, timeout=10) as client:
                 resp = await client.get(
                     f"{self.api_url}/api/system/journal",
                     auth=auth,

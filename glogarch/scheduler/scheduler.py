@@ -90,6 +90,12 @@ class ArchiveScheduler:
         # One or two is normal (a long export); a sustained streak means the
         # lock is stale and archiving has silently stopped.
         self._skip_streak: dict[str, int] = {}
+        # messages_done of the export that holds the lock, as of the previous
+        # skip. A long export that is ADVANCING is healthy, however many runs it
+        # displaces; only a lock with nothing behind it — or a job that has not
+        # moved — means archiving has actually stopped.
+        self._skip_last_progress: dict[str, int] = {}
+        self._stalled_streak: dict[str, int] = {}
 
     def _run_export_in_thread(self, schedule_name: str = "auto-export") -> None:
         """Sync wrapper that runs the async export in its own asyncio loop in a
@@ -104,7 +110,8 @@ class ArchiveScheduler:
 
     _EXPORT_MAX_RETRIES = 3
     _EXPORT_RETRY_DELAY = 60  # seconds
-    _SKIP_STREAK_ALERT = 3    # consecutive lock-skips before escalating
+    _SKIP_STREAK_ALERT = 3    # consecutive NON-ADVANCING skips before escalating
+    _STALE_LOCK_ALERT = 2     # skips with no running export at all before alerting
 
     async def _run_export(self, schedule_name: str = "auto-export") -> None:
         """Scheduled export job — reads config from DB (supports Web UI edits).
@@ -148,21 +155,7 @@ class ArchiveScheduler:
                         # nobody reads, while the Schedules page still showed a
                         # healthy cron-computed "next run". Escalate once the
                         # skipping is no longer plausibly a long-running export.
-                        self._skip_streak[schedule_name] = (
-                            self._skip_streak.get(schedule_name, 0) + 1)
-                        streak = self._skip_streak[schedule_name]
-                        if streak >= self._SKIP_STREAK_ALERT:
-                            log.error(
-                                "Scheduled export has been skipped %d runs in a row — "
-                                "the previous run still holds the per-server lock. If no "
-                                "export is really running, the lock is stale: cancel the "
-                                "running job, or restart the service to clear it.",
-                                streak, schedule=schedule_name, error=err_str)
-                            await self._notify_stuck_schedule(schedule_name, streak)
-                        else:
-                            log.warning("Previous export still holds lock, skipping this "
-                                        "scheduled run", schedule=schedule_name,
-                                        skipped_in_a_row=streak, error=err_str)
+                        await self._handle_lock_skip(schedule_name, err_str)
                         skipped_due_to_running = True
                         last_error = None
                         break
@@ -189,18 +182,101 @@ class ArchiveScheduler:
                 self._update_schedule_last_run(schedule_name)
 
 
-    async def _notify_stuck_schedule(self, schedule_name: str, streak: int) -> None:
-        """Tell the operator that a schedule has stopped archiving. Best-effort:
-        a notification failure must never break the scheduler loop."""
+    async def _handle_lock_skip(self, schedule_name: str, err_str: str) -> None:
+        """Decide whether a skipped run is normal or means archiving has stopped.
+
+        Skipping runs is NOT itself a fault. A first full backlog can be
+        billions of records and legitimately run for weeks, displacing every
+        daily run while archiving perfectly well. Alerting on the streak alone
+        would tell that operator their archiving had stopped and invite them to
+        cancel the job or restart the service — destroying days of real work.
+
+        So look at what the lock is actually protecting:
+          - no running export at all  -> the lock is stale, archiving really HAS
+                                         stopped (this is the case that once ran
+                                         silent for ~4 weeks)
+          - running and advancing     -> healthy; log the progress, never alert
+          - running but not advancing -> alert, but say THAT, not "stale lock"
+        """
+        streak = self._skip_streak.get(schedule_name, 0) + 1
+        self._skip_streak[schedule_name] = streak
+
+        job = None
+        try:
+            for j in self.db.list_running_jobs():
+                if getattr(j.job_type, "value", j.job_type) == "export":
+                    job = j
+                    break
+        except Exception as e:
+            # Never let a diagnostic read break the scheduler; treat as unknown.
+            log.warning("Could not read running jobs while handling a lock skip",
+                        schedule=schedule_name, error=str(e))
+            return
+
+        if job is None:
+            # Nothing is running, yet the lock is held: this is the real fault.
+            log.error(
+                "Scheduled export skipped %d run(s) in a row and NO export is "
+                "running — the per-server lock is stale and this schedule has "
+                "stopped archiving. Restart jt-glogarch to clear it.",
+                streak, schedule=schedule_name, error=err_str)
+            if streak >= self._STALE_LOCK_ALERT:
+                await self._notify_stuck_schedule(schedule_name, streak, job=None)
+            return
+
+        done = int(getattr(job, "messages_done", 0) or 0)
+        previous = self._skip_last_progress.get(schedule_name)
+        self._skip_last_progress[schedule_name] = done
+
+        if previous is None or done > previous:
+            # Displacing runs while genuinely working. Not a fault — say so
+            # plainly in the log so nobody reads the skip as a stall.
+            log.info("Previous export still running and advancing, skipping this "
+                     "scheduled run", schedule=schedule_name,
+                     skipped_in_a_row=streak, records_done=done,
+                     records_total=getattr(job, "messages_total", None),
+                     job=getattr(job, "id", None))
+            self._stalled_streak[schedule_name] = 0
+            return
+
+        stalled = self._stalled_streak.get(schedule_name, 0) + 1
+        self._stalled_streak[schedule_name] = stalled
+        log.error(
+            "Scheduled export skipped %d run(s) and the running export has not "
+            "advanced across %d of them (still %s records) — it may be wedged.",
+            streak, stalled, f"{done:,}", schedule=schedule_name,
+            job=getattr(job, "id", None))
+        if stalled >= self._SKIP_STREAK_ALERT:
+            await self._notify_stuck_schedule(schedule_name, streak, job=job)
+
+    async def _notify_stuck_schedule(self, schedule_name: str, streak: int,
+                                     job=None) -> None:
+        """Tell the operator archiving has stopped. Best-effort: a notification
+        failure must never break the scheduler loop.
+
+        Two genuinely different faults, so two different messages. Never tell an
+        operator whose export is working that "no data is being archived" — the
+        obvious response is to cancel it, and on a multi-week backlog that
+        throws away days of real work.
+        """
         try:
             from glogarch.notify.sender import notify_error
-            await notify_error(
-                "Scheduled export stuck",
-                f"Schedule '{schedule_name}' has been skipped {streak} runs in a row "
-                f"because the previous export still holds the per-server lock. "
-                f"No data is being archived by this schedule. If no export is "
-                f"actually running, the lock is stale — cancel the running job or "
-                f"restart jt-glogarch to clear it.")
+            if job is None:
+                body = (f"Schedule '{schedule_name}' has been skipped {streak} run(s) "
+                        f"in a row and NO export is running. The per-server lock is "
+                        f"stale, so this schedule is archiving nothing. Restart "
+                        f"jt-glogarch to clear the lock.")
+            else:
+                done = int(getattr(job, "messages_done", 0) or 0)
+                total = getattr(job, "messages_total", None)
+                scope = f"{done:,}" + (f" of {int(total):,}" if total else "")
+                body = (f"Schedule '{schedule_name}' has been skipped {streak} run(s) "
+                        f"because an export is still holding the lock — and that "
+                        f"export has NOT advanced across the last few of them "
+                        f"(still {scope} records). It may be wedged. Check the "
+                        f"source cluster's health before cancelling it: a throttled "
+                        f"export is paused on purpose and will resume by itself.")
+            await notify_error("Scheduled export not progressing", body)
         except Exception as e:
             log.warning("Could not send stuck-schedule notification",
                         schedule=schedule_name, error=str(e))
