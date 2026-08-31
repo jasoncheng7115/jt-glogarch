@@ -39,7 +39,12 @@ def verify_for_url(settings, url: str, default: bool = False) -> bool:
     if not want:
         return default
     try:
-        servers = getattr(settings, "graylog_servers", None) or []
+        # Settings.servers — NOT `graylog_servers`, which does not exist. An
+        # invented name here fails open and silently: getattr returns [], the
+        # loop never runs, and every caller quietly gets `default` while the
+        # feature looks implemented. test_tls_verify builds its stub from the
+        # real Settings model so the two cannot drift apart again.
+        servers = getattr(settings, "servers", None) or []
     except Exception:
         return default
     for srv in servers:

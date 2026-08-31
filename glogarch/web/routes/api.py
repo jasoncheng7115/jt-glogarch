@@ -199,6 +199,31 @@ def delete_archive(request: Request, archive_id: int):
 
 # --- Export ---
 
+def _record_unstarted_job(db, job_id: str, source: str, err: Exception) -> None:
+    """Leave a Job History row for a run that died before the exporter made one.
+
+    The job row is created INSIDE the exporter, after the concurrency lock and
+    the disk-space check. Anything raising before that point (lock held, disk
+    full, unreachable server) otherwise vanishes completely: no row, and only
+    an in-memory progress event that the Job History page does not read.
+    """
+    from glogarch.core.models import JobRecord, JobType
+    from glogarch.utils.sanitize import sanitize
+    try:
+        if db.get_job(job_id):
+            return                      # the exporter got far enough; leave it
+        db.create_job(JobRecord(
+            id=job_id, job_type=JobType.EXPORT, status=JobStatus.FAILED,
+            source=source, started_at=datetime.utcnow(),
+            completed_at=datetime.utcnow(),
+            error_message=sanitize(str(err))[:500],
+        ))
+    except Exception as e:                      # never mask the original failure
+        log.warning("Could not record an unstarted export job",
+                    job=job_id, error=str(e))
+
+
+
 @router.post("/export")
 async def trigger_export(request: Request, background_tasks: BackgroundTasks):
     body = await request.json()
@@ -240,6 +265,23 @@ async def trigger_export(request: Request, background_tasks: BackgroundTasks):
         for k in oldest_keys:
             _job_progress.pop(k, None)
             _cancel_flags.pop(k, None)
+
+    # An export refused by the per-server lock used to answer 200 "started",
+    # create no job row (the row is written INSIDE the exporter, AFTER the
+    # lock), and record the failure only in an in-memory progress list that the
+    # Job History page never reads. A customer cancelled a stuck scheduled run,
+    # pressed Run now, was told it started, and then found nothing anywhere.
+    # Refuse here, and say why.
+    from glogarch.export.exporter import is_export_running
+    from glogarch.opensearch.exporter import is_os_export_running
+    _busy = (is_os_export_running(server_config.name) if mode == "opensearch"
+             else is_export_running(server_config.name))
+    if _busy:
+        return JSONResponse(
+            {"error": f"An export is already running for '{server_config.name}'. "
+                      f"Wait for it to finish, or cancel it from Job History first.",
+             "code": "export_already_running"},
+            status_code=409)
 
     job_id = str(uuid.uuid4())
     _job_progress[job_id] = []
@@ -284,6 +326,7 @@ async def trigger_export(request: Request, background_tasks: BackgroundTasks):
                 _job_progress.setdefault(job_id, []).append(
                     {"phase": "error", "error": str(e), "pct": 100}
                 )
+                _record_unstarted_job(db, job_id, "manual:opensearch", e)
     else:
         from glogarch.export.exporter import _ensure_naive
         exporter = Exporter(server_config, settings.export, settings.rate_limit, db, integrity=settings.integrity)
@@ -310,6 +353,7 @@ async def trigger_export(request: Request, background_tasks: BackgroundTasks):
                 _job_progress.setdefault(job_id, []).append(
                     {"phase": "error", "error": str(e), "pct": 100}
                 )
+                _record_unstarted_job(db, job_id, "manual:api", e)
 
     asyncio.get_event_loop().run_in_executor(None, _run_in_thread)
     _audit(request, "export_started", f"mode={mode} job={job_id}")

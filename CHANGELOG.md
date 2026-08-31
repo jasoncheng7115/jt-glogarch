@@ -2,6 +2,35 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.13.92] - 2026-08-31
+
+### Fixed
+
+- **A manual export that never started no longer reports "started".** The
+  per-server lock refuses a run by raising, but the job row is created INSIDE
+  the exporter, AFTER that lock — so a refused run left no row at all, and the
+  failure was recorded only in an in-memory list the Job History page does not
+  read. `POST /api/export` had already answered 200. A customer cancelled a
+  stuck scheduled export, pressed Run now, was told it started, and found
+  nothing anywhere. The route now answers **409** with the reason, and any
+  failure that happens before the exporter writes its own row still leaves a
+  failed row in Job History (secrets sanitized).
+- **`verify_for_url()` read a field that does not exist**, so the setting it
+  was written to honour never reached anything. `Settings.servers` is the
+  field; the helper asked for `graylog_servers`, `getattr` returned `[]`, and
+  every call quietly fell through to the default. The feature shipped in
+  1.13.91 was inert. Its test built a hand-rolled stub that used the same
+  invented name, so the two agreed with each other and disagreed with the
+  model; the test now constructs a real `Settings` object.
+- **The audit heartbeat alert can be diagnosed, and stops flapping.** Each
+  server's probe failure was logged at DEBUG, which the service's INFO level
+  drops, so "nginx unreachable on all Graylog servers" arrived with no cause —
+  timeout, certificate and DNS all looked identical. Reasons are now logged at
+  WARNING and carried in the alert body. A single failed probe no longer
+  alerts: two consecutive failures (~10 min) are required, after the alert was
+  seen firing, clearing and firing again within 11 minutes while both servers
+  answered in 50 ms.
+
 ## [1.13.91] - 2026-08-27
 
 ### Security

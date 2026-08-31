@@ -44,6 +44,14 @@ class _FatalExportError(RuntimeError):
     not be swallowed by the per-index error handler and retried on every index."""
 
 
+def is_os_export_running(server_name: str) -> bool:
+    """Is an OpenSearch-mode export holding this server's lock right now?
+
+    See is_export_running() in export.exporter — advisory, same key scheme.
+    """
+    return bool(_os_export_lock.get(server_name + "_os"))
+
+
 class OpenSearchExporter:
     """Export logs directly from OpenSearch indices — no Graylog API pagination limits."""
 

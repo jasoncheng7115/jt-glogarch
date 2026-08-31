@@ -45,6 +45,8 @@ class AuditSyslogListener:
         self._batch_lock = asyncio.Lock()
         self._flush_task: asyncio.Task | None = None
         self._refresh_task: asyncio.Task | None = None
+        self._probe_failures: list[str] = []   # why each server's probe failed
+        self._probe_fail_streak: int = 0       # consecutive all-servers failures
         self._token_cache: dict[str, str] = {}  # token_prefix → username
         self._token_tried: set[str] = set()  # prefixes already tried async resolve
         self._token_cache_task: asyncio.Task | None = None
@@ -145,6 +147,7 @@ class AuditSyslogListener:
                 pass
 
     _HEARTBEAT_INTERVAL = 300   # probe every 5 minutes
+    _PROBE_FAIL_ALERT = 2       # consecutive failed probes before alerting
     _HEARTBEAT_WAIT = 30        # wait 30s after probe for syslog to arrive
     _heartbeat_alerted = False
     _last_probe_time: str = ""  # ISO timestamp of last successful probe
@@ -172,13 +175,31 @@ class AuditSyslogListener:
                 probe_result = await self._probe_through_nginx()
 
                 if probe_result == "nginx_unreachable":
-                    # nginx is down — alert
-                    if not self._heartbeat_alerted:
+                    # One failed probe is not an outage. This alert was seen
+                    # flapping (fire / restored / fire within 11 minutes) while
+                    # a manual probe answered HTTP 200 in 50 ms — a single
+                    # transient blip should not page anyone. Require two
+                    # consecutive failures (~10 min) before alerting.
+                    self._probe_fail_streak += 1
+                    why = "; ".join(self._probe_failures) or "no reason captured"
+                    if (self._probe_fail_streak >= self._PROBE_FAIL_ALERT
+                            and not self._heartbeat_alerted):
                         self._heartbeat_alerted = True
-                        log.warning("Audit heartbeat: nginx unreachable on all servers")
+                        log.warning("Audit heartbeat: nginx unreachable on all servers",
+                                    consecutive_failures=self._probe_fail_streak,
+                                    reasons=why)
                         await self._send_heartbeat_alert(
-                            "nginx unreachable on all Graylog servers (HTTPS port 443)")
+                            "nginx unreachable on all Graylog servers (HTTPS port 443).\n"
+                            f"Reason per server: {why}")
+                    else:
+                        log.info("Heartbeat probe failed, waiting for a second "
+                                 "consecutive failure before alerting",
+                                 consecutive_failures=self._probe_fail_streak,
+                                 reasons=why)
                     continue
+
+                # Any successful probe ends the streak.
+                self._probe_fail_streak = 0
 
                 if probe_result == "no_nginx_url":
                     continue  # Can't derive nginx URL, skip
@@ -218,6 +239,7 @@ class AuditSyslogListener:
         import httpx
 
         probed = False
+        self._probe_failures = []
         for srv in self.settings.servers:
             try:
                 parsed = urlparse(srv.url)
@@ -245,7 +267,14 @@ class AuditSyslogListener:
                         log.debug("Heartbeat probe OK", nginx_url=nginx_url,
                                   status=r.status_code)
             except Exception as e:
-                log.debug("Heartbeat probe failed", host=host, error=str(e))
+                # WARNING, not debug: this is the direct cause of an operator
+                # alert. Logged at debug it was dropped by the service's INFO
+                # level, so "nginx unreachable" arrived with no way to find out
+                # why — timeout, certificate, DNS, all indistinguishable.
+                reason = f"{type(e).__name__}: {e}"
+                self._probe_failures.append(f"{srv.name} — {reason}")
+                log.warning("Heartbeat probe failed", server=srv.name,
+                            nginx_url=f"https://{host}", error=reason)
 
         if not probed:
             return "nginx_unreachable"

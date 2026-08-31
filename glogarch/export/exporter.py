@@ -49,6 +49,17 @@ _export_lock: dict[str, bool] = {}
 _active_exporters: dict[str, object] = {}
 
 
+def is_export_running(server_name: str) -> bool:
+    """Is an API-mode export holding this server's lock right now?
+
+    Exposed so callers can REPORT the conflict instead of re-deriving it.
+    Advisory only — the authoritative check is still inside export(), which
+    holds the lock; a caller that passes here and then loses the race gets the
+    same RuntimeError as before.
+    """
+    return bool(_export_lock.get(server_name))
+
+
 def register_exporter(job_id: str, exporter) -> None:
     if job_id:
         _active_exporters[job_id] = exporter

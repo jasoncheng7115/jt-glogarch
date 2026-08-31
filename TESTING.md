@@ -356,6 +356,25 @@ nowhere) while the API, the flag and every unit test were fine. The rule:
       supplies: the run kept going, kept the per-server lock, and every nightly
       run afterwards was skipped with "Previous export still holds lock" —
       archiving stopped for ~4 weeks with only info lines (v1.13.87)
+- [ ] **A manual export on a busy server is REFUSED, visibly** — `POST
+      /api/export` answers 409 with `export_already_running`, not 200
+      "started". *The job row is written inside the exporter, after the lock,
+      so a refused run left no row at all and the failure lived only in an
+      in-memory list Job History never reads — a customer pressed Run now, was
+      told it started, and found nothing anywhere (v1.13.92).*
+- [ ] **Any export failure before the exporter's own row still appears in Job
+      History** — failed row, sanitized reason, correct `source`. Covers lock
+      held, disk full, unreachable server.
+      Unit cover: `tests/test_export_busy_visibility.py`
+- [ ] **The audit heartbeat alert names its cause** — the body carries the
+      per-server reason, and two consecutive failed probes are required before
+      alerting. *It was logged at DEBUG (dropped at INFO) and fired on a single
+      blip: alert / restored / alert in 11 minutes while both servers answered
+      in 50 ms (v1.13.92).* Unit cover: `tests/test_audit_heartbeat.py`
+- [ ] **A helper that reads a config field is tested against the REAL model** —
+      never a hand-rolled stub. *`verify_for_url` read `graylog_servers`
+      (the field is `servers`); the stub used the same invented name, so the
+      test agreed with the bug and the feature shipped inert (v1.13.92).*
 - [ ] **A lock-skip escalates only when work has actually stopped** — the streak
       alone is NOT the signal. Check what the lock protects: no running export
       at all → stale lock, alert and say restart clears it; running and
