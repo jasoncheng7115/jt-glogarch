@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Optional tamper-evidence for archives (HMAC-SHA256 + ledger).
 
 Opt-in (default OFF). See core.config.IntegrityConfig and CONFIG.md.

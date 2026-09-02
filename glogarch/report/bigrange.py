@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Make wide-window (e.g. 3-month) reports tractable — without lying.
 
 A dashboard widget saved with a FIXED time interval (say 5 minutes) was tuned

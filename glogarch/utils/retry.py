@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Retry decorator with exponential backoff."""
 
 from __future__ import annotations

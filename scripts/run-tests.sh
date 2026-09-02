@@ -71,6 +71,8 @@ UI_OUT=$(timeout 150 python3 scripts/ui-smoke.py "$UI_URL" ${UI_SMOKE_USER:+"$UI
 UI_RC=$?
 if echo "$UI_OUT" | grep -q "RESULT: OK"; then
     echo "UI smoke ($UI_URL): OK"
+    # A skipped layer must never read as a passed one.
+    echo "$UI_OUT" | grep "⚠" || true
 elif echo "$UI_OUT" | grep -q "RESULT: FAIL"; then
     echo "❌ UI SMOKE FAILED — refusing to release:"
     echo "$UI_OUT"

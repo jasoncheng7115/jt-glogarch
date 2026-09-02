@@ -2,6 +2,129 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.14.1] - 2026-09-01
+
+### Fixed
+
+- **Audit coverage.** An inventory of all 96 routes found 18 of the 43
+  state-changing ones with no audit record — including `POST /cleanup`, which
+  deletes archive files: deleting ONE archive was audited, deleting hundreds by
+  retention was not. Eight are now audited (cleanup, schedule delete, archive
+  rescan, verify, OpenSearch host reorder, import pause/resume/rate, test
+  notification), and `tests/test_audit_coverage.py` requires every future
+  state-changing route to be audited or explicitly justified as read-only.
+- **jt-glogarch's own operation log is now readable.** `audit_log` has been
+  written since the first release — who deleted archives, changed settings, ran
+  a search — with no interface at all: the endpoint existed and no page called
+  it, so the only way to read it was to open the SQLite file. Operation Audit
+  now has a second tab for it, filterable by user / action / time and paged.
+- **Six CSS variables were used but never defined**, across a third stylesheet
+  (`util.css`) that earlier sweeps never read. Three fell back to hardcoded
+  LIGHT colours in both themes — the report-fingerprint dialog rendered as a
+  pale panel with pale text on a dark page — and two had no fallback at all, so
+  those declarations were silently discarded.
+- **`data-i18n-label` was an invented attribute** that `applyI18n` never
+  handled, so the archive list's column names were English in a Chinese UI from
+  the day they were added.
+- **A finished job now says what it did.** The Note column was written only
+  when something exceptional happened, so a clean run left it EMPTY — on one
+  box 28 of 38 completed imports (74%) and 17 of 156 completed exports had no
+  note at all. The more normal the run, the less the row told you: a row
+  reading "6,662,908" said nothing about what was imported or where it went.
+  Both exporters and every import path now lead with a summary
+  ("3 archive(s), 6,662,908 records via GELF"), keeping any existing note
+  (skipped chunks, compliance warning, where-to-find hint) after it.
+- **Search usage is shown as examples, not prose.** The quoting rule lived
+  inside the keyword placeholder, where a 62-character sentence was cut off
+  mid-word — the one thing a reader needed was the part they could not see.
+  There is now a short table of examples (`error`, `firewall deny`,
+  `"connection refused"`, `source=fw01`, and the two combined) plus an explicit
+  list of what is NOT supported. The keyword placeholder is short again, and a
+  sweep keeps it under 30 characters.
+- **The per-page dropdown was 2px shorter than the inputs beside it.**
+- **`formatEta` reported "0m" for anything under a minute** — a search
+  estimated at 7 seconds was advertised as taking no time at all. Under 90
+  seconds now reads in seconds. Also affects the running-job estimate.
+
+### Added
+
+- **Every Python file now carries an SPDX licence header**
+  (`AGPL-3.0-or-later`). AGPL does not require per-file headers, but a single
+  `.py` lifted out of the tree otherwise carries no licence at all — and this
+  project is AGPL precisely because it cares where the code ends up. A sweep
+  requires new files to have one, and checks the three places that state the
+  licence (LICENSE, pyproject, source) still agree.
+- **New static sweeps for the failure classes found this release**: CSS
+  variables used but never defined (across ALL stylesheets, not just
+  style.css), theme tokens defined for only one theme, `data-i18n-*`
+  attributes nothing handles, and PRC terminology in UI strings.
+
+## [1.14.0] - 2026-09-01
+
+### Added
+
+- **Search records inside the archives, from the Archives page.** Deliberately
+  not a second Graylog: keywords (space-separated = AND) plus optional
+  `field=value` filters, over the time range already selected above. No index
+  exists, so the design is about not reading most of the corpus:
+  - The DB prunes first — time range, server and stream usually eliminate
+    >99% of archives before a file is opened. The time range is REQUIRED for
+    that reason, not defaulted.
+  - What survives gets a two-stage scan. Measured on a real 49.5 MB / 303,825
+    message archive: a chunked byte prefilter costs 1.57 s and rejects an
+    archive that cannot match, versus 8.54 s to parse one. Only archives that
+    really contain the terms pay the parse.
+  - The scan reads fixed-size chunks, not lines. The writer emits one JSON
+    document with NO newlines, so a line-oriented read (what `zgrep` does)
+    returns the whole archive as a single object — measured peak RSS +1,334 MB
+    against +8 MB for chunked, on boxes that already OOM during imports.
+  - `POST /api/search/plan` states the cost (archives, records, estimated
+    time) BEFORE the search runs, because the difference between an hour and a
+    month here is seconds versus tens of minutes.
+  - Results page 500 at a time and **"Load more" RESUMES from a server-side
+    cursor** — archives already scanned are never reopened. The UI says
+    plainly whether more exist or that is all of them in the range.
+  - Search yields to archiving: it pauses briefly per archive while an export
+    or import holds a lock, and says so on screen.
+  - **Results appear as they are found**, including from inside an archive
+    still being parsed — measured on a 3,250-archive range, the first hits now
+    show at 2 s instead of 13 s, and the count climbs every second after that.
+    The archive total is counted before the worker starts, so the progress line
+    never reads "0 / 0" with an empty bar, and a spinner runs while it works.
+  - Every refusal carries a translatable code rather than an English sentence.
+    A Chinese interface was answering "Enter a keyword or a field filter".
+  - Expanding a hit shows the full record, syntax-highlighted, with the
+    archive file it came from. Records carry 47 fields on one box and over
+    1,100 on another, so the first 12 populated fields show by default.
+
+## [1.13.93] - 2026-09-01
+
+### Fixed
+
+- **Long dashboard numbers were cut off, not shrunk.** `.stat-card` sets
+  `overflow:hidden` for its sparkline, and `.card-value` had a fixed 1.8em, so
+  a value wider than the 200px card was silently clipped — a site at
+  1,060,702,960 records displayed `1,060,702,96`. The value now steps down
+  through size tiers and stays on one line; measured in a real browser, every
+  magnitude up to 10^18 records fits.
+- **Two elements meant to start hidden were visible until script hid them.**
+  `index.html` used literal `style="display:none"`, which the app's OWN
+  `style-src 'self'` CSP refuses (`style-src-attr`), so the browser blocked it
+  and logged a console error on every dashboard load. They now use an
+  `.is-hidden` class. JS toggling was never affected — CSSOM assignment
+  (`el.style.display`) is not blocked, only the HTML attribute.
+- **The release gate silently skipped its post-login checks.** `ui-smoke.py`
+  only runs them when credentials are supplied, and said nothing when they were
+  not — which is why the CSP error above went unseen. It now states
+  `post-login checks NOT run`, and `run-tests.sh` surfaces that line.
+
+### Added
+
+- `tests/test_static_sweeps.py` rejects any inline `style="…"` attribute in a
+  template: our own CSP makes them inert, so they look applied and are not.
+- The UI smoke asserts dashboard stat values are never clipped, at magnitudes
+  from thousands to 10^18. No Python test can measure rendered type.
+
 ## [1.13.92] - 2026-08-31
 
 ### Fixed

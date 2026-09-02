@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Parse nginx syslog audit lines into structured events."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Export orchestrator — coordinates search, storage, and DB for archiving."""
 
 from __future__ import annotations
@@ -367,7 +369,23 @@ class Exporter:
             # NOT recorded as an archive, so it is retried on the next run (dedup
             # won't skip it) — but the operator must still be told the run was
             # partial, otherwise a green "Completed" hides missing data.
-            note_parts = []
+            # A run that had nothing exceptional to report used to leave the
+            # Note column EMPTY — so the more normal the run, the less the row
+            # said. A row reading "6,806,316" with a blank note tells the
+            # operator nothing about what was archived or how big it is. Lead
+            # with a plain summary; the exceptional notes still follow it.
+            def _mb(n):
+                for unit in ("B", "KB", "MB", "GB", "TB"):
+                    if n < 1024:
+                        return f"{n:.1f} {unit}"
+                    n /= 1024
+                return f"{n:.1f} PB"
+
+            note_parts = [
+                f"{result.chunks_exported} chunks, "
+                f"{result.messages_total:,} records, "
+                f"{_mb(result.compressed_bytes)} compressed"
+            ]
             if result.chunks_skipped > 0:
                 note_parts.append(
                     f"Skipped {result.chunks_skipped}/"

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Pre-import field mapping conflict resolver — guarantees zero indexer
 failures by setting target Graylog custom field mappings BEFORE GELF send.
 

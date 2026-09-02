@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """SQLite database for archive tracking."""
 
 from __future__ import annotations
@@ -553,6 +555,43 @@ class ArchiveDB:
                 if r[1] != "field_schema"]
         self._arch_cols_cache = ", ".join(cols) if cols else "*"
         return self._arch_cols_cache
+
+    def list_archives_for_search(
+        self,
+        server: str | None = None,
+        stream_id: str | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+    ) -> list[ArchiveRecord]:
+        """Archives whose time range OVERLAPS the query window, oldest first.
+
+        This is the search's only index. Overlap (not containment) is the
+        correct test: an archive covering 09:00-10:00 must be scanned for a
+        query of 09:30-09:45, and vice versa — a containment test would
+        silently drop most of the matching data.
+
+        Deleted/corrupted rows are excluded, and the order is deterministic
+        (time, then id) because the search's resume cursor is an index into
+        this list: an unstable order would make "load more" skip or repeat
+        archives between pages.
+        """
+        q = "SELECT * FROM archives WHERE status = 'completed'"
+        params: list = []
+        if server:
+            q += " AND server_name = ?"
+            params.append(server)
+        if stream_id:
+            q += " AND stream_id = ?"
+            params.append(stream_id)
+        if time_to is not None:
+            q += " AND time_from <= ?"
+            params.append(_dt_to_str(time_to))
+        if time_from is not None:
+            q += " AND time_to >= ?"
+            params.append(_dt_to_str(time_from))
+        q += " ORDER BY time_from ASC, id ASC"
+        rows = self.conn.execute(q, params).fetchall()
+        return [self._row_to_archive(r) for r in rows]
 
     def list_archives(
         self,
@@ -1197,6 +1236,45 @@ class ArchiveDB:
             "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def query_audit(self, username: str | None = None, action: str | None = None,
+                    time_from: str | None = None, time_to: str | None = None,
+                    limit: int = 100, offset: int = 0) -> tuple[list[dict], int]:
+        """Filtered, paged view of jt-glogarch's OWN operation log.
+
+        Separate from `api_audit`, which records what happened on Graylog via
+        the nginx syslog feed. This table answers "who did what in THIS tool" —
+        who deleted archives, changed settings, ran a search. It was written
+        from day one and had no interface at all, so the only way to read it
+        was to open the database by hand.
+        """
+        where, params = [], []
+        if username:
+            where.append("username LIKE ?")
+            params.append(f"%{username}%")
+        if action:
+            where.append("action LIKE ?")
+            params.append(f"%{action}%")
+        if time_from:
+            where.append("timestamp >= ?")
+            params.append(time_from)
+        if time_to:
+            where.append("timestamp <= ?")
+            params.append(time_to)
+        w = (" WHERE " + " AND ".join(where)) if where else ""
+        total = self.conn.execute(
+            f"SELECT COUNT(*) FROM audit_log{w}", params  # nosec B608 - fixed literal fragments; values bound
+        ).fetchone()[0]
+        rows = self.conn.execute(
+            f"SELECT * FROM audit_log{w} ORDER BY id DESC LIMIT ? OFFSET ?",  # nosec B608 - same
+            params + [max(1, min(int(limit), 500)), max(0, int(offset))],
+        ).fetchall()
+        return [dict(r) for r in rows], total
+
+    def distinct_audit_actions(self) -> list[str]:
+        """Action names actually present, for the filter dropdown."""
+        return [r[0] for r in self.conn.execute(
+            "SELECT DISTINCT action FROM audit_log ORDER BY action") if r[0]]
 
     # --- API Audit ---
 

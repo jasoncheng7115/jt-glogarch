@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Headless-Chromium HTML → PDF renderer for jt-glogarch Reports (beta).
 
 Mirrors how Graylog Enterprise renders reports (a headless Chromium print), but

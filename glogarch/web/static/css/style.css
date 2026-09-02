@@ -2,6 +2,15 @@
 /* Icons: Iconoir (https://iconoir.com) — MIT License, Copyright (c) 2021 Luca Burgio */
 
 :root, [data-theme="dark"] {
+    /* Tokens util.css referenced but nobody ever defined, so its light
+       fallbacks (#f3f4f6, #e5e7eb) were used in BOTH themes — the report
+       fingerprint box rendered as a pale panel with pale text on a dark page.
+       A colour whose only real definition is a fallback cannot follow a theme. */
+    --bg-subtle: #22243d;
+    --line: #3a3a66;
+    --brand: #6c63ff;
+    --text-dim: #9a9ab8;
+    --text-primary: #e8e8f0;
     --bg: #1a1b2e;
     --sidebar-bg: #0f1025;
     --card-bg: #222344;
@@ -21,6 +30,11 @@
 }
 
 [data-theme="light"] {
+    --bg-subtle: #f3f4f6;
+    --line: #e5e7eb;
+    --brand: #5b52e0;
+    --text-dim: #6b6b85;
+    --text-primary: #1a1a2e;
     --bg: #f0f2f5;
     --sidebar-bg: #2b2d42;
     --card-bg: #ffffff;
@@ -515,14 +529,30 @@
 .column-settings {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px 14px;
-    padding: 10px 14px;
-    margin-bottom: 10px;
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
+    gap: 8px 10px;
+    padding: 12px 14px;
+    margin: 12px 0 0;
+    /* Inside a card already, so a second card-coloured panel with its own
+       border just looked like a box in a box. Sit it on a subtle tint and
+       separate it with a rule instead. */
+    background: var(--hover-bg);
+    border: none;
+    border-top: 1px solid var(--border);
+    border-radius: 0 0 6px 6px;
     font-size: 0.85em;
 }
+
+/* Each option reads as a chip, so a row of eleven does not run together. */
+.column-settings label {
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--card-bg);
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.15s;
+}
+.column-settings label:hover { border-color: var(--accent); }
 
 .column-settings label {
     display: flex;
@@ -1084,7 +1114,13 @@ h3 {
     color: #9f99ff;
     position: relative;
     z-index: 1;
+    /* Never let a long value be cut by the card's overflow:hidden (which the
+       sparkline needs). Keep it on one line; fitStatValue() in app.js scales
+       the type down only when the rendered text is genuinely wider than the
+       box, so a wide window keeps every card at the same size. */
+    white-space: nowrap;
 }
+
 
 /* Tables */
 table {
@@ -1171,7 +1207,10 @@ tr:hover { background: var(--hover-bg); }
     margin-bottom: 3px;
 }
 
-.filter-item input {
+/* The search box sits directly under these filters and must look
+   identical; share the rule rather than copying it. */
+.filter-item input,
+.search-row input {
     width: 100%;
     padding: 7px 10px;
     border: 1px solid var(--border);
@@ -1711,3 +1750,178 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
     font-size: 0.85em;
     white-space: nowrap;
 }
+
+/* Initial hidden state for elements JS reveals later.
+   A literal style="display:none" in the template is blocked by our OWN
+   `style-src-attr 'self'` CSP, so the element renders VISIBLE until script
+   hides it. JS keeps using el.style.display (CSSOM assignment is not blocked);
+   this class only supplies the starting state. */
+.is-hidden { display: none; }
+
+/* ---- Record search (Archives page) ------------------------------------- */
+.arch-tabs { display: flex; gap: 6px; margin: 4px 0 0; }
+.arch-tab {
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.95em;
+}
+.arch-tab.active {
+    background: var(--card-bg);
+    color: var(--text);
+    font-weight: 600;
+}
+
+/* The app's generic `button:hover` (0,1,1) outranks `.arch-tab` (0,1,0), so a
+   tab picked up the accent-purple fill while keeping muted grey text — grey on
+   purple, unreadable in both themes. State the hover explicitly, in tokens, so
+   light and dark both stay legible. */
+.arch-tab:hover {
+    background: var(--hover-bg, rgba(127, 127, 127, 0.12));
+    color: var(--text);
+}
+.arch-tab.active:hover {
+    background: var(--card-bg);
+    color: var(--text);
+}
+.arch-tab:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.search-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.search-row label { display: block; font-size: 0.85em; color: var(--text-muted); margin-bottom: 6px; }
+.search-row input:focus { outline: none; border-color: var(--accent); }
+.search-f2 { flex: 2; min-width: 260px; }
+.search-f1 { flex: 1.3; min-width: 200px; }
+.search-f0 { flex: 0 0 110px; }
+
+/* The cost of the search, stated before it is run. */
+/* Usage shown as examples. Collapsible so it can be dismissed once learned,
+   open by default because a first-time reader needs it most. */
+.search-help {
+    margin-top: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--hover-bg);
+    font-size: 0.86em;
+}
+.search-help > summary {
+    padding: 9px 12px;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--text);
+    user-select: none;
+}
+.search-help-table { width: auto; margin: 0 12px 4px; background: none; }
+.search-help-table td { border: none; padding: 4px 14px 4px 0; vertical-align: top; }
+.search-help-table td:first-child { white-space: nowrap; }
+.search-help-table code {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: 4px;
+    color: var(--text); font-size: 0.95em;
+}
+.search-help-table td:last-child { color: var(--text-muted); }
+.search-help-not {
+    padding: 8px 12px 11px;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border);
+    margin-top: 4px;
+}
+
+/* The custom select skin is 36px while .filter-item input is 38px, so the row
+   sat 2px out of line. Match it where they share a row. */
+.search-row .custom-select-trigger,
+.search-row select { height: 38px; box-sizing: border-box; }
+
+.search-plan {
+    margin-top: 12px; padding: 10px 12px;
+    background: rgba(108, 99, 255, 0.07);
+    border-radius: 6px; font-size: 0.88em;
+}
+#search-columns { margin-top: 12px; }
+
+.search-scope-note {
+    margin-top: 10px; font-size: 0.85em; color: var(--text-muted);
+    line-height: 1.6;
+}
+
+/* Spinner while a search runs. A frozen "Searching…" with a bar that has not
+   moved yet reads as a hang; motion says the process is alive. */
+.search-spinner {
+    display: inline-block; width: 13px; height: 13px;
+    margin-right: 6px; vertical-align: -1px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: search-spin 0.8s linear infinite;
+}
+@keyframes search-spin { to { transform: rotate(360deg); } }
+
+.search-prog-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+/* Amber, not red: slowing down for archiving is intended behaviour. */
+.search-prog-note { margin-top: 10px; font-size: 0.86em; color: #b8860b; }
+.search-summary { margin: 0 2px 10px; }
+.search-more { margin: 14px 0; text-align: center; }
+/* Widths are keyed to the COLUMN, not to its position. Positional
+   (nth-child) widths break the moment a column is hidden by the column
+   picker: the remaining columns keep the old slots and the record column
+   stays narrow with dead space beside it. The record column declares no
+   width, so under table-layout:fixed it absorbs whatever is left. */
+#search-table { table-layout: fixed; width: 100%; }
+#search-table .scol-time    { width: 185px; }
+#search-table .scol-source  { width: 165px; }
+#search-table .scol-level   { width: 70px; }
+#search-table .scol-archive { width: 210px; }
+#search-table .scol-act     { width: 96px; }
+#search-table .rec-msg {
+    font-family: monospace; font-size: 0.88em;
+    overflow-wrap: anywhere;      /* wrap long tokens instead of overflowing */
+}
+#search-table .rec-archive { font-family: monospace; font-size: 0.8em;
+    color: var(--text-muted); overflow-wrap: anywhere; }
+/* The expanded row spans every column, so it must not inherit the widths. */
+#search-table tr.hit-detail td { width: auto; }
+
+/* Expanded record. Dark regardless of theme — it is a code view, and the
+   syntax colours below are tuned for a dark ground. */
+.hit-json { background: #0f1117; border-radius: 8px; padding: 16px; overflow-x: auto; margin: 2px 0 10px; }
+.hit-json-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.hit-json pre {
+    margin: 0; font-size: 0.88em; line-height: 1.6;
+    /* Wrap long values rather than forcing a horizontal scroll: an archived
+       payload field is routinely longer than the viewport. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.hit-json-src { margin-top: 12px; font-size: 0.82em; }
+.hit-json .muted { color: #8b93a7; }
+.hit-json code { color: #c9d1d9; }
+.hit-json .j-key { color: #7dd3fc; }
+.hit-json .j-str { color: #a5e075; }
+.hit-json .j-num { color: #f0a45d; }
+.hit-json .j-p   { color: #5b6478; }
+.hit-json .j-more { color: #8b93a7; cursor: pointer; text-decoration: underline dotted; }
+
+/* A disabled control must LOOK disabled, or the refusal reads as a dead button. */
+.search-row button[disabled], .search-row button.is-disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* jt-glogarch's own operation log */
+#alog-table .alog-op {
+    font-family: monospace; font-size: 0.88em;
+    background: rgba(108, 99, 255, 0.10);
+    padding: 2px 7px; border-radius: 4px; white-space: nowrap;
+}
+#alog-table .alog-detail {
+    font-family: monospace; font-size: 0.85em;
+    color: var(--text-muted); overflow-wrap: anywhere;
+}
+#alog-pagination { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }

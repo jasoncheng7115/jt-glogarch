@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Generate a report PDF from a stored report definition, save it, record
 history, and optionally email it. Beta."""
 

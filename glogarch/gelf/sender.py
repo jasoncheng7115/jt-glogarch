@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """GELF TCP sender for importing archived messages back into Graylog."""
 
 from __future__ import annotations

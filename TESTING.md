@@ -366,6 +366,75 @@ nowhere) while the API, the flag and every unit test were fine. The rule:
       History** — failed row, sanitized reason, correct `source`. Covers lock
       held, disk full, unreachable server.
       Unit cover: `tests/test_export_busy_visibility.py`
+### Audit coverage (every release)
+
+- [ ] **Every state-changing route leaves an audit record** —
+      `tests/test_audit_coverage.py` walks all routes; a POST/DELETE that
+      changes nothing must be listed in READ_ONLY_POSTS **with a reason**.
+      *An inventory found 18 of 43 unaudited, including `POST /cleanup`, which
+      DELETES ARCHIVE FILES — deleting one archive was audited, deleting
+      hundreds by retention was not (v1.14.0).*
+- [ ] **The destructive ones specifically**: cleanup, archive delete, clear
+      index set, delete server / schedule / report
+- [ ] **jt-glogarch's own log is readable in the UI** — Operation Audit →
+      "jt-glogarch operations", filterable and paged. *The records were written
+      from day one with no interface at all; the only way to read them was to
+      open the SQLite file.*
+- [ ] The Graylog stat cards are hidden on that tab — they count Graylog
+      operations and would read as counts of this tool's
+
+### Search security
+
+- [ ] **XSS: archived log content is attacker-controlled.** Anyone who can send
+      a log line to the customer's Graylog gets that text into our archives and
+      onto this page. Render `<script>`, `<img onerror>`, `<svg onload>`,
+      `</td></tr>` breakout and a payload as a FIELD NAME and as the archive
+      filename: all must appear as text, nothing may execute.
+- [ ] Field/server/stream values are bound SQL parameters; no user-supplied
+      path ever reaches the filesystem (archive paths come from the DB row)
+- [ ] All `/api/search*` endpoints answer 401 without a session
+- [ ] Page size clamped, retained hits capped, live searches pruned
+
+### Record search (Archives page)
+
+- [ ] **No time range = no search, enforced twice** — the button is genuinely
+      `disabled` (not merely labelled so) AND `POST /api/search` answers 400
+      for a rangeless, half-range or unparseable-range request. *The range is
+      the only index; without it the scan is the entire corpus — 173 GB and
+      1.06 billion records on one real box.* The hint names the control to use
+      ("drag on the Archive timeline above").
+- [ ] **The cost is stated before the search runs** — `/api/search/plan` shows
+      archives, records and an estimate, and opens no archive to do it
+- [ ] **The prefilter never under-selects** — a term containing a JSON-escaped
+      character (`"` `\`) bypasses the byte scan, and an unreadable archive is
+      treated as a candidate. *A skipped archive is a silently missing result,
+      indistinguishable from "nothing was there".*
+- [ ] **"Load more" resumes, it does not re-run** — every hit appears exactly
+      once across pages, no gaps, and archives already scanned are not
+      reopened. `has_more: false` means the range really is exhausted.
+- [ ] **Per-page 50/100/200/500/1000 is honoured** — picking 50 returns 50
+- [ ] **Long records are truncated visibly, not clipped** — a 4,000-character
+      syslog line shows ~320 characters plus "…", never a line with a chunk
+      silently missing from the middle
+- [ ] **Search yields to archiving** — it pauses per archive while an export or
+      import holds a lock, and says so on screen
+- [ ] **The scope is stated in the UI** — that this is a scan, not a query
+      engine, and that full analysis means importing back into Graylog
+      Unit cover: `tests/test_search_engine.py`, `tests/test_search_api.py`
+
+- [ ] **Dashboard stat values are never clipped** — the UI smoke measures the
+      rendered text against the card at magnitudes from thousands to 10^18.
+      *`.stat-card` sets overflow:hidden for the sparkline, so 1,060,702,960
+      records rendered as `1,060,702,96` (v1.13.93). No Python test can measure
+      type — this needs the browser.*
+- [ ] **No template carries an inline `style="…"`** — the app's own
+      `style-src 'self'` CSP refuses them (`style-src-attr`), so they look
+      applied and do nothing. Two elements meant to start hidden rendered
+      visible. Sweep: `tests/test_static_sweeps.py`
+- [ ] **Run the UI smoke WITH credentials** — without them the post-login
+      checks (Settings renders, stat clipping, main-page console errors) do not
+      run at all. It now prints `post-login checks NOT run`; a gate line that
+      says OK while a layer was skipped is how the CSP error above survived.
 - [ ] **The audit heartbeat alert names its cause** — the body carries the
       per-server reason, and two consecutive failed probes are required before
       alerting. *It was logged at DEBUG (dropped at INFO) and fired on a single

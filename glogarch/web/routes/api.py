@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """REST API routes for glogarch web interface."""
 
 from __future__ import annotations
@@ -904,6 +906,7 @@ async def pause_import(request: Request, job_id: str):
     if not fc:
         return JSONResponse({"error": "Import job not found or not running"}, status_code=404)
     fc.pause()
+    _audit(request, "import_paused", f"job={job_id}")
     return {"status": "paused", "job_id": job_id}
 
 
@@ -915,6 +918,7 @@ async def resume_import(request: Request, job_id: str):
     if not fc:
         return JSONResponse({"error": "Import job not found or not running"}, status_code=404)
     fc.resume()
+    _audit(request, "import_resumed", f"job={job_id}")
     return {"status": "resumed", "job_id": job_id}
 
 
@@ -929,6 +933,7 @@ async def set_import_rate(request: Request, job_id: str):
     rate_ms = int(body.get("rate_ms", fc.rate_ms))
     batch_size = int(body.get("batch_size", fc.batch_size)) if body.get("batch_size") else None
     fc.set_rate(rate_ms, batch_size)
+    _audit(request, "import_rate_changed", f"job={job_id} rate_ms={rate_ms} batch={batch_size}")
     return {"status": "ok", "rate_ms": fc.rate_ms, "batch_size": fc.batch_size}
 
 
@@ -977,6 +982,12 @@ def trigger_cleanup(request: Request, days: int | None = None, dry_run: bool = F
     db = _db(request)
     cleaner = Cleaner(settings.retention, settings.export, db, settings.op_audit)
     result = cleaner.cleanup(retention_days=days, dry_run=dry_run)
+    # Deleting ONE archive is audited; deleting hundreds by retention was not.
+    # A destructive bulk operation with no record of who ran it is the gap an
+    # audit trail exists to close.
+    _audit(request, "cleanup_run",
+           f"dry_run={dry_run} days={days if days is not None else 'default'} "
+           f"deleted={result.files_deleted} freed_bytes={result.bytes_freed}")
     return {
         "files_deleted": result.files_deleted,
         "bytes_freed": result.bytes_freed,
@@ -992,6 +1003,10 @@ def trigger_verify(request: Request, server: str | None = None):
     db = _db(request)
     verifier = Verifier(settings.export, db, integrity=settings.integrity)
     result = verifier.verify_all(server=server)
+    _audit(request, "verify_run",
+           f"server={server or 'all'} checked={result.total_checked} "
+           f"valid={result.valid} corrupted={len(result.corrupted)} "
+           f"tampered={len(result.tampered)} missing={len(result.missing_files)}")
     return {
         "total_checked": result.total_checked,
         "valid": result.valid,
@@ -1478,6 +1493,7 @@ def delete_schedule(request: Request, name: str):
         except Exception as e:
             log.warning("Failed to remove schedule from runtime",
                         name=name, error=str(e))
+    _audit(request, "schedule_deleted", f"name={name}")
     return {"status": "deleted", "name": name}
 
 
@@ -1881,6 +1897,10 @@ def rescan_archive_path(request: Request):
             db.update_archive_status(archive.id, ArchiveStatus.DELETED)
             removed += 1
 
+    # Rescan adds and removes archive DB records — a state change, and the one
+    # that reconciles what the operator sees against what is on disk.
+    _audit(request, "archive_rescan",
+           f"registered={registered} removed={removed} errors={len(errors)}")
     return {"registered": registered, "removed": removed, "errors": errors}
 
 
@@ -2051,6 +2071,8 @@ async def reorder_opensearch(request: Request):
         if config_path.exists():
             update_config(config_path,
                           lambda cfg: cfg.setdefault("opensearch", {}).update({"hosts": hosts}))
+    _audit(request, "opensearch_hosts_reordered",
+           f"server={server or 'global'} from={from_idx} to={to_idx}")
 
     return {"hosts": hosts, "primary": hosts[0], "server": server}
 
@@ -2162,6 +2184,8 @@ async def test_notify(request: Request):
             results.append(await _send_nextcloud_talk(client, config.nextcloud_talk, full_msg))
     if config.email.enabled:
         results.append(await _send_email(config.email, title, body, timestamp))
+
+    _audit(request, "notify_test_sent", f"channels={len(results) if isinstance(results, list) else 0}")
 
     return {"results": results}
 
@@ -2320,11 +2344,20 @@ def get_operation_history(request: Request, limit: int = 100):
 
 
 @router.get("/logs/audit")
-def get_audit_log(request: Request, limit: int = 200):
-    """Get audit log entries."""
+def get_audit_log(request: Request, limit: int = 100, offset: int = 0,
+                  username: str | None = None, action: str | None = None,
+                  time_from: str | None = None, time_to: str | None = None):
+    """jt-glogarch's own operation log — who did what in THIS tool.
+
+    Distinct from /api/audit, which reports operations on Graylog collected
+    from the nginx syslog feed.
+    """
     db = _db(request)
-    entries = db.list_audit(limit=limit)
-    return {"items": entries}
+    items, total = db.query_audit(username=username, action=action,
+                                  time_from=time_from, time_to=time_to,
+                                  limit=limit, offset=offset)
+    return {"items": items, "total": total, "limit": limit, "offset": offset,
+            "actions": db.distinct_audit_actions()}
 
 
 # --- Notification Settings ---

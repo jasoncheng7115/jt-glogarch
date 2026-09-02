@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Async Graylog REST API client for Graylog 6.x/7.x."""
 
 from __future__ import annotations

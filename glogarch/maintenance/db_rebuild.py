@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Reconstruct the SQLite metadata DB by scanning the archive directory.
 
 The .json.gz files are the source of truth — each one carries an

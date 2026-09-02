@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """OpenSearch direct bulk import — bypasses Graylog entirely.
 
 When the source archive already contains fully-processed Graylog documents

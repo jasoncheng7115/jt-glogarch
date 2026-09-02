@@ -95,7 +95,7 @@
         <!-- Hardware sizing advice, computed from THIS box: /proc/meminfo, CPU
              count and the co-located Graylog/OpenSearch JVM -Xmx. Hidden unless
              there is something to say. -->
-        <div class="section" id="sizing-section" style="display:none">
+        <div class="section is-hidden" id="sizing-section">
             <h2 data-i18n="sizing_title" data-icon="server">Hardware Sizing</h2>
             <div class="card mb15" id="sizing-card">
                 <div id="sizing-info" class="muted-flex1">Loading...</div>
@@ -171,11 +171,121 @@
                     <input type="datetime-local" id="filter-to">
                 </div>
             </div>
-            <div class="filter-actions">
-                <button data-act="loadArchives" data-i18n="btn_filter" data-icon="filter">Filter</button>
-                <button class="btn-secondary" data-act="loadArchives" data-i18n="btn_refresh" data-icon="refresh">Refresh</button>
-                <button class="btn-secondary" data-act="toggleColumnSettings" data-i18n="btn_columns" data-icon="shield">Columns</button>
+        </div>
+        
+        <!-- Record search. Deliberately part of the Archives page rather than a
+             page of its own: the time-range and server/stream controls above are
+             exactly the pruning inputs the search needs, and the time range is
+             its only index. Tabs (not a panel below the table) because the
+             archive list can be thousands of rows — results underneath it would
+             be off-screen. -->
+        <div class="arch-tabs" id="arch-tabs">
+          <button class="arch-tab active" data-act="archTab" data-arg="list"
+                  data-i18n="tab_archive_list" data-icon="archive">Archive list</button>
+          <button class="arch-tab" data-act="archTab" data-arg="search"
+                  data-i18n="tab_record_search" data-icon="search">Record search</button>
+        </div>
+
+        <div id="search-pane" class="is-hidden">
+          <div class="card mb15">
+            <div class="search-row">
+              <div class="search-f2">
+                <label data-i18n="search_terms_label">Keywords</label>
+                <input type="text" id="search-q" data-i18n-placeholder="search_terms_ph">
+              </div>
+              <div class="search-f1">
+                <label data-i18n="search_fields_label">Field filters</label>
+                <input type="text" id="search-fields" data-i18n-placeholder="search_fields_ph">
+              </div>
+              <div class="search-f0">
+                <label data-i18n="search_limit_label">Per page</label>
+                <select id="search-limit">
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                  <option value="500" selected>500</option>
+                  <option value="1000">1000</option>
+                </select>
+              </div>
+              <button class="btn-primary" data-act="runRecordSearch"
+                      data-i18n="btn_search_records" data-icon="search">Search records</button>
+              <button class="btn-secondary" data-act="toggleSearchColumns"
+                      data-i18n="btn_columns" data-icon="settings">Columns</button>
             </div>
+            <!-- Usage as EXAMPLES, not prose. The quoting rule first lived in
+                 the keyword placeholder, where a 62-character sentence was cut
+                 off mid-word — the one thing a reader needed was the part they
+                 could not see. Someone scanning a table of examples learns the
+                 syntax in seconds; a paragraph they must parse teaches nothing. -->
+            <details class="search-help" open>
+              <summary data-i18n="search_help_title">How to search</summary>
+              <table class="search-help-table">
+                <tbody>
+                  <tr><td><code>error</code></td><td data-i18n="search_help_1">contains "error"</td></tr>
+                  <tr><td><code>firewall deny</code></td><td data-i18n="search_help_2">both words must appear, anywhere in the record</td></tr>
+                  <tr><td><code>"connection refused"</code></td><td data-i18n="search_help_3">the exact phrase — use quotes when the keyword contains a space</td></tr>
+                  <tr><td><code>source=fw01</code></td><td data-i18n="search_help_4">field filter: that field equals exactly that value</td></tr>
+                  <tr><td><code>deny source=fw01</code></td><td data-i18n="search_help_5">combine both: keyword AND field filter</td></tr>
+                </tbody>
+              </table>
+              <div class="search-help-not" data-i18n="search_help_not"></div>
+            </details>
+            <div id="search-plan" class="search-plan"></div>
+            <!-- Set expectations honestly: this is a scan over archived files,
+                 not a query engine. Anyone who needs real analysis should use
+                 the product's own import path and get Graylog back. -->
+            <div class="search-scope-note" data-i18n="search_scope_note"></div>
+            <!-- Same pattern as the archive list's column settings: checkboxes
+                 persisted per column in localStorage. Level and the source
+                 archive are off by default — most reads only want when, where
+                 and what. -->
+            <div class="column-settings is-hidden" id="search-columns">
+              <label><input type="checkbox" data-scol="scol-time" checked> <span data-i18n="th_time">Time</span></label>
+              <label><input type="checkbox" data-scol="scol-source" checked> <span data-i18n="th_source">Source</span></label>
+              <label><input type="checkbox" data-scol="scol-level"> <span data-i18n="th_level">Level</span></label>
+              <label><input type="checkbox" data-scol="scol-record" checked> <span data-i18n="th_record">Record</span></label>
+              <label><input type="checkbox" data-scol="scol-archive"> <span data-i18n="search_col_archive">Archive file</span></label>
+            </div>
+          </div>
+
+          <div class="card mb15 is-hidden" id="search-progress">
+            <div class="search-prog-head">
+              <div id="search-prog-text"></div>
+              <button class="btn-sm btn-danger" data-act="cancelRecordSearch"
+                      data-i18n="btn_cancel">Cancel</button>
+            </div>
+            <div class="progress-bar u099"><div class="progress-fill" id="search-prog-bar"></div></div>
+            <div id="search-prog-note" class="search-prog-note"></div>
+          </div>
+
+          <div id="search-summary" class="search-summary is-hidden"></div>
+          <table id="search-table" class="is-hidden">
+            <thead><tr>
+              <th class="scol-time" data-i18n="th_time">Time</th>
+              <th class="scol-source" data-i18n="th_source">Source</th>
+              <th class="scol-level" data-i18n="th_level">Level</th>
+              <th class="scol-record" data-i18n="th_record">Record</th>
+              <th class="scol-archive" data-i18n="search_col_archive">Archive file</th>
+              <th class="scol-act"></th>
+            </tr></thead>
+            <tbody id="search-tbody"></tbody>
+          </table>
+          <div id="search-more-wrap" class="search-more is-hidden">
+            <button class="btn-secondary" data-act="loadMoreRecords"
+                    data-i18n="btn_load_more">Load more</button>
+          </div>
+        </div>
+
+        <div id="archives-pane">
+        <!-- The toolbar sits in a card for the same reason the search pane's
+             does: the tab strip needs a panel to attach to. Bare buttons on
+             the page background leave the active tab floating with nothing
+             under it, which stops reading as a tab at all. -->
+        <div class="card mb15">
+        <div class="filter-actions">
+            <button data-act="loadArchives" data-i18n="btn_filter" data-icon="filter">Filter</button>
+            <button class="btn-secondary" data-act="loadArchives" data-i18n="btn_refresh" data-icon="refresh">Refresh</button>
+            <button class="btn-secondary" data-act="toggleColumnSettings" data-i18n="btn_columns" data-icon="settings">Columns</button>
         </div>
         <div class="filters u066" id="batch-actions">
             <button class="btn-primary" data-act="batchImport" data-i18n="btn_batch_import" data-icon="download">Import Selected</button>
@@ -183,18 +293,22 @@
             <span class="u028" id="batch-count"></span>
         </div>
         <div id="column-settings" class="column-settings u066">
-            <label><input type="checkbox" data-col="col-id"> ID</label>
-            <label><input type="checkbox" data-col="col-server" checked data-i18n-label="th_server"> Server</label>
-            <label><input type="checkbox" data-col="col-stream" checked> Stream</label>
-            <label><input type="checkbox" data-col="col-from" checked data-i18n-label="th_from"> From</label>
-            <label><input type="checkbox" data-col="col-to" checked data-i18n-label="th_to"> To</label>
-            <label><input type="checkbox" data-col="col-records" checked data-i18n-label="th_messages"> Records</label>
-            <label><input type="checkbox" data-col="col-compressed" checked data-i18n-label="th_size_compressed"> Compressed</label>
-            <label><input type="checkbox" data-col="col-original" data-i18n-label="th_size_original"> Original</label>
-            <label><input type="checkbox" data-col="col-status" checked data-i18n-label="th_status"> Status</label>
-            <label><input type="checkbox" data-col="col-filename" data-i18n-label="th_filename"> Filename</label>
-            <label><input type="checkbox" data-col="col-actions" checked data-i18n-label="th_actions"> Actions</label>
+            <!-- `data-i18n-label` was invented here and applyI18n never handled
+                 it, so these stayed English in a Chinese UI. Use the attribute
+                 the translator actually processes. -->
+            <label><input type="checkbox" data-col="col-id"> <span data-i18n="th_id">ID</span></label>
+            <label><input type="checkbox" data-col="col-server" checked> <span data-i18n="th_server">Server</span></label>
+            <label><input type="checkbox" data-col="col-stream" checked> <span data-i18n="th_stream">Stream</span></label>
+            <label><input type="checkbox" data-col="col-from" checked> <span data-i18n="th_from">From</span></label>
+            <label><input type="checkbox" data-col="col-to" checked> <span data-i18n="th_to">To</span></label>
+            <label><input type="checkbox" data-col="col-records" checked> <span data-i18n="th_messages">Records</span></label>
+            <label><input type="checkbox" data-col="col-compressed" checked> <span data-i18n="th_size_compressed">Compressed</span></label>
+            <label><input type="checkbox" data-col="col-original"> <span data-i18n="th_size_original">Original</span></label>
+            <label><input type="checkbox" data-col="col-status" checked> <span data-i18n="th_status">Status</span></label>
+            <label><input type="checkbox" data-col="col-filename"> <span data-i18n="th_filename">Filename</span></label>
+            <label><input type="checkbox" data-col="col-actions" checked> <span data-i18n="th_actions">Actions</span></label>
         </div>
+        </div><!-- /toolbar card -->
         <table id="archives-table">
             <thead>
                 <tr>
@@ -215,6 +329,7 @@
             <tbody></tbody>
         </table>
         <div class="pagination" id="archives-pagination"></div>
+        </div><!-- /#archives-pane -->
 
         <!-- Import Modal -->
         <div id="import-modal" class="modal-overlay u066">
@@ -412,7 +527,7 @@
                     <!-- Prominent "paused/waiting" banner: shown when the import
                          is throttled to a stop by target backpressure or low host
                          RAM, so a frozen progress bar reads as "waiting", not stuck. -->
-                    <div class="import-pause-banner" id="import-pause-banner" style="display:none"></div>
+                    <div class="import-pause-banner is-hidden" id="import-pause-banner"></div>
                     <div class="u070" id="import-controls">
                         <!-- GELF-only: pause + live rate slider. Hidden when
                              import mode is bulk (bulk has no inter-batch
@@ -713,6 +828,7 @@
              so the numbers won't look "wrong" when the all-time list
              below shows older sensitive entries that fell out of the
              24-hour window. -->
+        <div id="audit-graylog-stats">
         <div class="u078" data-i18n="audit_stats_window">Statistics for the last 24 hours</div>
         <div class="u059">
             <div class="card stat-card u127" id="audit-stat-total" data-i18n-title="audit_tip_ops">
@@ -737,6 +853,49 @@
         <span class="u066" id="audit-last-received"></span>
 
         <!-- Filters -->
+        <!-- Two different questions, one page: what happened on GRAYLOG (from
+             the nginx syslog feed) and what happened in THIS tool (our own
+             audit_log). The second had no interface at all — the records were
+             written from day one and could only be read out of the database
+             by hand, which is no use to anyone doing a compliance review. -->
+        </div><!-- /#audit-graylog-stats -->
+
+        <div class="arch-tabs" id="audit-tabs">
+          <button class="arch-tab active" data-act="auditTab" data-arg="graylog"
+                  data-i18n="tab_audit_graylog" data-icon="shield">Graylog operations</button>
+          <button class="arch-tab" data-act="auditTab" data-arg="app"
+                  data-i18n="tab_audit_app" data-icon="log">jt-glogarch operations</button>
+        </div>
+
+        <div id="audit-app-pane" class="is-hidden">
+          <div class="card mb15">
+            <div class="audit-filters u054">
+              <input type="datetime-local" id="alog-from" data-i18n-title="th_from">
+              <span class="u022">~</span>
+              <input type="datetime-local" id="alog-to" data-i18n-title="th_to">
+              <input type="text" id="alog-user" data-i18n-placeholder="login_username">
+              <select id="alog-action" class="no-custom">
+                <option value="" data-i18n-opt="alog_all_actions">All actions</option>
+              </select>
+              <button class="btn-primary btn-sm" data-act="loadAppAudit" data-args="[1]"
+                      data-i18n="btn_filter" data-icon="filter">Filter</button>
+            </div>
+            <div class="search-scope-note" data-i18n="alog_note"></div>
+          </div>
+          <table id="alog-table">
+            <thead><tr>
+              <th data-i18n="th_time">Time</th>
+              <th data-i18n="login_username">User</th>
+              <th data-i18n="audit_ip">IP</th>
+              <th data-i18n="audit_operation">Operation</th>
+              <th data-i18n="audit_detail">Detail</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="u055" id="alog-pagination"></div>
+        </div>
+
+        <div id="audit-graylog-pane">
         <div class="audit-filters u054">
             <input type="datetime-local" id="audit-filter-from" title="From">
             <span class="u022">~</span>
@@ -764,6 +923,8 @@
             <tbody></tbody>
         </table>
         <div class="u055" id="audit-pagination"></div>
+
+        </div><!-- /#audit-graylog-pane -->
 
         <!-- Detail modal -->
         <div id="audit-detail-modal" class="modal-overlay u066">

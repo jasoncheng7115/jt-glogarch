@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """HMAC-SHA256 tamper-evidence for archives (optional feature).
 
 Security model

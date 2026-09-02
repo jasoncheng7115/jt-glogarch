@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Assemble a report's HTML from structured content and render it to PDF.
 
 A report is: a `report` header dict (cover/branding/meta) + a list of `sections`.

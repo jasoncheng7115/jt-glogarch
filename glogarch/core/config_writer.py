@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Atomic, locked writer for config.yaml.
 
 All Web UI / setup wizard endpoints that mutate config.yaml MUST go through

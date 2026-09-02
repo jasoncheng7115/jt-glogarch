@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Adaptive backpressure guard for exports (API *and* OpenSearch-direct).
 
 A heavy export puts search/read load on the same OpenSearch cluster that Graylog

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Import orchestrator — reads archives and sends to Graylog via GELF.
 
 Supports:
@@ -153,6 +155,21 @@ class ImportResult:
         self.indexer_failure_fields: list[str] = []  # fields auto-diagnosed on failure
         self.messages_indexed: int = 0  # destination-verified: sent - indexer failures
 
+
+def _import_summary(archives: int, sent: int, indexed: int, mode: str,
+                    extra: str = "") -> str:
+    """Plain summary for the Job History Note column.
+
+    Without it a clean import leaves the Note blank — the more normal the run,
+    the less the row said. Any existing note (reconciliation warning,
+    where-to-find hint) is kept after it.
+    """
+    parts = [f"{archives} archive(s), {sent:,} records via {mode.upper()}"]
+    if indexed and indexed != sent:
+        parts.append(f"{indexed:,} confirmed at destination")
+    if extra:
+        parts.append(extra)
+    return ". ".join(p for p in parts if p)
 
 class Importer:
     """Orchestrates importing archived logs back into Graylog.
@@ -544,7 +561,9 @@ class Importer:
                         job_id, status=JobStatus.COMPLETED, progress_pct=100.0,
                         messages_done=bulk_result.messages_indexed,
                         completed_at=datetime.utcnow(),
-                        error_message=full_msg,
+                        error_message=_import_summary(
+                            result.archives_processed, bulk_result.messages_sent,
+                            bulk_result.messages_indexed, "bulk", full_msg),
                     )
                 else:
                     log.info(
@@ -559,7 +578,9 @@ class Importer:
                         job_id, status=JobStatus.COMPLETED, progress_pct=100.0,
                         messages_done=bulk_result.messages_indexed,
                         completed_at=datetime.utcnow(),
-                        error_message=(where_msg or None),
+                        error_message=_import_summary(
+                            result.archives_processed, bulk_result.messages_sent,
+                            bulk_result.messages_indexed, "bulk", where_msg or ""),
                     )
 
                 try:
@@ -843,7 +864,9 @@ class Importer:
                 progress_pct=100.0 if final_status != JobStatus.CANCELLED else (
                     (result.messages_sent / max(total_messages, 1)) * 100),
                 messages_done=result.messages_sent, completed_at=datetime.utcnow(),
-                error_message=recon_msg or None,
+                error_message=_import_summary(
+                    result.archives_processed, result.messages_sent,
+                    result.messages_indexed, "gelf", recon_msg or ""),
                 result_json=_json_rj.dumps({
                     "messages_sent": result.messages_sent,
                     "messages_indexed": result.messages_indexed,

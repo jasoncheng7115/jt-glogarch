@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Strip secrets from strings before they are written to logs/DB.
 
 Used to prevent passwords and API tokens from leaking into jobs.error_message,

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Estimate how much longer the archive disk can hold logs.
 
 The estimate is grounded in the archive's OWN data — no fixed assumptions about

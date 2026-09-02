@@ -43,6 +43,7 @@ async def run(base_url: str, user: str | None, password: str | None) -> int:
     base_url = base_url.rstrip("/")
     errors: list[str] = []
     problems: list[str] = []
+    skipped: list[str] = []
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -92,6 +93,40 @@ async def run(base_url: str, user: str | None, password: str | None) -> int:
             if not nav_zh:
                 problems.append("main page: nav not Chinese after zh-TW switch")
 
+            # --- Dashboard stat values must never be CLIPPED --------------
+            # `.stat-card` sets overflow:hidden for the sparkline, so a value
+            # wider than the card is silently cut off rather than wrapped: a
+            # site at 1,060,702,960 records displayed "1,060,702,96". Only a
+            # real browser can catch this — no Python test measures type.
+            # Probe the magnitudes that matter, largest last.
+            overflow = await page.evaluate(
+                """() => {
+                  if (typeof setStatValue !== 'function') return ['setStatValue missing'];
+                  const el = document.getElementById('stat-messages');
+                  if (!el) return ['#stat-messages missing'];
+                  const bad = [];
+                  for (const v of ['7,448', '1,060,702,960', '11,579,254,477',
+                                   '12,345,678,901,234',
+                                   '999,999,999,999,999,999']) {
+                    setStatValue(el, v);
+                    const r = document.createRange(); r.selectNodeContents(el);
+                    const tw = r.getBoundingClientRect().width;
+                    const aw = el.getBoundingClientRect().width;
+                    if (tw > aw + 0.5) bad.push(`${v} overflows (${tw.toFixed(0)}px > ${aw.toFixed(0)}px)`);
+                  }
+                  return bad;
+                }""")
+            for o in overflow or []:
+                problems.append(f"dashboard stat value clipped: {o}")
+
+        else:
+            # Never let a skipped layer read as a passed one. The post-login
+            # checks (Settings renders, dashboard stat clipping, CSP console
+            # errors on the main page) only run with credentials — a CSP
+            # violation that blanked two elements sat unnoticed because the
+            # release gate never supplied them.
+            skipped.append("post-login checks NOT run (no credentials given)")
+
         await browser.close()
 
     real_errors = [e for e in errors if _is_real_error(e)]
@@ -100,6 +135,8 @@ async def run(base_url: str, user: str | None, password: str | None) -> int:
     print(f"  checks: {'PASS' if not problems else 'FAIL'}")
     for pr in problems:
         print(f"    ✗ {pr}")
+    for sk in skipped:
+        print(f"  ⚠ {sk}")
     print(f"  console/page errors: {len(real_errors)}")
     for e in real_errors[:20]:
         print(f"    ✗ {e}")

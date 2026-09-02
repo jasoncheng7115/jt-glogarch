@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """SSRF guard for user-supplied connection targets (OWASP A01 / SSRF).
 
 The "test connection" endpoints legitimately connect to an operator-specified

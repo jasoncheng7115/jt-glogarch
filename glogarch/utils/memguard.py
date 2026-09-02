@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Local box-memory guard.
 
 jt-glogarch is usually deployed on the SAME VM as the target Graylog + OpenSearch

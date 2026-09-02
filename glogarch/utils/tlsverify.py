@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Resolve the TLS-verify setting for an ad-hoc target URL.
 
 Most HTTP calls carry a server config and simply use `srv.verify_ssl`. A few

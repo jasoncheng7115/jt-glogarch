@@ -156,6 +156,9 @@ function formatDT(iso) {
 // had 53 days left). Deliberately coarse — days/hours, never false precision.
 function formatEta(sec) {
     if (sec == null || !isFinite(sec) || sec <= 0) return '';
+    // Sub-minute must not round to "0m" — a search estimated at 7 seconds was
+    // being advertised as taking no time at all.
+    if (sec < 90) return `${Math.round(sec)}s`;
     const min = Math.round(sec / 60);
     if (min < 60) return `${min}m`;
     const hr = Math.floor(min / 60);
@@ -174,6 +177,44 @@ function elapsedWithEta(j) {
     const label = (t('eta_left') || 'about {v} left').replace('{v}', eta);
     return `${el}<br><span class="job-eta" title="${esc(t('eta_hint') || '')}">${esc(label)}</span>`;
 }
+
+// Dashboard stat value: shrink ONLY when it would actually be clipped.
+// `.stat-card` sets `overflow:hidden` for the sparkline, so a value wider than
+// the card is silently CUT OFF — a site at 1,060,702,960 records showed
+// "1,060,702,96". The first fix stepped the size down by character count, but
+// character count is not width: on a wide window the card has room for the full
+// 1.8em and shrinking it anyway just made one card look different from its
+// neighbours. So measure the rendered text against the box and scale only by
+// what is actually missing. (CSSOM assignment is fine under our CSP; only the
+// HTML `style` attribute is blocked — see .is-hidden in style.css.)
+function fitStatValue(el) {
+    if (!el) return;
+    el.style.fontSize = '';                 // back to the stylesheet size
+    const avail = el.clientWidth;
+    if (!avail) return;                     // not laid out yet (hidden tab)
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    const w = r.getBoundingClientRect().width;
+    if (w <= avail) return;                 // fits at full size — leave it
+    const base = parseFloat(getComputedStyle(el).fontSize) || 29;
+    el.style.fontSize = Math.max(11, Math.floor(base * avail / w)) + 'px';
+}
+
+function setStatValue(el, text) {
+    if (!el) return;
+    el.textContent = text;
+    fitStatValue(el);
+}
+
+// A window that gets narrower must re-fit, or the value silently clips again
+// between status polls.
+let _statFitTimer = null;
+window.addEventListener('resize', () => {
+    clearTimeout(_statFitTimer);
+    _statFitTimer = setTimeout(() => {
+        document.querySelectorAll('.card-value').forEach(fitStatValue);
+    }, 120);
+});
 
 function formatElapsed(startIso, endIso) {
     if (!startIso) return '-';
@@ -261,11 +302,11 @@ async function loadDashboard() {
     try {
         const status = await fetchJSON(`${API}/status`);
         const s = status.archive_stats;
-        document.getElementById('stat-total').textContent = formatNumber(s.total);
-        document.getElementById('stat-messages').textContent = formatNumber(s.total_messages);
-        document.getElementById('stat-original').textContent = formatBytes(s.total_original_bytes || 0);
-        document.getElementById('stat-size').textContent = formatBytes(s.total_bytes || 0);
-        document.getElementById('stat-disk').textContent = formatMB(status.storage_stats.available_mb || 0);
+        setStatValue(document.getElementById('stat-total'), formatNumber(s.total));
+        setStatValue(document.getElementById('stat-messages'), formatNumber(s.total_messages));
+        setStatValue(document.getElementById('stat-original'), formatBytes(s.total_original_bytes || 0));
+        setStatValue(document.getElementById('stat-size'), formatBytes(s.total_bytes || 0));
+        setStatValue(document.getElementById('stat-disk'), formatMB(status.storage_stats.available_mb || 0));
 
         // Projected remaining archive retention (compressed footprint per month
         // of log × free disk). Muted normally; red when below the alert months.
@@ -1862,6 +1903,482 @@ function stopImportStatusPoll() {
     if (pb) { pb.style.display = 'none'; pb.innerHTML = ''; }
 }
 
+// ---- Record search (Archives page) ---------------------------------------
+// Scans the archives themselves; there is no index, so the time range chosen
+// above is what makes it fast. Everything here is bounded on purpose: one page
+// of results at a time, with an explicit "load more" that RESUMES from the
+// server-side cursor instead of re-running the whole query.
+let _searchId = null, _searchPoll = null, _searchShown = 0, _searchHasMore = false;
+
+// Text this pane writes itself (the plan line, the summary, the progress line
+// and the expand/collapse buttons) has no data-i18n attribute, so applyI18n()
+// cannot reach it — switching language left the whole search panel in the old
+// language. i18n.js already dispatches `langchange`; listen and re-render.
+document.addEventListener('langchange', () => {
+    const pane = document.getElementById('search-pane');
+    if (!pane || pane.classList.contains('is-hidden')) return;
+    planRecordSearch();
+    _relabelHitButtons();
+    if (_searchId) _refreshSearchLabels();
+});
+
+// Re-label expand/collapse without touching the rows themselves.
+function _relabelHitButtons() {
+    const tb = document.getElementById('search-tbody');
+    if (!tb) return;
+    for (let i = 0; i * 2 + 1 < tb.children.length; i++) {
+        const det = tb.children[i * 2 + 1];
+        const btn = tb.children[i * 2].querySelector('button');
+        if (!btn || !det) continue;
+        const open = !det.classList.contains('is-hidden');
+        btn.innerHTML = open
+            ? `${icon('eye_closed', 14)} ${esc(t('btn_collapse') || 'Collapse')}`
+            : `${icon('eye', 14)} ${esc(t('btn_expand') || 'Expand')}`;
+        if (open) _renderHitJson(det, i);
+    }
+}
+
+// The summary sentence is built from several strings; rebuild it in the new
+// language from the state we already hold rather than re-running the search.
+function _refreshSearchLabels() {
+    const sum = document.getElementById('search-summary');
+    if (!sum || sum.classList.contains('is-hidden')) return;
+    const tail = _searchHasMore ? (t('search_more_exist') || 'more exist')
+                                : (t('search_all_shown') || 'that is all of them');
+    sum.innerHTML = `<b>${(t('search_hits') || '{n} hits')
+        .replace('{n}', formatNumber(_searchShown))}</b> <span class="muted">— ${esc(tail)}</span>`;
+}
+
+// Which result columns to show. Same mechanism as the archive list's column
+// settings (checkbox + localStorage), so the two behave identically. Level and
+// the source archive default OFF: most reads want when, where and what.
+function toggleSearchColumns() {
+    const el = document.getElementById('search-columns');
+    if (el) el.classList.toggle('is-hidden');
+}
+
+function applySearchColumns() {
+    document.querySelectorAll('#search-columns input[data-scol]').forEach(cb => {
+        const cls = cb.getAttribute('data-scol');
+        document.querySelectorAll('.' + cls).forEach(el => {
+            el.style.display = cb.checked ? '' : 'none';
+        });
+    });
+}
+
+function initSearchColumns() {
+    document.querySelectorAll('#search-columns input[data-scol]').forEach(cb => {
+        const cls = cb.getAttribute('data-scol');
+        const saved = localStorage.getItem('scol-' + cls);
+        if (saved !== null) cb.checked = saved === '1';
+        if (cb._scolHooked) return;
+        cb._scolHooked = true;
+        cb.addEventListener('change', () => {
+            localStorage.setItem('scol-' + cls, cb.checked ? '1' : '0');
+            applySearchColumns();
+        });
+    });
+    applySearchColumns();
+}
+
+function archTab(which) {
+    const list = document.getElementById('archives-pane');
+    const pane = document.getElementById('search-pane');
+    if (!list || !pane) return;
+    const searching = which === 'search';
+    list.classList.toggle('is-hidden', searching);
+    pane.classList.toggle('is-hidden', !searching);
+    document.querySelectorAll('.arch-tab').forEach(b =>
+        b.classList.toggle('active', b.getAttribute('data-arg') === which));
+    if (searching) {
+        planRecordSearch();
+        _watchSearchRange(true);
+        _hookSearchEnter();
+        initSearchColumns();
+    } else {
+        _watchSearchRange(false);
+    }
+}
+
+// Watch the range by VALUE, not by event. The archive timeline sets
+// #filter-from/#filter-to with a plain `.value =` assignment, which fires no
+// `change` event at all — so a `change` listener leaves the search button
+// disabled forever after a drag, while the range is plainly filled in. Polling
+// the value is immune to how it got there, and to whoever writes it next.
+let _searchRangeTimer = null, _searchRangeSeen = null;
+
+function _watchSearchRange(on) {
+    clearInterval(_searchRangeTimer);
+    _searchRangeTimer = null;
+    if (!on) return;
+    _searchRangeSeen = null;
+    _searchRangeTimer = setInterval(() => {
+        const pane = document.getElementById('search-pane');
+        if (!pane || pane.classList.contains('is-hidden')) {
+            _watchSearchRange(false);
+            return;
+        }
+        const b = _searchBody();
+        const key = [b.time_from, b.time_to, b.server, b.stream_id].join('|');
+        if (key !== _searchRangeSeen) {
+            _searchRangeSeen = key;
+            planRecordSearch();
+        }
+    }, 400);
+}
+
+// Backend refusals carry a stable `code`; translate that. Showing `d.error`
+// verbatim put an English sentence in front of a Chinese user
+// ("Enter a keyword or a field filter").
+function _searchErr(d) {
+    if (!d) return '';
+    const key = d.code ? ('err_search_' + d.code) : null;
+    const tr = key ? t(key) : null;
+    if (tr && tr !== key) return tr.replace('{v}', d.value || '');
+    return d.error || '';
+}
+
+function _searchBody() {
+    return {
+        q: (document.getElementById('search-q') || {}).value || '',
+        field_filters: (document.getElementById('search-fields') || {}).value || '',
+        time_from: (document.getElementById('filter-from') || {}).value || '',
+        time_to: (document.getElementById('filter-to') || {}).value || '',
+        server: (document.getElementById('filter-server') || {}).value || '',
+        stream_id: (document.getElementById('filter-stream') || {}).value || '',
+        limit: (document.getElementById('search-limit') || {}).value || '500'
+    };
+}
+
+// Tell the user the cost BEFORE they commit: on this data the difference
+// between an hour and a month is seconds versus tens of minutes.
+async function planRecordSearch() {
+    const el = document.getElementById('search-plan');
+    if (!el) return;
+    const b = _searchBody();
+    // No range, no search — and the button is genuinely disabled, not merely
+    // labelled that way. The range is the only index this search has; without
+    // it the scan is the entire corpus (173 GB / 1.06 billion records on one
+    // real box), which is not a thing to start by accident.
+    const btn = document.querySelector("[data-act='runRecordSearch']");
+    if (!b.time_from || !b.time_to) {
+        el.innerHTML = esc(t('search_need_range') || 'Choose a time range above.');
+        if (btn) { btn.disabled = true; btn.classList.add('is-disabled'); }
+        return;
+    }
+    if (btn) { btn.disabled = false; btn.classList.remove('is-disabled'); }
+    try {
+        const r = await fetch(`${API}/search/plan`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(Object.assign({}, b, {q: b.q || 'x'}))
+        });
+        const d = await r.json();
+        if (!r.ok) { el.innerHTML = esc(_searchErr(d)); return; }
+        el.innerHTML = (t('search_plan') || '{a} archives, ~{m} records, about {s}')
+            .replace('{a}', `<b>${formatNumber(d.archives)}</b>`)
+            .replace('{m}', `<b>${formatNumber(d.messages)}</b>`)
+            .replace('{s}', `<b>${formatEta(d.estimated_seconds) || '<1m'}</b>`);
+    } catch (e) { el.textContent = ''; }
+}
+
+// Enter in either box runs the search — a form-shaped UI that ignores Enter
+// reads as broken.
+function _hookSearchEnter() {
+    ['search-q', 'search-fields'].forEach(id => {
+        const inp = document.getElementById(id);
+        if (!inp || inp._enterHooked) return;
+        inp._enterHooked = true;
+        inp.addEventListener('keydown', ev => {
+            if (ev.key !== 'Enter') return;
+            ev.preventDefault();
+            const btn = document.querySelector("[data-act='runRecordSearch']");
+            if (btn && btn.disabled) return;      // same rule as the button
+            runRecordSearch();
+        });
+    });
+}
+
+async function runRecordSearch() {
+    const b = _searchBody();
+    if (!b.time_from || !b.time_to) {
+        showAlert(t('search_need_range') || 'Choose a time range above.');
+        return;
+    }
+    const r = await fetch(`${API}/search`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(b)
+    });
+    const d = await r.json();
+    if (!r.ok) { showAlert(_searchErr(d) || 'search failed'); return; }
+    _searchId = d.search_id;
+    _searchShown = 0;
+    document.getElementById('search-tbody').innerHTML = '';
+    document.getElementById('search-table').classList.remove('is-hidden');
+    document.getElementById('search-progress').classList.remove('is-hidden');
+    document.getElementById('search-more-wrap').classList.add('is-hidden');
+    _pollSearch();
+}
+
+async function cancelRecordSearch() {
+    if (!_searchId) return;
+    await fetch(`${API}/search/${_searchId}/cancel`, {method: 'POST'});
+}
+
+async function loadMoreRecords() {
+    if (!_searchId) return;
+    const r = await fetch(`${API}/search/${_searchId}/more`, {method: 'POST'});
+    const d = await r.json();
+    if (!r.ok) { showAlert(_searchErr(d)); return; }
+    document.getElementById('search-progress').classList.remove('is-hidden');
+    document.getElementById('search-more-wrap').classList.add('is-hidden');
+    _pollSearch();
+}
+
+function _pollSearch() {
+    clearInterval(_searchPoll);
+    _searchPoll = setInterval(_refreshSearch, 1000);
+    _refreshSearch();
+}
+
+async function _refreshSearch() {
+    if (!_searchId) return;
+    let d;
+    try {
+        const r = await fetch(`${API}/search/${_searchId}?offset=${_searchShown}`);
+        d = await r.json();
+        if (!r.ok) throw new Error(d.error || '');
+    } catch (e) { clearInterval(_searchPoll); return; }
+
+    const done = d.status !== 'running';
+    const total = d.archives_total || 0;
+    const pct = total ? Math.min(100, Math.round((d.archives_scanned / total) * 100)) : 0;
+    const bar = document.getElementById('search-prog-bar');
+    if (bar) bar.style.width = pct + '%';
+    const pt = document.getElementById('search-prog-text');
+    if (pt) {
+        const spin = done ? '' : '<span class="search-spinner"></span> ';
+        pt.innerHTML = spin + `<b>${esc(done ? (t('search_done') || 'Finished')
+                                      : (t('search_running') || 'Searching…'))}</b> ` +
+            `<span class="muted">${(t('search_scanned') || 'scanned {n} / {t} archives · {h} hits')
+                .replace('{n}', formatNumber(d.archives_scanned || 0))
+                .replace('{t}', formatNumber(total))
+                .replace('{h}', formatNumber(d.hit_count || 0))}</span>`;
+    }
+    const note = document.getElementById('search-prog-note');
+    if (note) note.textContent = d.throttled ? (t('search_throttled') || '') : '';
+
+    (d.hits || []).forEach(h => _appendHit(h));
+    _searchShown += (d.hits || []).length;
+    if ((d.hits || []).length) applySearchColumns();   // new rows need the prefs too
+
+    if (done) {
+        clearInterval(_searchPoll);
+        document.getElementById('search-progress').classList.add('is-hidden');
+        _searchHasMore = !!d.has_more;
+        const sum = document.getElementById('search-summary');
+        if (sum) {
+            sum.classList.remove('is-hidden');
+            // Say plainly whether this is everything or merely the first page —
+            // a count with no such statement reads as "that is all there is".
+            const tail = d.has_more ? (t('search_more_exist') || 'more exist')
+                                    : (t('search_all_shown') || 'that is all of them');
+            sum.innerHTML = `<b>${(t('search_hits') || '{n} hits')
+                .replace('{n}', formatNumber(_searchShown))}</b> <span class="muted">— ${esc(tail)}</span>`;
+        }
+        document.getElementById('search-more-wrap')
+            .classList.toggle('is-hidden', !d.has_more);
+    }
+}
+
+// One archived record can be thousands of characters (a syslog "Log
+// statistics" line runs past 4,000), which turns a single result row into a
+// wall of text and buries every other hit. Truncate the PREVIEW explicitly —
+// with a visible marker — rather than letting CSS clip it, because a silently
+// clipped line reads as the whole message with a chunk missing from the
+// middle. The untruncated record is one click away.
+const REC_PREVIEW_CHARS = 320;
+
+function _recPreview(msg) {
+    const s = String(msg).replace(/\s+/g, ' ').trim();
+    return s.length > REC_PREVIEW_CHARS
+        ? s.slice(0, REC_PREVIEW_CHARS) + ' …'
+        : s;
+}
+
+function _appendHit(h) {
+    const tb = document.getElementById('search-tbody');
+    if (!tb) return;
+    const i = tb.children.length;
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+        `<td class="scol-time">${esc(formatDT(h.timestamp))}</td>` +
+        `<td class="scol-source">${esc(h.source || '')}</td>` +
+        `<td class="scol-level">${esc(h.level || '')}</td>` +
+        `<td class="scol-record rec-msg">${esc(_recPreview(h.message || ''))}</td>` +
+        `<td class="scol-archive rec-archive">${esc(h.archive_file || '')}</td>` +
+        `<td class="scol-act"><button class="btn-sm" data-act="toggleHit" data-arg="${i}">` +
+        `${icon('eye', 14)} ${esc(t('btn_expand') || 'Expand')}</button></td>`;
+    tb.appendChild(tr);
+    const det = document.createElement('tr');
+    det.className = 'hit-detail is-hidden';
+    det.innerHTML = `<td colspan="6"><div class="hit-json" id="hit-json-${i}"></div></td>`;
+    tb.appendChild(det);
+    det._doc = h.doc;
+    det._file = h.archive_file;
+}
+
+function toggleHit(i) {
+    const tb = document.getElementById('search-tbody');
+    const det = tb.children[Number(i) * 2 + 1];
+    if (!det) return;
+    const open = !det.classList.contains('is-hidden');
+    det.classList.toggle('is-hidden', open);
+    const btn = tb.children[Number(i) * 2].querySelector('button');
+    if (btn) btn.innerHTML = open
+        ? `${icon('eye', 14)} ${esc(t('btn_expand') || 'Expand')}`
+        : `${icon('eye_closed', 14)} ${esc(t('btn_collapse') || 'Collapse')}`;
+    if (!open) _renderHitJson(det, i);
+}
+
+// Records carry 47 fields on one box and over 1,100 on another, so showing
+// everything by default makes the table unreadable. Start with the fields that
+// have a value, and let the reader ask for the rest.
+const HIT_PREVIEW_FIELDS = 12;
+
+function _renderHitJson(det, i, showAll) {
+    const box = document.getElementById(`hit-json-${i}`);
+    if (!box) return;
+    const doc = det._doc || {};
+    const keys = Object.keys(doc).filter(k => doc[k] !== null && doc[k] !== '');
+    const shown = showAll ? keys : keys.slice(0, HIT_PREVIEW_FIELDS);
+    const hidden = keys.length - shown.length;
+    let body = '';
+    shown.forEach((k, n) => {
+        const v = doc[k];
+        const val = (typeof v === 'number' || typeof v === 'boolean')
+            ? `<span class="j-num">${esc(String(v))}</span>`
+            : `<span class="j-str">"${esc(String(v))}"</span>`;
+        body += `  <span class="j-key">"${esc(k)}"</span><span class="j-p">:</span> ` +
+                `${val}<span class="j-p">${n < shown.length - 1 || hidden ? ',' : ''}</span>\n`;
+    });
+    if (hidden > 0) {
+        body += `  <span class="j-more" data-act="expandHitAll" data-arg="${i}">` +
+                `${esc((t('search_more_fields') || '… {n} more fields').replace('{n}', hidden))}</span>\n`;
+    }
+    box.innerHTML =
+        `<div class="hit-json-head"><span class="muted">${esc(
+            (t('search_full_record') || 'Full record ({n} fields)').replace('{n}', keys.length))}</span>` +
+        `<button class="btn-sm" data-act="copyHitJson" data-arg="${i}">${icon('copy', 14)} ${esc(t('btn_copy_json') || 'Copy JSON')}</button></div>` +
+        `<pre><code><span class="j-p">{</span>\n${body}<span class="j-p">}</span></code></pre>` +
+        `<div class="hit-json-src muted">${esc(t('search_from_archive') || 'From archive')} ` +
+        `<code>${esc(det._file || '')}</code></div>`;
+}
+
+function expandHitAll(i) {
+    const tb = document.getElementById('search-tbody');
+    const det = tb.children[Number(i) * 2 + 1];
+    if (det) _renderHitJson(det, i, true);
+}
+
+function copyHitJson(i) {
+    const tb = document.getElementById('search-tbody');
+    const det = tb.children[Number(i) * 2 + 1];
+    if (!det) return;
+    // copyText() already handles the clipboard + its own feedback.
+    copyText(JSON.stringify(det._doc || {}, null, 2));
+}
+
+// ---- jt-glogarch's own operation log -------------------------------------
+// Records who did what in THIS tool (deleted archives, changed settings, ran a
+// search). Written since day one, but until now with no interface at all — the
+// only way to read it was to open the SQLite file, which is no help to anyone
+// doing a compliance review.
+let _alogPage = 1, _alogActionsLoaded = false;
+const ALOG_PAGE_SIZE = 100;
+
+function auditTab(which) {
+    const gl = document.getElementById('audit-graylog-pane');
+    const app = document.getElementById('audit-app-pane');
+    if (!gl || !app) return;
+    const isApp = which === 'app';
+    gl.classList.toggle('is-hidden', isApp);
+    app.classList.toggle('is-hidden', !isApp);
+    document.querySelectorAll('#audit-tabs .arch-tab').forEach(b =>
+        b.classList.toggle('active', b.getAttribute('data-arg') === which));
+    // The stat cards count GRAYLOG operations. Left visible above this tab
+    // they would read as counts of what was done in this tool.
+    const stats = document.getElementById('audit-graylog-stats');
+    if (stats) stats.classList.toggle('is-hidden', isApp);
+    if (isApp) loadAppAudit(1);
+}
+
+async function loadAppAudit(page) {
+    _alogPage = Math.max(1, Number(page) || 1);
+    const q = new URLSearchParams({
+        limit: ALOG_PAGE_SIZE, offset: (_alogPage - 1) * ALOG_PAGE_SIZE
+    });
+    const put = (id, key) => {
+        const v = (document.getElementById(id) || {}).value;
+        if (v) q.set(key, v);
+    };
+    put('alog-user', 'username');
+    put('alog-action', 'action');
+    put('alog-from', 'time_from');
+    put('alog-to', 'time_to');
+
+    let d;
+    try {
+        d = await fetchJSON(`${API}/logs/audit?${q}`);
+    } catch (e) {
+        showAlert(String(e));
+        return;
+    }
+
+    if (!_alogActionsLoaded && Array.isArray(d.actions)) {
+        _alogActionsLoaded = true;
+        const sel = document.getElementById('alog-action');
+        if (sel) {
+            const keep = sel.value;
+            sel.innerHTML = `<option value="">${esc(t('alog_all_actions') || 'All actions')}</option>` +
+                d.actions.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+            sel.value = keep;
+        }
+    }
+
+    const tb = document.querySelector('#alog-table tbody');
+    if (tb) {
+        tb.innerHTML = (d.items || []).map(r => `<tr>
+            <td>${esc(formatDT(r.timestamp))}</td>
+            <td>${esc(r.username || '')}</td>
+            <td>${esc(r.ip_address || '')}</td>
+            <td><span class="alog-op">${esc(r.action || '')}</span></td>
+            <td class="alog-detail">${esc(r.detail || '')}</td>
+        </tr>`).join('') ||
+        `<tr><td colspan="5" class="u023">${esc(t('alog_empty') || 'No entries')}</td></tr>`;
+    }
+    _renderAlogPagination(d.total || 0);
+}
+
+function _renderAlogPagination(total) {
+    const el = document.getElementById('alog-pagination');
+    if (!el) return;
+    const pages = Math.max(1, Math.ceil(total / ALOG_PAGE_SIZE));
+    if (pages <= 1) {
+        el.innerHTML = `<span class="u023">${esc((t('alog_total') || '{n} entries')
+            .replace('{n}', formatNumber(total)))}</span>`;
+        return;
+    }
+    const btn = (p, label, on) =>
+        `<button class="btn-sm${on ? ' btn-primary' : ''}" data-act="loadAppAudit" data-args="[${p}]">${esc(label)}</button>`;
+    let html = btn(Math.max(1, _alogPage - 1), '‹');
+    const from = Math.max(1, _alogPage - 2), to = Math.min(pages, from + 4);
+    for (let p = from; p <= to; p++) html += ' ' + btn(p, String(p), p === _alogPage);
+    html += ' ' + btn(Math.min(pages, _alogPage + 1), '›');
+    html += ` <span class="u023">${esc((t('alog_total') || '{n} entries')
+        .replace('{n}', formatNumber(total)))}</span>`;
+    el.innerHTML = html;
+}
+
 // ---- Export ----
 async function loadExportPage() {
     // Load current mode from server config
@@ -3226,7 +3743,7 @@ function showConfirm(title, message, onConfirm) {
         btnRow.innerHTML = `<button class="btn-danger" data-act="doConfirm">${icon('shield')} ${t('btn_confirm')}</button>
             <button class="btn-secondary" data-act="closeConfirm">${t('btn_cancel')}</button>`;
     } else {
-        btnRow.innerHTML = `<button class="btn-primary" data-act="closeConfirm">${t('btn_ok')}</button>`;
+        btnRow.innerHTML = `<button class="btn-primary" data-act="closeConfirm">${icon('check', 15)} ${esc(t('btn_ok'))}</button>`;
     }
     modal.style.display = 'flex';
 }

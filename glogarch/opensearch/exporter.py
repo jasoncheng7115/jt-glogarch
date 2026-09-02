@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """OpenSearch direct export — bypasses Graylog API for high-performance archiving."""
 
 from __future__ import annotations
@@ -349,7 +351,21 @@ class OpenSearchExporter:
             # Build completion note with skip + failure info. A failed index is
             # not recorded, so it retries next run — but the operator must still
             # see that this run was partial rather than a misleading green.
-            note_parts = []
+            # Same reason as the API exporter: without a leading summary, a
+            # clean run leaves the Note column blank and the row says nothing
+            # about what was archived.
+            def _mb(n):
+                for unit in ("B", "KB", "MB", "GB", "TB"):
+                    if n < 1024:
+                        return f"{n:.1f} {unit}"
+                    n /= 1024
+                return f"{n:.1f} PB"
+
+            note_parts = [
+                f"{result.chunks_exported} chunks, "
+                f"{result.messages_total:,} records, "
+                f"{_mb(result.compressed_bytes)} compressed"
+            ]
             # Index-set coverage — surface the multi-index-set scope on the job
             # itself (was log-only). A non-empty skip list is a data-integrity
             # warning: those index sets were NOT archived this run.

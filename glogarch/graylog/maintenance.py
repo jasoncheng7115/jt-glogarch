@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Non-destructive 'flush / relieve' operations for a target Graylog.
 
 When a large import wedges the target Graylog (journal backlog piling up, a

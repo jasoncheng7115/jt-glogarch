@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jason Cheng (Jason Tools)
 """FastAPI application factory."""
 
 from __future__ import annotations
@@ -218,9 +220,11 @@ def create_app() -> FastAPI:
 
     # Register routes
     from glogarch.web.routes.api import router as api_router
+    from glogarch.web.routes.search import router as search_router
     from glogarch.web.routes.pages import router as pages_router
 
     app.include_router(api_router, prefix="/api")
+    app.include_router(search_router, prefix="/api")
     app.include_router(pages_router)
 
     return app
