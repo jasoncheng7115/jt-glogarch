@@ -180,7 +180,7 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
 - [ ] `deploy/upgrade.sh` 可正常執行（db-backup → git pull → install → restart → verify）
 - [ ] **DB 備份確實產出檔案** —— 升級後 `/var/backups/jt-glogarch/` 會多一個新的
       `jt-glogarch-*.db` 快照。偵測指令曾在 root 的工作目錄下執行、對 `./config.yaml`
-      拋 `PermissionError`，於是**靜默略過備份**卻印出看似正常的「not available」
+      拋 `PermissionError`，於是**無聲略過備份**卻印出看似正常的「not available」
       （v1.13.82）。`test_upgrade_script.py` 已釘住偵測必須在 `$INSTALL_DIR` 下執行。
 
 ### 安全性——Bandit 原始碼掃描（每次發版，自動執行）
@@ -344,7 +344,7 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
 - [ ] **命中的關鍵字要標示，而且標示要安全** —— 關鍵字要在「記錄」欄與展開的
       完整記錄中標示（「來源」欄不標），欄位條件要連欄位名稱一起標示；內容含有
       `<img src=x onerror=...>` 的記錄必須以**純文字**呈現，且關鍵字仍有標示。
-      *高亮是用記錄內容組 HTML：先各自跳脫、再插入標記，順序反過來就是 XSS。*
+      *醒目提示是用記錄內容組 HTML：先各自跳脫、再插入標記，順序反過來就是 XSS。*
 - [ ] **搜尋要讓路給歸檔** —— 匯出或匯入持有鎖時，每份歸檔之間會暫停，並在畫面
       上說明
 - [ ] **介面要說明適用範圍** —— 這是掃描而非查詢引擎，需要完整分析請匯回 Graylog

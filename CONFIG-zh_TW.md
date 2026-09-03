@@ -78,7 +78,7 @@ export:
                                         # 空 = 歸檔「所有」index set（安全預設；限縮清單會記錄略過哪些）
   fields: []                            # 限定欄位（空 = 全部）
 
-  # --- 自適應反壓守護（見下方說明） ---
+  # --- 自動調節反壓守護（見下方說明） ---
   jvm_memory_threshold_pct: 75.0        # heap 軟門檻：持續高於此 % 才暫停
   jvm_memory_hard_pct: 90.0             # heap 硬上限：單次 >= 此 % 立即暫停
   health_heap_sustained_samples: 2      # 軟門檻連續超過幾次才暫停
@@ -93,7 +93,7 @@ export:
   connection_failure_limit: 10          # 連續連線失敗達此次數即中止
 ```
 
-### 自適應反壓守護
+### 自動調節反壓守護
 
 大量匯出會對 Graylog 用來索引的**同一個** OpenSearch 叢集造成負載。在繁忙或 HDD
 儲存的叢集上，這會餓死 ingestion——disk journal 與環形緩衝區積壓、Graylog 停止

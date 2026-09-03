@@ -22,8 +22,8 @@
 
 | # | 缺陷 | 根因 | 防止再犯的機制 |
 |---|---|---|---|
-| 1 | 某索引集合的歸檔壓制了另一個索引集合，那些日誌**從未被歸檔**（v1.13.62） | 區塊重複判斷問的是「**任何**非此前置碼的歸檔是否涵蓋？」，於是 27 個索引集合的站台上 `graylog_147` 涵蓋了 `filesrv_33` | 區塊迴圈與查詢篩選改用**同一份合併區間**（`covered_ranges`），結構上不可能分歧。`test_chunk_dedup_and_query_filter_use_the_same_ranges` |
-| 2 | API ⇄ OpenSearch 切換時同一批日誌被歸檔**兩次**（v1.13.55） | SQL 中 `NULL NOT LIKE 'x%'` 結果為 NULL，使 API 歸檔（`stream_id IS NULL`）完全隱形；且涵蓋判定要求**單一**歸檔完整包含區塊，跨模式邊界永遠不吻合 | 只採計完整涵蓋該時段的歸檔（`stream_id IS NULL` 或該索引本身）並合併。`test_api_all_streams_archive_covers`、`test_stream_filtered_archive_does_not_cover` |
+| 1 | 某索引集合的歸檔壓制了另一個索引集合，那些記錄**從未被歸檔**（v1.13.62） | 區塊重複判斷問的是「**任何**非此前置碼的歸檔是否涵蓋？」，於是 27 個索引集合的站台上 `graylog_147` 涵蓋了 `filesrv_33` | 區塊迴圈與查詢篩選改用**同一份合併區間**（`covered_ranges`），結構上不可能分歧。`test_chunk_dedup_and_query_filter_use_the_same_ranges` |
+| 2 | API ⇄ OpenSearch 切換時同一批記錄被歸檔**兩次**（v1.13.55） | SQL 中 `NULL NOT LIKE 'x%'` 結果為 NULL，使 API 歸檔（`stream_id IS NULL`）完全隱形；且涵蓋判定要求**單一**歸檔完整包含區塊，跨模式邊界永遠不吻合 | 只採計完整涵蓋該時段的歸檔（`stream_id IS NULL` 或該索引本身）並合併。`test_api_all_streams_archive_covers`、`test_stream_filtered_archive_does_not_cover` |
 | 3 | 已歸檔約 95% 的索引，破洞**永遠**補不回（v1.13.56） | `coverage >= 0.95 → 整個索引跳過`，且比例以整台伺服器的時間範圍計算，姊妹索引互相灌高 | 移除該啟發式；僅在篩選後筆數**恰為 0** 時跳過。e2e 步驟 [5] 會打缺口並要求補回 |
 | 4 | 對新名稱的首次 Bulk 匯入**間歇性遺失文件**（v1.13.60） | 寫入在 Graylog 仍在建置寫入索引時開始；OpenSearch 接受後，索引隨即被取代 | `_wait_for_stable_alias()`（連續三次解析到同一實體索引）**加上**執行後的目的端計數——目的端為 0 即判定失敗 |
 | 5 | 升級將刪除 200～1095 天之間的歸檔（v1.13.57） | 1.13.56 開始採用一個從未真正生效過的 `retention_days` | 啟動時對帳，絕不縮短前一版本保留的範圍。`test_upgrade_does_not_shorten_retention_and_delete_data` ＋ `scripts/upgrade-compat-test.sh` |
@@ -55,7 +55,7 @@
 
 | # | 缺陷 | 根因 | 防止再犯的機制 |
 |---|---|---|---|
-| 17 | 工作仍在前進，進度條卻凍結（v1.13.44） | 2 秒輪詢被 `sseOk` 擋住，而該旗標會因每次心跳而恆為 true | 輪詢一律從工作紀錄刷新，並共用單調遞增的繪製器 |
+| 17 | 工作仍在前進，進度條卻凍結（v1.13.44） | 2 秒輪詢被 `sseOk` 擋住，而該旗標會因每次心跳而恆為 true | 輪詢一律從工作紀錄重新整理，並共用單調遞增的繪製器 |
 | 18 | 暫停中的工作與卡死無法區分（v1.13.42、v1.13.61） | 進度只計算**已寫入**的訊息，被節流時就完全不動 | 對話框、側邊欄與作業歷程都顯示琥珀色「暫停中——來源／目標負載過高」 |
 | 19 | backpressure 暫停期間誤報 `SSE timeout`（v1.13.41） | 串流在 10 分鐘無事件後丟出一個假的錯誤 | 暫停期間送出心跳；串流只以工作的真實狀態結束 |
 | 20 | 系統記錄無法用於診斷（v1.13.61） | 介面輪詢塞滿視窗——最近 100 行中有 57% 是 HTTP 存取雜訊 | 預設 `app_only=true` 濾除存取記錄 |

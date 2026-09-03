@@ -1,4 +1,4 @@
-# jt-glogarch v1.14.2
+# jt-glogarch v1.14.3
 
 **語言**： [English](README.md) | **繁體中文**  
 **網站**： <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.14.2-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.14.3-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -587,7 +587,7 @@ jt-glogarch 提供**兩種**升級方式。兩者都會先備份資料庫、絕�
 
 #### 1. 線上升級（主機可連外網）
 
-**建議做法 —— 直接執行最新版升級腳本（任何版本都一次到位）：**
+**建議做法 —— 直接執行最新版升級指令碼（任何版本都一次到位）：**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-glogarch/main/deploy/upgrade.sh | sudo bash
@@ -595,16 +595,16 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-glogarch/main/dep
 
 此法會抓取並執行**最新版**的 `upgrade.sh`，所以即使是大跨版（例如 1.7.9 → 最新）也能在**一次執行**內裝好程式碼與所有執行環境（含 PDF 報表的 Chromium＋中文字型），且包含最新的資料安全修正。接著會 git pull、將 `jt-glogarch.db` 快照到 `/var/backups/jt-glogarch/`、套用新設定預設值、force-reinstall 套件並重啟。服務執行中也可安全執行。
 
-<details><summary>替代做法：執行主機上的腳本</summary>
+<details><summary>替代做法：執行主機上的指令碼</summary>
 
 ```bash
 sudo bash /opt/jt-glogarch/deploy/upgrade.sh
 ```
 
-也可以，但**第一次**執行時跑的是你主機上的**舊**腳本：
+也可以，但**第一次**執行時跑的是你主機上的**舊**指令碼：
 
-- 若目前版本 **< 1.10.4**：建議改用上方 `curl | sudo bash`，因為舊腳本的 git stash 步驟可能動到未追蹤檔案。自 1.10.4 起，腳本會在任何 git 操作前先忽略 `config.yaml`／`certs/`／DB。
-- 若目前版本 **< 1.10.0**：請再執行**第二次**，讓已更新的腳本安裝 PDF 報表相依（出現 `=== PDF Reports runtime deps (Chromium + CJK font) ===` 即成功）。1.10.x 之間互升則一次到位。
+- 若目前版本 **< 1.10.4**：建議改用上方 `curl | sudo bash`，因為舊指令碼的 git stash 步驟可能動到未追蹤檔案。自 1.10.4 起，指令碼會在任何 git 操作前先忽略 `config.yaml`／`certs/`／DB。
+- 若目前版本 **< 1.10.0**：請再執行**第二次**，讓已更新的指令碼安裝 PDF 報表相依（出現 `=== PDF Reports runtime deps (Chromium + CJK font) ===` 即成功）。1.10.x 之間互升則一次到位。
 
 </details>
 

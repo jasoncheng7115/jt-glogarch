@@ -2,6 +2,27 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.14.3] - 2026-09-03
+
+### Fixed
+
+- **PRC vocabulary in the Traditional Chinese documentation.** `高亮` reached a
+  release note and was caught by eye during review — which is exactly the kind
+  of check that should not depend on someone noticing. The term is now
+  醒目提示 (語法上色 for code colouring), and the same sweep cleaned 腳本 →
+  指令碼, 自適應 → 自動調節, 靜默 → 無聲, 日誌 → 記錄 and 刷新 → 重新整理
+  from README / CONFIG / TESTING / DEFECTS-zh_TW.
+
+### Changed
+
+- **Taiwanese terminology is now a build gate**
+  (`test_zh_docs_use_taiwanese_terminology`): 37 PRC terms fail the build if
+  they appear in any customer-facing zh_TW document or in `i18n.js`. CHANGELOG
+  is deliberately excluded — it is a dated record, and several entries quote
+  the PRC term on purpose because they document the replacement
+  (`日誌 → 記錄`); rewriting those would make them nonsense. `用戶端` (client)
+  is whitelisted as a legitimate Taiwanese term.
+
 ## [1.14.2] - 2026-09-02
 
 ### Added
