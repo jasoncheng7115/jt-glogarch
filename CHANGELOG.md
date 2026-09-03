@@ -2,6 +2,104 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.14.2] - 2026-09-02
+
+### Added
+
+- **Download search results as CSV or JSON.** Exports every record matching
+  the search across ALL pages, not the page on screen. The server re-scans in
+  fixed-size pages and streams each one out, so peak memory is one page
+  whether the export is 500 rows or a million; the generator is synchronous so
+  Starlette runs it off the event loop and the rest of the UI stays live. The
+  browser is handed the stream directly (`Content-Disposition`), which writes
+  to disk without the tab ever holding the file. CSV carries time, source,
+  level, record and archive file, with a UTF-8 BOM so Excel does not mangle
+  Chinese; JSON Lines carries every field plus `_jt_source_archive` for
+  provenance. Capped at 1,000,000 rows, and the cap is **marked in the file**
+  when reached rather than silently truncating. Audited as `search_exported` —
+  taking records out of the archive is egress.
+
+- **Matched keywords and field values are highlighted in the results**, so the
+  reason a record is in the list is visible without re-reading the line — in
+  the Record column and in the expanded record, not in Source (one short value
+  the reader already scans; marking it is noise). A field filter marks its
+  key as well as its value, so `source=fw01` reads as the reason rather than a
+  coincidence. Highlighting builds HTML out of a log line, so the string is
+  split into matched and unmatched spans and each is escaped **before** the
+  marks go in — a record containing `<img src=x onerror=...>` renders as text.
+
+### Fixed
+
+- **Expanding a search result showed the WRONG record.** Each hit occupies two
+  rows (the summary and its hidden detail), but the hit index was taken from
+  the row count, so hit *n* claimed index *2n*: clicking a row opened a later
+  hit's detail and rendered a different record's fields into it. Hit 0 worked
+  by coincidence (2×0 = 0), which is how it passed a two-row check. In a tool
+  used for audit and forensics, being shown a record you did not click is the
+  worst failure available; the UI test now expands the SECOND row and asserts
+  the panel carries that row's own marker.
+- **Static assets could stay stale after an upgrade.** `app.js` and the
+  stylesheets were served with an ETag but no `Cache-Control`, so browsers
+  applied heuristic caching and could keep the previous release's JavaScript
+  running against the new backend without revalidating — a fixed bug reappears
+  and the version in the sidebar says it should not. Every stylesheet and
+  script URL now carries `?v={{ version }}`, so a release is a new URL.
+
+- **Expanding a search result pulled the table inwards.** The expanded-record
+  row spans the table with a `colspan`, which was hardcoded to 6 — but the
+  column picker hides columns with `display:none`, and the default view shows
+  four. The browser invented the two missing columns, and under
+  `table-layout: fixed` those phantoms took an equal share of the leftover
+  width, so the Record column collapsed to a third of its size and the table
+  visibly shrank the moment a row was expanded. The colspan is now derived from
+  the visible columns and recomputed when the picker changes, so rows already
+  on screen follow too.
+- **Search-result rows could disagree with their own header about which
+  columns exist.** Hiding a column set `display:none` on each matching cell,
+  which only reached the rows that existed at that moment — every row appended
+  afterwards kept all six cells, landed in the wrong column slots and squeezed
+  the record text into the action column's 96 px. It survived only because the
+  publish path re-applied the preferences after each batch; any other caller
+  reproduced the broken layout. Column visibility is now one class on the
+  table, so a row is born with the right columns hidden.
+
+### Changed
+
+- **Expanding a record now shows every field immediately.** It used to stop at
+  12 with a "… N more fields (click to show)" link; expanding is already the
+  deliberate "show me everything" click, and a second click to reach the field
+  you came for is the wrong trade. Wide-schema records (over 1,100 fields on
+  one box) are handled by capping the box height and scrolling inside it
+  instead of burying the rest of the results.
+- **Notifications put a blank line before the send time.** It was glued to the
+  last body line, so when that line was an indented bullet — a sub-second
+  overflow timestamp, an error entry — the footer read as one more list item.
+- **Cancel buttons that were missing their icon** now have one: record search,
+  Job History cancel, and the confirmation dialog's Cancel.
+- **Record-search wording is less chatty**: "How to search" → "Search syntax",
+  "{n} hits — that is all of them in this range" → "{n} matches — all results
+  in this range are shown".
+- **Keywords vs Field filters is now explained where the reader is.** Two text
+  boxes labelled only with a noun did not say which took what, and the syntax
+  help made it worse: the examples were one ungrouped list, and the last one —
+  `deny source=fw01`, "combine both" — was simply wrong. Typed into the
+  Keywords box a field filter is matched as literal text and finds nothing.
+  Each box's label now states what it does, the examples are grouped by the
+  box they belong in, and the combined case says explicitly which value goes
+  in which box.
+- **The syntax help is laid out properly.** It was a `<table>`, so it inherited
+  the global table styling — a card background, a border and shrink-to-fit
+  width — and rendered as a narrow bordered box floating inside a full-width
+  panel with dead space beside it, the second group heading picking up a zebra
+  stripe its peer did not. It is a two-column grid now: examples sized to the
+  widest one, descriptions aligned against them, spanning the panel.
+- `scripts/ui-sim-test.py` now walks the record-search tab and asserts the
+  rendered geometry — table and record-column width unchanged across an
+  expand, colspan equal to the visible column count, header and body agreeing
+  on the columns, and every field shown without a second click. The colspan
+  and column-visibility defects are pure layout, invisible to any backend
+  test.
+
 ## [1.14.1] - 2026-09-01
 
 ### Fixed

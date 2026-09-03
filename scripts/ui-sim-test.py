@@ -159,6 +159,170 @@ async def main():
                 check("stored settings API URL not clobbered by host edit",
                       v1 and "203.0.113.9" not in v1, repr(v1))
             check("typed API URL never overwritten", v2 == "http://keep.me:9000", repr(v2))
+
+        # 4) record search: the tab, the plan line, and the LAYOUT on expand.
+        # The layout half is the point. Expanding a hit used to shrink the
+        # table: the detail row's colspan was hardcoded to 6 while the column
+        # picker had hidden two columns, so the browser invented the missing
+        # ones and table-layout:fixed handed them a share of the width. No
+        # backend test can see that — it is pure rendered geometry — so the
+        # rows here are injected through the SAME _appendHit() the real search
+        # uses, which makes the check independent of what this box happens to
+        # have archived.
+        await pg.goto(f"{BASE}/archives", wait_until="networkidle")
+        await pg.wait_for_timeout(1200)
+        n0 = len(errs)
+        await pg.evaluate("archTab('search')")
+        await pg.wait_for_timeout(2500)
+        plan = await pg.evaluate(
+            "(document.getElementById('search-plan')||{}).textContent||''")
+        check("record search tab opens and plans the range",
+              bool(plan.strip()), plan.strip()[:80] or "empty")
+
+        # Three hits, each carrying a marker unique to its own record. Two was
+        # not enough: every hit occupies two rows, so an index computed from
+        # the row count is right for hit 0 by coincidence (2×0 = 0) and wrong
+        # for every hit after it — which is exactly the bug that shipped,
+        # showing the reader a record they had not clicked.
+        await pg.evaluate("""() => {
+            document.getElementById('search-table').classList.remove('is-hidden');
+            const tb = document.getElementById('search-tbody');
+            tb.innerHTML = '';
+            for (let n = 0; n < 3; n++) _appendHit({
+                timestamp: '2026-08-23T06:22:20.000Z', source: 'router-007',
+                level: '6', message: 'x'.repeat(120) + ' n=' + n,
+                archive_file: 'a_' + n + '.json.gz',
+                doc: {source: 'router-007', port: 443, marker: 'ROW' + n},
+            });
+        }""")
+        await pg.wait_for_timeout(300)
+        before = await pg.evaluate(
+            "() => { const t = document.getElementById('search-table');"
+            "  const r = t.querySelector('tbody .scol-record');"
+            "  return [Math.round(t.getBoundingClientRect().width),"
+            "          Math.round(r.getBoundingClientRect().width)]; }")
+        # Expand the SECOND hit, not the first — see above.
+        await pg.evaluate("() => document.querySelectorAll('#search-tbody "
+                          "tr:not(.hit-detail) button')[1].click()")
+        await pg.wait_for_timeout(400)
+        opened = await pg.evaluate(
+            "() => { const tb = document.getElementById('search-tbody');"
+            "  const open = [...tb.children].filter(r => r.classList.contains('hit-detail')"
+            "      && !r.classList.contains('is-hidden'));"
+            "  return [open.length, open[0] ? [...tb.children].indexOf(open[0]) : -1,"
+            "          open[0] ? open[0].textContent : '']; }")
+        check("expanding a row opens THAT row's record",
+              opened[0] == 1 and opened[1] == 3 and "ROW1" in opened[2],
+              f"open={opened[0]} at row {opened[1]}, "
+              f"marker={'ROW1' if 'ROW1' in opened[2] else opened[2][:40]!r}")
+        after = await pg.evaluate(
+            "() => { const t = document.getElementById('search-table');"
+            "  const r = t.querySelector('tbody .scol-record');"
+            "  const d = t.querySelector('tr.hit-detail:not(.is-hidden) > td');"
+            "  const th = [...t.querySelectorAll('thead th')]"
+            "      .filter(e => getComputedStyle(e).display !== 'none').length;"
+            "  return [Math.round(t.getBoundingClientRect().width),"
+            "          Math.round(r.getBoundingClientRect().width),"
+            "          d ? d.colSpan : 0, th]; }")
+        check("expanding a hit does not resize the table",
+              abs(after[0] - before[0]) <= 1 and abs(after[1] - before[1]) <= 1,
+              f"table {before[0]}->{after[0]}, record col {before[1]}->{after[1]}")
+        check("detail row colspan matches the visible column count",
+              after[2] == after[3], f"colspan={after[2]} visible th={after[3]}")
+
+        # Header and body must agree on which columns exist. They did not:
+        # hiding was applied per-cell, so it only reached rows that already
+        # existed and every appended row kept all six — the body landed in the
+        # wrong column slots and the record text was squeezed into 96px.
+        align = await pg.evaluate(
+            "() => { const t = document.getElementById('search-table');"
+            "  const vis = e => getComputedStyle(e).display !== 'none';"
+            "  const th = [...t.querySelectorAll('thead th')].filter(vis);"
+            "  const td = [...t.querySelector('tbody tr').children].filter(vis);"
+            "  const w = e => Math.round(e.getBoundingClientRect().width);"
+            "  return [th.length, td.length,"
+            "          w(t.querySelector('thead .scol-record')),"
+            "          w(t.querySelector('tbody .scol-record')),"
+            "          Math.round(t.getBoundingClientRect().width),"
+            "          th.reduce((s, e) => s + w(e), 0)]; }")
+        check("header and result rows have the same columns",
+              align[0] == align[1], f"{align[0]} th vs {align[1]} td")
+        check("record column is the same width in header and body",
+              abs(align[2] - align[3]) <= 1, f"th={align[2]} td={align[3]}")
+        check("visible columns fill the table width",
+              abs(align[4] - align[5]) <= 2, f"table={align[4]} columns={align[5]}")
+
+        # Every field, no second click: the "… N more fields" link is gone.
+        shown_all = await pg.evaluate(
+            "() => { const b = document.getElementById('hit-json-1');"
+            "  return [(b.textContent.match(/\\\"[a-z_]+\\\":/g)||[]).length,"
+            "          b.textContent.includes('more fields') ||"
+            "          b.textContent.includes('個欄位（點選')]; }")
+        check("expanded record shows every field with no second click",
+              shown_all[0] >= 3 and not shown_all[1], repr(shown_all))
+        # The two input boxes must SAY what they take, and every syntax
+        # example must name the box it belongs in. Unlabelled, the pair was
+        # unreadable even to us, and one example ("deny source=fw01, combine
+        # both") described a syntax that silently matches nothing.
+        helped = await pg.evaluate(
+            "() => { const hints = [...document.querySelectorAll('.search-row .search-hint')]"
+            "      .map(e => e.textContent.trim()).filter(Boolean);"
+            "  const groups = [...document.querySelectorAll('.search-help-list .shelp-group')]"
+            "      .map(e => e.textContent.trim()).filter(Boolean);"
+            "  const both = (document.querySelector('.search-help-both')||{}).textContent||'';"
+            "  return [hints.length, groups.length, both.trim().length]; }")
+        check("both search boxes explain themselves, help is grouped by box",
+              helped[0] == 2 and helped[1] == 2 and helped[2] > 20, repr(helped))
+
+        # Highlighting says WHY a record is in the results — and it builds
+        # HTML from a log line, so the escaping has to hold. A message
+        # carrying markup must come back as text with the term marked, and
+        # must not create an element.
+        hl = await pg.evaluate("""() => {
+            _searchTerms = ['proxy']; _searchFilters = {port: '443'};
+            const tb = document.getElementById('search-tbody');
+            tb.innerHTML = '';
+            _appendHit({timestamp: '2026-08-23T06:22:20.000Z', source: 'router-007',
+                        level: '6',
+                        message: '<img src=x onerror=alert(1)> PROXY denied <b>x</b>',
+                        archive_file: 'a.json.gz',
+                        doc: {message: 'proxy denied', port: 443, other: 'x'}});
+            document.querySelectorAll('#search-tbody tr:not(.hit-detail) button')[0].click();
+            const cell = document.querySelector('#search-tbody .scol-record');
+            const box = document.getElementById('hit-json-0');
+            return {
+                marks: cell.querySelectorAll('mark.hl').length,
+                marked: [...cell.querySelectorAll('mark.hl')].map(m => m.textContent),
+                injected: cell.querySelectorAll('img, b, script').length,
+                text: cell.textContent,
+                jsonMarks: box.querySelectorAll('mark.hl').length,
+                filterKey: box.querySelectorAll('.j-key.hl-key').length,
+            };
+        }""")
+        check("matched keyword is highlighted in the record, preserving case",
+              hl["marks"] == 1 and hl["marked"] == ["PROXY"], repr(hl["marked"]))
+        check("a log line containing markup is escaped, not rendered",
+              hl["injected"] == 0 and "<img src=x" in hl["text"],
+              f"elements={hl['injected']}")
+        check("expanded record highlights the term and the matched field",
+              hl["jsonMarks"] >= 2 and hl["filterKey"] == 1,
+              f"marks={hl['jsonMarks']} filterKeys={hl['filterKey']}")
+        check("source column is left unmarked",
+              await pg.evaluate(
+                  "document.querySelector('#search-tbody .scol-source')"
+                  ".querySelectorAll('mark').length === 0"))
+
+        # The download offer appears with results and carries its icons.
+        dl = await pg.evaluate(
+            "() => { const a = document.getElementById('search-actions');"
+            "  const b = [...a.querySelectorAll('button[data-act=downloadSearch]')];"
+            "  return [b.length, b.every(x => !!x.querySelector('svg')),"
+            "          b.map(x => x.getAttribute('data-arg')).join(',')]; }")
+        check("download controls render for CSV and JSON, with icons",
+              dl[0] == 2 and dl[1] and dl[2] == "csv,jsonl", repr(dl))
+
+        check("no JS errors during record-search flow", len(errs) == n0,
+              "; ".join(errs[n0:][:2]))
         await b.close()
 
     print(f"=== RESULT: {'ALL PASS' if not FAIL else 'FAILURES: ' + ', '.join(FAIL)} ===")

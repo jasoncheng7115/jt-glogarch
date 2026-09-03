@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>jt-glogarch - Graylog Open Archive</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-    <link rel="stylesheet" href="/static/css/style.css">
-    <link rel="stylesheet" href="/static/css/util.css">
+    <link rel="stylesheet" href="/static/css/style.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/util.css?v={{ version }}">
 </head>
 <body>
     <nav class="sidebar" id="sidebar">
@@ -189,12 +189,19 @@
         <div id="search-pane" class="is-hidden">
           <div class="card mb15">
             <div class="search-row">
+              <!-- Each box says what it DOES, right in its label. Two text
+                   inputs side by side with only a noun for a label ("Keywords"
+                   / "Field filters") do not tell anyone which one to type in;
+                   the difference is free text vs an exact field value, so say
+                   exactly that where the reader already is. -->
               <div class="search-f2">
-                <label data-i18n="search_terms_label">Keywords</label>
+                <label><span data-i18n="search_terms_label">Keywords</span>
+                  <span class="search-hint" data-i18n="search_terms_hint"></span></label>
                 <input type="text" id="search-q" data-i18n-placeholder="search_terms_ph">
               </div>
               <div class="search-f1">
-                <label data-i18n="search_fields_label">Field filters</label>
+                <label><span data-i18n="search_fields_label">Field filters</span>
+                  <span class="search-hint" data-i18n="search_fields_hint"></span></label>
                 <input type="text" id="search-fields" data-i18n-placeholder="search_fields_ph">
               </div>
               <div class="search-f0">
@@ -218,16 +225,33 @@
                  could not see. Someone scanning a table of examples learns the
                  syntax in seconds; a paragraph they must parse teaches nothing. -->
             <details class="search-help" open>
-              <summary data-i18n="search_help_title">How to search</summary>
-              <table class="search-help-table">
-                <tbody>
-                  <tr><td><code>error</code></td><td data-i18n="search_help_1">contains "error"</td></tr>
-                  <tr><td><code>firewall deny</code></td><td data-i18n="search_help_2">both words must appear, anywhere in the record</td></tr>
-                  <tr><td><code>"connection refused"</code></td><td data-i18n="search_help_3">the exact phrase — use quotes when the keyword contains a space</td></tr>
-                  <tr><td><code>source=fw01</code></td><td data-i18n="search_help_4">field filter: that field equals exactly that value</td></tr>
-                  <tr><td><code>deny source=fw01</code></td><td data-i18n="search_help_5">combine both: keyword AND field filter</td></tr>
-                </tbody>
-              </table>
+              <summary data-i18n="search_help_title">Search syntax</summary>
+              <!-- Grouped BY BOX. Ungrouped, the list read as one syntax you
+                   type in one place — and the old last row, "deny source=fw01
+                   = combine both", said so outright. It does not work: the
+                   keyword box matches literal text, so `source=fw01` typed
+                   there looks for that exact string and silently finds
+                   nothing. Each example now names the box it belongs in. -->
+              <!-- A grid, not a <table>: the global table style gave this one
+                   a card background, a border and shrink-to-fit width, so a
+                   narrow bordered box floated inside a full-width panel with
+                   dead space beside it. Two grid columns line the examples up
+                   against their descriptions and span the panel properly. -->
+              <div class="search-help-list">
+                <div class="shelp-group" data-i18n="search_help_g1"></div>
+                <div><code>error</code></div>
+                <div class="shelp-desc" data-i18n="search_help_1">contains "error"</div>
+                <div><code>firewall deny</code></div>
+                <div class="shelp-desc" data-i18n="search_help_2">both words must appear, anywhere in the record</div>
+                <div><code>"connection refused"</code></div>
+                <div class="shelp-desc" data-i18n="search_help_3">the exact phrase — use quotes when the keyword contains a space</div>
+                <div class="shelp-group" data-i18n="search_help_g2"></div>
+                <div><code>source=fw01</code></div>
+                <div class="shelp-desc" data-i18n="search_help_4">the source field is exactly fw01</div>
+                <div><code>source=fw01 level=4</code></div>
+                <div class="shelp-desc" data-i18n="search_help_5">several filters, space-separated — all must match</div>
+              </div>
+              <div class="search-help-both" data-i18n="search_help_both"></div>
               <div class="search-help-not" data-i18n="search_help_not"></div>
             </details>
             <div id="search-plan" class="search-plan"></div>
@@ -252,13 +276,27 @@
             <div class="search-prog-head">
               <div id="search-prog-text"></div>
               <button class="btn-sm btn-danger" data-act="cancelRecordSearch"
-                      data-i18n="btn_cancel">Cancel</button>
+                      data-i18n="btn_cancel" data-icon="close">Cancel</button>
             </div>
             <div class="progress-bar u099"><div class="progress-fill" id="search-prog-bar"></div></div>
             <div id="search-prog-note" class="search-prog-note"></div>
           </div>
 
-          <div id="search-summary" class="search-summary is-hidden"></div>
+          <div class="search-summary-row">
+            <div id="search-summary" class="search-summary is-hidden"></div>
+            <!-- Downloads the WHOLE matching set, not the page on screen:
+                 the browser streams it straight to disk, so neither the tab
+                 nor the server holds the file in memory. -->
+            <div id="search-actions" class="search-actions is-hidden">
+              <span class="search-dl-label" data-i18n="search_download"></span>
+              <button class="btn-secondary btn-sm" data-act="downloadSearch" data-arg="csv"
+                      data-i18n="btn_download_csv" data-icon="download">CSV</button>
+              <button class="btn-secondary btn-sm" data-act="downloadSearch" data-arg="jsonl"
+                      data-i18n="btn_download_json" data-icon="download">JSON</button>
+            </div>
+          </div>
+          <div id="search-download-note" class="search-dl-note is-hidden"
+               data-i18n="search_download_note"></div>
           <table id="search-table" class="is-hidden">
             <thead><tr>
               <th class="scol-time" data-i18n="th_time">Time</th>
@@ -1113,7 +1151,7 @@ sudo bash upgrade-offline.sh</pre>
         {% endif %}
     </main>
 
-    <script src="/static/js/i18n.js"></script>
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/i18n.js?v={{ version }}"></script>
+    <script src="/static/js/app.js?v={{ version }}"></script>
 </body>
 </html>

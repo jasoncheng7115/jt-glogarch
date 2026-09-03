@@ -2,4 +2,4 @@
 # Copyright (C) 2026 Jason Cheng (Jason Tools)
 """Glogarch - Graylog Open Archive tool."""
 
-__version__ = "1.14.1"
+__version__ = "1.14.2"

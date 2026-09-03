@@ -1817,16 +1817,65 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
     color: var(--text);
     user-select: none;
 }
-.search-help-table { width: auto; margin: 0 12px 4px; background: none; }
-.search-help-table td { border: none; padding: 4px 14px 4px 0; vertical-align: top; }
-.search-help-table td:first-child { white-space: nowrap; }
-.search-help-table code {
+/* Says what the box is FOR, on the same line as its name — the reader is
+   already looking there and does not have to open the syntax help to learn
+   which of the two inputs takes what. */
+.search-hint { font-weight: normal; font-size: 0.82em; color: var(--text-muted); }
+/* A grid, not a table. As a <table> this inherited the global card
+   background + border and shrank to fit its content, so a narrow bordered box
+   floated inside the full-width panel with dead space beside it. Two columns:
+   the examples size to the widest one, the descriptions take the rest. */
+.search-help-list {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 7px 20px;
+    align-items: baseline;
+    margin: 2px 14px 4px;
+}
+/* Each example belongs to ONE of the two boxes; the group heading says which. */
+.search-help-list .shelp-group {
+    grid-column: 1 / -1;
+    margin-top: 10px;
+    font-weight: 600;
+    color: var(--text);
+}
+.search-help-list .shelp-group:first-child { margin-top: 0; }
+.search-help-list .shelp-desc { color: var(--text-muted); }
+.search-help-list code {
     background: var(--card-bg);
     border: 1px solid var(--border);
     padding: 2px 8px; border-radius: 4px;
     color: var(--text); font-size: 0.95em;
+    white-space: nowrap;
 }
-.search-help-table td:last-child { color: var(--text-muted); }
+/* Matched keyword / field value, so the reason a record is in the results is
+   visible without re-reading the line. Deliberately NOT applied to the source
+   column: it is one short value the reader already scans, and marking it just
+   adds noise. Two grounds to sit on — the light table and the always-dark
+   expanded record — so the JSON view keeps the syntax colour and tints only
+   the background. */
+mark.hl {
+    background: #ffe08a;
+    color: #1f2328;
+    border-radius: 3px;
+    padding: 0 2px;
+}
+[data-theme="dark"] mark.hl { background: #8a6a12; color: #fff8e1; }
+/* Solid, not a tint. A 28%-alpha wash over a near-black ground was almost
+   invisible — in a 58-field record the one marked value has to be findable at
+   a glance, which is the entire point of marking it. Overriding the syntax
+   colour on the matched span is fine: the mark IS what the reader is looking
+   for there. */
+.hit-json mark.hl {
+    background: #ffd166;
+    color: #1f2328;
+    font-weight: 600;
+}
+/* A field filter matched THIS key — mark the name too, not only the value,
+   so `source=fw01` is visibly the reason rather than a coincidence. */
+.hit-json .j-key.hl-key { text-decoration: underline dotted; text-underline-offset: 3px; }
+
+.search-help-both { margin: 12px 14px 4px; font-size: 0.86em; color: var(--text-muted); }
 .search-help-not {
     padding: 8px 12px 11px;
     color: var(--text-muted);
@@ -1867,6 +1916,13 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
 /* Amber, not red: slowing down for archiving is intended behaviour. */
 .search-prog-note { margin-top: 10px; font-size: 0.86em; color: #b8860b; }
 .search-summary { margin: 0 2px 10px; }
+.search-summary-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; flex-wrap: wrap;
+}
+.search-actions { display: flex; align-items: center; gap: 8px; margin: 0 2px 10px; }
+.search-dl-label { font-size: 0.88em; color: var(--text-muted); }
+.search-dl-note { margin: 0 2px 12px; font-size: 0.84em; color: var(--text-muted); }
 .search-more { margin: 14px 0; text-align: center; }
 /* Widths are keyed to the COLUMN, not to its position. Positional
    (nth-child) widths break the moment a column is hidden by the column
@@ -1879,6 +1935,17 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
 #search-table .scol-level   { width: 70px; }
 #search-table .scol-archive { width: 210px; }
 #search-table .scol-act     { width: 96px; }
+/* Hiding a column is a property of the TABLE, not of each cell. Setting
+   display:none on every matching cell only reaches the cells that exist at
+   that moment, so a row appended afterwards keeps all six cells while the
+   header shows four — the body then sits in the wrong column slots and the
+   record text is squeezed into the action column's 96px. A class on the table
+   makes every future row correct the instant it is created. */
+#search-table.hide-scol-time    .scol-time,
+#search-table.hide-scol-source  .scol-source,
+#search-table.hide-scol-level   .scol-level,
+#search-table.hide-scol-record  .scol-record,
+#search-table.hide-scol-archive .scol-archive { display: none; }
 #search-table .rec-msg {
     font-family: monospace; font-size: 0.88em;
     overflow-wrap: anywhere;      /* wrap long tokens instead of overflowing */
@@ -1890,7 +1957,12 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
 
 /* Expanded record. Dark regardless of theme — it is a code view, and the
    syntax colours below are tuned for a dark ground. */
-.hit-json { background: #0f1117; border-radius: 8px; padding: 16px; overflow-x: auto; margin: 2px 0 10px; }
+/* Expanding shows every field, and a record can carry over 1,100 of them —
+   which would push the rest of the results a screen-height per hit. Cap the
+   box and let it scroll internally: all the fields are there, none of them
+   cost the reader their place in the result list. */
+.hit-json { background: #0f1117; border-radius: 8px; padding: 16px;
+    overflow-x: auto; max-height: 70vh; overflow-y: auto; margin: 2px 0 10px; }
 .hit-json-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .hit-json pre {
     margin: 0; font-size: 0.88em; line-height: 1.6;
@@ -1906,7 +1978,6 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
 .hit-json .j-str { color: #a5e075; }
 .hit-json .j-num { color: #f0a45d; }
 .hit-json .j-p   { color: #5b6478; }
-.hit-json .j-more { color: #8b93a7; cursor: pointer; text-decoration: underline dotted; }
 
 /* A disabled control must LOOK disabled, or the refusal reads as a dead button. */
 .search-row button[disabled], .search-row button.is-disabled {

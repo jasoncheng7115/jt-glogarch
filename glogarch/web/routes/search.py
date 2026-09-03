@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from glogarch.search.engine import SearchQuery, run_search
+from glogarch.search.engine import SearchQuery, iter_all_hits, run_search
 from glogarch.utils.logging import get_logger
 
 log = get_logger(__name__)
@@ -296,6 +296,124 @@ async def start_search(request: Request):
     except Exception as e:
         log.warning("Could not audit the search", error=str(e))
     return {"search_id": search_id, "status": "running"}
+
+
+# --- Download the whole result set -----------------------------------------
+#
+# Deliberately NOT "download what is on screen". The page holds one capped
+# page of hits; the answer to "export this search" is every record in the
+# range that matches, which is what an evidence request or a hand-off to
+# another tool needs.
+#
+# Three constraints shaped this:
+#   - Memory. `iter_all_hits` yields one record at a time and retains none,
+#     so peak footprint is a single row whether the export is 500 rows or
+#     five million. It also reads each archive ONCE: the paged resume that
+#     serves the screen re-parses the archive it stopped inside, which is
+#     quadratic over a whole download (three 1,000-row pages on staging
+#     examined 220K, 531K then 464K messages for the same work).
+#   - The event loop. The generator below is SYNCHRONOUS, so Starlette runs it
+#     in a threadpool; gzip and JSON parsing never block the loop and the rest
+#     of the UI keeps responding while a long download streams.
+#   - Honesty about limits. A cap that silently drops rows would turn a
+#     partial export into what looks like a complete one, so the cap is
+#     generous, stated in the UI, and MARKED IN THE FILE when it is reached.
+MAX_EXPORT_ROWS = 1_000_000
+CSV_COLUMNS = ["timestamp", "source", "level", "message", "archive_file"]
+
+
+def _csv_row(values: list) -> str:
+    import csv
+    import io as _io
+    buf = _io.StringIO()
+    csv.writer(buf, lineterminator="\n").writerow(values)
+    return buf.getvalue()
+
+
+def _export_rows(db, q: SearchQuery, fmt: str):
+    """Yield the export row by row. Sync on purpose — see above."""
+    import json
+
+    rows = 0
+    truncated = False
+
+    if fmt == "csv":
+        # BOM first: Excel reads a UTF-8 CSV without one as Latin-1 and turns
+        # every Chinese field into mojibake, which is most of the audience.
+        yield "﻿" + _csv_row(CSV_COLUMNS)
+
+    for h in iter_all_hits(db, q, yield_cb=_yield_to_archiving):
+        if rows >= MAX_EXPORT_ROWS:
+            truncated = True
+            break
+        if fmt == "csv":
+            yield _csv_row([h.timestamp, h.source, h.level, h.message,
+                            h.archive_file])
+        else:
+            # The record exactly as archived, plus its provenance under a
+            # namespaced key that cannot collide with a Graylog field.
+            yield json.dumps({**h.doc, "_jt_source_archive": h.archive_file},
+                             ensure_ascii=False, default=str) + "\n"
+        rows += 1
+
+    if truncated:
+        note = (f"TRUNCATED at {MAX_EXPORT_ROWS:,} rows — narrow the time "
+                f"range and export again to get the rest")
+        log.warning("Search export hit the row ceiling", rows=rows)
+        if fmt == "csv":
+            yield _csv_row(["", "", "", note, ""])
+        else:
+            yield json.dumps({"_jt_note": note}) + "\n"
+    log.info("Search export finished", rows=rows, fmt=fmt, truncated=truncated)
+
+
+@router.get("/search/export")
+async def export_search(request: Request):
+    """Stream every matching record as CSV or JSON Lines.
+
+    A GET taking query parameters, not a POST taking JSON, so the browser can
+    do the download itself: `location.href = ...` hands the stream straight to
+    the disk writer. `fetch()` + `blob()` would hold the ENTIRE export in the
+    tab's memory before the save dialog appears — the one thing this must not
+    do — and a form POST cannot carry a JSON body. Nothing here changes state.
+    """
+    from fastapi.responses import StreamingResponse
+
+    body = dict(request.query_params)
+    q, err = _build_query(body)
+    if err:
+        return JSONResponse(err, status_code=400)
+
+    fmt = (body.get("format") or "csv").strip().lower()
+    if fmt not in ("csv", "jsonl"):
+        return JSONResponse(_err("bad_format", "format must be csv or jsonl", fmt),
+                            status_code=400)
+
+    stamp = q.time_from.strftime("%Y%m%dT%H%M") + "_" + q.time_to.strftime("%Y%m%dT%H%M")
+    name = f"jt-glogarch-search_{stamp}.{'csv' if fmt == 'csv' else 'jsonl'}"
+    media = "text/csv; charset=utf-8" if fmt == "csv" else "application/x-ndjson"
+
+    # Taking records OUT of the archive is data egress, so it is audited like
+    # any other state-changing operation — who exported what, and over which
+    # range.
+    try:
+        request.app.state.db.audit(
+            "search_exported",
+            f"format={fmt} q={body.get('q','')!r} range={q.time_from}..{q.time_to}",
+            request.session.get("username", ""),
+            request.client.host if request.client else "")
+    except Exception as e:
+        log.warning("Could not audit the search export", error=str(e))
+
+    return StreamingResponse(
+        _export_rows(request.app.state.db, q, fmt),
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{name}"',
+                 # The length is unknown until the scan ends, so the browser
+                 # shows an indeterminate download. Say so rather than letting
+                 # it look stalled.
+                 "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/search/{search_id}")

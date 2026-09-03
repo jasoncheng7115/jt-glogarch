@@ -416,6 +416,43 @@ nowhere) while the API, the flag and every unit test were fine. The rule:
 - [ ] **Long records are truncated visibly, not clipped** — a 4,000-character
       syslog line shows ~320 characters plus "…", never a line with a chunk
       silently missing from the middle
+- [ ] **The results table keeps its geometry** (`ui-sim-test.py`) — expanding a
+      hit changes neither the table width nor the record column's; the detail
+      row's `colspan` equals the number of VISIBLE columns; header and body
+      agree on which columns exist and the visible ones fill the table.
+      *Hiding a column is a property of the table, not of each cell: a
+      hardcoded colspan invents phantom columns, and per-cell hiding misses
+      every row appended later. Both squeeze the record text into 96 px, and
+      no backend test can see either.*
+- [ ] **Expanding shows every field at once** — no "… N more fields" second
+      click; a wide-schema record (1,100+ fields) scrolls inside its own box
+      rather than burying the results below it
+- [ ] **Download covers every page, not the screen** — CSV and JSON Lines both
+      return the whole matching set for the range, and the two agree on the
+      record count. *`limit` bounds the screen; an export that honoured it
+      would hand over a quarter of the evidence and look complete doing it.*
+- [ ] **The download streams and reads each archive once** — the first row is
+      available before the last is found (no materialising), and a full export
+      opens each archive exactly once. *The screen's "load more" resumes by
+      re-parsing the archive it stopped inside — correct for a few clicks,
+      quadratic for a download: three 1,000-row pages examined 220K, 531K then
+      464K messages. Streaming cut a real 4,041-row export from 62 s to 35 s
+      with byte-identical output.*
+- [ ] **The row cap is marked IN the file** — hitting it writes a TRUNCATED
+      row (CSV) / `_jt_note` object (JSONL), never a silent stop
+- [ ] **CSV opens correctly in Excel** — UTF-8 BOM present, so Chinese fields
+      are not mojibake; embedded newlines stay inside quoted fields
+- [ ] **The export is audited** (`search_exported`) — records leaving the
+      archive is egress, and egress leaves a record
+- [ ] **`/search/export` is declared before `/search/{search_id}`** — FastAPI
+      matches in declaration order, and the parameterised route silently
+      swallowed the literal one, answering the download with a 404 JSON body
+- [ ] **Matched terms are highlighted, and the highlight is safe** — the
+      keyword is marked in the Record column and in the expanded record (never
+      in Source), a field filter marks its key as well as its value, and a
+      message containing `<img src=x onerror=...>` renders as TEXT with the
+      term still marked. *The highlight builds HTML from a log line: escape
+      each span first, insert the marks second — the other order is an XSS.*
 - [ ] **Search yields to archiving** — it pauses per archive while an export or
       import holds a lock, and says so on screen
 - [ ] **The scope is stated in the UI** — that this is a scan, not a query

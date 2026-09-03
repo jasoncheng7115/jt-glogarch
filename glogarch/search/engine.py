@@ -171,6 +171,71 @@ def _message_matches(msg: dict, terms: list[str], filters: dict[str, str]) -> bo
 PROGRESS_INTERVAL_SEC = 0.4
 
 
+def _make_hit(msg: dict, record, path: Path) -> SearchHit:
+    """One place that decides what a hit looks like, for every caller."""
+    return SearchHit(
+        timestamp=str(msg.get("timestamp") or ""),
+        source=str(msg.get("source") or ""),
+        level=str(msg.get("level") if msg.get("level") is not None else ""),
+        message=str(msg.get("message") or msg.get("full_message") or ""),
+        doc=msg,
+        archive_id=getattr(record, "id", 0) or 0,
+        archive_file=path.name,
+    )
+
+
+def iter_all_hits(db, query: SearchQuery, *, cancel_check=None, yield_cb=None):
+    """Yield every matching message, one at a time, and retain nothing.
+
+    `run_search` below is built for a SCREEN: it stops at max_results and
+    resumes by re-parsing the archive it stopped inside, because gzip cannot
+    seek. Over a few "load more" clicks that is the right trade. For a full
+    download it is quadratic — measured on staging, three consecutive
+    1,000-row pages examined 220K, then 531K, then 464K messages, most of it
+    re-reading what the previous page had already read.
+
+    So a download gets a generator instead: one pass per archive, nothing
+    accumulated, and the caller decides when to pull. The MATCHING rule is
+    the same `_message_matches` and the same prefilter — only the traversal
+    differs, so the two cannot disagree about what a hit is.
+    """
+    from glogarch.archive.storage import ArchiveIterator
+
+    terms = query.normalised_terms()
+    filters = {k: str(v).lower() for k, v in (query.field_filters or {}).items()}
+    needles = query.prefilter_needles()
+
+    records = db.list_archives_for_search(
+        server=query.server, stream_id=query.stream_id,
+        time_from=query.time_from, time_to=query.time_to)
+    log.info("Archive search (streaming) starting", archives=len(records))
+
+    for rec in records:
+        if cancel_check and cancel_check():
+            return
+        if yield_cb:
+            yield_cb()
+        path = Path(rec.file_path)
+        if not path.exists():
+            log.warning("Skipping a missing archive during export",
+                        path=str(rec.file_path))
+            continue
+        if not archive_may_contain(path, needles):
+            continue
+        try:
+            for batch in ArchiveIterator(path, batch_size=500):
+                if cancel_check and cancel_check():
+                    return
+                for msg in batch:
+                    if _message_matches(msg, terms, filters):
+                        yield _make_hit(msg, rec, path)
+        except Exception as e:
+            # One unreadable archive must not abort a download that has
+            # already produced thousands of good rows.
+            log.warning("Archive failed during streaming search",
+                        path=str(path), error=str(e))
+
+
 def search_archive(record, query: SearchQuery, out: SearchResult,
                    cancel_check=None, skip_hits: int = 0,
                    progress_cb=None) -> int:
@@ -218,15 +283,7 @@ def search_archive(record, query: SearchQuery, out: SearchResult,
                 if skip_hits > 0:
                     skip_hits -= 1
                     continue
-                out.hits.append(SearchHit(
-                    timestamp=str(msg.get("timestamp") or ""),
-                    source=str(msg.get("source") or ""),
-                    level=str(msg.get("level") if msg.get("level") is not None else ""),
-                    message=str(msg.get("message") or msg.get("full_message") or ""),
-                    doc=msg,
-                    archive_id=getattr(record, "id", 0) or 0,
-                    archive_file=path.name,
-                ))
+                out.hits.append(_make_hit(msg, record, path))
                 found += 1
                 if len(out.hits) >= query.max_results:
                     # Page is full. The CALLER owns the cursor: it knows how

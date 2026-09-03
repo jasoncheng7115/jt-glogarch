@@ -73,7 +73,10 @@ async def send_notification(
 
     results = []
     timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
-    full_msg = f"[jt-glogarch] {title}\n{message}\n{timestamp}"
+    # Blank line before the footer. Without it the send time is glued to the
+    # last body line, and when that line is an indented bullet — the overflow
+    # timestamps, the error list — the footer reads as one more list item.
+    full_msg = f"[jt-glogarch] {title}\n{message}\n\n{timestamp}"
 
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         if config.telegram.enabled:

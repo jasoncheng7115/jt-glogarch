@@ -1958,12 +1958,39 @@ function toggleSearchColumns() {
 }
 
 function applySearchColumns() {
+    const tbl = document.getElementById('search-table');
+    if (!tbl) return;
+    // One class on the table, not display:none on each cell — see the CSS.
+    // Per-cell hiding only reached the rows that already existed, so every
+    // row appended afterwards had to be fixed up by a second call; forget it
+    // once and the body renders in the wrong columns.
     document.querySelectorAll('#search-columns input[data-scol]').forEach(cb => {
-        const cls = cb.getAttribute('data-scol');
-        document.querySelectorAll('.' + cls).forEach(el => {
-            el.style.display = cb.checked ? '' : 'none';
-        });
+        tbl.classList.toggle('hide-' + cb.getAttribute('data-scol'), !cb.checked);
     });
+    _recalcSearchColSpan();
+}
+
+// The expanded-record row spans the whole table with a colspan, and that
+// colspan MUST equal the number of VISIBLE columns. The column picker hides
+// cells with display:none, so a hardcoded colspan="6" asked for six columns
+// when only four were rendered; the browser then invents the two missing
+// ones, and under table-layout:fixed those phantoms take an equal share of
+// the leftover width — the record column collapsed to a third and the table
+// visibly pulled inwards the moment a row was expanded. Recompute whenever
+// the visible set changes, and cache it: _appendHit runs once per hit (up to
+// 500 a page), so it must not re-measure the header every time.
+let _searchColSpan = 6;
+
+function _recalcSearchColSpan() {
+    const ths = document.querySelectorAll('#search-table thead th');
+    if (!ths.length) return;
+    let n = 0;
+    ths.forEach(th => { if (getComputedStyle(th).display !== 'none') n++; });
+    _searchColSpan = Math.max(1, n);
+    // Rows already on screen have to follow, or toggling a column while
+    // results are showing re-introduces exactly the same mismatch.
+    document.querySelectorAll('#search-table tr.hit-detail > td')
+        .forEach(td => { td.colSpan = _searchColSpan; });
 }
 
 function initSearchColumns() {
@@ -2112,6 +2139,10 @@ async function runRecordSearch() {
     if (!r.ok) { showAlert(_searchErr(d) || 'search failed'); return; }
     _searchId = d.search_id;
     _searchShown = 0;
+    // Freeze what this search asked for; the highlight must describe the
+    // results on screen, not whatever the boxes say a minute later.
+    _searchTerms = _parseTermsJS(b.q);
+    _searchFilters = _parseFiltersJS(b.field_filters);
     document.getElementById('search-tbody').innerHTML = '';
     document.getElementById('search-table').classList.remove('is-hidden');
     document.getElementById('search-progress').classList.remove('is-hidden');
@@ -2169,7 +2200,10 @@ async function _refreshSearch() {
 
     (d.hits || []).forEach(h => _appendHit(h));
     _searchShown += (d.hits || []).length;
-    if ((d.hits || []).length) applySearchColumns();   // new rows need the prefs too
+    // No re-applying the column prefs here any more: they live as a class on
+    // the table, so a row is born with the right columns hidden. This call
+    // was the only thing keeping the layout correct, and it ran once per
+    // publish batch over every cell on the page.
 
     if (done) {
         clearInterval(_searchPoll);
@@ -2187,7 +2221,36 @@ async function _refreshSearch() {
         }
         document.getElementById('search-more-wrap')
             .classList.toggle('is-hidden', !d.has_more);
+        // Offer the download once there is something to download.
+        const acts = document.getElementById('search-actions');
+        if (acts) acts.classList.toggle('is-hidden', _searchShown === 0);
+        const dlNote = document.getElementById('search-download-note');
+        if (dlNote) dlNote.classList.toggle('is-hidden', _searchShown === 0);
     }
+}
+
+// Download EVERY matching record, not the page on screen — that is what an
+// evidence request or a hand-off to another tool needs, and the reason the
+// server re-scans instead of dumping the retained page.
+//
+// `location.href` on purpose: the response carries Content-Disposition, so
+// the browser streams it to disk itself and the page is untouched. fetch() +
+// blob() would hold the whole export in the tab's memory before the save
+// dialog even appears, which on a million-row CSV is exactly the failure this
+// is meant to avoid.
+function downloadSearch(fmt) {
+    const b = _searchBody();
+    if (!b.time_from || !b.time_to) {
+        showAlert(t('search_need_range') || 'Choose a time range above.');
+        return;
+    }
+    const p = new URLSearchParams({
+        q: b.q, field_filters: b.field_filters,
+        time_from: b.time_from, time_to: b.time_to,
+        server: b.server, stream_id: b.stream_id,
+        format: fmt === 'jsonl' ? 'jsonl' : 'csv',
+    });
+    window.location.href = `${API}/search/export?${p.toString()}`;
 }
 
 // One archived record can be thousands of characters (a syslog "Log
@@ -2197,6 +2260,68 @@ async function _refreshSearch() {
 // clipped line reads as the whole message with a chunk missing from the
 // middle. The untruncated record is one click away.
 const REC_PREVIEW_CHARS = 320;
+
+// What the current search was looking for, so a result can show WHY it
+// matched. Captured when the search starts rather than read from the inputs
+// at render time — the user may edit the boxes while results are streaming
+// in, and highlighting the new text on the old results would be a lie.
+let _searchTerms = [];
+let _searchFilters = {};
+
+// Mirrors the server's shlex-based split: a quoted phrase is one term.
+function _parseTermsJS(raw) {
+    const out = [];
+    const re = /"([^"]*)"|(\S+)/g;
+    let m;
+    while ((m = re.exec(raw || '')) !== null) {
+        const t = (m[1] !== undefined ? m[1] : m[2]).trim().toLowerCase();
+        if (t) out.push(t);
+    }
+    return out;
+}
+
+function _parseFiltersJS(raw) {
+    const out = {};
+    (raw || '').split(/\s+/).forEach(p => {
+        const i = p.indexOf('=');
+        if (i > 0) out[p.slice(0, i).trim().toLowerCase()] = p.slice(i + 1).trim();
+    });
+    return out;
+}
+
+// Escape FIRST, mark second — and never the other way round. Searching for
+// the term inside already-escaped text would match the wrong offsets (an `&`
+// has become `&amp;`), and injecting <mark> before escaping would let a log
+// line containing markup execute. So the raw string is split into matched and
+// unmatched spans, each span is escaped on its own, and only then joined.
+function _hlEsc(text, terms) {
+    const s = String(text == null ? '' : text);
+    if (!terms || !terms.length) return esc(s);
+    const low = s.toLowerCase();
+    const spans = [];
+    terms.forEach(t => {
+        if (!t) return;
+        let i = low.indexOf(t);
+        while (i !== -1) {
+            spans.push([i, i + t.length]);
+            i = low.indexOf(t, i + t.length);
+        }
+    });
+    if (!spans.length) return esc(s);
+    spans.sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    spans.forEach(sp => {
+        const last = merged[merged.length - 1];
+        if (last && sp[0] <= last[1]) last[1] = Math.max(last[1], sp[1]);
+        else merged.push([sp[0], sp[1]]);
+    });
+    let out = '', pos = 0;
+    merged.forEach(([a, b]) => {
+        out += esc(s.slice(pos, a)) + '<mark class="hl">' + esc(s.slice(a, b)) + '</mark>';
+        pos = b;
+    });
+    return out + esc(s.slice(pos));
+}
 
 function _recPreview(msg) {
     const s = String(msg).replace(/\s+/g, ' ').trim();
@@ -2208,20 +2333,26 @@ function _recPreview(msg) {
 function _appendHit(h) {
     const tb = document.getElementById('search-tbody');
     if (!tb) return;
-    const i = tb.children.length;
+    // Each hit occupies TWO rows — the summary and its (hidden) detail — so
+    // the hit index is half the row count, not the row count. Using the row
+    // count made hit n claim index 2n: toggleHit() then opened the detail row
+    // of a LATER hit and rendered a different record's fields into it, so the
+    // reader was shown a record they had not clicked. Hit 0 worked by
+    // coincidence (2×0 = 0), which is why it survived a two-row check.
+    const i = tb.children.length / 2;
     const tr = document.createElement('tr');
     tr.innerHTML =
         `<td class="scol-time">${esc(formatDT(h.timestamp))}</td>` +
         `<td class="scol-source">${esc(h.source || '')}</td>` +
         `<td class="scol-level">${esc(h.level || '')}</td>` +
-        `<td class="scol-record rec-msg">${esc(_recPreview(h.message || ''))}</td>` +
+        `<td class="scol-record rec-msg">${_hlEsc(_recPreview(h.message || ''), _searchTerms)}</td>` +
         `<td class="scol-archive rec-archive">${esc(h.archive_file || '')}</td>` +
         `<td class="scol-act"><button class="btn-sm" data-act="toggleHit" data-arg="${i}">` +
         `${icon('eye', 14)} ${esc(t('btn_expand') || 'Expand')}</button></td>`;
     tb.appendChild(tr);
     const det = document.createElement('tr');
     det.className = 'hit-detail is-hidden';
-    det.innerHTML = `<td colspan="6"><div class="hit-json" id="hit-json-${i}"></div></td>`;
+    det.innerHTML = `<td colspan="${_searchColSpan}"><div class="hit-json" id="hit-json-${i}"></div></td>`;
     tb.appendChild(det);
     det._doc = h.doc;
     det._file = h.archive_file;
@@ -2240,31 +2371,35 @@ function toggleHit(i) {
     if (!open) _renderHitJson(det, i);
 }
 
-// Records carry 47 fields on one box and over 1,100 on another, so showing
-// everything by default makes the table unreadable. Start with the fields that
-// have a value, and let the reader ask for the rest.
-const HIT_PREVIEW_FIELDS = 12;
-
-function _renderHitJson(det, i, showAll) {
+// Expanding a record shows ALL of its fields. It used to stop at 12 with a
+// "… N more fields (click to show)" link, on the theory that a 1,100-field
+// record would swamp the page — but expanding is already the deliberate "show
+// me everything" click, and making the reader click a second time to see the
+// field they came for is the wrong trade. The box is height-capped in CSS
+// instead, so a wide-schema record scrolls inside itself rather than burying
+// the rest of the results.
+function _renderHitJson(det, i) {
     const box = document.getElementById(`hit-json-${i}`);
     if (!box) return;
     const doc = det._doc || {};
     const keys = Object.keys(doc).filter(k => doc[k] !== null && doc[k] !== '');
-    const shown = showAll ? keys : keys.slice(0, HIT_PREVIEW_FIELDS);
-    const hidden = keys.length - shown.length;
     let body = '';
-    shown.forEach((k, n) => {
+    keys.forEach((k, n) => {
         const v = doc[k];
+        // A field filter matched this exact key: mark the whole value, and
+        // the key with it. Keyword terms are highlighted inside any value.
+        const want = _searchFilters[String(k).toLowerCase()];
+        const isFilter = want !== undefined && String(v).toLowerCase() === String(want).toLowerCase();
+        const raw = String(v);
+        const shown = isFilter ? `<mark class="hl">${esc(raw)}</mark>`
+                               : _hlEsc(raw, _searchTerms);
         const val = (typeof v === 'number' || typeof v === 'boolean')
-            ? `<span class="j-num">${esc(String(v))}</span>`
-            : `<span class="j-str">"${esc(String(v))}"</span>`;
-        body += `  <span class="j-key">"${esc(k)}"</span><span class="j-p">:</span> ` +
-                `${val}<span class="j-p">${n < shown.length - 1 || hidden ? ',' : ''}</span>\n`;
+            ? `<span class="j-num">${shown}</span>`
+            : `<span class="j-str">"${shown}"</span>`;
+        body += `  <span class="j-key${isFilter ? ' hl-key' : ''}">"${esc(k)}"</span>` +
+                `<span class="j-p">:</span> ` +
+                `${val}<span class="j-p">${n < keys.length - 1 ? ',' : ''}</span>\n`;
     });
-    if (hidden > 0) {
-        body += `  <span class="j-more" data-act="expandHitAll" data-arg="${i}">` +
-                `${esc((t('search_more_fields') || '… {n} more fields').replace('{n}', hidden))}</span>\n`;
-    }
     box.innerHTML =
         `<div class="hit-json-head"><span class="muted">${esc(
             (t('search_full_record') || 'Full record ({n} fields)').replace('{n}', keys.length))}</span>` +
@@ -2272,12 +2407,6 @@ function _renderHitJson(det, i, showAll) {
         `<pre><code><span class="j-p">{</span>\n${body}<span class="j-p">}</span></code></pre>` +
         `<div class="hit-json-src muted">${esc(t('search_from_archive') || 'From archive')} ` +
         `<code>${esc(det._file || '')}</code></div>`;
-}
-
-function expandHitAll(i) {
-    const tb = document.getElementById('search-tbody');
-    const det = tb.children[Number(i) * 2 + 1];
-    if (det) _renderHitJson(det, i, true);
 }
 
 function copyHitJson(i) {
@@ -2795,7 +2924,7 @@ async function loadJobs() {
     tbody.innerHTML = data.items.map(j => {
         const isRunning = j.status === 'running' || j.status === 'pending';
         const cancelBtn = isRunning
-            ? `<button class="btn-sm btn-danger" data-act="cancelJob" data-arg="${j.id}" data-i18n="btn_cancel">Cancel</button>`
+            ? `<button class="btn-sm btn-danger" data-act="cancelJob" data-arg="${j.id}" data-i18n="btn_cancel" data-icon="close">Cancel</button>`
             : '';
         // One-click retry: an import that hit indexer failures (fields now
         // auto-pinned as string) can be re-run to recover them. Bulk-preferred
@@ -3741,7 +3870,7 @@ function showConfirm(title, message, onConfirm) {
     const btnRow = document.getElementById('confirm-buttons');
     if (onConfirm) {
         btnRow.innerHTML = `<button class="btn-danger" data-act="doConfirm">${icon('shield')} ${t('btn_confirm')}</button>
-            <button class="btn-secondary" data-act="closeConfirm">${t('btn_cancel')}</button>`;
+            <button class="btn-secondary" data-act="closeConfirm">${icon('close', 15)} ${t('btn_cancel')}</button>`;
     } else {
         btnRow.innerHTML = `<button class="btn-primary" data-act="closeConfirm">${icon('check', 15)} ${esc(t('btn_ok'))}</button>`;
     }
