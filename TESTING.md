@@ -230,6 +230,42 @@ GL_PASS='<graylog-admin-pw>' bash scripts/e2e-archive-test.sh
       pins the probe running inside `$INSTALL_DIR`.
 - [ ] `deploy/upgrade.sh` never overwrites an existing `servers:` / `opensearch:` block
 
+**Air-gapped install / upgrade (v1.14.5)** — static gates live in
+`test_static_sweeps.py::test_offline_bundle_can_do_a_first_install` and
+`::test_report_engine_install_is_verified_not_assumed`; the manual pass needs a
+VM with the network genuinely blackholed (not just "we did not use it").
+
+- [ ] **A bundle can install onto a host that has never been online** —
+      `bash scripts/build-offline-bundle.sh`, carry the tarball to a host with
+      NO jt-glogarch and no route to PyPI, `sudo bash install-offline.sh`, then
+      `systemctl enable --now jt-glogarch` and reach `/setup`. *Before v1.14.5
+      this was impossible: the bundle could only upgrade a host that had once
+      been online.*
+- [ ] **Neither offline script can do the other's job** — `upgrade-offline.sh`
+      on a fresh host names `install-offline.sh` instead of dead-ending;
+      `install-offline.sh` over an existing install refuses and points at the
+      upgrade (which is the only one that backs up the database first).
+- [ ] **pip really never reaches the network** — run the install with the
+      default route removed. `--no-index` is explicit; a fallback to PyPI hangs
+      for minutes and then fails.
+- [ ] **A Python minor-version mismatch is caught BEFORE anything is written** —
+      a `cp310` bundle on a 3.12 host aborts with the version named, not with a
+      compiled-wheel ImportError halfway through.
+- [ ] **The render engine is verified, not assumed** — every installer runs
+      `verify_report_engine`, which LAUNCHES Chromium as `jt-glogarch` and
+      renders a PDF. On a host missing the OS libraries it must print the
+      missing `lib*.so` names (from `ldd`) and the final summary must say PDF
+      Reports do not work — while stating that archiving and restore are
+      unaffected. *A tarball cannot carry those libraries and offline mode
+      skips `playwright install-deps`, so "installed" and "works" are different
+      facts; the upgrade used to report success and the first scheduled report
+      failed hours later.*
+- [ ] **Log what you swallow** — after any change that adds an `except`, run
+      `test_silent_except_count_only_goes_down` (budget 15, only goes DOWN) and
+      `test_remaining_silent_excepts_are_narrow` (no broad `except` that does
+      nothing, anywhere). *A degradation nobody can see in the log is a
+      degradation nobody can diagnose.*
+
 ### WebUI Connection Settings + Setup Wizard (v1.8.0) — Feature ↔ Test
 
 | Feature | Automated test | Manual check |
@@ -416,6 +452,47 @@ nowhere) while the API, the flag and every unit test were fine. The rule:
 - [ ] **Long records are truncated visibly, not clipped** — a 4,000-character
       syslog line shows ~320 characters plus "…", never a line with a chunk
       silently missing from the middle
+- [ ] **An OpenSearch-direct scan that reads fewer documents than the index
+      holds FAILS the index** — it does not report success. `iter_index_docs`
+      reconciles `fetched` against the pre-scan `_count` and raises
+      `IncompleteIndexScan`. *The cursor is `(timestamp, _doc)` and `_doc` is
+      shard-local, so on a multi-shard index a page boundary can exclude a
+      record that was never returned — and the chunks already written are
+      recorded as covering their time range, so dedup hides the gap on every
+      later run. Production indices have 4 shards; the e2e cluster has 1, which
+      is why no data-path test could ever have caught this.*
+- [ ] **Cancel and backpressure are never reported as data loss** — breaking
+      out of the scan closes the generator, so the reconciliation must not run.
+      A user pressing Cancel must not be told the archive lost records.
+- [ ] **On a BUSY cluster, bound the window** — `E2E_WINDOW_HOURS=2 bash
+      scripts/e2e-archive-test.sh` replaces the `--days 1/3` exports with a
+      fixed window. *A production Graylog ingesting ~9.5M messages/hour turns
+      `--days 3` into tens of millions of documents and hours of load.*
+- [ ] **Do NOT run step [3] (GELF re-import) against a production Graylog** —
+      it imports the archive back into the LIVE index set, which on a busy
+      cluster means hundreds of thousands of duplicated production messages.
+      The full round-trip belongs on a test cluster; production runs the
+      read-only and isolated-index steps.
+- [ ] **A 4-SHARD index is scanned completely** — e2e step [8] builds one on
+      purpose, with 30 documents per timestamp so sort keys collide across
+      shards, and demands every document back in timestamp order.
+      *`tests/test_os_shard_scan.py` reproduces the loss deterministically; the
+      e2e step exists because production has 4 shards and this cluster has 1,
+      which is how a real record-dropping bug hid for its whole life. Any new
+      scan/cursor work must keep BOTH.*
+- [ ] **Every shard request pins the primary copy** (`_shards:N|_primary`) —
+      `_shards:N` alone may alternate between primary and replica, whose `_doc`
+      order differs, which reintroduces exactly the bug being fixed.
+- [ ] **The merged scan still yields ascending timestamps** — the exporter
+      closes and RECORDS a chunk archive when the hour boundary is crossed, so a
+      scan that restarted at t0 per shard would reopen chunks already written.
+- [ ] **Peak memory did not grow** — each shard holds a page and has one in
+      flight, so the byte budget is divided by 2N. Measure with wide (~9 KB)
+      documents: `test_bytes_in_flight_stay_within_the_single_page_budget`.
+      *The 500-document page floor was written for ONE cursor; applied per shard
+      it silently became a 36 MB memory floor on the box that gets OOM-killed.*
+- [ ] **A single-shard index is scanned exactly as before** — no per-shard
+      requests, no new behaviour, for small deployments and this test cluster.
 - [ ] **The results table keeps its geometry** (`ui-sim-test.py`) — expanding a
       hit changes neither the table width nor the record column's; the detail
       row's `colspan` equals the number of VISIBLE columns; header and body

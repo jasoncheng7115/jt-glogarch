@@ -164,13 +164,13 @@ class GelfSender:
             try:
                 self._writer.close()
                 await self._writer.wait_closed()
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Error closing the GELF TCP connection", error=str(e))
         if self._udp_transport:
             try:
                 self._udp_transport.close()
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Error closing the GELF UDP transport", error=str(e))
         self._connected = False
         log.info(f"GELF {self.protocol.upper()} disconnected", messages_sent=self._messages_sent)
 

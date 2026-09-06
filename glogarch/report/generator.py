@@ -95,8 +95,8 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
                     # it's a version string (Latin), so half-width reads better and
                     # is what the user asked for, in both languages.
                     report["server"] = f"{_srv_name} (Graylog {_ver})"
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Could not read the Graylog version for the report cover", error=str(e))
 
     sections: list[dict] = []
 
@@ -243,8 +243,8 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
                 host = urlparse(_srv2.url).hostname if _srv2 else ""
                 if host:
                     parts.append(host)
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Could not derive the host name for the report filename", error=str(e))
         if "time" in ap:
             parts.append(now.strftime("%Y-%m-%d %H:%M"))
         if "dashboard" in ap and dashboards:
@@ -303,13 +303,13 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
     sidecar = path.with_name(path.name + ".sha256")
     try:
         sidecar.write_text(f"{sha256}  {filename}\n", encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Could not write the report SHA-256 sidecar", error=str(e))
     try:
         _chown_if_root(path)
         _chown_if_root(sidecar)
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("Could not adjust report file ownership", error=str(e))
 
     # "Data volume" for the job row = widgets rebuilt (+ captured dashboard pages).
     units = sum(len(s.get("widgets") or []) for s in sections if s.get("type") == "charts")
@@ -353,8 +353,8 @@ def _chown_if_root(path: Path):
         try:
             u = pwd.getpwnam("jt-glogarch")
             os.chown(path, u.pw_uid, u.pw_gid)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Could not chown a report file to jt-glogarch - the service may not be able to read it", error=str(e))
 
 
 def _email_pdf(settings, recipients, subject_title, pdf: bytes, filename: str, lang: str):

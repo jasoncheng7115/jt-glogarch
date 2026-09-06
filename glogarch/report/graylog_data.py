@@ -107,8 +107,8 @@ async def get_graylog_version(server) -> str:
                             auth=_basic_auth(server), headers={"Accept": "application/json"})
             if r.status_code == 200:
                 return (r.json().get("version") or "").split("+")[0]
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("Could not read the Graylog version for the report cover", error=str(e))
     return ""
 
 
@@ -181,8 +181,8 @@ async def capture_dashboard_png(
                 # Submit + press Enter (some Graylog builds only submit on Enter).
                 try:
                     await page.click('button[type="submit"], button:has-text("Sign in"), button:has-text("登入")', timeout=3000)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("Login submit button not clickable; falling back to Enter", error=str(e))
                 await page.press(pass_sel, "Enter")
                 # Success signal = the dashboard grid mounts. Waiting for the grid
                 # directly is far more reliable than watching the login form
@@ -212,8 +212,8 @@ async def capture_dashboard_png(
                         await page.wait_for_timeout(3000)   # let widgets refetch
                         try:
                             await page.wait_for_load_state("networkidle", timeout=25000)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log.debug("networkidle not reached after applying the time-range override", error=str(e))
                 # Enumerate the dashboard's tabs (state_id + title) in on-screen
                 # order. A dashboard with a single query has no tab bar → empty list.
                 all_tabs = []
@@ -240,8 +240,8 @@ async def capture_dashboard_png(
                         await page.wait_for_timeout(1500)   # let the tab mount
                         try:
                             await page.wait_for_load_state("networkidle", timeout=25000)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log.debug("networkidle not reached after switching dashboard tab", error=str(e))
                     png, reason, boundaries = await _shoot_current_grid(page, dashboard_id)
                     if png:
                         captures.append({"png": png, "title": tab.get("title") or "",
@@ -289,8 +289,8 @@ async def _activate_tab(page, state_id) -> bool:
         if await el.count() and await el.is_visible():
             await el.click()
             return True
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("Direct dashboard-tab click failed; trying the overflow menu", error=str(e))
     try:
         await page.click('.query-tabs-more-li button', timeout=3000)
         await page.wait_for_timeout(400)
@@ -299,8 +299,8 @@ async def _activate_tab(page, state_id) -> bool:
             if await links.nth(i).is_visible():
                 await links.nth(i).click()
                 return True
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("Could not click the dashboard tab in the overflow menu", error=str(e))
     return False
 
 
@@ -314,12 +314,12 @@ async def _shoot_current_grid(page, dashboard_id):
     grid height) for slice_tall_png."""
     try:
         await page.set_viewport_size({"width": _CAPTURE_WIDTH, "height": 1000})
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("Could not set the initial capture viewport", error=str(e))
     try:
         await page.evaluate("()=>window.scrollTo(0,0)")
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("Could not scroll the dashboard to the top before capture", error=str(e))
     grid_sel = None
     for sel in (".react-grid-layout", "[data-testid='dashboard']", ".widget-list"):
         if await page.query_selector(sel):
@@ -342,14 +342,14 @@ async def _shoot_current_grid(page, dashboard_id):
                         dashboard=dashboard_id, grid_h=grid_h, cap=_MAX_CAPTURE_VIEWPORT)
         try:
             await page.set_viewport_size({"width": _CAPTURE_WIDTH, "height": tall})
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Could not grow the capture viewport to the full grid height", error=str(e))
         await page.evaluate("()=>window.scrollTo(0,0)")
         await page.wait_for_timeout(1500)
     try:
         await page.wait_for_load_state("networkidle", timeout=25000)
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("networkidle not reached before capture", error=str(e))
     # Give every widget's chart a moment to finish drawing now that they are all
     # on-screen.
     await page.wait_for_timeout(4000)
@@ -490,8 +490,8 @@ async def _autoscroll_dashboard(page):
             el.scrollTo(0, 0); window.scrollTo(0, 0);
             await sleep(500);
         }""")
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("Lazy-render scroll pass failed; some widgets may capture blank", error=str(e))
 
 
 def slice_tall_png(png: bytes, first_ratio: float = 1.15, rest_ratio: float = 1.42,
@@ -757,8 +757,8 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                 if progress_cb:
                     try:
                         progress_cb(0, len(_slices), "slicing")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.warning("Report progress callback failed - the job bar will not advance", error=str(e))
                 for _si, (a, b) in enumerate(_slices, 1):
                     body = {"global_override": {
                         "timerange": {"type": "absolute",
@@ -769,8 +769,8 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                     if progress_cb:
                         try:
                             progress_cb(_si, len(_slices), "slicing")
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log.warning("Report progress callback failed for a slice - the job bar will not advance", error=str(e))
                     for st_state, blob in (part or {}).items():
                         for stid, r in ((blob or {}).get("search_types") or {}).items():
                             if stid in sliceable:
@@ -833,7 +833,8 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                             "to": midnight_utc.strftime(fmt)}}}
                     try:
                         snapped = await _exec_and_wait(body)
-                    except Exception:
+                    except Exception as e:
+                        log.warning("Snapped-window query failed; skipping this candidate duration", error=str(e))
                         continue
                     for (st_id, stype_id), dd in dur_of.items():
                         if dd != d:
@@ -877,8 +878,8 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                             _tf, _tfld = _metric_fn_field(
                                 ((wc.get("series") or [{}])[0] or {}).get("function") or "count()")
                             trend_prev[wid] = _numeric_of(pr, (_tf == "count" and not _tfld))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.debug("Could not compute the previous-period trend for a widget", error=str(e))
     except Exception as e:
         log.warning("rebuild_dashboard failed", dashboard=dashboard_id, error=str(e))
         return []
@@ -2180,8 +2181,8 @@ def archive_summary_sections(db, lang: str = "zh-TW") -> tuple[dict, list[dict]]
             sections.append({"type": "charts", "title": t["sec_audit"], "description": t["audit_desc"],
                              "widgets": [{"kind": "chart", "title": t["chart_ops"],
                                           "config": builder.bar_chart(alabels, avalues, label=t["chart_ops"])}]})
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Audit section could not be built - it is omitted from the report", error=str(e))
 
     header = {"kpis": kpis}
     return header, sections
@@ -2199,8 +2200,8 @@ def _archive_daily(db, days: int):
                 ((today - timedelta(days=days)).isoformat(),))
             for r in cur.fetchall():
                 rows[r[0]] = r[1] or 0
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Archive daily statistics query failed - the report will show zeros", error=str(e))
     for i in range(days - 1, -1, -1):
         d = today - timedelta(days=i)
         labels.append(d.strftime("%m/%d"))
@@ -2216,8 +2217,8 @@ def _job_outcomes(db):
             for st, n in cur.fetchall():
                 if st in out:
                     out[st] = n
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Job status statistics query failed - the report will show zeros", error=str(e))
     return out
 
 
@@ -2233,8 +2234,8 @@ def _audit_daily(db, days: int):
                 ((today - timedelta(days=days)).isoformat(),))
             for r in cur.fetchall():
                 rows[r[0]] = r[1]
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Audit daily statistics query failed - the report will show zeros", error=str(e))
     for i in range(days - 1, -1, -1):
         d = today - timedelta(days=i)
         labels.append(d.strftime("%m/%d"))

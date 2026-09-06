@@ -113,8 +113,8 @@ class ArchiveStorage:
                 for child in cumulative.iterdir():
                     try:
                         os.chown(child, pw.pw_uid, pw.pw_gid)
-                    except OSError:
-                        pass
+                    except OSError as e:
+                        log.debug("Could not chown an archive directory entry to jt-glogarch", error=str(e))
 
     def get_archive_filename(
         self,
@@ -420,8 +420,8 @@ class StreamingArchiveWriter:
                 if self._file:
                     try:
                         self._file.close()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.debug("Could not close the archive writer during cleanup", error=str(e))
                     self._file = None
                 if self.path.exists():
                     self.path.unlink()

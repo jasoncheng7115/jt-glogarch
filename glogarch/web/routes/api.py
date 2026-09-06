@@ -40,8 +40,8 @@ def _audit(request: Request, action: str, detail: str = ""):
         username = request.session.get("username", "")
         ip = request.client.host if request.client else ""
         db.audit(action, detail, username, ip)
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Audit record could not be written - this operation is NOT in the audit log", error=str(e))
 
 
 def _apply_to_runtime(request: Request, sched) -> None:
@@ -781,8 +781,8 @@ async def _measure_bytes_per_doc(hosts, user, pw, verify, prefix):
                         docs = int((pri.get("docs") or {}).get("count") or 0)
                         if store > 0 and docs > 0:
                             return store / docs, "index-set"
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Could not read index-set stats for the average document size", error=str(e))
     # 2) fallback: the DOMINANT log data across the cluster. Use _cat/indices and
     # EXCLUDE system/plugin indices (dot-prefixed, or top_queries/gl-events/…) —
     # those have few docs but large ones and badly skew a cluster-wide _all ratio.
@@ -808,7 +808,8 @@ async def _measure_bytes_per_doc(hosts, user, pw, verify, prefix):
                         store += sz
                 if store > 0 and docs > 0:
                     return store / docs, "log-data"
-        except Exception:
+        except Exception as e:
+            log.debug("Could not read log-data stats for the average document size", error=str(e))
             continue
     return None
 
@@ -841,7 +842,8 @@ async def _query_os_data_disk(hosts, user, pw, verify):
                             paths.add(p)
                 if total > 0:
                     return total, avail, h, sorted(paths)
-        except Exception:
+        except Exception as e:
+            log.debug("Could not read disk usage for a Graylog node", error=str(e))
             continue
     return None
 
@@ -1569,8 +1571,8 @@ def get_health(request: Request):
                         f"never run: {', '.join(missing[:5])}")
             except Exception as e:
                 issues.append(f"scheduler: could not verify registration ({e})")
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Health check could not inspect the scheduler", error=str(e))
 
     healthy = db_ok and disk_ok and sched_ok
 
@@ -1647,8 +1649,8 @@ def get_sizing(request: Request):
     stats = {}
     try:
         stats = db.get_archive_stats() or {}
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Archive statistics unavailable - dashboard totals will read zero", error=str(e))
     archive_count = int(stats.get("total") or 0)
 
     # Feed the MEASURED archive growth rate + configured retention in, so the
@@ -1663,8 +1665,8 @@ def get_sizing(request: Request):
             used_bytes, stats.get("earliest"), stats.get("latest"), free_bytes)
         if est.get("available"):
             bytes_per_month = est.get("bytes_per_month")
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("Retention estimate could not be computed", error=str(e))
 
     return recommend_spec(
         archive_count=archive_count,
@@ -1736,8 +1738,8 @@ async def list_servers(request: Request):
                             if isinstance(d, list) and len(d) > 0:
                                 info["has_datanode"] = True
                                 info["datanode_count"] = len(d)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("Data Node detection failed - assuming no Data Node", error=str(e))
             return info
 
     # Probe all servers concurrently so N unreachable servers don't add up
@@ -1866,7 +1868,7 @@ def rescan_archive_path(request: Request):
             def _parse(s):
                 for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%S"):
                     try: return datetime.strptime(s, fmt)
-                    except: continue
+                    except ValueError: continue
                 return datetime.utcnow()
 
             checksum = compute_sha256(gz_file)
@@ -1968,8 +1970,8 @@ async def opensearch_status(request: Request, server: str | None = None):
                 srv = settings.get_server(server)
                 if srv.opensearch is not None and srv.opensearch.hosts:
                     source = "per-server"
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Could not read the per-server OpenSearch configuration", error=str(e))
     return {
         "configured": has_config,
         "hosts": os_config.hosts,
@@ -2593,8 +2595,8 @@ def _schedule_to_dict(s, running_since: str | None = None) -> dict:
     if s.config_json:
         try:
             config = _json.loads(s.config_json)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Schedule config_json could not be parsed - the schedule will run with defaults", error=str(e))
     # Compute next fire time from cron expression if enabled
     next_run = None
     if s.enabled and s.cron_expr:
@@ -2612,8 +2614,8 @@ def _schedule_to_dict(s, running_since: str | None = None) -> dict:
             next_fire = trigger.get_next_fire_time(None, datetime.now(tz))
             if next_fire:
                 next_run = next_fire.isoformat()
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Could not compute the next fire time for a schedule", error=str(e))
     return {
         "id": s.id,
         "name": s.name,
@@ -2784,8 +2786,8 @@ async def _fetch_heap_advice(client, base_url: str, auth):
             used = (j.get("used_memory") or {}).get("bytes", 0)
             pct = (used / mx * 100.0) if mx else None
             return heap_advice(mx, pct)
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("Could not read JVM heap information from Graylog", error=str(e))
     return None
 
 
@@ -3341,8 +3343,8 @@ def delete_report(request: Request, name: str):
     if sched:
         try:
             sched.remove_report(name)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Report schedule could not be removed from the scheduler - it may still fire until restart", error=str(e))
     _audit(request, "report_deleted", f"report={name}")
     return {"status": "deleted", "name": name}
 
@@ -3400,8 +3402,8 @@ async def generate_report_now(request: Request, name: str):
     cfg = {}
     try:
         cfg = _json.loads(rec.get("config_json") or "{}")
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Report config_json could not be parsed", error=str(e))
     cfg["name"] = name
 
     # Guard against duplicate concurrent generations of the same report (double

@@ -625,8 +625,8 @@ class Exporter:
             try:
                 from glogarch.integrity import seal_archive
                 seal_archive(self.integrity, self.db, record)
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Archive could not be sealed - tamper-evidence is NOT in place for this archive", error=str(e))
             result.original_bytes += original_bytes
             result.compressed_bytes += file_size
         except Exception as e:
@@ -656,16 +656,16 @@ class Exporter:
             if writer._file:
                 writer._file.close()
                 writer._file = None
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Could not close the archive writer during partial-file cleanup", error=str(e))
         try:
             if path.exists():
                 path.unlink()
             sha_path = path.with_suffix(path.suffix + ".sha256")
             if sha_path.exists():
                 sha_path.unlink()
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Could not remove a partial archive file - a truncated archive may remain on disk", error=str(e))
 
     def _build_time_chunks(
         self, time_from: datetime, time_to: datetime

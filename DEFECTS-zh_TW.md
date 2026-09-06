@@ -28,6 +28,7 @@
 | 4 | 對新名稱的首次 Bulk 匯入**間歇性遺失文件**（v1.13.60） | 寫入在 Graylog 仍在建置寫入索引時開始；OpenSearch 接受後，索引隨即被取代 | `_wait_for_stable_alias()`（連續三次解析到同一實體索引）**加上**執行後的目的端計數——目的端為 0 即判定失敗 |
 | 5 | 升級將刪除 200～1095 天之間的歸檔（v1.13.57） | 1.13.56 開始採用一個從未真正生效過的 `retention_days` | 啟動時對帳，絕不縮短前一版本保留的範圍。`test_upgrade_does_not_shorten_retention_and_delete_data` ＋ `scripts/upgrade-compat-test.sh` |
 | 6 | 9 KB 文件下單一 `_bulk` 請求達約 93 MB（v1.13.49） | `batch_docs` 只限制筆數，從未限制位元組；OpenSearch 預設上限為 100 MB | 10 MB 上限並將剩餘遞延；`test_byte_cap_loses_no_documents` 證明分割不會遺漏 |
+| 7 | OpenSearch 直連掃描在多 shard 索引上可能**無聲跳過記錄**（v1.14.4 偵測到） | `search_after` 以 `(timestamp, _doc)` 分頁，但 `_doc` 是 **shard 內**的 Lucene id。不同 shard 的兩筆文件可能有相同的排序鍵，下一頁就會把兩者都排除——包含那筆從未被回傳的。也沒有用 PIT，因此沒有穩定快照。而且沒有任何機制比對「讀到的」與「索引宣稱有的」，已寫出的區塊又已被記錄為涵蓋該時段，於是缺口在之後每次執行都被重複資料刪除邏輯壓制 | 每次掃描結束都會以掃描前的 `_count` 對帳，短少即拋出 `IncompleteIndexScan`，並附上筆數與 shard 數。`tests/test_os_scan_reconcile.py`（6 項）固定住：短少必須大聲、超出不算錯誤、而使用者取消或反壓造成的**刻意中止絕不可被回報成資料遺失**。**v1.14.5 已修**：改為每個分片一個游標（`preference=_shards:N|_primary`），再合流回全域時間順序，`_doc` 於是重新具備唯一性。已在真實的 4 分片、126 萬筆索引上驗證——舊游標連續兩次分別掉了 38 筆與 145 筆；`tests/test_os_shard_scan.py` 會重現該筆數遺失並釘住修正。`_count` 對帳保留為最後防線。已記錄區塊內部的缺口仍需刪掉該封存才能補回 |
 
 ## 無聲失敗
 
@@ -40,6 +41,9 @@
 | 11 | 排程匯出失敗，作業歷程卻空無一物 | 失敗路徑的 `create_job` 本身被包在一個總是失敗的 try/except 中 | 失敗會被記錄；`/api/health` 另外回報 `schedules_registered` |
 | 27 | 每個索引集合都顯示「0 個索引、0 位元組」——清除操作看起來會像是無害的空動作（發版前攔截，1.13.66） | Graylog 的 `indices/{id}/list` 會把每個群組包成 `{"all": {"indices": [...]}}`；直接迭代 `data["all"]` 走的是字典的鍵，什麼也沒產出。容量則位於 `all_shards.store_size_bytes`，而非 `size.bytes` | `_iter_indices()` 成為唯一的解析點，並以測試釘住真實回應結構、裸列表的相容處理與畸形內容。回應結構現在是「被斷言」而非「被假設」 |
 | 28 | 清除操作可能刪掉正在寫入的索引，導致目標無法接收它正要騰出空間的那批匯入（發版前攔截，1.13.66） | deflector 查詢被包在 `except: pass` 中，因此讀不到 deflector 時 `write_index` 為 None——而「保留除了 None 以外的全部」等於什麼都不保留 | 無法辨識寫入索引時，會在**任何刪除動作之前中止**。`test_unknown_write_index_aborts_without_deleting` |
+| 32 | 49 處站點可能讓產品**無聲降級**——稽核紀錄沒寫進去、封存沒有封緘、通知沒有送出（v1.14.5） | `except Exception: pass`。2026-07 的稽核修掉了 28 處危險站點，把這些延後處理；而「延後」等於「仍然看不見」 | 每一處現在都會記錄它吞掉了什麼（維運人員需要行動的用 warning，盡力而為的探測用 debug）。125 處 -> 15 處，並由 `test_remaining_silent_excepts_are_narrow` 禁止任何位置再出現什麼都不做的廣泛 `except` |
+| 33 | 根本**沒有離線環境的首次安裝**路徑（v1.14.5） | `upgrade-offline.sh` 在沒有既有安裝時就中止，`install.sh` 又一定會連 PyPI。離線套件只能升級「曾經連過網」的主機——之所以沒人發現，是因為每個測試站台都早已用線上方式安裝過 | `install-offline.sh` 加上 `install.sh --offline`（pip 以 `--no-index` 鎖定），共用同一條程式路徑；建置離線套件時若缺少首次安裝指令碼會**直接中止**，而不是產出一個只能升級的套件。`test_offline_bundle_can_do_a_first_install` |
+| 34 | 離線安裝回報成功，PDF 產製其實是壞的（v1.14.5） | Chromium 依賴的作業系統共用函式庫無法放進 tarball，離線模式又跳過 `playwright install-deps`，所以「裝好了」與「能用」是兩回事。文件當時只要求人工驗證 | `verify_report_engine()` 會以服務帳號啟動 Chromium 並產出 PDF，失敗時以 `ldd` 指出缺少的 `lib*.so`。每支安裝指令碼都會呼叫它，並在結尾摘要中回報。`test_report_engine_install_is_verified_not_assumed` |
 
 ## 規模——成本隨資料量而非工作量成長
 

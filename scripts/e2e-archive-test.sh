@@ -9,6 +9,8 @@
 #   [5] Re-export dedup: already-archived time is skipped in the QUERY (guards the
 #       "export stuck at 0%" bug) while a punched GAP is still re-exported exactly
 #   [6] A deleted archive FILE is detected by verify and self-healed on re-export
+#   [8] A 4-SHARD index is scanned completely (production has 4 shards, this
+#       cluster has 1 — the blind spot that hid a real record-dropping bug)
 #
 # Uses throwaway configs + DBs + archive dirs under /tmp, so it never touches
 # the live service's database. A GELF TCP input must be listening on GELF_PORT.
@@ -25,6 +27,22 @@ GL_USER="${GL_USER:-admin}"
 GL_PASS="${GL_PASS:?set GL_PASS to the Graylog admin password}"
 GELF_PORT="${GELF_PORT:-32202}"
 SEED="${SEED:-300}"
+# How much history the export steps cover. The defaults reproduce the original
+# behaviour on a quiet test cluster. On a BUSY cluster (a production Graylog
+# ingesting hundreds of thousands of messages an hour) `--days 3` means tens of
+# millions of documents and hours of load, so set E2E_WINDOW_HOURS to bound it
+# — every step still runs, just over less history.
+#   E2E_WINDOW_HOURS=2 bash scripts/e2e-archive-test.sh
+E2E_WINDOW_HOURS="${E2E_WINDOW_HOURS:-0}"      # 0 = use --days, as before
+if [ "$E2E_WINDOW_HOURS" != "0" ]; then
+    WIN_FROM="$(date -u -d "$E2E_WINDOW_HOURS hours ago" +%Y-%m-%dT%H:%M:%S)"
+    RANGE1="--from $WIN_FROM"
+    RANGE3="--from $WIN_FROM"
+    echo "  (bounded window: last ${E2E_WINDOW_HOURS}h, from $WIN_FROM UTC)"
+else
+    RANGE1="--days 1"
+    RANGE3="--days 3"
+fi
 W=/tmp/e2e-archive
 FAIL=0
 
@@ -91,13 +109,13 @@ curl -s -u "$GL_USER:$GL_PASS" -H "X-Requested-By: cli" -X POST \
 echo "  waiting 15s for index ranges to recompute..."; sleep 15
 
 echo "=== [1] Graylog API-mode archive ==="
-$PYA export --mode api --days 1 --no-resume 2>&1 | tail -3
+$PYA export --mode api $RANGE1 --no-resume 2>&1 | tail -3
 na="$(find "$W/arch_api" -name '*.json.gz' | wc -l)"
 echo "  API archives produced: $na"
 [ "$na" -ge 1 ] || { echo "FAIL: API export produced no archive"; FAIL=1; }
 
 echo "=== [2] OpenSearch-direct archive ==="
-$PYO export --mode opensearch --days 1 --no-resume 2>&1 | tail -3
+$PYO export --mode opensearch $RANGE1 --no-resume 2>&1 | tail -3
 no="$(find "$W/arch_os" -name '*.json.gz' | wc -l)"
 echo "  OS archives produced: $no"
 [ "$no" -ge 1 ] || { echo "FAIL: OpenSearch export produced no archive"; FAIL=1; }
@@ -200,7 +218,7 @@ log_level: WARNING
 YAML
 chown -R jt-glogarch:jt-glogarch "$W5"
 P5="sudo -u jt-glogarch python3 -m glogarch --config $W5/cfg.yaml"
-$P5 export --mode opensearch --days 3 --no-resume >/dev/null 2>&1
+$P5 export --mode opensearch $RANGE3 --no-resume >/dev/null 2>&1
 sum5() { sudo -u jt-glogarch python3 -c "import sqlite3;c=sqlite3.connect('$W5/db.db');print(c.execute('SELECT COALESCE(SUM(message_count),0) FROM archives WHERE status=\"completed\"').fetchone()[0])"; }
 base="$(sum5)"
 echo "  first export archived: $base records"
@@ -209,7 +227,7 @@ if [ "${base:-0}" -le 0 ] 2>/dev/null; then
 else
     # (a) re-run with everything covered -> must add nothing, and be quick
     t0=$(date +%s)
-    out5="$($P5 export --mode opensearch --days 3 --no-resume 2>&1)"
+    out5="$($P5 export --mode opensearch $RANGE3 --no-resume 2>&1)"
     el=$(( $(date +%s) - t0 ))
     again="$(sum5)"
     echo "  re-export added $(( again - base )) records in ${el}s (expect 0)"
@@ -233,7 +251,7 @@ c.execute("DELETE FROM archives WHERE id=?", (mid[0],)); c.commit()
 print(mid[1])
 PY
 )"
-    $P5 export --mode opensearch --days 3 --no-resume >/dev/null 2>&1
+    $P5 export --mode opensearch $RANGE3 --no-resume >/dev/null 2>&1
     filled="$(sum5)"
     echo "  gap of $gap records removed; after re-export total=$filled (expect $base)"
     if [ "$filled" = "$base" ]; then
@@ -269,7 +287,7 @@ PY
     else
         echo "FAIL: verify did not detect the deleted archive file"; FAIL=1
     fi
-    $P5 export --mode opensearch --days 3 --no-resume >/dev/null 2>&1
+    $P5 export --mode opensearch $RANGE3 --no-resume >/dev/null 2>&1
     healed="$(sum5)"
     echo "  completed records after re-export: $healed (expect $base)"
     if [ "$healed" = "$base" ]; then
@@ -351,6 +369,102 @@ else
 fi
 $PYO streams-cleanup --prefix "$CIDX" --yes >/dev/null 2>&1
 osc -X DELETE "$OS_URL/${CIDX}*" >/dev/null 2>&1
+
+echo "=== [8] Multi-shard scan: every document is returned ==="
+# THE blind spot this suite had for its whole life. Production Graylog indices
+# have 4 shards; this test cluster has 1 — so the `search_after` cursor's
+# shard-local `_doc` tiebreaker could drop records at a page boundary and no
+# data-path test could ever see it. Build a 4-shard index on purpose, with many
+# documents sharing each timestamp so sort keys collide across shards, and
+# demand the scan return every one.
+SIDX="jt_e2e_shards"
+osc -X DELETE "$OS_URL/$SIDX" >/dev/null 2>&1
+osc -X PUT "$OS_URL/$SIDX" -H 'Content-Type: application/json' -d '{
+  "settings": {"number_of_shards": 4, "number_of_replicas": 0},
+  "mappings": {"properties": {"timestamp": {"type": "date",
+      "format": "uuuu-MM-dd HH:mm:ss.SSS"}, "message": {"type": "keyword"}}}}' >/dev/null 2>&1
+
+# 40 timestamps x 30 documents = 1200 docs; every timestamp exists on several
+# shards, which is exactly the collision the old cursor mishandled.
+python3 - "$OS_URL" "$SIDX" <<'PYEOF' >/dev/null 2>&1
+import json, sys, urllib.request
+url, idx = sys.argv[1], sys.argv[2]
+lines = []
+n = 0
+for t in range(40):
+    ts = f"2026-01-01 00:{t:02d}:00.000"
+    for k in range(30):
+        lines.append(json.dumps({"index": {"_index": idx, "_id": f"d{n}"}}))
+        lines.append(json.dumps({"timestamp": ts, "message": f"m{n}"}))
+        n += 1
+body = ("\n".join(lines) + "\n").encode()
+req = urllib.request.Request(f"{url}/_bulk", data=body,
+                             headers={"Content-Type": "application/x-ndjson"}, method="POST")
+urllib.request.urlopen(req).read()
+urllib.request.urlopen(urllib.request.Request(f"{url}/{idx}/_refresh", method="POST")).read()
+PYEOF
+
+shard_out="$(OS_URL="$OS_URL" SIDX="$SIDX" python3 - <<'PYEOF'
+import asyncio, json, os
+from glogarch.core.config import OpenSearchConfig
+from glogarch.opensearch.client import OpenSearchClient, IncompleteIndexScan
+
+CFG = OpenSearchConfig(hosts=[os.environ["OS_URL"]], verify_ssl=False)
+IDX = os.environ["SIDX"]
+
+
+async def scan(batch):
+    seen, last, inversions = 0, None, 0
+    async with OpenSearchClient(CFG) as c:
+        try:
+            async for docs in c.iter_index_docs(IDX, batch_size=batch,
+                                                delay_between_requests_ms=0):
+                for d in docs:
+                    ts = d.get("timestamp")
+                    if last is not None and ts is not None and ts < last:
+                        inversions += 1
+                    last = ts
+                seen += len(docs)
+        except IncompleteIndexScan as e:
+            return e.fetched, inversions, "incomplete"
+    return seen, inversions, "ok"
+
+
+async def main():
+    async with OpenSearchClient(CFG) as c:
+        total = (await c.post(f"/{IDX}/_count", json={"query": {"match_all": {}}}))["count"]
+        shards = await c.get_shard_count(IDX)
+    # A page that lands INSIDE a group of colliding sort keys is what the old
+    # cursor mishandled; 250 does not divide the 30-per-timestamp groups.
+    os.environ["JT_OS_SCAN_SINGLE_CURSOR"] = "1"
+    old = await scan(250)
+    os.environ.pop("JT_OS_SCAN_SINGLE_CURSOR")
+    new = await scan(250)
+    print(json.dumps({"total": total, "shards": shards,
+                      "old": old[0], "new": new[0], "inversions": new[1]}))
+
+asyncio.run(main())
+PYEOF
+)"
+# structlog writes to stdout, so keep only the JSON line the probe printed.
+shard_json="$(echo "$shard_out" | grep '^{' | tail -1)"
+echo "  $shard_json"
+sfield() { echo "$shard_json" | python3 -c "import sys,json;print(json.load(sys.stdin)[\"$1\"])" 2>/dev/null || echo -1; }
+s_total="$(sfield total)"
+s_shards="$(sfield shards)"
+s_new="$(sfield new)"
+s_inv="$(sfield inversions)"
+s_old="$(sfield old)"
+echo "  old single cursor read $s_old of $s_total (informational — the loss is"
+echo "  page-boundary dependent; tests/test_os_shard_scan.py reproduces it exactly)"
+if [ "$s_shards" != "4" ]; then
+    echo "FAIL: the test index is not 4 shards ($s_shards) — this step proves nothing"; FAIL=1
+elif [ "$s_new" = "$s_total" ] && [ "$s_inv" = "0" ]; then
+    echo "  PASS: per-shard scan returned all $s_total docs of a 4-shard index, in timestamp order"
+else
+    echo "FAIL: multi-shard scan returned $s_new of $s_total docs, $s_inv order inversions"; FAIL=1
+fi
+osc -X DELETE "$OS_URL/$SIDX" >/dev/null 2>&1
 
 echo ""
 echo "=== RESULT: $([ $FAIL -eq 0 ] && echo 'ALL PASS' || echo 'FAILURES') ==="

@@ -83,8 +83,8 @@ def generate_key_file(path: str) -> str:
     p.write_text(b64 + "\n")
     try:
         os.chmod(path, 0o600)
-    except OSError:
-        pass
+    except OSError as e:
+        log.warning("Could not restrict permissions on the HMAC key file - it may be readable by other users", error=str(e))
     return b64
 
 

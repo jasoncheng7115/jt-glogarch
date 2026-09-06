@@ -1,4 +1,4 @@
-# jt-glogarch v1.14.3
+# jt-glogarch v1.14.5
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.14.3-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.14.5-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -39,6 +39,7 @@ and can restore them back into any Graylog instance via GELF (UDP / TCP).
 - [Web UI Guide](#web-ui-guide)
   - [Dashboard](#dashboard)
   - [Archive List](#archive-list)
+  - [Record Search](#record-search-since-v1140)
   - [Job History](#job-history)
   - [Schedules](#schedules)
   - [Notification Settings](#notification-settings)
@@ -166,6 +167,7 @@ GELF mode also has:
 
 - **Dashboard** — Grafana-style sparkline stat cards, server status, recent jobs
 - **Archive List** — Filtering, sorting, batch operations, drag-to-select timeline
+- **Record Search** — Search inside the archives themselves without restoring anything: pick a time range, match terms and field filters, matches highlighted in place, download the whole result set as CSV or JSON Lines
 - **Job History** — Real-time progress (SSE), elapsed time, cancel, source/mode badges
 - **Schedule Management** — Cron editor, inline progress, "Run Now"
 - **Notification Settings** — 6 channels with language selection
@@ -454,14 +456,16 @@ curl -L -o jt-glogarch-src.tar.gz \
   https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz
 tar xzf jt-glogarch-src.tar.gz && cd jt-glogarch-main
 bash scripts/build-offline-bundle.sh
-# → produces dist/jt-glogarch-<version>-offline.tar.gz  (~365 MB)
+# → produces dist/jt-glogarch-<version>-offline.tar.gz  (~370 MB, mostly Chromium)
 sha256sum dist/jt-glogarch-*-offline.tar.gz   # note it — verify after transfer
 ```
 
 (Equivalent with git: `git clone https://github.com/jasoncheng7115/jt-glogarch.git && cd jt-glogarch`.)
 
-The bundle contains the jt-glogarch wheel **and every runtime dependency wheel**
-**and the source tree** and the offline installer — everything the upgrade needs.
+The bundle contains the jt-glogarch wheel, **every runtime dependency wheel**
+(46 of them), **the source tree**, the offline installer, and the PDF-report
+pieces — the Playwright wheel, a matching **Chromium** build and a CJK font.
+Everything the upgrade needs.
 
 **Step 2 — carry `jt-glogarch-<version>-offline.tar.gz` to the target host** (USB,
 internal file share, scp — whatever your air-gap policy allows).
@@ -471,17 +475,58 @@ internal file share, scp — whatever your air-gap policy allows).
 ```bash
 tar xzf jt-glogarch-<version>-offline.tar.gz
 cd jt-glogarch-<version>-offline
+
+# Host has NO jt-glogarch yet — first install (since v1.14.5):
+sudo bash install-offline.sh
+
+# Host already runs jt-glogarch — upgrade:
 sudo bash upgrade-offline.sh
 ```
 
-It backs up the DB, refreshes the `/opt/jt-glogarch` source tree, installs the
-package + any missing dependencies **from the bundled wheels only** (no network),
-restarts the service, and verifies `GET /api/health` reports the new version.
+`install-offline.sh` creates the service user, stages the source into
+`/opt/jt-glogarch`, installs everything from the bundled wheels, generates the
+self-signed certificate and installs the systemd unit — then
+`systemctl enable --now jt-glogarch` and open `https://<host>:8990/` for the
+first-run setup wizard. It refuses to run over an existing install, and it
+checks the bundle's Python version against the host **before** writing anything.
 
-> The bundle's compiled dependency wheels (uvloop, httptools, watchfiles…) are
-> platform-specific — build the bundle on the **same Python version and CPU
-> architecture** as the target host. The optional PDF-report engine
-> (Playwright/Chromium) is **not** included; install it separately where wanted.
+`upgrade-offline.sh` backs up the DB, refreshes the `/opt/jt-glogarch` source
+tree, installs the package + any missing dependencies **from the bundled wheels
+only** (no network), restarts the service, and verifies `GET /api/health`
+reports the new version. On a host with no install it points you at
+`install-offline.sh` rather than stopping.
+
+> The bundle's compiled dependency wheels (uvloop, httptools, watchfiles,
+> pydantic-core…) are platform-specific — build it on the **same Python
+> _minor_ version and CPU architecture** as the target host. A `cp310` wheel
+> will not install on Python 3.12. For the report pieces the build host also
+> needs `python3-venv` and a CJK font (`fonts-wqy-zenhei`); the script prints a
+> warning and carries on without them.
+
+**PDF Reports ARE in the bundle.** It ships the Playwright wheel, PyMuPDF,
+Pillow, a Chromium build matching that exact Playwright version (~277 MB) and a
+CJK font, and `upgrade-offline.sh` installs all of them — that is most of the
+~370 MB.
+
+What a tarball cannot carry is Chromium's **OS shared libraries** (`libnss3`,
+`libatk1.0-0`, `libxkbcommon0`, `libgbm1`, `libasound2`, …). An online host gets
+them from `playwright install-deps`, which needs a package manager and the
+network; an air-gapped host must install them from its own distro media. Without
+them, report rendering fails at runtime.
+
+**Since v1.14.5 the installer checks this for you.** Every install/upgrade path
+runs `verify_report_engine`, which launches Chromium as the `jt-glogarch` user
+and renders a real PDF. If it cannot, the script names the missing shared
+libraries (via `ldd`) and the final summary says PDF Reports do not work on this
+host — while making clear that archiving, restore and the Web UI are unaffected.
+Earlier versions reported "Complete" and the failure only appeared hours later
+in a scheduled report.
+
+To re-check at any time:
+
+```bash
+sudo bash -c 'source /opt/jt-glogarch/deploy/report-deps.sh && verify_report_engine'
+```
 
 ### Uninstall
 
@@ -838,6 +883,40 @@ This is where you manage all your archives.
 - **Batch Delete** — Removes files from disk and marks records as deleted
 
 **Column settings** — Toggle columns on/off (saved in localStorage)
+
+
+### Record Search (since v1.14.0)
+
+![Record search](images/record_search.png)
+![Record search — expanded record](images/record_search_expanded.png)
+
+Look inside the archived files **without importing them back into Graylog
+first** — for the one-off question ("what did that host do six months ago?")
+where re-importing the whole period would take tens of minutes and this takes
+seconds to a few minutes.
+
+- **A time range is mandatory**, deliberately: archives have no index, so the
+  range is the only thing that can prune the corpus before a file is opened.
+  Drag on the Archive timeline, or fill in From / To.
+- **Keywords** — free text, matched anywhere in the record, case-insensitive.
+  `firewall deny` requires both; `"connection refused"` is one phrase.
+- **Field filters** — one named field, exact value: `source=fw01 level=4`.
+  A field filter typed into the Keywords box is matched as literal text and
+  finds nothing, which is why they are separate boxes.
+- **The cost is stated before the search runs** — how many archives, roughly how
+  many records, and an estimate.
+- **Matches are highlighted** in the Record column and the expanded record, so
+  the reason a row is in the results is visible without re-reading the line.
+- **Download every matching record** as CSV (UTF-8 BOM, so Excel doesn't mangle
+  non-ASCII) or JSON Lines (every field). It exports **all pages, not the page
+  on screen**, streamed straight to disk — memory stays flat whether it is 500
+  rows or a million.
+- **Search gives way to archiving** — while an export or import is running it
+  slows down between archives and says so on screen.
+
+> Not a query engine: no dashboards, charts, aggregations, query language,
+> wildcards, regular expressions, OR / NOT, or sorting by a field. For real
+> analysis, import that period back into Graylog and use its full search.
 
 
 ### Job History

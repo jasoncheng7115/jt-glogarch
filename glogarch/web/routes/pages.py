@@ -11,6 +11,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from glogarch import __version__ as _APP_VERSION
+from glogarch.utils.logging import get_logger
+
+log = get_logger("web.pages")
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -137,8 +140,9 @@ async def login_submit(request: Request):
                 # This server responded but rejected the credentials — Graylog is
                 # reachable, so keep trying the other servers before giving up.
                 graylog_ok = True
-        except Exception:
+        except Exception as e:
             # This server is unreachable — try the next one.
+            log.debug("Graylog server unreachable during login; trying the next one", error=str(e))
             continue
 
     _audit(request, "login_failed", f"User: {username}")
@@ -159,8 +163,8 @@ def _audit(request: Request, action: str, detail: str = ""):
         username = request.session.get("username", "")
         ip = request.client.host if request.client else ""
         db.audit(action, detail, username, ip)
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Audit record could not be written - this operation is NOT in the audit log", error=str(e))
 
 
 @router.get("/logout")

@@ -373,8 +373,8 @@ def _t(key: str, **kwargs) -> str:
     lang = "en"
     try:
         lang = get_settings().notify.language or "en"
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("Could not read the notification language setting; defaulting to English", error=str(e))
     tpl = _MSG.get(lang, _MSG["en"]).get(key, _MSG["en"].get(key, key))
     return tpl.format(**kwargs) if kwargs else tpl
 

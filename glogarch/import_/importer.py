@@ -232,8 +232,8 @@ class Importer:
                 try:
                     await self.preflight.wait_for_index_ready(
                         preflight_result.index_set_id, timeout_sec=20)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("Index did not report ready after remediation - new mappings may not be active yet", error=str(e))
                 result.indexer_failure_fields.extend(new_fields)
                 log.warning("Mid-import auto-remediation applied",
                             fields=new_fields, failures_delta=cur - baseline)
@@ -515,8 +515,8 @@ class Importer:
                         try:
                             await self.preflight.wait_for_index_ready(
                                 preflight_result.index_set_id, timeout_sec=20)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log.warning("Index did not report ready after remediation - new mappings may not be active yet", error=str(e))
                         if done:
                             for f in done:
                                 if f not in result.indexer_failure_fields:
@@ -698,8 +698,8 @@ class Importer:
                                         await notify_error("Import",
                                             f"Graylog journal overflow: {uncommitted:,} uncommitted entries. "
                                             f"Import stopped to prevent data loss.")
-                                    except Exception:
-                                        pass
+                                    except Exception as e:
+                                        log.warning("Journal-overflow notification failed - the stop was NOT reported to any channel", error=str(e))
                                     raise RuntimeError(
                                         f"Graylog journal overflow ({uncommitted:,} uncommitted). "
                                         f"Import stopped.")

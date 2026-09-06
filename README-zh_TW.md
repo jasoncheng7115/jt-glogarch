@@ -1,4 +1,4 @@
-# jt-glogarch v1.14.3
+# jt-glogarch v1.14.5
 
 **語言**： [English](README.md) | **繁體中文**  
 **網站**： <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.14.3-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.14.5-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -38,6 +38,7 @@ Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
 - [Web UI 使用說明](#web-ui-使用說明)
   - [儀表板](#儀表板)
   - [歸檔清單](#歸檔清單)
+  - [記錄搜尋](#記錄搜尋歸檔清單頁的第二個分頁)
   - [作業歷程](#作業歷程)
   - [排程作業](#排程作業)
   - [通知設定](#通知設定)
@@ -161,6 +162,7 @@ GELF 模式還有：
 
 - **儀表板** — Grafana 風格的迷你圖表卡片、伺服器狀態、最近工作
 - **歸檔清單** — 篩選、排序、批次操作、可拖曳選取的時間軸
+- **記錄搜尋** — 不必還原就能直接在封存檔內查記錄：指定時間範圍、關鍵字與欄位條件，命中處就地醒目提示，整批結果可下載為 CSV 或 JSON Lines
 - **作業歷程** — 即時進度（SSE）、耗時、取消、來源/模式標籤
 - **排程作業** — Cron 編輯器、行內進度、立即執行
 - **通知設定** — 6 種管道含語言選擇
@@ -615,7 +617,7 @@ sudo bash /opt/jt-glogarch/deploy/upgrade.sh
 
 適用於**無法連外網**的客戶站台。做法是在任一台可連外網的機器上打包成**自帶所有相依套件的離線包**，用實體方式帶進去（USB／內部檔案分享／scp），在目標主機本機執行 —— pip 全程不連網路（`--no-index`）。
 
-**步驟 1 —— 在可連外網的機器上**（Python 主版本與 CPU 架構需與目標主機相同，例如 CPython 3.10 + linux x86_64）：
+**步驟 1 —— 在可連外網的機器上**（Python 的**主要與次要版本**及 CPU 架構都必須與目標主機相同，例如 CPython 3.10 ＋ linux x86_64）：
 
 ```bash
 # 下載最新原始碼（不需要 git）並打包——已實測可用：
@@ -623,13 +625,13 @@ curl -L -o jt-glogarch-src.tar.gz \
   https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz
 tar xzf jt-glogarch-src.tar.gz && cd jt-glogarch-main
 bash scripts/build-offline-bundle.sh
-# → 產生 dist/jt-glogarch-<版本>-offline.tar.gz（約 365 MB）
+# → 產生 dist/jt-glogarch-<版本>-offline.tar.gz（約 370 MB，大部分是 Chromium）
 sha256sum dist/jt-glogarch-*-offline.tar.gz   # 記下校驗值，帶入後核對
 ```
 
 （有 git 時等價做法：`git clone https://github.com/jasoncheng7115/jt-glogarch.git && cd jt-glogarch`。）
 
-離線包內含 jt-glogarch wheel、**所有相依套件的 wheel**、**原始碼樹**與離線安裝指令碼 —— 升級所需的東西全部打包在內。
+離線包內含 jt-glogarch wheel、**所有相依套件的 wheel**（共 46 個）、**原始碼樹**、離線安裝指令碼，以及 PDF 報表所需的元件 —— Playwright wheel、對應版本的 **Chromium** 與中日韓字型。升級需要的東西全部打包在內。
 
 **步驟 2 —— 將 `jt-glogarch-<版本>-offline.tar.gz` 帶到目標主機**（USB、內部檔案分享、scp，依貴站台的隔離政策而定）。
 
@@ -638,12 +640,44 @@ sha256sum dist/jt-glogarch-*-offline.tar.gz   # 記下校驗值，帶入後核�
 ```bash
 tar xzf jt-glogarch-<版本>-offline.tar.gz
 cd jt-glogarch-<版本>-offline
+
+# 主機尚未安裝 jt-glogarch —— 首次安裝（v1.14.5 起支援）：
+sudo bash install-offline.sh
+
+# 主機已在執行 jt-glogarch —— 升級：
 sudo bash upgrade-offline.sh
 ```
 
-它會：備份 DB → 更新 `/opt/jt-glogarch` 原始碼樹 → **僅從離線包內的 wheel** 安裝套件與缺少的相依（完全不連網）→ 重啟服務 → 確認 `GET /api/health` 回報新版本。
+`install-offline.sh` 會建立服務帳號、把原始碼樹放進 `/opt/jt-glogarch`、僅以離線包內的 wheel 安裝所有套件、產生自簽憑證並安裝 systemd unit；接著執行 `systemctl enable --now jt-glogarch`，開啟 `https://<主機>:8990/` 進入首次設定精靈。它會拒絕覆蓋既有安裝，並在**動任何檔案之前**先比對離線包與主機的 Python 版本。
 
-> 離線包內的編譯型相依 wheel（uvloop、httptools、watchfiles…）與平台相關，**打包機器的 Python 版本與 CPU 架構必須與目標主機相同**。選用的 PDF 報表引擎（Playwright／Chromium）**不含**在離線包內，需在需要的機器另行安裝。
+`upgrade-offline.sh` 會：備份 DB → 更新 `/opt/jt-glogarch` 原始碼樹 → **僅從離線包內的 wheel** 安裝套件與缺少的相依（完全不連網）→ 重啟服務 → 確認 `GET /api/health` 回報新版本。在尚未安裝的主機上，它會指向 `install-offline.sh` 而不是就此中止。
+
+> 離線包內的編譯型相依 wheel（uvloop、httptools、watchfiles、pydantic-core…）與平台
+> 相關，**打包機器的 Python 次要版本與 CPU 架構必須與目標主機相同** —— `cp310` 的
+> wheel 無法安裝在 Python 3.12 上。報表元件的部分，打包機器另需 `python3-venv` 與
+> 中日韓字型（`fonts-wqy-zenhei`）；缺少時指令碼會印出警告並繼續，只是打包出來的
+> 離線包會少掉那些元件。
+
+**PDF 報表元件確實包含在離線包內。** 內含 Playwright wheel、PyMuPDF、Pillow、與該
+Playwright 版本相符的 Chromium（約 277 MB）以及中日韓字型，`upgrade-offline.sh` 會
+一併安裝 —— 這也是離線包約 370 MB 的主要原因。
+
+**唯一無法打包進去的是 Chromium 需要的作業系統共用函式庫**（`libnss3`、
+`libatk1.0-0`、`libxkbcommon0`、`libgbm1`、`libasound2` 等）。可連外網的主機是靠
+`playwright install-deps` 取得，那需要套件管理程式與網路；封閉網路的主機必須改由貴
+站台自己的安裝媒體安裝。少了它們，報表會在實際產生時才失敗。
+
+**v1.14.5 起，安裝程式會替你檢查這件事。** 所有安裝／升級路徑都會執行
+`verify_report_engine`：以 `jt-glogarch` 身分啟動 Chromium 並實際產出一份 PDF。若無法
+啟動，指令碼會（透過 `ldd`）指出缺少哪些共用函式庫，結尾摘要也會明講這台主機的 PDF
+報表無法運作，同時說明封存、還原與 Web UI 都不受影響。舊版本會印出「完成」，而失敗
+要等到幾小時後的排程報表才浮現。
+
+隨時想重新檢查：
+
+```bash
+sudo bash -c 'source /opt/jt-glogarch/deploy/report-deps.sh && verify_report_engine'
+```
 
 
 
@@ -797,6 +831,44 @@ Web UI 是**主要操作介面**，CLI 用於自動化和指令碼。
 - **批次刪除** — 從磁碟移除檔案並標記為已刪除
 
 **欄位設定** — 可開關欄位顯示（存在 localStorage)
+
+
+### 記錄搜尋（歸檔清單頁的第二個分頁）
+
+![記錄搜尋](images/record_search_zhtw.png)
+![記錄搜尋 — 展開單筆記錄](images/record_search_expanded_zhtw.png)
+
+**直接在歸檔檔案裡找記錄，不必先匯回 Graylog。** 適合「六個月前那台主機到底發生什麼事」
+這種一次性的查證——把整段時間匯回去要花好幾十分鐘，這裡幾秒到幾分鐘就有答案。
+
+**時間範圍是必填的**，而且刻意如此：歸檔沒有索引，範圍就是唯一能先篩掉大部分檔案的
+依據。在上方的歸檔時間軸拖曳，或直接填起始／結束。
+
+**兩個輸入框，各做各的事：**
+
+| 欄位 | 意義 | 範例 |
+|---|---|---|
+| 關鍵字 | 自由文字，比對整筆記錄的任何位置，不分大小寫 | `error`、`firewall deny`（兩個都要出現）、`"connection refused"`（完整片語） |
+| 欄位條件 | 指定某個欄位，值必須**完全相符** | `source=fw01`、`source=fw01 level=4`（都要符合） |
+
+欄位條件若誤填進「關鍵字」欄，會被當成一般文字比對，結果會是零筆——所以兩者分開。
+關鍵字本身含空格時要加雙引號。
+
+**搜尋前會先說明代價**：涵蓋幾份歸檔、約幾筆記錄、預估多久。範圍越窄越快。
+
+**命中的關鍵字與欄位值會以醒目提示標出**，記錄欄與展開的完整記錄都會標，不必重讀整行
+就看得出這筆為什麼被找出來。
+
+**下載全部符合的記錄**：CSV（時間、來源、等級、記錄、歸檔檔名，含 UTF-8 BOM 讓 Excel
+不會亂碼）或 JSON Lines（每一筆的全部欄位）。**匯出的是所有分頁的全部結果，不是畫面上
+這一頁**，並直接串流寫入磁碟，不論幾百筆或上百萬筆，記憶體用量都一樣。
+
+> **這不是查詢引擎。** 沒有儀表板、圖表、統計聚合，也沒有查詢語言；不支援萬用字元、
+> 正規表示式、OR／NOT、依欄位排序。需要完整分析時，請把該時段的歸檔匯回 Graylog，
+> 用它原本的搜尋功能。
+>
+> 搜尋會**讓路給歸檔**：偵測到匯出或匯入正在執行時，會在每份歸檔之間放慢，
+> 並在畫面上說明。歸檔才是本體，搜尋是輔助。
 
 
 ### 作業歷程

@@ -58,6 +58,12 @@ chown -R "${SVC_USER}:${SVC_USER}" "${BROWSERS_PATH}"
 echo "==> Restarting jt-glogarch"
 systemctl restart jt-glogarch || echo "  (restart jt-glogarch manually)"
 
+# Prove it actually renders rather than asserting it does — this script exists
+# precisely because "installed" and "works" are not the same thing here.
+for _rd in "/opt/jt-glogarch/deploy/report-deps.sh" "$(dirname "$0")/../deploy/report-deps.sh"; do
+    if [ -f "$_rd" ]; then source "$_rd"; verify_report_engine || true; break; fi
+done
+
 echo ""
 echo "Done. Open the Web UI → Reports (beta). The 'render engine' notice should"
 echo "be gone; create a report and click Generate."

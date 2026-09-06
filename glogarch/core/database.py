@@ -220,8 +220,8 @@ class ArchiveDB:
         """
         try:
             self._conn.rollback()
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Rollback failed while restoring the connection", error=str(e))
         # Crash recovery: an archive flips to IMPORTING while being read by an
         # in-flight import job. The importer's finally block flips it back to
         # COMPLETED, but if the process is killed (-9 / OOM / crash), the row
@@ -1455,8 +1455,8 @@ class ArchiveDB:
                 sparkline["ops"].append({"day": hour_label, "count": ops})
                 sparkline["login_failures"].append({"day": hour_label, "count": errs})
                 sparkline["sensitive"].append({"day": hour_label, "count": sens})
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Audit sparkline query failed - the audit dashboard will show empty charts", error=str(e))
 
         return {
             "total": total,

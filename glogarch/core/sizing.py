@@ -31,6 +31,10 @@ from __future__ import annotations
 import os
 import re
 
+from glogarch.utils.logging import get_logger
+
+log = get_logger("core.sizing")
+
 _GB = 1024.0
 _DAYS_PER_MONTH = 30.44   # keep in sync with core/retention_estimate.py
 
@@ -65,8 +69,8 @@ def read_host_resources() -> dict:
         info["swap_total_mb"] = st
         if st is not None and sf is not None:
             info["swap_used_mb"] = max(0.0, st - sf)
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("Could not parse /proc/meminfo", error=str(e))
     return info
 
 
@@ -108,8 +112,8 @@ def detect_local_jvms() -> dict:
                     mb = _xmx_to_mb(tok[4:])
                     if mb and (found[key] is None or mb > found[key]):
                         found[key] = mb
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("Could not scan /proc for co-located JVM heap sizes", error=str(e))
     found["colocated"] = bool(found["graylog_heap_mb"] or found["opensearch_heap_mb"])
     return found
 

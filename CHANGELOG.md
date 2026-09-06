@@ -2,6 +2,159 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.14.5] - 2026-09-06
+
+### Fixed
+
+- **The OpenSearch-direct scan no longer drops records on a multi-shard index —
+  and it got faster doing it.** 1.14.4 could only DETECT the loss. The cursor
+  sorted on `(timestamp, _doc)`, and `_doc` is a shard-local Lucene id: two
+  documents on different shards can carry the same key, and the next
+  `search_after` then excludes BOTH, including the one never returned. The scan
+  now runs **one cursor per shard** (`preference=_shards:N|_primary`, which pins
+  the copy — `_shards:N` alone may alternate between primary and replica, whose
+  `_doc` order differs, reintroducing the same bug) and MERGES the streams back
+  into global timestamp order. The merge is not cosmetic: the exporter closes and
+  records a chunk archive the moment a timestamp crosses an hour boundary, so a
+  scan that restarted at t0 per shard would reopen chunks it had already written.
+  Single-shard indices keep the old single-cursor path exactly, and
+  `JT_OS_SCAN_SINGLE_CURSOR=1` forces it back as an emergency escape hatch.
+
+  Measured on a real 4-shard, 1,261,300-document production index — the old
+  cursor lost records on two consecutive runs (38 and 145 documents), the new
+  one returned every document in ascending order, and it did it in **61 s
+  against the old scan's 82 s**. The speed-up is the point of the design: a
+  fan-out `_search` asks all N shards for a full page and discards (N-1)/N of it
+  at the coordinator, while each shard-pinned request keeps everything it
+  collects. Getting there needed two measured corrections — refilling a shard
+  only when its buffer ran dry threw away the parallelism a fan-out query has by
+  construction (180 s at the same request count), and the 500-document page floor,
+  written for one cursor, became a memory floor when applied to every shard
+  (2 x 4 x 500 x 9 KB = 36 MB in flight against a 16 MB budget). Each shard now
+  keeps a page in hand and a page in flight, with the byte budget divided by 2N,
+  so peak memory matches the old single-page scan.
+
+  *A gap already written into an archive is still not self-healing:* the chunk is
+  recorded as covering its time range, so dedup suppresses it until that archive
+  is deleted and the window re-exported.
+
+### Added
+
+- **Air-gapped FIRST INSTALL (`deploy/install-offline.sh`).** There was no such
+  path: `upgrade-offline.sh` aborts when `/opt/jt-glogarch/glogarch` is absent
+  and `install.sh` always reached for PyPI, so a new customer on an isolated
+  network had nothing to run — the offline bundle could only ever upgrade a
+  host that had once been online. `install.sh` now takes `--offline
+  <bundle-dir>` (pip pinned with `--no-index --find-links`, so it can never
+  silently reach for the network and hang), and `install-offline.sh` stages the
+  bundle's source tree into `/opt` and hands over to that same installer — one
+  code path for online and offline, so they cannot drift apart. The bundle now
+  ships the whole `deploy/` directory plus `setuptools`/`wheel`, and the build
+  aborts rather than producing a bundle that quietly only upgrades. Each script
+  refuses the other's job: an existing install is sent to `upgrade-offline.sh`
+  (only that one backs up the database first), and a fresh host is sent to
+  `install-offline.sh`. A Python minor-version mismatch against the bundle's
+  compiled wheels is caught up front, before anything is written.
+
+### Fixed
+
+- **An offline install could report success while PDF rendering was broken.**
+  Chromium's OS shared libraries (`libnss3`, `libatk1.0-0`, `libxkbcommon0`,
+  `libgbm1`, `libasound2`, …) cannot be carried in a tarball, and offline mode
+  deliberately skips `playwright install-deps` (it needs apt and a network) — so
+  the browser installed, the upgrade printed "Complete", and the failure surfaced
+  hours later in a scheduled report. `verify_report_engine()` now actually
+  launches Chromium as the service user and renders a PDF; on failure it names
+  the missing shared libraries via `ldd`, which is the one thing an air-gapped
+  operator can act on. Wired into `install.sh`, `upgrade.sh`,
+  `upgrade-offline.sh` and `install-report-engine.sh`, and reported in each
+  final summary. Documentation said to verify this by hand — a check nobody
+  runs is not a check.
+
+- **`install.sh` could exit 127 at its last step after a perfectly successful
+  install.** The systemd block was gated on `/etc/systemd/system` existing —
+  which it does on hosts with no `systemctl` at all (containers, minimal
+  images) — so the script died on the very last command and read as a failed
+  install. It now requires `systemctl` itself and says plainly that the unit was
+  not installed. Found by running the new air-gapped install for real, with the
+  network removed, rather than reading the script.
+- **The render check could report "no Chromium installed" while it sat right
+  there.** The `ldd` lookup hardcoded `chromium-*/chrome-linux/chrome`; current
+  Playwright uses `chrome-linux64/` and a separate headless-shell build, so the
+  missing-library list — the whole point of the check — was suppressed exactly
+  when it was needed. It now finds the binaries, and the error excerpt shows the
+  line that says what failed instead of Playwright's teardown chatter.
+
+### Changed
+
+- **The silent-`except` backlog is cleared: 125 sites -> 15.** The 2026-07 audit
+  fixed the 28 dangerous ones and left 49 "degrades silently" tracked for a
+  later batch; this is that batch. Every remaining site that could hide a real
+  degradation now logs what it swallowed — `log.warning` where an operator would
+  want to know (an audit record that was never written, an archive that was
+  never sealed, a notification that never went out, a report schedule that
+  outlived its report, a target stream left paused, an index that never came
+  ready after mapping remediation), `log.debug` for genuine best-effort probes.
+  The audit listener's 21 cache-refresh sites — the largest cluster, and the
+  reason usernames could silently degrade to IP-only resolution — are all
+  covered. What remains is benign by construction: `strptime` format-probing
+  loops, `FileNotFoundError` on a file already gone, APScheduler's
+  `JobLookupError` for a job that is not registered, and a `/proc` read for a
+  process that exited mid-scan. A new sweep
+  (`test_remaining_silent_excepts_are_narrow`) pins that: a broad `except:` /
+  `except Exception:` that does nothing may not come back anywhere, and the
+  ratchet budget drops 125 -> 15.
+
+## [1.14.4] - 2026-09-05
+
+### Fixed
+
+- **An OpenSearch-direct scan could silently skip records — now it fails
+  loudly.** `search_after` paginates on `(timestamp, _doc)`, but `_doc` is a
+  **shard-local** Lucene id: two documents on different shards can carry the
+  same sort key, and the next page excludes BOTH, including the one never
+  returned. Nothing compared what was read against what the index held, and the
+  chunks already written are recorded as covering their time range — so the gap
+  was suppressed by dedup on every later run and could never be noticed.
+  Production Graylog indices have **4 shards**; the e2e cluster has **1**, which
+  is why no data-path test could catch it. Every scan now reconciles `fetched`
+  against the pre-scan `_count` and raises `IncompleteIndexScan` naming the
+  counts and the shard count. **This is detection, not a cure** — the cursor
+  itself still needs a point-in-time or per-shard scan, and a gap inside an
+  already-recorded chunk cannot be recovered without deleting that archive.
+  Reading *more* than the count is drift, not loss, and is only logged; a
+  cancel or backpressure stop closes the generator and is never reported as
+  loss. Found by external review.
+- **The upgrade claimed to add `op_audit.retention_days` and did not.** The
+  `sed` appended after a `listen_port` line, which the minimal block the Web UI
+  writes (`op_audit:` + `enabled:`) does not have — so it matched nothing,
+  changed nothing, and the message above it announced success anyway. It now
+  inserts after the `op_audit:` header, verifies the result, and says what
+  actually happened. Verified against four real block shapes. No functional
+  impact (the built-in default of 180 days applied regardless), but an upgrade
+  that reports an edit it did not make is a defect in its own right.
+
+### Changed
+
+- **Record search is documented.** The feature shipped in 1.14.0 with nothing
+  in either README, nothing on the docs site and no screenshots — it existed
+  only in the changelog. Both READMEs now carry a section (what each of the two
+  input boxes does, why the time range is mandatory, highlighting, CSV/JSON
+  download, and an explicit statement of what it is *not*), the docs site has a
+  feature card and a gallery entry, and there are screenshots in both languages.
+- **The offline-upgrade documentation was wrong in three places.** It said the
+  PDF-report engine is **not** in the bundle; the bundle has shipped the
+  Playwright wheel, PyMuPDF, Pillow, a matching Chromium (~277 MB) and a CJK
+  font for several releases, and `upgrade-offline.sh` installs all of them —
+  measured 373 MB / 46 wheels for 1.14.3. It also omitted the one thing that
+  actually blocks air-gapped hosts: Chromium's OS shared libraries cannot be
+  carried in a tarball and `playwright install-deps` is deliberately skipped
+  offline, so rendering fails at runtime while the upgrade reports success. And
+  the Chinese text said the build host needed a matching Python *major* version
+  when the wheels are `cp310` and require the *minor* version to match.
+  Verified end to end by building from the published tarball and installing it
+  on a host with PyPI blackholed.
+
 ## [1.14.3] - 2026-09-03
 
 ### Fixed

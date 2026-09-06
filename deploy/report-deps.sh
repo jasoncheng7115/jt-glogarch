@@ -86,3 +86,113 @@ install_report_deps() {
     chown -R "$service_user":"$service_user" "$browsers_dir" 2>/dev/null || true
     echo "=== Reports deps step complete ==="
 }
+
+# --- Verify the render engine actually WORKS ------------------------------
+#
+# Installing the Chromium tarball is NOT proof that reports will render. The
+# browser needs OS shared libraries (libnss3, libatk1.0-0, libxkbcommon0,
+# libgbm1, libasound2, …) that a tarball cannot carry, and in offline mode
+# `playwright install-deps` is deliberately skipped (it needs apt + network).
+# Before this check, an air-gapped upgrade printed "Complete" and the first
+# scheduled report failed hours later with a browser launch error.
+#
+# So: actually launch Chromium AS THE SERVICE USER and render a page. If it
+# fails, name the missing shared libraries (ldd) — that is the one thing the
+# operator can act on, and they cannot apt-get it.
+#
+#   verify_report_engine        -> 0 = renders, 1 = does not (never fatal)
+verify_report_engine() {
+    local service_user="jt-glogarch"
+    local install_dir="/opt/jt-glogarch"
+    local browsers_dir="$install_dir/.playwright"
+    local out rc
+
+    echo ""
+    echo "=== Verifying the PDF render engine (real Chromium launch) ==="
+
+    if ! python3 -c "import playwright" >/dev/null 2>&1; then
+        echo "  ⚠ playwright is not installed — PDF Reports are unavailable."
+        echo "    Everything else works; install the [report] extra to enable them."
+        return 1
+    fi
+
+    local probe
+    probe=$(mktemp /tmp/jt-render-check-XXXXXX.py)
+    cat > "$probe" <<'PYEOF'
+import asyncio, os, sys
+os.makedirs(os.environ.get("TMPDIR", "/tmp"), exist_ok=True)
+from playwright.async_api import async_playwright
+
+
+async def main():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(args=["--no-sandbox"])
+        page = await browser.new_page()
+        await page.set_content("<h1>jt-glogarch render check</h1>")
+        pdf = await page.pdf(format="A4")
+        await browser.close()
+        if not pdf or len(pdf) < 500:
+            print("PDF came back empty", file=sys.stderr)
+            sys.exit(2)
+
+
+asyncio.run(main())
+print("OK")
+PYEOF
+    chmod 644 "$probe"
+    out=$(sudo -u "$service_user" env \
+            PLAYWRIGHT_BROWSERS_PATH="$browsers_dir" \
+            TMPDIR="$browsers_dir/tmp" \
+            python3 "$probe" 2>&1)
+    rc=$?
+    rm -f "$probe"
+
+    if [ $rc -eq 0 ]; then
+        echo "  ✅ Chromium launched and rendered a PDF — PDF Reports are ready."
+        return 0
+    fi
+
+    echo "  ❌ PDF rendering does NOT work on this host."
+    echo "     (Archiving, restore and every other feature are unaffected.)"
+    echo ""
+    # Playwright pads the tail with process-teardown chatter; show the lines that
+    # actually say what went wrong, and fall back to the tail if none match.
+    echo "  Error:"
+    local why
+    why=$(echo "$out" | grep -viE '^\s*- \[pid=' \
+            | grep -iE 'error|missing|cannot|failed|shared librar' | head -6)
+    [ -z "$why" ] && why=$(echo "$out" | tail -6)
+    echo "$why" | sed 's/^/    /'
+
+    # Name the missing OS libraries — the actionable part on an air-gapped box.
+    # Playwright's layout moves around (chrome-linux/ vs chrome-linux64/, plus a
+    # separate headless-shell build), so FIND the binaries instead of guessing a
+    # path: a wrong guess prints "no Chromium installed" at the exact moment the
+    # operator needs the library list, which is worse than saying nothing.
+    local bins
+    bins=$(find "$browsers_dir" -maxdepth 4 -type f \
+             \( -name chrome -o -name headless_shell -o -name chrome-headless-shell \) \
+             2>/dev/null)
+    if [ -n "$bins" ] && command -v ldd >/dev/null 2>&1; then
+        local missing
+        missing=$(echo "$bins" | while read -r b; do
+                      ldd "$b" 2>/dev/null | awk '/not found/{print $1}'
+                  done | sort -u)
+        if [ -n "$missing" ]; then
+            echo ""
+            echo "  Missing shared libraries (install these from your distro media):"
+            echo "$missing" | sed 's/^/    /'
+            echo ""
+            echo "  On Debian/Ubuntu these usually come from:"
+            echo "    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2"
+            echo "    libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3"
+            echo "    libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2"
+            echo "  Online hosts can simply run:  python3 -m playwright install-deps chromium"
+        fi
+    elif [ -z "$bins" ]; then
+        echo ""
+        echo "  No Chromium binary found under $browsers_dir —"
+        echo "  the browser was never installed (offline bundle without Chromium?)."
+    fi
+    return 1
+}

@@ -93,7 +93,7 @@ sudo systemctl enable --now jt-glogarch</code></pre>
     </div>
     <div class="code-block" hidden id="tab-offline-wrap">
       <button class="copy-btn" data-copy="offline">Copy</button>
-      <pre id="tab-offline"><code id="cmd-offline"># 1) On any internet-connected Linux (same Python 3.10 / x86_64 as the target)
+      <pre id="tab-offline"><code id="cmd-offline"># 1) On any internet-connected Linux (SAME Python minor version + CPU arch as the target)
 curl -L -o src.tar.gz \
   https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz
 tar xzf src.tar.gz && cd jt-glogarch-main
@@ -102,7 +102,9 @@ sha256sum dist/jt-glogarch-*-offline.tar.gz # note it, verify after transfer
 
 # 2) Carry the bundle in (USB / scp), verify the sha256, then on the host:
 tar xzf jt-glogarch-*-offline.tar.gz && cd jt-glogarch-*-offline
-sudo bash upgrade-offline.sh                # pip never touches the network; DB backed up first</code></pre>
+sudo bash upgrade-offline.sh                # pip never touches the network; DB backed up first
+# Bundle (~370 MB) includes Chromium for PDF reports, but NOT its OS libs
+# (libnss3, libatk1.0-0, libgbm1, …) — install those from your own media.</code></pre>
     </div>
     <dl class="post-note">
       <dt>Web UI</dt>
@@ -148,6 +150,15 @@ sudo bash upgrade-offline.sh                # pip never touches the network; DB 
       </div>
       <h3>OpenSearch Direct export</h3>
       <p>Bypasses Graylog and queries OpenSearch directly. <strong>~5× faster</strong>. Per-index export with <code class="kbd">search_after</code> pagination (no 10K limit), host failover, transient retry on 500/502/503/429.</p>
+    </div>
+    <div class="mode">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+        </svg>
+      </div>
+      <h3>Record search (inside the archives)</h3>
+      <p>Find records in the archived files without importing them back into Graylog first. A time range is mandatory — it is the only index. Keywords match anywhere in the record, field filters require an exact value, and matches are <strong>highlighted</strong>. Download <strong>every page</strong> of results as CSV / JSON Lines, streamed straight to disk. A quick look, not a query engine.</p>
     </div>
     <div class="mode">
       <div class="icon">
@@ -291,6 +302,10 @@ sudo bash upgrade-offline.sh                # pip never touches the network; DB 
     <button class="shot" type="button" data-lightbox="screenshots/7_reports_en.png">
       <img class="ss-img" src="screenshots/7_reports_en.png" alt="Reports" loading="lazy">
       <div class="label">Reports<small>Branded PDF reports from dashboards, scheduling &amp; email</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="screenshots/8_search_en.png">
+      <img class="ss-img" src="screenshots/8_search_en.png" alt="Record search" loading="lazy">
+      <div class="label">Record search<small>Search inside the archives, matches highlighted, CSV / JSON download</small></div>
     </button>
   </div>
 

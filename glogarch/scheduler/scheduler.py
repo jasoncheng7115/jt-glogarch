@@ -450,8 +450,8 @@ class ArchiveScheduler:
                     msg = f"Verify: {len(result.corrupted)} corrupted, {len(result.missing_files)} missing"
                     loop = asyncio.get_event_loop()
                     loop.create_task(notify_error("Verify", msg))
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("Verify-failure notification failed - corrupted archives were NOT reported to any channel", error=str(e))
         except Exception as e:
             from glogarch.utils.sanitize import sanitize
             log.error("Scheduled verify failed", error=str(e))
@@ -632,7 +632,8 @@ class ArchiveScheduler:
                 continue
             try:
                 cfg = _json.loads(sched.config_json) or {}
-            except Exception:
+            except Exception as e:
+                log.warning("Cleanup schedule config_json could not be parsed - its retention was NOT reconciled", error=str(e))
                 continue
             stored = cfg.get("retention_days")
             try:
@@ -741,8 +742,8 @@ class ArchiveScheduler:
         job_id = f"report:{name}"
         try:
             self.scheduler.remove_job(job_id)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("No existing report job to remove before rescheduling", error=str(e))
         rep = self.db.get_report(name)
         if not rep or not rep.get("enabled"):
             return
@@ -761,8 +762,8 @@ class ArchiveScheduler:
     def remove_report(self, name: str) -> None:
         try:
             self.scheduler.remove_job(f"report:{name}")
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Report job could not be removed - it may keep firing until restart", error=str(e))
 
     def _run_report(self, name: str) -> None:
         """Generate a scheduled report in a worker thread (Chromium is heavy)."""

@@ -411,8 +411,8 @@ class OpenSearchExporter:
                     duration_seconds=result.duration_seconds,
                     mode="opensearch",
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Export-complete notification failed - the run itself succeeded", error=str(e))
 
         except Exception as e:
             self.db.update_job(job_id, status=JobStatus.FAILED,
@@ -422,8 +422,8 @@ class OpenSearchExporter:
             try:
                 from glogarch.notify.sender import notify_error
                 await notify_error("Export (OpenSearch)", str(e))
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Export-error notification failed - the failure was NOT reported to any channel", error=str(e))
             raise
         finally:
             _os_export_lock.pop(server_key, None)
@@ -432,8 +432,8 @@ class OpenSearchExporter:
             if _gl is not None:
                 try:
                     await _gl.__aexit__(None, None, None)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("Could not close the Graylog client after the export", error=str(e))
 
         return result
 
@@ -643,8 +643,8 @@ class OpenSearchExporter:
                 try:
                     from glogarch.integrity import seal_archive
                     seal_archive(self.integrity, self.db, record)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("Archive could not be sealed - tamper-evidence is NOT in place for this archive", error=str(e))
                 file_count += 1
                 result.original_bytes += original_bytes
                 result.compressed_bytes += file_size
@@ -817,16 +817,16 @@ class OpenSearchExporter:
             if writer and writer._file:
                 writer._file.close()
                 writer._file = None
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Could not close the archive writer during partial-file cleanup", error=str(e))
         try:
             if path.exists():
                 path.unlink()
             sha_path = path.with_suffix(path.suffix + ".sha256")
             if sha_path.exists():
                 sha_path.unlink()
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Could not remove a partial archive file - a truncated archive may remain on disk", error=str(e))
 
     async def _resolve_prefixes(
         self, index_prefix: str | None, index_set_ids: list[str] | None

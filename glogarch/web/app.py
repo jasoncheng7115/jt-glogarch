@@ -197,8 +197,8 @@ def create_app() -> FastAPI:
         try:
             secret_file.write_text(session_secret)
             secret_file.chmod(0o600)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Could not persist the session secret - every restart will invalidate all sessions", error=str(e))
 
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(APIAuthMiddleware)

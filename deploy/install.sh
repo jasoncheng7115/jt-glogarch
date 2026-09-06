@@ -28,17 +28,41 @@ fi
 #   --ca-bundle <file>   verify against a custom CA (e.g. the proxy root CA)
 #   --insecure           skip TLS verification for this run (like 'curl -k')
 # Both also readable from the environment (JT_CA_BUNDLE / JT_INSECURE).
+#   --offline [<bundle-dir>]  install with ZERO network: every wheel, plus
+#                        Chromium and the CJK font, comes from an offline
+#                        bundle built by scripts/build-offline-bundle.sh.
+#                        Defaults to the directory this script lives in, which
+#                        is where install-offline.sh calls it from.
+OFFLINE_DIR=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --ca-bundle) JT_CA_BUNDLE="$2"; shift 2 ;;
         --ca-bundle=*) JT_CA_BUNDLE="${1#*=}"; shift ;;
         --insecure) JT_INSECURE=1; shift ;;
+        --offline)
+            if [ -n "$2" ] && [ -d "$2" ]; then OFFLINE_DIR="$2"; shift 2
+            else OFFLINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; shift; fi ;;
+        --offline=*) OFFLINE_DIR="${1#*=}"; shift ;;
         -h|--help)
-            echo "Usage: sudo bash deploy/install.sh [--ca-bundle <file>] [--insecure]"
+            echo "Usage: sudo bash deploy/install.sh [--ca-bundle <file>] [--insecure] [--offline <bundle-dir>]"
             exit 0 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
+
+# Offline mode: point pip at the bundle's wheels and never at an index. An
+# air-gapped host has no PyPI, and a pip that silently falls back to the
+# network would hang for minutes and then fail — so --no-index is explicit.
+PIP_SRC=""
+if [ -n "$OFFLINE_DIR" ]; then
+    if ! ls "$OFFLINE_DIR"/jt_glogarch-*.whl >/dev/null 2>&1; then
+        echo "Error: --offline given but no jt_glogarch-*.whl in $OFFLINE_DIR"
+        echo "       Point --offline at an extracted offline bundle."
+        exit 1
+    fi
+    PIP_SRC="--no-index --find-links=$OFFLINE_DIR"
+    echo "OFFLINE mode: installing from $OFFLINE_DIR (no network will be used)"
+fi
 if [ -f "$INSTALL_DIR/deploy/tls-env.sh" ]; then
     source "$INSTALL_DIR/deploy/tls-env.sh"
 else
@@ -97,13 +121,31 @@ usermod -aG systemd-journal "$SERVICE_USER" 2>/dev/null || true
 # Ensure setuptools is new enough to read pyproject.toml metadata
 echo ""
 echo "Upgrading setuptools and wheel..."
-$PIP install $PIP_TLS_OPTS $PIP_FLAGS --upgrade "setuptools>=68.0" wheel 2>&1 | tail -1
+if [ -n "$OFFLINE_DIR" ]; then
+    # Only if the bundle actually carries them; the system copies are normally
+    # new enough, and a hard failure here would abort an otherwise fine install.
+    $PIP install $PIP_SRC $PIP_FLAGS --upgrade "setuptools>=68.0" wheel 2>&1 | tail -1 \
+        || echo "  (not in the bundle — using the system setuptools/wheel)"
+else
+    $PIP install $PIP_TLS_OPTS $PIP_FLAGS --upgrade "setuptools>=68.0" wheel 2>&1 | tail -1
+fi
 
 # Install Python dependencies and package
 # Clean any stale build artifacts to ensure latest code is installed
 rm -rf "$INSTALL_DIR/build" "$INSTALL_DIR"/*.egg-info 2>/dev/null
 echo ""
 echo "Installing jt-glogarch and dependencies..."
+if [ -n "$OFFLINE_DIR" ]; then
+    # Install the prebuilt wheel + every dependency from the bundle. Building
+    # from the source tree would need a network for build deps.
+    OFFLINE_WHEEL=$(ls "$OFFLINE_DIR"/jt_glogarch-*.whl | head -1)
+    $PIP install $PIP_SRC $PIP_FLAGS --no-build-isolation "$OFFLINE_WHEEL" 2>&1 | tail -2
+    $PIP install $PIP_SRC $PIP_FLAGS --no-build-isolation --force-reinstall --no-deps "$OFFLINE_WHEEL" 2>&1 | tail -1
+    # The [report] extra is not pulled in by a bare wheel install — take it by
+    # name from the bundle, and carry on without it if this bundle predates it.
+    $PIP install $PIP_SRC $PIP_FLAGS --no-build-isolation playwright pymupdf pillow 2>&1 | tail -1 \
+        || echo "  (no report wheels in this bundle — PDF Reports unavailable)"
+else
 $PIP install $PIP_TLS_OPTS $PIP_FLAGS --no-build-isolation --no-cache-dir --force-reinstall --no-deps "$INSTALL_DIR"
 # Install runtime deps + the [report] extra (Playwright) so PDF Reports work
 # out of the box. Bracket-extra syntax requires the path quoted.
@@ -116,13 +158,20 @@ if ! $PIP install $PIP_TLS_OPTS $PIP_FLAGS --no-build-isolation --no-cache-dir "
     echo "  (deps install hit a distro-managed package — retrying with --ignore-installed)"
     $PIP install $PIP_TLS_OPTS $PIP_FLAGS --ignore-installed --no-build-isolation --no-cache-dir "$INSTALL_DIR"[report]
 fi
+fi
 echo ""
 echo "Python packages installed OK"
 
 # --- PDF Reports host deps: Chromium browser + CJK font (best-effort) ---
+REPORT_ENGINE_OK=unknown
 if [ -f "$INSTALL_DIR/deploy/report-deps.sh" ]; then
     source "$INSTALL_DIR/deploy/report-deps.sh"
-    install_report_deps "$PIP_FLAGS"
+    install_report_deps "$PIP_FLAGS" "$OFFLINE_DIR"
+    # Installing the browser is not proof that it RUNS — verify by launching it.
+    # Offline hosts especially: the OS shared libraries Chromium needs cannot be
+    # carried in a tarball, so this is where that shows up, not hours later in a
+    # scheduled report.
+    if verify_report_engine; then REPORT_ENGINE_OK=yes; else REPORT_ENGINE_OK=no; fi
 fi
 
 # --- Create directories ---
@@ -206,7 +255,11 @@ echo "  $ARCHIVE_DIR => $SERVICE_USER"
 echo "  $CONFIG_DIR  => $SERVICE_USER"
 
 # --- Install systemd service (optional) ---
-if [ -d /etc/systemd/system ]; then
+# /etc/systemd/system can exist on a host with no systemctl (containers, some
+# minimal images). Requiring only the directory made the script die 127 at the
+# very last step — after a completely successful install — which reads as a
+# failed install.
+if [ -d /etc/systemd/system ] && command -v systemctl &>/dev/null; then
     echo ""
     # Only prompt when stdin is an interactive terminal. Under a piped /
     # non-interactive install (ssh 'bash ...', curl | bash, redirected stdin)
@@ -241,8 +294,19 @@ if [ -d /etc/systemd/system ]; then
     fi
 fi
 
+if [ ! -d /etc/systemd/system ] || ! command -v systemctl &>/dev/null; then
+    echo ""
+    echo "No systemd on this host — the service unit was NOT installed."
+    echo "  Start manually: sudo -u $SERVICE_USER python3 -m glogarch server"
+fi
+
 echo ""
 echo "=== Installation Complete ==="
+if [ "$REPORT_ENGINE_OK" = "no" ]; then
+    echo ""
+    echo "  NOTE: PDF Reports will NOT render on this host (see the check above)."
+    echo "        Archiving, restore, scheduling and the Web UI are unaffected."
+fi
 echo ""
 echo "Next steps:"
 echo "  1. Edit $INSTALL_DIR/config.yaml with your Graylog server details"

@@ -96,7 +96,7 @@ sudo systemctl enable --now jt-glogarch</code></pre>
     </div>
     <div class="code-block" hidden id="tab-offline-wrap">
       <button class="copy-btn" data-copy="offline">複製</button>
-      <pre id="tab-offline"><code id="cmd-offline"># ① 在任一台可上網的 Linux（Python 3.10／x86_64 需與目標主機相同）
+      <pre id="tab-offline"><code id="cmd-offline"># ① 在任一台可上網的 Linux（Python 次要版本與 CPU 架構需與目標主機相同）
 curl -L -o src.tar.gz \
   https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz
 tar xzf src.tar.gz && cd jt-glogarch-main
@@ -105,7 +105,9 @@ sha256sum dist/jt-glogarch-*-offline.tar.gz # 記下校驗值
 
 # ② 以 USB／scp 把離線包帶進無外網主機，核對 sha256 後：
 tar xzf jt-glogarch-*-offline.tar.gz && cd jt-glogarch-*-offline
-sudo bash upgrade-offline.sh                # pip 全程不連網；會先自動備份 DB</code></pre>
+sudo bash upgrade-offline.sh                # pip 全程不連網；會先自動備份 DB
+# 離線包（約 370 MB）已含 PDF 報表用的 Chromium，但不含它需要的系統函式庫
+# （libnss3、libatk1.0-0、libgbm1…），請自行從貴站台的安裝媒體安裝。</code></pre>
     </div>
     <dl class="post-note">
       <dt>Web UI</dt>
@@ -150,6 +152,15 @@ sudo bash upgrade-offline.sh                # pip 全程不連網；會先自動
       </div>
       <h3>OpenSearch Direct 匯出</h3>
       <p>繞過 Graylog 直接查 OpenSearch，<strong>速度約 5 倍</strong>。逐 index 匯出、<code class="kbd">search_after</code> 分頁無 10K 限制、多主機 failover、500/502/503/429 自動重試。</p>
+    </div>
+    <div class="mode">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+        </svg>
+      </div>
+      <h3>記錄搜尋（歸檔內直接查）</h3>
+      <p>不必先匯回 Graylog 就能在歸檔檔案裡找記錄。時間範圍必填（那是唯一的索引），關鍵字比對整筆記錄、欄位條件要求完全相符，命中處以<strong>醒目提示</strong>標出。可把<strong>所有分頁</strong>的結果下載成 CSV／JSON Lines，串流寫入磁碟。這是簡易搜尋，不是查詢引擎。</p>
     </div>
     <div class="mode">
       <div class="icon">
@@ -290,6 +301,10 @@ sudo bash upgrade-offline.sh                # pip 全程不連網；會先自動
     <button class="shot" type="button" data-lightbox="screenshots/7_reports_zhtw.png">
       <img class="ss-img" src="screenshots/7_reports_zhtw.png" alt="統計報表" loading="lazy">
       <div class="label">統計報表<small>從儀表板產生品牌化 PDF 報表，支援排程與 Email</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="screenshots/8_search_zhtw.png">
+      <img class="ss-img" src="screenshots/8_search_zhtw.png" alt="記錄搜尋" loading="lazy">
+      <div class="label">記錄搜尋<small>直接在歸檔內查記錄、命中處醒目提示、可下載 CSV／JSON</small></div>
     </button>
   </div>
 

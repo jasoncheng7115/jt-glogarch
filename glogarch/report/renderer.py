@@ -40,8 +40,8 @@ if _bp:
     try:
         os.makedirs(_tmp, exist_ok=True)
         os.environ.setdefault("TMPDIR", _tmp)
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Could not create the Playwright TMPDIR - PDF rendering may fail", error=str(e))
 
 # A4 in CSS px at 96dpi is ~794x1123; we let Chromium handle page sizing.
 # The top/bottom margins hold the brand band (BAND_MM) PLUS a gap so page
@@ -138,8 +138,8 @@ async def html_to_pdf(
             await page.set_content(html, wait_until="networkidle")
             try:
                 await page.evaluate("document.fonts && document.fonts.ready")
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("document.fonts.ready not available before rendering", error=str(e))
             await page.wait_for_timeout(250)  # let Chart.js finish drawing
             # Reserve the top/bottom margins for the bands, but DON'T use
             # Chromium's own header/footer — it leaves a white gap at the right
@@ -226,8 +226,8 @@ def _add_toc_page_numbers(pdf: bytes, toc_titles: list, brand_color: str) -> byt
         if outline:
             try:
                 doc.set_toc(outline)
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Could not write PDF outline bookmarks", error=str(e))
         out = doc.tobytes(garbage=4, deflate=True)
         doc.close()
         return out
@@ -392,13 +392,13 @@ def _draw_bands(pdf: bytes, brand_color: str, report_title: str, header_text: st
                         _im = _PILImage.open(_BytesIO(raw))
                         if _im.height:
                             lw = min(lh * (_im.width / _im.height), 60 * _MM)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.debug("Could not measure the cover logo dimensions", error=str(e))
                     page.insert_image(fitz.Rect(pad, (band_h - lh) / 2, pad + lw,
                                                 (band_h + lh) / 2),
                                       stream=raw, keep_proportion=True, overlay=True)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("Cover logo could not be inserted - the report renders without it", error=str(e))
             # Vertically-centred text within each band (baseline tuned for 8pt).
             hy0, hy1 = band_h / 2 - 6, band_h / 2 + 8
             fy0, fy1 = H - band_h / 2 - 6, H - band_h / 2 + 8
@@ -412,8 +412,8 @@ def _draw_bands(pdf: bytes, brand_color: str, report_title: str, header_text: st
         # dedupe + compress.
         try:
             doc.subset_fonts()
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Font subsetting failed - the PDF will be larger", error=str(e))
         out = doc.tobytes(garbage=4, deflate=True)
         doc.close()
         return out

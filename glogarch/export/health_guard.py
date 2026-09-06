@@ -191,8 +191,8 @@ class HealthGuard:
         try:
             from glogarch.notify.sender import notify_error
             await notify_error("Export", msg)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Backpressure-stop notification failed - the stop was NOT reported to any channel", error=str(e))
         raise RuntimeError(msg)
 
     def _emit(self, progress: dict | None, detail: str) -> None:
@@ -204,5 +204,5 @@ class HealthGuard:
         payload.update({"phase": "backpressure_wait", "detail": detail})
         try:
             self.progress_callback(payload)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Backpressure progress callback failed", error=str(e))

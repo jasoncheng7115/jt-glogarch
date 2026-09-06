@@ -364,8 +364,8 @@ class PreflightChecker:
                                     f"is in state {inp_state.get('state')}, not RUNNING. "
                                     f"Start the input before importing."
                                 )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log.debug("Could not read the state of a GELF input", error=str(e))
 
                         # 3. override_source warning — would replace our source field
                         if attrs.get("override_source"):
@@ -408,8 +408,8 @@ class PreflightChecker:
                             f"Consider waiting for it to drain — adding more load "
                             f"may cause back-pressure throughout the import."
                         )
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Could not read the target journal depth", error=str(e))
 
             # 7. Disk space on data dir (best effort)
             try:
@@ -424,8 +424,8 @@ class PreflightChecker:
                                 f"Graylog node {node_id} is_processing=false. "
                                 f"It may not accept new messages."
                             )
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Could not read Graylog node processing state", error=str(e))
 
         return errors, warnings
 
@@ -589,8 +589,8 @@ class PreflightChecker:
                             ftype = entry.get("type")
                             if fname and ftype and fname not in out:
                                 out[fname] = ftype
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Could not parse a custom field-mapping entry", error=str(e))
         return out
 
     async def _read_actual_os_mapping(
@@ -811,8 +811,8 @@ class PreflightChecker:
                     )
                     if r.status_code == 200:
                         return
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("Index-set stats not readable yet; still waiting for the index to come online", error=str(e))
                 await asyncio.sleep(1)
 
     # ---------------------------------------- OpenSearch auto-detection
@@ -837,7 +837,8 @@ class PreflightChecker:
                         # 200 = anonymous; 401 = needs OS-specific creds
                         # Either way the host is reachable on that port
                         return url
-                except Exception:
+                except Exception as e:
+                    log.debug("OpenSearch host probe failed; trying the next candidate", error=str(e))
                     continue
         return None
 
@@ -870,8 +871,8 @@ class PreflightChecker:
                     # Make sure it's started
                     try:
                         await c.post(f"{self.api_url}/api/streams/{sid}/resume")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.warning("Could not resume the target stream - it may stay paused and drop the import", error=str(e))
                     return sid, False
 
             # Graylog 6 vs 7 have different POST /streams body schemas:

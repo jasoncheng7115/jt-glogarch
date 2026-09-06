@@ -1,5 +1,7 @@
 #!/bin/bash
-# Build a SELF-CONTAINED offline upgrade bundle for air-gapped customer sites.
+# Build a SELF-CONTAINED offline bundle for air-gapped customer sites.
+# The bundle does BOTH a first install (install-offline.sh) and an upgrade
+# (upgrade-offline.sh) — before v1.14.5 there was no air-gapped install path.
 #
 # Run this on an INTERNET-CONNECTED machine whose Python major.minor matches the
 # target host (both must be CPython 3.10 on linux x86_64 for the compiled wheels
@@ -7,9 +9,10 @@
 #
 #     dist/jt-glogarch-<ver>-offline.tar.gz
 #
-# containing: the jt_glogarch wheel + EVERY runtime dependency wheel +
-# upgrade-offline.sh. Copy that single tarball to the air-gapped host and follow
-# deploy/upgrade-offline.sh. pip on the target never touches the network.
+# containing: the jt_glogarch wheel + EVERY runtime dependency wheel + the
+# source tree + the whole deploy/ directory + Chromium and a CJK font. Copy that
+# single tarball to the air-gapped host and run install-offline.sh (fresh) or
+# upgrade-offline.sh (existing). pip on the target never touches the network.
 #
 # Usage:  bash scripts/build-offline-bundle.sh
 set -e
@@ -54,6 +57,10 @@ for line in z.read(meta).decode().splitlines():
 PYEOF
 echo "  runtime deps:"; sed 's/^/    /' "$STAGE/requirements.txt"
 python3 -m pip download --dest "$STAGE" -r "$STAGE/requirements.txt" 2>&1 | tail -3
+# A FRESH air-gapped install may sit on an older setuptools than pyproject.toml
+# needs, and it cannot reach PyPI to fix that — so carry them.
+python3 -m pip download --dest "$STAGE" "setuptools>=68.0" wheel 2>&1 | tail -1 \
+    || echo "  WARNING: could not download setuptools/wheel — a fresh install may need a newer setuptools."
 
 # 2b. PDF Reports [report] extra — bundle the Playwright wheel + its deps so the
 #     offline target can `pip install playwright` without the network.
@@ -105,6 +112,30 @@ for p in "$REPO_ROOT/deploy/report-deps.sh" "$REPO_ROOT/github/deploy/report-dep
     [ -f "$p" ] && cp "$p" "$STAGE/report-deps.sh" && break
 done
 
+# 2d. The whole deploy/ directory — needed for the air-gapped FIRST INSTALL
+#     (install-offline.sh stages these into /opt and then runs install.sh
+#     --offline). Without them the bundle could only ever upgrade.
+DEPLOY_SRC=""
+for p in "$REPO_ROOT/deploy" "$REPO_ROOT/github/deploy"; do
+    [ -d "$p" ] && DEPLOY_SRC="$p" && break
+done
+if [ -z "$DEPLOY_SRC" ]; then
+    echo "Error: deploy/ not found under $REPO_ROOT"; exit 1
+fi
+mkdir -p "$STAGE/deploy"
+for f in install.sh install-offline.sh upgrade-offline.sh report-deps.sh \
+         tls-env.sh uninstall.sh jt-glogarch.service config.yaml.example; do
+    [ -f "$DEPLOY_SRC/$f" ] && cp "$DEPLOY_SRC/$f" "$STAGE/deploy/"
+done
+if [ ! -f "$STAGE/deploy/install-offline.sh" ]; then
+    echo "Error: deploy/install-offline.sh missing — the bundle could not do a"
+    echo "       fresh air-gapped install. Aborting rather than shipping a"
+    echo "       bundle that silently only upgrades."
+    exit 1
+fi
+cp "$STAGE/deploy/install-offline.sh" "$STAGE/install-offline.sh"
+chmod +x "$STAGE/install-offline.sh" "$STAGE/deploy/"*.sh
+
 # 3. Include the source tree + upgrade script. The source is synced to
 #    /opt/jt-glogarch on the target so that `python -m glogarch` run from /opt
 #    (the CLI) uses the new code too — the wheel only updates dist-packages
@@ -128,17 +159,29 @@ fi
 cp "$UPGRADE_SH" "$STAGE/upgrade-offline.sh"
 chmod +x "$STAGE/upgrade-offline.sh"
 cat > "$STAGE/README-OFFLINE.txt" << EOF
-jt-glogarch ${VERSION} — OFFLINE upgrade bundle
-================================================
+jt-glogarch ${VERSION} — OFFLINE bundle (install AND upgrade)
+==============================================================
 On the air-gapped target host (as root):
 
   tar xzf ${BUNDLE_NAME}.tar.gz
   cd ${BUNDLE_NAME}
+
+  # FIRST INSTALL (no jt-glogarch on this host yet):
+  sudo bash install-offline.sh
+
+  # UPGRADE (jt-glogarch already installed — backs up the database first):
   sudo bash upgrade-offline.sh
 
-Requires: an existing jt-glogarch install and Python ${PYVER} on the same
-platform this bundle was built on. pip never touches the network.
+Each refuses to do the other's job, so neither can clobber a live install.
+
+Requires: Python ${PYVER} on the same platform this bundle was built on —
+compiled wheels do not load across minor versions, and install-offline.sh
+checks this before touching anything. pip never touches the network.
 Wheels included: $(ls "$STAGE"/*.whl 2>/dev/null | wc -l)
+
+After a first install the service is NOT started automatically:
+  systemctl enable --now jt-glogarch
+then open https://<this-host>:8990/ for the first-run setup wizard.
 
 PDF Reports (beta): this bundle ships the Playwright wheel, the Chromium
 browser ($([ -f "$STAGE/chromium-browser.tar.gz" ] && echo "included" || echo "MISSING")) and a CJK font
@@ -159,4 +202,6 @@ SIZE=$(du -h "dist/${BUNDLE_NAME}.tar.gz" | cut -f1)
 echo ""
 echo "=== Bundle ready ==="
 echo "  dist/${BUNDLE_NAME}.tar.gz  (${SIZE}, ${WHEELS} wheels)"
-echo "  Copy it to the air-gapped host and run upgrade-offline.sh."
+echo "  Copy it to the air-gapped host, then:"
+echo "    fresh host    -> sudo bash install-offline.sh"
+echo "    existing host -> sudo bash upgrade-offline.sh"

@@ -16,6 +16,9 @@ from rich.table import Table
 from glogarch.core.config import Settings, load_settings, get_settings
 from glogarch.core.database import ArchiveDB
 from glogarch.utils.logging import setup_logging
+from glogarch.utils.logging import get_logger
+
+log = get_logger("cli")
 
 console = Console()
 
@@ -1272,8 +1275,8 @@ def audit_status():
             parsed = urlparse(srv.url)
             if parsed.hostname:
                 ips.add(parsed.hostname)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Could not parse a configured server URL for the audit allowlist", error=str(e))
     if ips:
         console.print(f"  Config server IPs: {', '.join(sorted(ips))}")
 

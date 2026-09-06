@@ -165,8 +165,8 @@ class Verifier:
                 except RuntimeError:
                     asyncio.run(notify_verify_failed(
                         result.corrupted, result.missing_files, tampered=result.tampered))
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Verify-failure notification failed - corrupted archives were NOT reported to any channel", error=str(e))
 
         return result
 

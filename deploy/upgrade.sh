@@ -172,12 +172,27 @@ op_audit:
 OPAUDIT
         chown jt-glogarch:jt-glogarch "$CONFIG_FILE"
     else
-        # op_audit exists — ensure retention_days is present within op_audit block
+        # op_audit exists — ensure retention_days is present within op_audit block.
         if ! sed -n '/^op_audit:/,/^[^ ]/p' "$CONFIG_FILE" | grep -q "retention_days"; then
             echo "  Adding op_audit.retention_days: 180..."
-            sed -i '/^op_audit:/,/^[^ ]/{/listen_port/a\  retention_days: 180
+            # Insert straight after the `op_audit:` header. The previous version
+            # appended after a `listen_port` line, which does not exist in the
+            # minimal block the Web UI writes (`op_audit:` + `enabled:` only) —
+            # so on those hosts the sed matched nothing, changed nothing, and
+            # the echo above still announced success. Verified against four real
+            # block shapes: minimal, with listen_port, already-present, and
+            # op_audit as the last block in the file.
+            sed -i '0,/^op_audit:/{/^op_audit:/a\  retention_days: 180
 }' "$CONFIG_FILE"
             chown jt-glogarch:jt-glogarch "$CONFIG_FILE"
+            # Say what actually happened. An upgrade that reports an edit it did
+            # not make is worse than one that admits it could not.
+            if sed -n '/^op_audit:/,/^[^ ]/p' "$CONFIG_FILE" | grep -q "retention_days"; then
+                echo "    added."
+            else
+                echo "    ⚠ could not add it automatically — set op_audit.retention_days"
+                echo "      manually if you want it explicit (the built-in default 180 applies either way)."
+            fi
         fi
     fi
 fi
@@ -203,6 +218,9 @@ fi
 if [ -f "$INSTALL_DIR/deploy/report-deps.sh" ]; then
     source "$INSTALL_DIR/deploy/report-deps.sh"
     install_report_deps "$PIP_FLAGS"
+    # Installing the browser is not proof that it RUNS (missing OS libraries are
+    # the usual cause). Launch it once and say so plainly either way.
+    verify_report_engine || true
 fi
 
 # 3b. Memory safety cap (drop-in — doesn't touch a customer-edited main unit).

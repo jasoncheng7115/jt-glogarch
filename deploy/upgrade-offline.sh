@@ -13,6 +13,10 @@
 # The bundle contains the jt-glogarch wheel AND every runtime dependency wheel,
 # so pip never touches the network (--no-index). Nothing else is required on
 # the target host except Python 3.10+ and the existing jt-glogarch install.
+#
+# NO jt-glogarch on the host yet? Use install-offline.sh from the same bundle —
+# a first install must also create the service user, certificates and unit file,
+# which this script does not do.
 
 set -e
 INSTALL_DIR="/opt/jt-glogarch"
@@ -29,9 +33,19 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-# Existing install present?
+# Existing install present? If not, this is a FIRST install — that has its own
+# script now (it must create the user, certs and service, which this one does
+# not). Point at it instead of dead-ending.
 if [ ! -d "$INSTALL_DIR/glogarch" ]; then
-    echo "Error: $INSTALL_DIR not found. Is jt-glogarch installed? (offline upgrade only)"
+    echo "No existing install found at $INSTALL_DIR."
+    if [ -f "$BUNDLE_DIR/install-offline.sh" ]; then
+        echo "This bundle can do a fresh air-gapped install — run:"
+        echo ""
+        echo "    sudo bash $BUNDLE_DIR/install-offline.sh"
+    else
+        echo "This bundle predates the offline first-install path (v1.14.5);"
+        echo "rebuild it with scripts/build-offline-bundle.sh to get one."
+    fi
     exit 1
 fi
 
@@ -126,9 +140,15 @@ pip install $PIP_FLAGS --no-index --no-build-isolation --force-reinstall --no-de
 pip install $PIP_FLAGS --no-index --find-links="$BUNDLE_DIR" --no-build-isolation playwright pymupdf pillow 2>&1 | tail -1 \
     || echo "  (no bundled report wheels — PDF Reports unavailable on this bundle)"
 # Chromium browser + CJK font come from the bundle (offline mode).
+REPORT_ENGINE_OK=unknown
 if [ -f "$BUNDLE_DIR/report-deps.sh" ]; then
     source "$BUNDLE_DIR/report-deps.sh"
     install_report_deps "$PIP_FLAGS" "$BUNDLE_DIR"
+    # A tarball cannot carry Chromium's OS shared libraries, and offline mode
+    # deliberately skips `playwright install-deps` (it needs apt + network). So
+    # the browser can be installed and still refuse to launch. Find that out
+    # HERE, not when the first scheduled report fails.
+    if verify_report_engine; then REPORT_ENGINE_OK=yes; else REPORT_ENGINE_OK=no; fi
 fi
 
 # 4. Restart
@@ -147,6 +167,11 @@ echo ""
 echo "=== Offline Upgrade Complete ==="
 echo "  $CURRENT -> $NEW"
 echo "  Health: $STATUS"
+case "$REPORT_ENGINE_OK" in
+    yes) echo "  PDF Reports: render engine verified OK" ;;
+    no)  echo "  PDF Reports: NOT working on this host (see the check above)."
+         echo "               Archiving and restore are unaffected." ;;
+esac
 
 if [ "$STATUS" != "healthy" ]; then
     echo ""

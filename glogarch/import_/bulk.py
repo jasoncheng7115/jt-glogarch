@@ -464,8 +464,8 @@ class BulkImporter:
                 err = r.json().get("error", {}).get("type", "")
                 if "resource_already_exists" in err:
                     return
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Could not parse the OpenSearch 400 response body", error=str(e))
         raise RuntimeError(
             f"Failed to create index {index_name}: HTTP {r.status_code}: {r.text[:300]}"
         )

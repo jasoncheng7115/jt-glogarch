@@ -102,8 +102,8 @@ def parse_syslog_hostname(data: bytes) -> str:
         m = _SYSLOG_HOSTNAME_RE.match(text)
         if m:
             return m.group(1)
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("Could not read the syslog hostname from the datagram", error=str(e))
     return ""
 
 
@@ -366,8 +366,8 @@ def process_raw_entry(raw: dict, max_body_size: int = 65536) -> dict:
         try:
             decoded = base64.b64decode(auth[6:]).decode("utf-8", errors="replace")
             full_token = decoded.split(":", 1)[0]
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Could not decode the Basic auth token from the request", error=str(e))
 
     # If no auth header but cookie has session ID, use it
     cookie_session = ""

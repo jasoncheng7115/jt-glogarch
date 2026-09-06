@@ -183,6 +183,35 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
       拋 `PermissionError`，於是**無聲略過備份**卻印出看似正常的「not available」
       （v1.13.82）。`test_upgrade_script.py` 已釘住偵測必須在 `$INSTALL_DIR` 下執行。
 
+**離線（air-gapped）安裝／升級（v1.14.5）** —— 靜態檢查在
+`test_static_sweeps.py::test_offline_bundle_can_do_a_first_install` 與
+`::test_report_engine_install_is_verified_not_assumed`；人工驗證必須在真的把網路
+封掉的 VM 上做（不是「我們沒有用到網路」而已）。
+
+- [ ] **離線套件能安裝到從未連過網的主機** —— `bash scripts/build-offline-bundle.sh`
+      建置後把 tarball 搬到一台沒有 jt-glogarch、也連不到 PyPI 的主機，執行
+      `sudo bash install-offline.sh`，接著 `systemctl enable --now jt-glogarch`
+      並開啟 `/setup`。*v1.14.5 之前這件事做不到：離線套件只能升級曾經連過網的
+      主機。*
+- [ ] **兩支離線指令碼不會互相越權** —— 在全新主機上執行 `upgrade-offline.sh` 會
+      指向 `install-offline.sh` 而不是就此中止；在已安裝的主機上執行
+      `install-offline.sh` 會拒絕並導向升級指令碼（只有升級指令碼會先備份資料庫）。
+- [ ] **pip 真的完全不碰網路** —— 移除預設路由後再安裝一次。`--no-index` 是明確
+      指定的；一旦退回 PyPI，會卡上好幾分鐘才失敗。
+- [ ] **Python 次版本不符會在動任何檔案之前就擋下** —— 把 `cp310` 套件放到
+      Python 3.12 主機上，必須明確指出版本不符而中止，而不是安裝到一半才丟出
+      編譯 wheel 的 ImportError。
+- [ ] **算繪引擎是驗證過的，不是假設的** —— 每支安裝指令碼都會執行
+      `verify_report_engine`，以 `jt-glogarch` 身分實際啟動 Chromium 並產出 PDF。
+      在缺少作業系統函式庫的主機上，必須印出（由 `ldd` 取得的）缺少的 `lib*.so`
+      名稱，結尾摘要必須說明 PDF 報表無法運作，同時說明封存與還原不受影響。
+      *tarball 帶不動那些函式庫，離線模式又跳過 `playwright install-deps`，
+      「裝好了」與「能用」是兩回事；過去升級會回報成功，幾小時後的排程報表才失敗。*
+- [ ] **吞掉什麼就記錄什麼** —— 任何新增 `except` 的變更之後，執行
+      `test_silent_except_count_only_goes_down`（預算 15，只能往下降）與
+      `test_remaining_silent_excepts_are_narrow`（任何位置都不得再出現什麼都不做的
+      廣泛 `except`）。*記錄裡看不到的降級，就是沒有人能診斷的降級。*
+
 ### 安全性——Bandit 原始碼掃描（每次發版，自動執行）
 
 由 `run-tests.sh` 執行；ZAP 是動態掃描，本質上看不到下列任何一項。
@@ -316,6 +345,37 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
 - [ ] **每頁 50／100／200／500／1000 要真的生效** —— 選 50 就回 50 筆
 - [ ] **過長的記錄要明確截斷，不能被裁切** —— 4,000 字的 syslog 顯示約 320 字
       加上「…」，絕不能出現中間無聲少掉一段的行
+- [ ] **OpenSearch 直連掃描若讀到的筆數少於索引宣稱的，該索引必須失敗** —— 不可
+      回報成功。`iter_index_docs` 會以掃描前的 `_count` 對帳，短少即拋出
+      `IncompleteIndexScan`。*游標是 `(timestamp, _doc)`，而 `_doc` 只在 shard
+      內唯一，所以多 shard 索引的分頁邊界可能排除一筆從未被回傳的記錄——而已寫出
+      的區塊又被記錄為涵蓋該時段，缺口會被重複資料刪除邏輯在之後每次執行都藏起來。
+      正式環境的索引是 4 個 shard，e2e 叢集只有 1 個，這就是為什麼任何資料路徑
+      測試都不可能抓到它。*
+- [ ] **取消與反壓絕不可被回報成資料遺失** —— 中途跳出掃描會關閉產生器，對帳
+      因此不可執行。使用者按下取消，不該被告知歸檔掉了資料。
+- [ ] **在繁忙叢集上要限制時窗** —— `E2E_WINDOW_HOURS=2 bash
+      scripts/e2e-archive-test.sh` 會把 `--days 1/3` 的匯出換成固定時窗。
+      *每小時吞吐約 950 萬筆的正式 Graylog，`--days 3` 等於數千萬筆與數小時的負載。*
+- [ ] **不要對正式 Graylog 執行步驟 [3]（GELF 回匯）** —— 它會把封存匯回**線上**
+      索引集合，在繁忙叢集上等於數十萬筆重複的正式訊息。完整往返屬於測試叢集；
+      正式機只跑唯讀與使用獨立索引的步驟。
+- [ ] **4 分片索引必須被完整掃描** —— e2e 步驟 [8] 會刻意建立一個 4 分片索引，
+      每個時間戳放 30 筆文件讓排序鍵在分片之間相撞，並要求全部文件依時間順序
+      回傳。*`tests/test_os_shard_scan.py` 會穩定重現該筆數遺失；e2e 這一步存在
+      的理由是正式環境有 4 個分片、這座測試叢集只有 1 個，而那正是一個真實的
+      掉資料錯誤能藏一輩子的原因。任何新的掃描／游標改動，兩者都必須保留。*
+- [ ] **每個分片請求都要釘住主副本**（`_shards:N|_primary`）—— 只寫 `_shards:N`
+      可能在主副本之間輪替，而兩者的 `_doc` 順序不同，等於把要修的錯誤再引回來。
+- [ ] **合流後仍維持時間戳遞增** —— 匯出端一旦跨過小時邊界就會關閉並寫入該分塊的
+      封存記錄，若掃描對每個分片都從頭走一次時間軸，就會去敲已經寫過的分塊。
+- [ ] **峰值記憶體不得增加** —— 每個分片同時持有一頁、預抓一頁，因此位元組預算要
+      除以 2N。請用寬文件（約 9 KB）驗證：
+      `test_bytes_in_flight_stay_within_the_single_page_budget`。
+      *那個 500 筆的頁面下限是為「單一游標」設計的，套到每個分片上就無聲地變成
+      36 MB 的記憶體下限——而那台機器正是會被 OOM killer 砍掉的那台。*
+- [ ] **單分片索引的掃描方式必須與過去完全相同** —— 不發出任何分片請求、沒有新
+      行為，小型部署與這座測試叢集都不必為這個修正付出代價。
 - [ ] **結果表格的版面不能跑掉**（`ui-sim-test.py`）—— 展開某一筆時，表格寬度與
       記錄欄寬度都不變；展開列的 `colspan` 等於**可見**欄位數；表頭與資料列對
       「有哪些欄位」的認定一致，且可見欄位填滿整個表格寬度。*隱藏欄位是表格的

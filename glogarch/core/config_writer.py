@@ -23,6 +23,9 @@ import tempfile
 import threading
 from pathlib import Path
 from typing import Any, Callable
+from glogarch.utils.logging import get_logger
+
+log = get_logger("core.config_writer")
 
 import yaml
 
@@ -64,8 +67,8 @@ def update_config(config_path: str | Path, mutate: Callable[[dict], None]) -> di
             # Best-effort cleanup; never leave the temp file behind on failure.
             try:
                 os.unlink(tmp_name)
-            except OSError:
-                pass
+            except OSError as e:
+                log.debug("Could not remove the temporary config file after a failed write", error=str(e))
             raise
     return cfg
 

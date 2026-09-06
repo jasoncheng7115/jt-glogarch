@@ -114,8 +114,8 @@ class AuditSyslogListener:
                 parsed = urlparse(srv.url)
                 if parsed.hostname:
                     self.allowed_ips.add(parsed.hostname)
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Could not parse configured server URL for the audit allowlist", error=str(e))
         # Always allow localhost
         self.allowed_ips.add("127.0.0.1")
         self.allowed_ips.add("::1")
@@ -143,10 +143,10 @@ class AuditSyslogListener:
                                 host = urlparse(f"http://{addr}").hostname or addr.split(":")[0]
                                 if host:
                                     self.allowed_ips.add(host)
-                            except Exception:
-                                pass
-            except Exception:
-                pass
+                            except Exception as e:
+                                log.debug("Could not parse a Graylog cluster node address", error=str(e))
+            except Exception as e:
+                log.debug("Could not read Graylog cluster nodes for the audit allowlist", error=str(e))
 
     _HEARTBEAT_INTERVAL = 300   # probe every 5 minutes
     _PROBE_FAIL_ALERT = 2       # consecutive failed probes before alerting
@@ -292,8 +292,8 @@ class AuditSyslogListener:
                 "Please check nginx syslog configuration on all Graylog nodes."
             )
             await send_notification(NotifyEvent.AUDIT_ALERT, _t("audit_alert_title"), body)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Audit heartbeat alert notification failed - the alert was NOT delivered", error=str(e))
 
     async def _periodic_refresh(self) -> None:
         """Refresh allowed IPs every 5 minutes."""
@@ -304,8 +304,8 @@ class AuditSyslogListener:
                 await self._refresh_allowed_ips()
                 if len(self.allowed_ips) != old_count:
                     log.info("Allowed IPs refreshed", count=len(self.allowed_ips))
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Periodic allowed-IP refresh failed - the allowlist may be stale", error=str(e))
 
     async def _refresh_token_cache(self) -> None:
         """Query Graylog Users API to build token_prefix → username map.
@@ -355,13 +355,13 @@ class AuditSyslogListener:
                                         tv = tok.get("token", "")
                                         if tv and len(tv) >= 8:
                                             self._token_cache[tv[:8]] = uname
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                log.debug("Could not read tokens for a Graylog user", error=str(e))
                 self._token_tried.clear()  # reset async resolve attempts
                 log.debug("Token cache refreshed", entries=len(self._token_cache))
                 return  # One server is enough
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Token cache refresh failed - token users will fall back to IP resolution", error=str(e))
 
     async def _refresh_ip_user_cache(self) -> None:
         """Build IP → username cache and backfill records without username.
@@ -442,8 +442,8 @@ class AuditSyslogListener:
                             if name and name not in system_users:
                                 users.append(name)
                         return users
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Could not list Graylog users for the IP-user cache", error=str(e))
         return []
 
     async def _periodic_token_cache(self) -> None:
@@ -451,34 +451,34 @@ class AuditSyslogListener:
         # Initial load — build all caches immediately on startup
         try:
             await self._refresh_resource_cache()
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Initial resource cache load failed - target names will be unresolved until the next refresh", error=str(e))
         try:
             await self._refresh_token_cache()
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Initial token cache load failed - token users will fall back to IP resolution", error=str(e))
         try:
             await self._refresh_ip_user_cache()
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Initial IP-user cache load failed - usernames may be blank until the next refresh", error=str(e))
         cycle = 0
         while True:
             await asyncio.sleep(120)  # every 2 minutes
             cycle += 1
             try:
                 await self._refresh_ip_user_cache()
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Periodic IP-user cache refresh failed", error=str(e))
             if cycle % 3 == 0:  # every 6 minutes
                 try:
                     await self._refresh_resource_cache()
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("Periodic resource cache refresh failed - target names may be stale", error=str(e))
             if cycle % 5 == 0:  # every 10 minutes
                 try:
                     await self._refresh_token_cache()
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("Periodic token cache refresh failed", error=str(e))
 
     async def _resolve_session(self, session_id: str, entry: dict) -> None:
         """Resolve a Graylog session ID to a username via API.
@@ -504,8 +504,8 @@ class AuditSyslogListener:
                             self._session_cache[session_id] = user
                             entry["username"] = user
                             return
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Could not resolve a Graylog session to a username", error=str(e))
         # Fallback: use IP cache or default user
         remote = entry.get("remote_addr", "")
         ip_user = self._session_cache.get(f"ip:{remote}", "")
@@ -695,8 +695,8 @@ class AuditSyslogListener:
                                 _new[f"user:{uid}"] = full
                     log.debug("Resource cache refreshed", total=len(self._resource_cache))
                 return
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Resource cache refresh failed - audit target names will be stale", error=str(e))
 
         if _new:
             self._resource_cache = _new
@@ -749,8 +749,8 @@ class AuditSyslogListener:
                                 entry["username"] = f"{uname} (token)"
                                 log.info("Token resolved via API", user=uname)
                                 return
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Could not resolve a token prefix to a username via the Graylog API", error=str(e))
 
     async def _periodic_flush(self) -> None:
         """Flush batch to DB every 5 seconds."""
@@ -889,8 +889,8 @@ class AuditSyslogListener:
                         username = body_user
                         self._session_cache[f"ip:{remote_addr}"] = body_user
                         log.info("Login detected", ip=remote_addr, user=body_user)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("Could not parse a login request body for the username", error=str(e))
 
         # Resolve token → username
         if auth_type == "token":
@@ -964,8 +964,8 @@ class AuditSyslogListener:
                             if q and q != "*":
                                 entry["target_name"] = q[:100] + ("..." if len(q) > 100 else "")
                                 break
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.debug("Could not extract the search query from the request body", error=str(e))
 
         # For create/modify operations, extract title/name/username from request body
         if not entry.get("target_name"):
@@ -990,8 +990,8 @@ class AuditSyslogListener:
                         t = body_obj.get("title") or body_obj.get("name") or ""
                     if t:
                         entry["target_name"] = str(t)[:120]
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("Could not derive a target name from the request body", error=str(e))
 
         # Fallback: extract meaningful segment from URI for operations without target
         if not entry.get("target_name"):
@@ -1035,8 +1035,8 @@ class AuditSyslogListener:
                                 grantees.append(f"{gtype}:{gid[:8]} ({perm})")
                     if grantees:
                         entry["target_name"] += " → " + ", ".join(grantees[:3])
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("Could not derive grantee names for a sharing operation", error=str(e))
 
         # For logout, use the username as target
         if entry.get("operation") == "auth.logout" and not entry.get("target_name"):
