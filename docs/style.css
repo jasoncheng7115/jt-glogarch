@@ -543,6 +543,13 @@ section .subhead {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 24px;
 }
+/* Two grids stacked inside one section (record search: screenshots above, the
+   explanation cards below). Neither grid carries a margin of its own, so
+   without this they butt together and read as one block. 36px is the gap the
+   subhead already puts between a heading and its content. */
+.shots + .features {
+  margin-top: 36px;
+}
 .shot {
   background: var(--surface);
   border-radius: var(--radius);
