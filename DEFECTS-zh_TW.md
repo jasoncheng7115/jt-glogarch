@@ -45,6 +45,8 @@
 | 33 | 根本**沒有離線環境的首次安裝**路徑（v1.14.5） | `upgrade-offline.sh` 在沒有既有安裝時就中止，`install.sh` 又一定會連 PyPI。離線套件只能升級「曾經連過網」的主機——之所以沒人發現，是因為每個測試站台都早已用線上方式安裝過 | `install-offline.sh` 加上 `install.sh --offline`（pip 以 `--no-index` 鎖定），共用同一條程式路徑；建置離線套件時若缺少首次安裝指令碼會**直接中止**，而不是產出一個只能升級的套件。`test_offline_bundle_can_do_a_first_install` |
 | 34 | 離線安裝回報成功，PDF 產製其實是壞的（v1.14.5） | Chromium 依賴的作業系統共用函式庫無法放進 tarball，離線模式又跳過 `playwright install-deps`，所以「裝好了」與「能用」是兩回事。文件當時只要求人工驗證 | `verify_report_engine()` 會以服務帳號啟動 Chromium 並產出 PDF，失敗時以 `ldd` 指出缺少的 `lib*.so`。每支安裝指令碼都會呼叫它，並在結尾摘要中回報。`test_report_engine_install_is_verified_not_assumed` |
 
+| 35 | 被取消的匯出被回報成**完成、100%、「0 筆」**——旁邊的備註卻寫著已寫出 54.2 MB（v1.14.6） | 取消是以進度回呼拋出的 `RuntimeError` 傳進來，走的是與「索引真的失敗」同一個 `except`，於是被記成失敗，作業還繼續跑到正常結束並寫入 `COMPLETED`。而 `messages_total` 只在索引**完整結束**後才累加，因此被中斷索引的筆數——那些已寫進資料庫的有效封存——被丟棄，位元組計數器（每寫一個檔就累加）卻保留了數值 | `_is_cancellation()` 在**兩種**匯出模式中分辨兩者；取消寫入 `JobStatus.CANCELLED`，並保留 `progress_pct` 停在工作中斷處；被中斷單元的筆數會帶回結果並計入。`tests/test_export_cancel_reporting.py`（8 項），含一項參數化檢查確保兩種模式都套用同一條規則 |
+
 ## 規模——成本隨資料量而非工作量成長
 
 | # | 缺陷 | 根因 | 防止再犯的機制 |

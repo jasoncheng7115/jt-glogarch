@@ -107,6 +107,21 @@ def normalize_index_set_ids(raw, config_index_sets=None):
     return None
 
 
+def _is_cancellation(exc: BaseException) -> bool:
+    """Did this exception come from the operator pressing Cancel?
+
+    Cancellation reaches the export as a `RuntimeError("Job cancelled by user")`
+    raised by the progress callback — i.e. through the SAME `except` that catches
+    a genuine chunk/index failure. Without this distinction a cancel was recorded
+    as "Index X failed — data may be incomplete, will retry next run", the run
+    carried on to its normal end, and the job row was written as COMPLETED at
+    100%. `asyncio.CancelledError` derives from BaseException and so is not
+    caught by `except Exception`; it is listed for the paths that catch wider.
+    """
+    return isinstance(exc, asyncio.CancelledError) or \
+        "cancelled by user" in str(exc).lower()
+
+
 class ExportResult:
     """Result of an export operation."""
 
@@ -131,6 +146,16 @@ class ExportResult:
         # in the default all-index-sets case). Surfaced so a partial export — e.g.
         # one deliberately restricted to specific index sets — is never silent.
         self.index_sets_skipped: list[str] = []
+        # Was this run stopped by the operator? A cancel is NOT a failure and
+        # NOT a success — reporting it as either is what made a cancelled run
+        # finish as "completed, 100%, 0 records".
+        self.cancelled: bool = False
+        # Records written by the unit currently being exported. `messages_total`
+        # only grows when that unit FINISHES, so a cancel mid-index used to
+        # discard the count for archives that were written, recorded in the DB
+        # and are perfectly valid — the operator saw 0 records next to 54 MB of
+        # compressed output and could not tell whether data had been lost.
+        self.partial_index_messages: int = 0
 
 
 class Exporter:
@@ -255,7 +280,9 @@ class Exporter:
                     consecutive_failures = 0
                     for chunk_idx, (chunk_from, chunk_to) in enumerate(chunks):
                         if self._cancelled:
-                            log.info("Export cancelled by user", job_id=job_id)
+                            log.info("Export cancelled by user", job_id=job_id,
+                                     records_kept=result.messages_total)
+                            result.cancelled = True
                             break
 
                         # Check if already exported (same-mode exact match)
@@ -309,6 +336,17 @@ class Exporter:
                             consecutive_failures = 0
 
                         except Exception as e:
+                            if _is_cancellation(e):
+                                # The operator pressed Cancel. Recording that as
+                                # "Chunk N failed — will retry next run" and then
+                                # finishing the job as COMPLETED at 100% is how a
+                                # cancelled run came to look like a successful one.
+                                self._cancelled = True
+                                result.cancelled = True
+                                log.info("Export cancelled by user", job_id=job_id,
+                                         chunk=chunk_idx + 1,
+                                         records_kept=result.messages_total)
+                                break
                             err_msg = f"Chunk {chunk_idx+1} failed: {e}"
                             log.error(err_msg, chunk_from=str(chunk_from))
                             result.errors.append(err_msg)
@@ -406,37 +444,51 @@ class Exporter:
                     f"ℹ {len(result.truncations)} sub-second overflow(s) exceeded "
                     f"Graylog's API limit (chunk archived; NOT retried) — re-run "
                     f"these windows in OpenSearch Direct mode: {ts_list}")
+            if result.cancelled:
+                note_parts.append(
+                    "⚠ Cancelled by user — the chunks archived before the cancel "
+                    "are kept and will not be re-exported; re-run to continue")
             note = ". ".join(note_parts)
-            self.db.update_job(
-                job_id,
-                status=JobStatus.COMPLETED,
-                progress_pct=100.0,
+            # Cancelled is neither completed nor failed, and it is not 100%.
+            # Omitting progress_pct leaves the bar where the work stopped.
+            final_fields = dict(
                 messages_done=result.messages_total,
                 messages_total=result.messages_total,
                 completed_at=datetime.utcnow(),
                 error_message=note,
             )
+            if result.cancelled:
+                final_fields.update(status=JobStatus.CANCELLED)
+            else:
+                final_fields.update(status=JobStatus.COMPLETED, progress_pct=100.0)
+            self.db.update_job(job_id, **final_fields)
             log.info("Export completed", job_id=job_id,
                      chunks_exported=result.chunks_exported,
                      chunks_skipped=result.chunks_skipped,
                      messages_total=result.messages_total)
 
-            # Send notification
-            try:
-                from glogarch.notify.sender import notify_export_complete
-                result.duration_seconds = _time.time() - _start_time
-                await notify_export_complete(
-                    result.chunks_exported, result.messages_total,
-                    result.chunks_skipped, result.errors,
-                    files=len(result.files_written),
-                    original_bytes=result.original_bytes,
-                    compressed_bytes=result.compressed_bytes,
-                    duration_seconds=result.duration_seconds,
-                    mode="api",
-                    truncations=result.truncations,
-                )
-            except Exception as e:
-                log.warning("Export notification failed", error=str(e))
+            # Send notification. A cancel is a deliberate act by the operator:
+            # telling them the export "completed" would be wrong, and an error
+            # notification would be alarming.
+            if result.cancelled:
+                log.info("Completion notification skipped — run was cancelled",
+                         job_id=job_id)
+            else:
+                try:
+                    from glogarch.notify.sender import notify_export_complete
+                    result.duration_seconds = _time.time() - _start_time
+                    await notify_export_complete(
+                        result.chunks_exported, result.messages_total,
+                        result.chunks_skipped, result.errors,
+                        files=len(result.files_written),
+                        original_bytes=result.original_bytes,
+                        compressed_bytes=result.compressed_bytes,
+                        duration_seconds=result.duration_seconds,
+                        mode="api",
+                        truncations=result.truncations,
+                    )
+                except Exception as e:
+                    log.warning("Export notification failed", error=str(e))
 
         except Exception as e:
             err_str = str(e)

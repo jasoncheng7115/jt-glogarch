@@ -1604,6 +1604,8 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
 }
 .status-running { color: var(--warning); font-weight: 500; }
 .status-failed { color: var(--danger); font-weight: 500; }
+/* Cancelled is deliberate, not a fault — muted, never red. */
+.status-cancelled { color: var(--text-dim); font-weight: 500; }
 .status-pending { color: var(--text-muted); }
 .status-corrupted { color: var(--danger); font-weight: 600; }
 .status-missing { color: var(--warning); font-weight: 600; }

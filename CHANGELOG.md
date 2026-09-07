@@ -2,6 +2,42 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.14.6] - 2026-09-07
+
+### Fixed
+
+- **A cancelled export was reported as a successful one.** A customer pressed
+  Cancel six minutes into an OpenSearch-direct run; the job row came back as
+  **completed, 100%, "0 筆"** — next to a note reading "54.2 MB compressed" and
+  "1 index(es) failed — data may be incomplete, will retry next run: Index
+  graylog_5474 failed: Job cancelled by user". Nothing in that row let an
+  operator tell whether data had been lost. It had not been. Three defects, all
+  of them now fixed:
+  - Cancellation reaches the exporter as a `RuntimeError("Job cancelled by
+    user")` raised by the progress callback — through the SAME `except` that
+    catches a real index failure — so it was recorded as one, and the run then
+    continued to its normal end. Both export modes now tell the two apart
+    (`_is_cancellation`) and stop.
+  - The final job write was unconditionally `COMPLETED` at `progress_pct=100`.
+    A cancelled run is now written as `CANCELLED`, and `progress_pct` is left
+    alone so the bar stays where the work actually stopped.
+  - `messages_total` only grows when an index FINISHES, so the records written
+    by the interrupted index — real archives, already checksummed and recorded
+    in the database — were dropped from the count. That is the whole of "0
+    records, 54.2 MB compressed": two counters kept at different levels, one
+    discarded by the exception and one not. The interrupted index's own output
+    is now carried on the result and added, so the number reflects what is on
+    disk. The same salvage applies to a genuine index failure, whose archives
+    are equally valid.
+  - The note now says what a cancel means, because the obvious reading ("I lost
+    that work") is wrong: the archives written before the cancel are kept and
+    de-duplication skips them on the next run.
+  - No completion notification is sent for a cancelled run — telling someone
+    their deliberate act "completed" is wrong, and an error would alarm them.
+  - The Web UI had no icon or label for `cancelled`, so the badge fell through
+    to rendering the raw English status string. It now has both, in both
+    languages, in a muted colour — cancelled is deliberate, not a fault.
+
 ## [1.14.5] - 2026-09-06
 
 ### Fixed

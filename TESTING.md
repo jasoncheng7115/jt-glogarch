@@ -461,6 +461,20 @@ nowhere) while the API, the flag and every unit test were fine. The rule:
       recorded as covering their time range, so dedup hides the gap on every
       later run. Production indices have 4 shards; the e2e cluster has 1, which
       is why no data-path test could ever have caught this.*
+- [ ] **Cancelling an export marks it CANCELLED, never completed** — press
+      Cancel mid-run in the UI: the badge is the muted "Cancelled by user" (both
+      languages, not a raw English status string), the progress bar stays where
+      it stopped rather than snapping to 100%, and the note says the archives
+      written so far are kept. *A cancelled run used to finish as "completed,
+      100%, 0 records" beside a note saying 54.2 MB had been written — a real
+      customer could not tell whether data had been lost.*
+- [ ] **The record count survives the cancel** — the number shown after
+      cancelling matches what the live counter had reached, not 0. Cross-check
+      against the Archive list for that time range. *`messages_total` only grows
+      when a unit FINISHES; the interrupted unit's archives are on disk and in
+      the DB and must be counted.*
+- [ ] **No completion notification for a cancelled run** — and no error one
+      either. Cancel is a deliberate act.
 - [ ] **Cancel and backpressure are never reported as data loss** — breaking
       out of the scan closes the generator, so the reconciliation must not run.
       A user pressing Cancel must not be told the archive lost records.

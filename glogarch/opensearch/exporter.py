@@ -20,7 +20,7 @@ from glogarch.core.models import (
     JobStatus,
     JobType,
 )
-from glogarch.export.exporter import ExportResult, _ensure_naive
+from glogarch.export.exporter import ExportResult, _ensure_naive, _is_cancellation
 from glogarch.graylog.client import GraylogClient
 from glogarch.graylog.system import SystemMonitor
 from glogarch.export.health_guard import HealthGuard
@@ -325,6 +325,9 @@ class OpenSearchExporter:
                             "detail": f"querying {index_name} ({docs_count:,} docs)...",
                         })
 
+                    # Reset before each index so a failure here can never
+                    # inherit the previous index's count.
+                    result.partial_index_messages = 0
                     try:
                         msgs = await self._export_index(
                             os_client, index_name, prefix,
@@ -338,8 +341,23 @@ class OpenSearchExporter:
                     except _FatalExportError:
                         raise  # disk full etc. — abort the whole run
                     except Exception as e:
+                        # Whatever this index DID write is already on disk and
+                        # recorded in the DB as a completed archive, so it counts.
+                        # `messages_total` only grows when an index finishes, so
+                        # without this the run reported 0 records next to the
+                        # bytes it had actually written.
+                        salvaged = result.partial_index_messages
+                        result.messages_total += salvaged
+                        if _is_cancellation(e):
+                            # Not an index failure. Stop, and let the run be
+                            # reported as cancelled rather than completed.
+                            self._cancelled = True
+                            result.cancelled = True
+                            log.info("Export cancelled by user", job_id=job_id,
+                                     index=index_name, records_kept=salvaged)
+                            break
                         err = f"Index {index_name} failed: {e}"
-                        log.error(err)
+                        log.error(err, records_kept=salvaged)
                         result.errors.append(err)
 
                     # Periodic disk check
@@ -382,37 +400,62 @@ class OpenSearchExporter:
                 note_parts.append(
                     f"⚠ {len(result.errors)} index(es) failed — data may be "
                     f"incomplete, will retry next run: {sample}")
+            if result.cancelled:
+                # Say what a cancel actually means, because the obvious reading
+                # ("I lost that work") is wrong: every archive written before
+                # the cancel is complete, checksummed and recorded, and the next
+                # run skips it by de-duplication.
+                note_parts.append(
+                    "⚠ Cancelled by user — the archives written before the cancel "
+                    "are kept and will not be re-exported; re-run to continue")
             note = ". ".join(note_parts)
             import json as _json
             result_json = _json.dumps({
                 "index_sets_covered": len(prefixes),
                 "index_sets_skipped": result.index_sets_skipped,
             })
-            self.db.update_job(
-                job_id, status=JobStatus.COMPLETED, progress_pct=100.0,
-                messages_done=result.messages_total, messages_total=result.messages_total,
+            # A cancelled run is neither COMPLETED nor FAILED, and it did not
+            # reach 100%. Leaving progress_pct out keeps the bar where the work
+            # actually stopped instead of snapping it to full.
+            final_fields = dict(
+                messages_done=result.messages_total,
+                messages_total=result.messages_total,
                 completed_at=datetime.utcnow(),
                 error_message=note,
                 result_json=result_json,
             )
-            log.info("OpenSearch export completed", job_id=job_id,
+            if not result.cancelled:
+                final_fields.update(status=JobStatus.COMPLETED, progress_pct=100.0)
+            else:
+                final_fields.update(status=JobStatus.CANCELLED)
+            self.db.update_job(job_id, **final_fields)
+            log.info("OpenSearch export cancelled" if result.cancelled
+                     else "OpenSearch export completed", job_id=job_id,
                      exported=result.chunks_exported, skipped=result.chunks_skipped,
                      messages=result.messages_total)
 
-            try:
-                from glogarch.notify.sender import notify_export_complete
-                result.duration_seconds = _time.time() - _start_time
-                await notify_export_complete(
-                    result.chunks_exported, result.messages_total,
-                    result.chunks_skipped, result.errors,
-                    files=len(result.files_written),
-                    original_bytes=result.original_bytes,
-                    compressed_bytes=result.compressed_bytes,
-                    duration_seconds=result.duration_seconds,
-                    mode="opensearch",
-                )
-            except Exception as e:
-                log.warning("Export-complete notification failed - the run itself succeeded", error=str(e))
+            # The person who pressed Cancel does not need to be told the export
+            # "completed"; a success notification there is simply wrong, and an
+            # error one would be alarming for a deliberate act.
+            if result.cancelled:
+                log.info("Completion notification skipped — run was cancelled",
+                         job_id=job_id)
+            else:
+                try:
+                    from glogarch.notify.sender import notify_export_complete
+                    result.duration_seconds = _time.time() - _start_time
+                    await notify_export_complete(
+                        result.chunks_exported, result.messages_total,
+                        result.chunks_skipped, result.errors,
+                        files=len(result.files_written),
+                        original_bytes=result.original_bytes,
+                        compressed_bytes=result.compressed_bytes,
+                        duration_seconds=result.duration_seconds,
+                        mode="opensearch",
+                    )
+                except Exception as e:
+                    log.warning("Export-complete notification failed - the run itself succeeded",
+                                error=str(e))
 
         except Exception as e:
             self.db.update_job(job_id, status=JobStatus.FAILED,
@@ -692,6 +735,9 @@ class OpenSearchExporter:
                         if writer and writer.message_count > 0:
                             msgs = await _close_and_record(writer, path, current_chunk_from, current_chunk_to)
                             total_msgs_this_index += msgs
+                            # Published so the caller can still see it if this
+                            # index is interrupted before it returns.
+                            result.partial_index_messages = total_msgs_this_index
                         elif writer:
                             self._cleanup_writer(writer, path)
                             writer = None
@@ -794,6 +840,7 @@ class OpenSearchExporter:
         if writer and writer.message_count > 0:
             msgs = await _close_and_record(writer, path, current_chunk_from, current_chunk_to)
             total_msgs_this_index += msgs
+            result.partial_index_messages = total_msgs_this_index
         elif writer:
             self._cleanup_writer(writer, path)
 
