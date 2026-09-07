@@ -20,7 +20,8 @@ from glogarch.core.models import (
     JobStatus,
     JobType,
 )
-from glogarch.export.exporter import ExportResult, _ensure_naive, _is_cancellation
+from glogarch.export.exporter import (ExportResult, _ensure_naive, _is_cancellation,
+                                      ExportCancelled, fire_progress_after_record)
 from glogarch.graylog.client import GraylogClient
 from glogarch.graylog.system import SystemMonitor
 from glogarch.export.health_guard import HealthGuard
@@ -78,6 +79,20 @@ class OpenSearchExporter:
 
     def cancel(self) -> None:
         self._cancelled = True
+
+    def _check_cancel(self) -> None:
+        """Raise `ExportCancelled` at a checkpoint if the operator cancelled.
+
+        Never `break`. A `break` out of the scan loop fell through to 'close
+        and record the last writer' and stamped a half-scanned hour as a
+        COMPLETED archive covering the whole hour — after which dedup hid the
+        unscanned tail on every later run. Silent, permanent loss on the cancel
+        path, for years. Raising takes the failure path instead: the partial
+        writer is deleted, only whole hours stay recorded, and the run ends as
+        CANCELLED.
+        """
+        if self._cancelled:
+            raise ExportCancelled("Job cancelled by user")
 
     async def export(
         self,
@@ -140,231 +155,242 @@ class OpenSearchExporter:
             _gl_client = GraylogClient(self.server_config, self.rate_limiter)
             try:
                 await _gl_client.__aenter__()
-                guard = HealthGuard(SystemMonitor(_gl_client), self.export_config, progress_callback)
+                guard = HealthGuard(SystemMonitor(_gl_client), self.export_config, progress_callback,
+                                    cancel_check=lambda: self._cancelled)
             except Exception:
                 _gl_client = None
-                guard = HealthGuard(None, self.export_config, progress_callback)  # disabled
+                guard = HealthGuard(None, self.export_config, progress_callback,
+                                    cancel_check=lambda: self._cancelled)  # disabled
 
             async with OpenSearchClient(self.os_config) as os_client:
-                # === PHASE A (plan): scan / filter / dedup / count EVERY prefix
-                # (index set) UP FRONT so the progress denominator is STABLE for
-                # the whole run. Accumulating per-prefix (the previous approach)
-                # kept done <= total but made the % bar regress each time a new
-                # index set was reached; pre-scanning gives one fixed grand total.
-                grand_total_docs = 0
-                export_plan = []  # flat: (prefix, index_name, idx_from, idx_to, docs_count)
-                for prefix in prefixes:
-                    if self._cancelled:
-                        break
+                try:
+                    # === PHASE A (plan): scan / filter / dedup / count EVERY prefix
+                    # (index set) UP FRONT so the progress denominator is STABLE for
+                    # the whole run. Accumulating per-prefix (the previous approach)
+                    # kept done <= total but made the % bar regress each time a new
+                    # index set was reached; pre-scanning gives one fixed grand total.
+                    grand_total_docs = 0
+                    export_plan = []  # flat: (prefix, index_name, idx_from, idx_to, docs_count)
+                    for prefix in prefixes:
+                        self._check_cancel()
 
-                    # Get active write index to skip it
-                    active_index = await os_client.get_active_write_index(prefix)
-                    log.info("Active write index", prefix=prefix, active=active_index)
+                        # Get active write index to skip it
+                        active_index = await os_client.get_active_write_index(prefix)
+                        log.info("Active write index", prefix=prefix, active=active_index)
 
-                    # List all indices for this prefix
-                    indices = await os_client.list_indices(prefix)
-                    log.info("Found indices", prefix=prefix, count=len(indices))
+                        # List all indices for this prefix
+                        indices = await os_client.list_indices(prefix)
+                        log.info("Found indices", prefix=prefix, count=len(indices))
 
-                    # First pass: filter out active/empty indices quickly
-                    scan_list = []
-                    for idx_info in indices:
-                        index_name = idx_info["index"]
-                        if index_name == active_index:
-                            log.info("Skipping active write index", index=index_name)
-                            continue
-                        if idx_info["docs_count"] == 0:
-                            continue
-                        scan_list.append(idx_info)
-
-                    if progress_callback:
-                        progress_callback({
-                            "phase": "scanning",
-                            "pct": 0,
-                            "detail": f"Scanning {len(scan_list)} indices...",
-                        })
-
-                    # Parallel time range queries (batch of 10 to avoid overwhelming OS)
-                    async def _get_range(idx_info):
-                        min_ts, max_ts = await os_client.get_index_time_range(idx_info["index"])
-                        return idx_info, min_ts, max_ts
-
-                    candidates = []  # [(index_name, idx_from, idx_to, docs_count)]
-                    batch_size = 10
-                    for i in range(0, len(scan_list), batch_size):
-                        if self._cancelled:
-                            break
-                        batch = scan_list[i:i + batch_size]
-                        results = await asyncio.gather(
-                            *[_get_range(info) for info in batch],
-                            return_exceptions=True,
-                        )
-                        for res in results:
-                            if isinstance(res, Exception):
-                                continue
-                            idx_info, min_ts, max_ts = res
+                        # First pass: filter out active/empty indices quickly
+                        scan_list = []
+                        for idx_info in indices:
                             index_name = idx_info["index"]
-                            if not min_ts or not max_ts:
-                                log.warning("Cannot determine time range", index=index_name)
+                            if index_name == active_index:
+                                log.info("Skipping active write index", index=index_name)
                                 continue
-                            idx_from = self._parse_ts(min_ts)
-                            idx_to = self._parse_ts(max_ts)
-                            if not idx_from or not idx_to:
-                                log.warning("Cannot parse timestamps", index=index_name,
-                                            min_ts=min_ts, max_ts=max_ts)
+                            if idx_info["docs_count"] == 0:
                                 continue
-                            candidates.append((index_name, idx_from, idx_to, idx_info["docs_count"]))
+                            scan_list.append(idx_info)
+
                         if progress_callback:
-                            scanned = min(i + batch_size, len(scan_list))
                             progress_callback({
                                 "phase": "scanning",
                                 "pct": 0,
-                                "detail": f"Scanned {scanned}/{len(scan_list)} indices...",
+                                "detail": f"Scanning {len(scan_list)} indices...",
                             })
 
-                    # Apply keep_indices limit (keep most recent N indices)
-                    if keep_indices and keep_indices > 0:
-                        candidates.sort(key=lambda x: x[2], reverse=True)
-                        selected = candidates[:keep_indices]
-                        selected.sort(key=lambda x: x[1])  # ascending for export order
-                        log.info("Keep indices filter", keep=keep_indices,
-                                 total_candidates=len(candidates), selected=len(selected))
-                    else:
-                        selected = []
-                        for c in candidates:
-                            if c[2] < time_from or c[1] > time_to:
-                                log.info("Index outside time range, skipping", index=c[0])
-                                continue
-                            selected.append(c)
+                        # Parallel time range queries (batch of 10 to avoid overwhelming OS)
+                        async def _get_range(idx_info):
+                            min_ts, max_ts = await os_client.get_index_time_range(idx_info["index"])
+                            return idx_info, min_ts, max_ts
 
-                    # Dedup check + accurate _count → add survivors to the plan.
-                    total_selected = len(selected)
-                    for index_name, idx_from, idx_to, docs_count in selected:
-                        log.info("Index time range",
-                                 index=index_name, idx_from=str(idx_from), idx_to=str(idx_to),
-                                 docs=docs_count)
-                        existing = self.db.find_archive(
-                            self.server_config.name, index_name, idx_from, idx_to
-                        )
-                        if existing and existing.status == ArchiveStatus.COMPLETED:
-                            result.chunks_skipped += 1
-                            log.info("Index already exported, skipping", index=index_name)
+                        candidates = []  # [(index_name, idx_from, idx_to, docs_count)]
+                        batch_size = 10
+                        for i in range(0, len(scan_list), batch_size):
+                            self._check_cancel()
+                            batch = scan_list[i:i + batch_size]
+                            results = await asyncio.gather(
+                                *[_get_range(info) for info in batch],
+                                return_exceptions=True,
+                            )
+                            for res in results:
+                                if isinstance(res, Exception):
+                                    continue
+                                idx_info, min_ts, max_ts = res
+                                index_name = idx_info["index"]
+                                if not min_ts or not max_ts:
+                                    log.warning("Cannot determine time range", index=index_name)
+                                    continue
+                                idx_from = self._parse_ts(min_ts)
+                                idx_to = self._parse_ts(max_ts)
+                                if not idx_from or not idx_to:
+                                    log.warning("Cannot parse timestamps", index=index_name,
+                                                min_ts=min_ts, max_ts=max_ts)
+                                    continue
+                                candidates.append((index_name, idx_from, idx_to, idx_info["docs_count"]))
                             if progress_callback:
+                                scanned = min(i + batch_size, len(scan_list))
                                 progress_callback({
-                                    "phase": "dedup", "pct": 0,
-                                    "detail": f"skipped {result.chunks_skipped}/{total_selected} indices (archived)",
+                                    "phase": "scanning",
+                                    "pct": 0,
+                                    "detail": f"Scanned {scanned}/{len(scan_list)} indices...",
                                 })
-                            continue
-                        # NOTE: there used to be a "coverage >= 95% -> skip this
-                        # whole index" heuristic here. It silently lost data twice
-                        # over: up to 5% of an index could stay unarchived FOREVER
-                        # (a hole inside a mostly-archived index was never
-                        # refilled), and the ratio was computed over the TIME RANGE
-                        # for the whole server, so sister indices covering the same
-                        # hours inflated each other's coverage — with three indices
-                        # spanning the same hours, one index's real gap read as
-                        # ">=95% covered". Caught by e2e step [5], which punches a
-                        # gap and requires it back.
-                        #
-                        # It is also obsolete: since v1.13.53 `_export_index`
-                        # excludes the already-archived ranges in the OpenSearch
-                        # query and skips the index outright when the filtered
-                        # count is 0. That is exact, costs one `_count`, and can
-                        # never skip a gap.
-                        # Accurate doc count via _count (not _cat which includes deleted docs)
-                        # Count only what is NOT already archived, so the
-                        # progress denominator reflects the real work. Counting
-                        # the whole index made a mostly-archived corpus sit at
-                        # "0% of 1,948,570,498" while it was in fact fine.
-                        _, _plan_filter = self._covered_and_filter(
-                            index_name, prefix, idx_from, idx_to)
-                        try:
-                            resp = await os_client.post(
-                                f"/{index_name}/_count",
-                                json={"query": _plan_filter or {"match_all": {}}})
-                            real_count = resp.get("count", docs_count)
-                        except Exception:
-                            real_count = docs_count
-                        if real_count <= 0:
-                            # Already fully archived — skipped in the PLAN, so it
-                            # never reaches the scan and contributes nothing to
-                            # the denominator.
-                            log.info("Nothing left to export after excluding "
-                                     "archived ranges", index=index_name)
-                            result.chunks_skipped += 1
-                            continue
-                        export_plan.append((prefix, index_name, idx_from, idx_to, real_count))
-                        grand_total_docs += real_count
 
-                # Stable denominator, set ONCE before any export writes.
-                total_docs = grand_total_docs
-                total_to_export = len(export_plan)
-                self.db.update_job(job_id, messages_total=grand_total_docs)
-                log.info("Export plan built", indices=total_to_export,
-                         grand_total_docs=grand_total_docs, prefixes=len(prefixes))
+                        # Apply keep_indices limit (keep most recent N indices)
+                        if keep_indices and keep_indices > 0:
+                            candidates.sort(key=lambda x: x[2], reverse=True)
+                            selected = candidates[:keep_indices]
+                            selected.sort(key=lambda x: x[1])  # ascending for export order
+                            log.info("Keep indices filter", keep=keep_indices,
+                                     total_candidates=len(candidates), selected=len(selected))
+                        else:
+                            selected = []
+                            for c in candidates:
+                                if c[2] < time_from or c[1] > time_to:
+                                    log.info("Index outside time range, skipping", index=c[0])
+                                    continue
+                                selected.append(c)
 
-                # === PHASE B (export): every planned index against the STABLE total.
-                for idx_num, (prefix, index_name, idx_from, idx_to, docs_count) in enumerate(export_plan):
-                    if self._cancelled:
-                        break
+                        # Dedup check + accurate _count → add survivors to the plan.
+                        total_selected = len(selected)
+                        for index_name, idx_from, idx_to, docs_count in selected:
+                            # Per candidate: on a big prefix this loop is hundreds of
+                            # `_count` calls, each up to the 120 s read timeout on an
+                            # overloaded cluster — the exact situation in which the
+                            # operator has just pressed Cancel.
+                            self._check_cancel()
+                            log.info("Index time range",
+                                     index=index_name, idx_from=str(idx_from), idx_to=str(idx_to),
+                                     docs=docs_count)
+                            existing = self.db.find_archive(
+                                self.server_config.name, index_name, idx_from, idx_to
+                            )
+                            if existing and existing.status == ArchiveStatus.COMPLETED:
+                                result.chunks_skipped += 1
+                                log.info("Index already exported, skipping", index=index_name)
+                                if progress_callback:
+                                    progress_callback({
+                                        "phase": "dedup", "pct": 0,
+                                        "detail": f"skipped {result.chunks_skipped}/{total_selected} indices (archived)",
+                                    })
+                                continue
+                            # NOTE: there used to be a "coverage >= 95% -> skip this
+                            # whole index" heuristic here. It silently lost data twice
+                            # over: up to 5% of an index could stay unarchived FOREVER
+                            # (a hole inside a mostly-archived index was never
+                            # refilled), and the ratio was computed over the TIME RANGE
+                            # for the whole server, so sister indices covering the same
+                            # hours inflated each other's coverage — with three indices
+                            # spanning the same hours, one index's real gap read as
+                            # ">=95% covered". Caught by e2e step [5], which punches a
+                            # gap and requires it back.
+                            #
+                            # It is also obsolete: since v1.13.53 `_export_index`
+                            # excludes the already-archived ranges in the OpenSearch
+                            # query and skips the index outright when the filtered
+                            # count is 0. That is exact, costs one `_count`, and can
+                            # never skip a gap.
+                            # Accurate doc count via _count (not _cat which includes deleted docs)
+                            # Count only what is NOT already archived, so the
+                            # progress denominator reflects the real work. Counting
+                            # the whole index made a mostly-archived corpus sit at
+                            # "0% of 1,948,570,498" while it was in fact fine.
+                            _, _plan_filter = self._covered_and_filter(
+                                index_name, prefix, idx_from, idx_to)
+                            try:
+                                resp = await os_client.post(
+                                    f"/{index_name}/_count",
+                                    json={"query": _plan_filter or {"match_all": {}}})
+                                real_count = resp.get("count", docs_count)
+                            except Exception:
+                                real_count = docs_count
+                            if real_count <= 0:
+                                # Already fully archived — skipped in the PLAN, so it
+                                # never reaches the scan and contributes nothing to
+                                # the denominator.
+                                log.info("Nothing left to export after excluding "
+                                         "archived ranges", index=index_name)
+                                result.chunks_skipped += 1
+                                continue
+                            export_plan.append((prefix, index_name, idx_from, idx_to, real_count))
+                            grand_total_docs += real_count
 
-                    # Pause here if Graylog ingestion is backing up.
-                    await guard.checkpoint({
-                        "phase": "exporting", "index": index_name,
-                        "messages_done": result.messages_total,
-                        "messages_total": total_docs,
-                        "pct": (idx_num / max(total_to_export, 1)) * 100,
-                    })
+                    # Stable denominator, set ONCE before any export writes.
+                    total_docs = grand_total_docs
+                    total_to_export = len(export_plan)
+                    self.db.update_job(job_id, messages_total=grand_total_docs)
+                    log.info("Export plan built", indices=total_to_export,
+                             grand_total_docs=grand_total_docs, prefixes=len(prefixes))
 
-                    if progress_callback:
-                        progress_callback({
-                            "phase": "exporting",
-                            "pct": (idx_num / max(total_to_export, 1)) * 100,
-                            "index": index_name,
+                    # === PHASE B (export): every planned index against the STABLE total.
+                    for idx_num, (prefix, index_name, idx_from, idx_to, docs_count) in enumerate(export_plan):
+                        self._check_cancel()
+
+                        # Pause here if Graylog ingestion is backing up.
+                        await guard.checkpoint({
+                            "phase": "exporting", "index": index_name,
                             "messages_done": result.messages_total,
                             "messages_total": total_docs,
-                            "detail": f"querying {index_name} ({docs_count:,} docs)...",
+                            "pct": (idx_num / max(total_to_export, 1)) * 100,
                         })
 
-                    # Reset before each index so a failure here can never
-                    # inherit the previous index's count.
-                    result.partial_index_messages = 0
-                    try:
-                        msgs = await self._export_index(
-                            os_client, index_name, prefix,
-                            idx_from, idx_to,
-                            idx_num, total_to_export,
-                            progress_callback, result,
-                            job_id, total_docs, guard=guard,
-                        )
-                        result.chunks_exported += 1
-                        result.messages_total += msgs
-                    except _FatalExportError:
-                        raise  # disk full etc. — abort the whole run
-                    except Exception as e:
-                        # Whatever this index DID write is already on disk and
-                        # recorded in the DB as a completed archive, so it counts.
-                        # `messages_total` only grows when an index finishes, so
-                        # without this the run reported 0 records next to the
-                        # bytes it had actually written.
-                        salvaged = result.partial_index_messages
-                        result.messages_total += salvaged
-                        if _is_cancellation(e):
-                            # Not an index failure. Stop, and let the run be
-                            # reported as cancelled rather than completed.
-                            self._cancelled = True
-                            result.cancelled = True
-                            log.info("Export cancelled by user", job_id=job_id,
-                                     index=index_name, records_kept=salvaged)
-                            break
-                        err = f"Index {index_name} failed: {e}"
-                        log.error(err, records_kept=salvaged)
-                        result.errors.append(err)
+                        if progress_callback:
+                            progress_callback({
+                                "phase": "exporting",
+                                "pct": (idx_num / max(total_to_export, 1)) * 100,
+                                "index": index_name,
+                                "messages_done": result.messages_total,
+                                "messages_total": total_docs,
+                                "detail": f"querying {index_name} ({docs_count:,} docs)...",
+                            })
 
-                    # Periodic disk check
-                    if (idx_num + 1) % 5 == 0:
-                        has_space, _ = self.storage.check_disk_space()
-                        if not has_space:
-                            raise RuntimeError("Disk space exhausted during export")
+                        # Reset before each index so a failure here can never
+                        # inherit the previous index's count.
+                        result.partial_index_messages = 0
+                        try:
+                            msgs = await self._export_index(
+                                os_client, index_name, prefix,
+                                idx_from, idx_to,
+                                idx_num, total_to_export,
+                                progress_callback, result,
+                                job_id, total_docs, guard=guard,
+                            )
+                            result.chunks_exported += 1
+                            result.messages_total += msgs
+                        except _FatalExportError:
+                            raise  # disk full etc. — abort the whole run
+                        except Exception as e:
+                            # Whatever this index DID write is already on disk and
+                            # recorded in the DB as a completed archive, so it counts.
+                            # `messages_total` only grows when an index finishes, so
+                            # without this the run reported 0 records next to the
+                            # bytes it had actually written.
+                            salvaged = result.partial_index_messages
+                            result.messages_total += salvaged
+                            if _is_cancellation(e):
+                                raise   # not an index failure — one handler files it
+                            err = f"Index {index_name} failed: {e}"
+                            log.error(err, records_kept=salvaged)
+                            result.errors.append(err)
+
+                        # Periodic disk check
+                        if (idx_num + 1) % 5 == 0:
+                            has_space, _ = self.storage.check_disk_space()
+                            if not has_space:
+                                raise RuntimeError("Disk space exhausted during export")
+                except Exception as e:
+                    if not _is_cancellation(e):
+                        raise
+                    # THE cancel handler for an OpenSearch run. Every checkpoint
+                    # (Phase A scan/dedup, Phase B between and inside indices),
+                    # the Web UI callback and a guard pause all unwind to here;
+                    # the final write below then records CANCELLED. Partial
+                    # writers were deleted on the way up, so every archive that
+                    # remains recorded covers a whole hour it really scanned.
+                    result.cancelled = True
+                    log.info("Export cancelled by user", job_id=job_id,
+                             records_kept=result.messages_total)
 
             # Build completion note with skip + failure info. A failed index is
             # not recorded, so it retries next run — but the operator must still
@@ -379,15 +405,25 @@ class OpenSearchExporter:
                     n /= 1024
                 return f"{n:.1f} PB"
 
+            # Lead with what is on disk. `chunks_exported` counts INDICES that
+            # finished, so an interrupted single-index run read "0 chunks" beside
+            # 40 archive files — the same two-levels-of-counter defect as the
+            # record count. Files written is the number that matches the disk.
             note_parts = [
-                f"{result.chunks_exported} chunks, "
+                f"{len(result.files_written)} archive file(s), "
                 f"{result.messages_total:,} records, "
                 f"{_mb(result.compressed_bytes)} compressed"
             ]
             # Index-set coverage — surface the multi-index-set scope on the job
             # itself (was log-only). A non-empty skip list is a data-integrity
             # warning: those index sets were NOT archived this run.
-            if result.index_sets_skipped:
+            if result.cancelled:
+                # No coverage claim: "Covered all N index set(s)" described the
+                # operator's SELECTION, not what Phase B reached before the
+                # cancel — it painted a green "all index sets" chip on a run
+                # that had touched two of twenty-seven.
+                pass
+            elif result.index_sets_skipped:
                 note_parts.append(
                     f"⚠ Archived {len(prefixes)} index set(s); NOT covered: "
                     f"{', '.join(result.index_sets_skipped)} — their logs are not archived")
@@ -401,32 +437,41 @@ class OpenSearchExporter:
                     f"⚠ {len(result.errors)} index(es) failed — data may be "
                     f"incomplete, will retry next run: {sample}")
             if result.cancelled:
-                # Say what a cancel actually means, because the obvious reading
-                # ("I lost that work") is wrong: every archive written before
-                # the cancel is complete, checksummed and recorded, and the next
-                # run skips it by de-duplication.
+                # Say what a cancel actually means. Whole hours already written
+                # are complete, checksummed and recorded — de-duplication skips
+                # them next run. The hour that was in progress is DISCARDED (a
+                # partial hour recorded as complete would hide its tail forever),
+                # so the next run starts from it.
                 note_parts.append(
-                    "⚠ Cancelled by user — the archives written before the cancel "
-                    "are kept and will not be re-exported; re-run to continue")
+                    "⚠ Cancelled by user — completed archives are kept and will not "
+                    "be re-exported; the hour in progress was discarded and the "
+                    "next run resumes from it")
             note = ". ".join(note_parts)
             import json as _json
-            result_json = _json.dumps({
-                "index_sets_covered": len(prefixes),
-                "index_sets_skipped": result.index_sets_skipped,
-            })
+            if result.cancelled:
+                # No `index_sets_covered`: the coverage chip must not render.
+                result_json = _json.dumps({"cancelled": True,
+                                           "index_sets_skipped": result.index_sets_skipped})
+            else:
+                result_json = _json.dumps({
+                    "index_sets_covered": len(prefixes),
+                    "index_sets_skipped": result.index_sets_skipped,
+                })
             # A cancelled run is neither COMPLETED nor FAILED, and it did not
             # reach 100%. Leaving progress_pct out keeps the bar where the work
             # actually stopped instead of snapping it to full.
             final_fields = dict(
                 messages_done=result.messages_total,
-                messages_total=result.messages_total,
                 completed_at=datetime.utcnow(),
                 error_message=note,
                 result_json=result_json,
             )
             if not result.cancelled:
-                final_fields.update(status=JobStatus.COMPLETED, progress_pct=100.0)
+                final_fields.update(status=JobStatus.COMPLETED, progress_pct=100.0,
+                                    messages_total=result.messages_total)
             else:
+                # Keep the plan's denominator and the bar where the work stopped:
+                # "N of N" beside a 7% bar hides how much was NOT archived.
                 final_fields.update(status=JobStatus.CANCELLED)
             self.db.update_job(job_id, **final_fields)
             log.info("OpenSearch export cancelled" if result.cancelled
@@ -458,6 +503,14 @@ class OpenSearchExporter:
                                 error=str(e))
 
         except Exception as e:
+            if _is_cancellation(e):
+                self.db.update_job(job_id, status=JobStatus.CANCELLED,
+                                   messages_done=result.messages_total,
+                                   completed_at=datetime.utcnow(),
+                                   error_message="Cancelled by user")
+                result.cancelled = True
+                log.info("Export cancelled by user", job_id=job_id)
+                return result
             self.db.update_job(job_id, status=JobStatus.FAILED,
                                error_message=str(e), completed_at=datetime.utcnow())
             result.errors.append(str(e))
@@ -706,8 +759,9 @@ class OpenSearchExporter:
                 delay_between_requests_ms=2,
                 query=scan_query,
             ):
-                if self._cancelled:
-                    break
+                # Raises, never breaks — a break here fell through to 'close the
+                # last writer' and recorded a half-scanned hour as complete.
+                self._check_cancel()
                 # Backpressure sampling on a fixed ~15s cadence, throughout the
                 # (potentially long) single-index scan — not only between indices.
                 if guard is not None:
@@ -845,7 +899,10 @@ class OpenSearchExporter:
             self._cleanup_writer(writer, path)
 
         if progress_callback:
-            progress_callback({
+            # Every archive of this index is recorded by now. A cancel raised by
+            # THIS callback must not drop the index from the count — it only
+            # sets the flag, and the next checkpoint raises it.
+            fire_progress_after_record(self, progress_callback, {
                 "phase": "done",
                 "chunk_index": idx_num + 1,
                 "total_chunks": total_indices,

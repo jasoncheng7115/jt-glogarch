@@ -47,6 +47,9 @@
 
 | 35 | 被取消的匯出被回報成**完成、100%、「0 筆」**——旁邊的備註卻寫著已寫出 54.2 MB（v1.14.6） | 取消是以進度回呼拋出的 `RuntimeError` 傳進來，走的是與「索引真的失敗」同一個 `except`，於是被記成失敗，作業還繼續跑到正常結束並寫入 `COMPLETED`。而 `messages_total` 只在索引**完整結束**後才累加，因此被中斷索引的筆數——那些已寫進資料庫的有效封存——被丟棄，位元組計數器（每寫一個檔就累加）卻保留了數值 | `_is_cancellation()` 在**兩種**匯出模式中分辨兩者；取消寫入 `JobStatus.CANCELLED`，並保留 `progress_pct` 停在工作中斷處；被中斷單元的筆數會帶回結果並計入。`tests/test_export_cancel_reporting.py`（8 項），含一項參數化檢查確保兩種模式都套用同一條規則 |
 
+| 36 | 取消 OpenSearch 直連匯出，可能**永久遺失進行中的那個小時**（既有問題；1.14.6 之後由審查發現，v1.14.7 修正） | 掃描迴圈的 `if self._cancelled: break` 跳出後落到「關閉最後一個 writer」，把掃到一半的小時以涵蓋整個小時的 COMPLETED 封存記錄下來；之後 `covered_ranges()` 在每次掃描中排除它。排程執行必走這條路 | 每個檢查點都**拋出** `ExportCancelled`（絕不 `break`）；未完成的 writer 在回溯途中刪除，只有完整的小時留下。`test_export_cancel_paths.py::test_flag_cancel_mid_index_never_records_a_partial_hour` 重現遺失的形狀，`..._the_next_run_resumes_from_the_discarded_hour` 斷言補回 |
+| 37 | 1.14.6 的取消修正漏掉只靠旗標與 `try` 之外的取消，仍以 COMPLETED 或 FAILED 結束（v1.14.7） | `result.cancelled` 只在每索引的 `except` 裡設定；`try` 之外的回呼拋出會衝到 FAILED 處理器；反壓暫停與 Phase A 從不讀旗標；API 的 chunk 迴圈只在每 chunk 讀一次 | 兩種模式共用一套取消模型：`ExportCancelled` + 每個檢查點的 `_check_cancel()`（Phase A 每候選、Phase B 每索引與每批、guard 暫停每 tick、API 每批）+ 每次執行一個處理器 + 外層保險。執行期測試驅動兩個真實匯出器走過旗標路徑、回呼路徑、Phase A 與 guard 暫停 |
+
 ## 規模——成本隨資料量而非工作量成長
 
 | # | 缺陷 | 根因 | 防止再犯的機制 |

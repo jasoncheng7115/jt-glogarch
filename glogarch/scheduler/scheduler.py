@@ -354,7 +354,8 @@ class ArchiveScheduler:
                 log.info("No resume point found (API), using full range", stream=first_stream)
             log.info("Scheduled export starting (API)", time_from=str(time_from), time_to=str(time_to), streams=stream_ids)
             result = await exporter.export(time_from=time_from, time_to=time_to, streams=stream_ids, source=f"scheduled:api:{schedule_name}")
-        log.info("Scheduled export completed",
+        log.info("Scheduled export cancelled" if getattr(result, "cancelled", False)
+                 else "Scheduled export completed",
                  chunks=result.chunks_exported,
                  skipped=result.chunks_skipped,
                  messages=result.messages_total,

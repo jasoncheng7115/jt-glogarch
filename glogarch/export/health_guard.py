@@ -74,10 +74,16 @@ class HealthGuard:
     pressure clears, or raises RuntimeError if it stays high past the max wait.
     """
 
-    def __init__(self, monitor, cfg, progress_callback=None, ctx=None):
+    def __init__(self, monitor, cfg, progress_callback=None, ctx=None,
+                 cancel_check=None):
         self.monitor = monitor
         self.cfg = cfg
         self.progress_callback = progress_callback
+        # Read on every tick of a backpressure pause. "Paused — source under
+        # load" is exactly when an operator presses Cancel, and the pause loop
+        # used to ignore both the exporter's flag and the callback's exception
+        # for up to health_max_pause_min (30 min by default).
+        self.cancel_check = cancel_check
         self.ctx = dict(ctx or {})
         self.pause_count = 0
         self.total_paused_sec = 0
@@ -166,6 +172,7 @@ class HealthGuard:
             await asyncio.sleep(interval)
             waited += interval
             self.total_paused_sec += interval
+            self._raise_if_cancelled(waited)
             health = await self._read()
             if health is None:
                 self._emit(progress, f"Graylog not responding; still waiting (paused {waited}s)")
@@ -195,6 +202,12 @@ class HealthGuard:
             log.warning("Backpressure-stop notification failed - the stop was NOT reported to any channel", error=str(e))
         raise RuntimeError(msg)
 
+    def _raise_if_cancelled(self, waited: int) -> None:
+        if self.cancel_check and self.cancel_check():
+            from glogarch.export.exporter import ExportCancelled
+            log.info("export cancelled during backpressure pause", waited_sec=waited)
+            raise ExportCancelled("Job cancelled by user")
+
     def _emit(self, progress: dict | None, detail: str) -> None:
         if not self.progress_callback:
             return
@@ -205,4 +218,9 @@ class HealthGuard:
         try:
             self.progress_callback(payload)
         except Exception as e:
+            # The Web UI callback raises the cancel. Swallowing it here kept a
+            # paused export paused for the full max wait after Cancel was pressed.
+            from glogarch.export.exporter import _is_cancellation
+            if _is_cancellation(e):
+                raise
             log.debug("Backpressure progress callback failed", error=str(e))

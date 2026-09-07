@@ -17,6 +17,7 @@ completed at 100% reads as data loss).
 """
 import asyncio
 import os
+import json
 import re
 import sys
 
@@ -108,10 +109,105 @@ async def main():
         for e in errs:
             print("  pageerror:", e)
         ok = clicked == "ok" and status == "cancelled" and not errs
-        print("  RESULT:", "ALL PASS" if ok else
+        print("  import cancel:", "PASS" if ok else
               f"FAIL (status={status!r} — cancelled required; "
               f"'completed' means the cancel was recorded dishonestly)")
+
+        ok_export = await _export_cancel(pg, errs)
+        ok = ok and ok_export
+        print("  RESULT:", "ALL PASS" if ok else "FAILURES")
         await b.close()
         return 0 if ok else 1
+
+
+async def _api(pg, path, method="GET", body=None):
+    return await pg.evaluate(
+        "(a) => fetch(a.path, {method: a.method, headers: {'Content-Type':'application/json'},"
+        " body: a.body}).then(r => r.json())",
+        {"path": path, "method": method, "body": json.dumps(body) if body is not None else None})
+
+
+async def _export_cancel(pg, errs):
+    """Cancel a real OpenSearch-direct EXPORT mid-run — the customer's scenario.
+
+    Until this release, the script only cancelled an IMPORT, and export had its own
+    cancel handling with its own defects: a cancelled run finished "completed,
+    100%, 0 records", and on the flag path a half-scanned hour was recorded as a
+    complete archive. Asserts the row, the badge, the live page AND that only
+    whole-hour archives were added.
+    """
+    print("=== export cancel (OpenSearch-direct) ===")
+    before = (await _api(pg, "/api/archives?page_size=1")).get("total", 0)
+    r = await _api(pg, "/api/export", "POST", {"mode": "opensearch", "days": 2})
+    jid = r.get("job_id")
+    if not jid:
+        print("  FAIL: could not start an export:", r); return False
+    print(f"  export job {jid}")
+
+    # Wait until at least one WHOLE hour has been closed and recorded, then
+    # cancel while the next hour is in progress. The hour in progress is
+    # discarded on cancel by design (recording it as complete is the data-loss
+    # bug), so cancelling before any hour has closed would legitimately leave
+    # 0 archives and 0 records — and prove nothing.
+    live = 0
+    j = {}
+    for _ in range(200):
+        await pg.wait_for_timeout(3000)
+        j = await _api(pg, f"/api/jobs/{jid}")
+        live = j.get("messages_done") or 0
+        if j.get("status") != "running":
+            print(f"  FAIL: job left running before cancel: {j.get('status')} — "
+                  "nothing left to export on this target?"); return False
+        now = (await _api(pg, "/api/archives?page_size=1")).get("total", 0)
+        if now > before and live > 0:
+            break
+    else:
+        print("  FAIL: no whole hour was recorded within the wait — cannot test a mid-run cancel")
+        return False
+    denominator = j.get("messages_total") or 0
+    await _api(pg, f"/api/jobs/{jid}/cancel", "POST")
+    for _ in range(100):
+        await pg.wait_for_timeout(3000)
+        j = await _api(pg, f"/api/jobs/{jid}")
+        if j.get("status") != "running":
+            break
+    after = (await _api(pg, "/api/archives?page_size=1")).get("total", 0)
+    added = await _api(pg, f"/api/archives?page_size={min(500, max(1, after - before))}"
+                           "&sort=created_at&order=desc") \
+        if after > before else {"items": []}
+    partial = [a for a in (added.get("items") or [])
+               if a.get("time_from") and a.get("time_to")
+               and (a["time_from"][14:16] != "00" or a["time_to"][14:16] != "00")]
+
+    status, done, pct = j.get("status"), j.get("messages_done") or 0, j.get("progress_pct")
+    note, res = j.get("error_message") or "", j.get("result") or {}
+    await pg.goto(f"{BASE}/jobs", wait_until="networkidle")
+    await pg.wait_for_timeout(1500)
+    badge = await pg.evaluate(
+        "(id) => { const row=[...document.querySelectorAll('tr')].find(tr => tr.textContent.includes(id));"
+        "  const s=row && row.querySelector('[class^=status-]'); return s ? s.className : null; }", jid[:8])
+    chip = await pg.evaluate(
+        "(id) => { const row=[...document.querySelectorAll('tr')].find(tr => tr.textContent.includes(id));"
+        "  return !!(row && row.querySelector('.cov-ok')); }", jid[:8])
+
+    checks = {
+        "status is cancelled": status == "cancelled",
+        "count kept (not 0)": done > 0,
+        "denominator kept (not overwritten with the numerator)":
+            (j.get("messages_total") or 0) == denominator and denominator > done,
+        "progress not snapped to 100": pct is None or pct < 100,
+        "note explains the cancel": "Cancelled by user" in note,
+        "no 'Covered all' claim": "Covered all" not in note and "index_sets_covered" not in res,
+        "badge is cancelled": badge == "status-cancelled",
+        "no green coverage chip": not chip,
+        "archives were recorded before the cancel": after > before,
+        "no partial-hour archive recorded": not partial,
+        "no page errors": not errs,
+    }
+    print(f"  live={live:,} final: status={status!r} done={done:,} total={j.get('messages_total')} "
+          f"pct={pct} archives +{after - before}")
+    for k, v in checks.items():
+        print(f"  {'PASS' if v else 'FAIL'}: {k}")
+    return all(checks.values())
 
 sys.exit(asyncio.run(main()))

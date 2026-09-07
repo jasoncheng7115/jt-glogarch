@@ -2,6 +2,80 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.14.7] - 2026-09-07
+
+### Fixed
+
+- **Cancelling an OpenSearch-direct export could silently lose the hour in
+  progress — permanently.** Inside the index scan, `if self._cancelled: break`
+  left the loop and then fell through to "close the last writer", which
+  recorded the half-scanned hour as a COMPLETED archive spanning the whole
+  hour. `covered_ranges()` then excluded that hour from every later scan, so
+  the unscanned tail was never fetched again; verify passed (the file's SHA256
+  was consistent) and the pre-scan reconciliation never ran (early exit).
+  Scheduled runs, which have no progress callback, ALWAYS took this path; Web
+  UI cancels took it whenever the click landed during a page fetch, which is
+  most of the time. Pre-existing for years; found by review after 1.14.6 —
+  whose new note ("the archives written before the cancel are kept; re-run to
+  continue") described exactly the opposite of what happened to that hour.
+  Every checkpoint now RAISES `ExportCancelled` instead of breaking: the
+  partial writer is deleted on the way up, only whole hours stay recorded, and
+  the next run resumes from the discarded hour. `test_export_cancel_paths.py`
+  reproduces the loss shape (a hour split across two batches, cancel between
+  them) and asserts the second run brings it back whole.
+- **1.14.6's cancel fix was incomplete.** It set `result.cancelled` only in the
+  per-index `except`, so every flag-only cancel — a scheduled run, or a Web UI
+  cancel landing between callbacks — still ended COMPLETED at 100% with a
+  success notification; and a cancel raised by a callback OUTSIDE the per-unit
+  `try` (Phase A scanning/dedup, the pre-index call after a guard pause, the
+  API skip branch) escaped to the outer handler and was filed as FAILED with an
+  error notification. There is now ONE cancel model in both modes: a dedicated
+  `ExportCancelled` exception (the Web UI callback raises it; `_check_cancel()`
+  raises it at every checkpoint), one handler per run that files it as
+  CANCELLED, and an outer belt-and-braces catch so a cancel can never be written
+  as FAILED.
+- **A cancel pressed during a backpressure pause was ignored for up to 30
+  minutes.** "Paused — source under load" is exactly when an operator presses
+  Cancel; `_pause_until_clear` never read the flag and `_emit` swallowed the
+  callback's exception at DEBUG. The guard now takes a `cancel_check` and
+  raises on the next tick; a cancel from the callback is re-raised.
+- **Phase A ignored cancellation entirely.** On a big index set the dedup loop
+  is hundreds of `_count` requests, each up to the 120 s read timeout on an
+  overloaded cluster — the very situation in which the operator just cancelled.
+  It could keep the per-server lock for 10+ hours after the cancel. Checkpoint
+  per candidate.
+- **A scheduled API export did not read the flag inside a chunk**, so after the
+  cancel endpoint had already written CANCELLED it kept querying Graylog for
+  the rest of a 1-2.5 h hour-chunk, answered 409 to new exports and made the
+  next schedule log "stale lock — restart jt-glogarch" for a lock that was
+  live. Checkpoint per batch.
+- **The live export page rendered a cancelled run as "Completed!" at 100%** (or
+  as "Completed with 0 records"); only the Job History badge said otherwise.
+  `showResult` has a cancelled branch, the bar stays where the work stopped,
+  the SSE stream treats `cancelled` as terminal without a pct, and the cancel
+  endpoint no longer injects a synthetic "error at 100%" event.
+- **A cancelled row contradicted itself** — `messages_total` was overwritten
+  with the salvaged numerator ("783,433 of 783,433" beside a 7% bar) and the
+  plan's 11.8M denominator was gone. The denominator is now kept on a cancel.
+- **A cancelled run claimed "Covered all 27 index set(s)"** and painted the
+  green coverage chip — the claim described the operator's selection, not what
+  Phase B reached. No coverage claim on a cancel; the chip does not render.
+- **A cancel raised by the post-record "done" callback dropped a recorded
+  archive from the count** ("0 records beside 48 MB" in API mode). Shared
+  `fire_progress_after_record`: a cancel there only sets the flag; the next
+  checkpoint raises it with the count intact.
+- **The note opened with "0 chunks"** beside 40 archive files — `chunks_exported`
+  counts INDICES that finished. The note now leads with archive files written,
+  which is the number that matches the disk.
+- Logs: "Export completed" / "Scheduled export completed" are no longer written
+  for a cancelled run.
+
+### Changed
+
+- The substring contract `"cancelled by user" in str(e)` is retired as the
+  primary signal; `ExportCancelled` is the type. The dead
+  `asyncio.CancelledError` arm (never catchable by `except Exception`) is gone.
+
 ## [1.14.6] - 2026-09-07
 
 ### Fixed

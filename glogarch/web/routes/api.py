@@ -34,6 +34,21 @@ router = APIRouter()
 _cancel_flags: dict[str, bool] = {}
 
 
+def _publish_export_end(job_id: str, result) -> None:
+    """The live export page's final event.
+
+    A cancelled run must not be published as "done at 100%" — that is how the
+    export screen came to say "Completed!" over a job the operator had just
+    cancelled, while only the Job History badge said otherwise.
+    """
+    if getattr(result, "cancelled", False):
+        ev = {"phase": "cancelled", "messages_done": result.messages_total}
+    else:
+        ev = {"phase": "done", "pct": 100, "messages_done": result.messages_total,
+              "messages_total": result.messages_total}
+    _job_progress.setdefault(job_id, []).append(ev)
+
+
 def _audit(request: Request, action: str, detail: str = ""):
     try:
         db = request.app.state.db
@@ -291,7 +306,8 @@ async def trigger_export(request: Request, background_tasks: BackgroundTasks):
     def _cb(info):
         # Check if cancelled
         if _cancel_flags.get(job_id):
-            raise RuntimeError("Job cancelled by user")
+            from glogarch.export.exporter import ExportCancelled
+            raise ExportCancelled("Job cancelled by user")
         info["job_id"] = job_id
         events = _job_progress.setdefault(job_id, [])
         # Keep only last 100 progress events per job to limit memory
@@ -321,9 +337,7 @@ async def trigger_export(request: Request, background_tasks: BackgroundTasks):
                     progress_callback=_cb, source="manual:opensearch",
                     job_id=job_id, keep_indices=int(keep_indices) if keep_indices else None,
                 ))
-                _job_progress.setdefault(job_id, []).append(
-                    {"phase": "done", "pct": 100, "messages_done": result.messages_total, "messages_total": result.messages_total, "source": "manual"}
-                )
+                _publish_export_end(job_id, result)
             except Exception as e:
                 _job_progress.setdefault(job_id, []).append(
                     {"phase": "error", "error": str(e), "pct": 100}
@@ -348,9 +362,7 @@ async def trigger_export(request: Request, background_tasks: BackgroundTasks):
                     streams=streams, progress_callback=_cb, source="manual:api",
                     job_id=job_id,
                 ))
-                _job_progress.setdefault(job_id, []).append(
-                    {"phase": "done", "pct": 100, "messages_done": result.messages_total, "messages_total": result.messages_total}
-                )
+                _publish_export_end(job_id, result)
             except Exception as e:
                 _job_progress.setdefault(job_id, []).append(
                     {"phase": "error", "error": str(e), "pct": 100}
@@ -1042,7 +1054,10 @@ def get_job(request: Request, job_id: str):
         events = _job_progress[job_id]
         if events:
             last = events[-1]
-            is_done = last.get("phase") in ("error", "done") or last.get("pct", 0) >= 100
+            # "cancelled" is terminal and carries no pct. Without it here the
+            # job endpoint kept serving the in-memory "running" view for a run
+            # the exporter had already written as CANCELLED to the DB.
+            is_done = last.get("phase") in ("error", "done", "cancelled") or last.get("pct", 0) >= 100
             if is_done:
                 db_job = db.get_job(job_id)
                 if db_job:
@@ -1111,8 +1126,10 @@ def cancel_job(request: Request, job_id: str):
 
     # Check in-memory jobs first (Web UI triggered)
     if job_id in _job_progress:
+        # An informational event, NOT a synthetic error at 100%: the exporter
+        # is still unwinding and will publish the real final state itself.
         _job_progress.setdefault(job_id, []).append(
-            {"phase": "error", "error": "Job cancelled by user", "pct": 100}
+            {"phase": "cancelling", "detail": "Cancelling — finishing the current batch"}
         )
         _audit(request, "job_cancelled", f"job={job_id}")
         return {"status": "cancelled", "id": job_id}
@@ -1157,7 +1174,9 @@ async def job_stream(request: Request, job_id: str):
                 last_idx += 1
                 new = True
                 yield {"event": "progress", "data": _json.dumps(evt)}
-                if evt.get("pct", 0) >= 100 or evt.get("phase") in ("error", "done"):
+                # "cancelled" is terminal too — and carries NO pct, so the
+                # client keeps the bar where the work stopped.
+                if evt.get("pct", 0) >= 100 or evt.get("phase") in ("error", "done", "cancelled"):
                     yield {"event": "done", "data": _json.dumps(evt)}
                     return
             if new:
@@ -1176,8 +1195,10 @@ async def job_stream(request: Request, job_id: str):
                     except Exception:
                         job = None
                     if job and job.status.value in ("completed", "failed", "cancelled"):
-                        yield {"event": "done", "data": _json.dumps(
-                            {"phase": job.status.value, "pct": 100})}
+                        term = {"phase": job.status.value}
+                        if job.status.value != "cancelled":
+                            term["pct"] = 100
+                        yield {"event": "done", "data": _json.dumps(term)}
                         return
                 yield {"event": "heartbeat", "data": _json.dumps({"phase": "heartbeat"})}
 
@@ -1438,9 +1459,7 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
                     progress_callback=_cb, source=f"manual:opensearch:{name}",
                     job_id=job_id, keep_indices=int(keep_indices) if keep_indices else None,
                 ))
-                _job_progress.setdefault(job_id, []).append(
-                    {"phase": "done", "pct": 100, "messages_done": result.messages_total, "messages_total": result.messages_total}
-                )
+                _publish_export_end(job_id, result)
             except Exception as e:
                 _job_progress.setdefault(job_id, []).append(
                     {"phase": "error", "error": str(e), "pct": 100}
@@ -1466,9 +1485,7 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
                     streams=stream_ids, progress_callback=_cb, source=f"manual:api:{name}",
                     job_id=job_id,
                 ))
-                _job_progress.setdefault(job_id, []).append(
-                    {"phase": "done", "pct": 100, "messages_done": result.messages_total, "messages_total": result.messages_total}
-                )
+                _publish_export_end(job_id, result)
             except Exception as e:
                 _job_progress.setdefault(job_id, []).append(
                     {"phase": "error", "error": str(e), "pct": 100}

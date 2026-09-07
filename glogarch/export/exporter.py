@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, Callable
@@ -107,19 +106,50 @@ def normalize_index_set_ids(raw, config_index_sets=None):
     return None
 
 
-def _is_cancellation(exc: BaseException) -> bool:
-    """Did this exception come from the operator pressing Cancel?
+class ExportCancelled(Exception):
+    """The operator cancelled this export.
 
-    Cancellation reaches the export as a `RuntimeError("Job cancelled by user")`
-    raised by the progress callback — i.e. through the SAME `except` that catches
-    a genuine chunk/index failure. Without this distinction a cancel was recorded
-    as "Index X failed — data may be incomplete, will retry next run", the run
-    carried on to its normal end, and the job row was written as COMPLETED at
-    100%. `asyncio.CancelledError` derives from BaseException and so is not
-    caught by `except Exception`; it is listed for the paths that catch wider.
+    ONE signal, ONE type. Cancellation used to be a bare
+    `RuntimeError("Job cancelled by user")` raised by the Web UI's progress
+    callback and recognised by substring at several sites — reword one and the
+    others silently stop matching. It also reached the exporter through the
+    same `except Exception` that catches a real chunk/index failure, so a cancel
+    was filed as a failure and the run finished as COMPLETED.
+
+    Now: the exporter's own `_check_cancel()` raises this at every checkpoint
+    (so scheduled runs, which have no callback, unwind the same way the Web UI
+    ones do), the Web UI callback raises this too, and exactly one handler per
+    run turns it into status=CANCELLED.
     """
-    return isinstance(exc, asyncio.CancelledError) or \
+
+
+def _is_cancellation(exc: BaseException) -> bool:
+    """Is this exception the operator's cancel rather than a failure?
+
+    `ExportCancelled` is the contract. The substring fallback remains only for
+    the importer's older `RuntimeError("Job cancelled by user")` sites, which
+    share the notification filter.
+    """
+    return isinstance(exc, ExportCancelled) or \
         "cancelled by user" in str(exc).lower()
+
+
+def fire_progress_after_record(exporter, progress_callback, info: dict) -> None:
+    """Fire a progress callback AFTER an archive has been recorded.
+
+    If the callback raises the cancel here, the unit it reports on is already
+    complete, checksummed and in the database — raising out of it would drop a
+    recorded archive from the count (the '0 records beside 48 MB' symptom). So a
+    cancel raised here only sets the exporter's flag; the very next checkpoint
+    raises it, with the count intact. Shared by both export modes.
+    """
+    try:
+        progress_callback(info)
+    except Exception as e:
+        if _is_cancellation(e):
+            exporter._cancelled = True
+            return
+        raise
 
 
 class ExportResult:
@@ -180,6 +210,20 @@ class Exporter:
     def cancel(self) -> None:
         """Request cancellation of the current export."""
         self._cancelled = True
+
+    def _check_cancel(self) -> None:
+        """Raise at a checkpoint if the operator has cancelled.
+
+        Raising — instead of `break` — is the point. A `break` leaves the loop
+        but then FALLS THROUGH to whatever follows: in the OpenSearch exporter
+        that was 'close and record the last writer', which stamped a
+        half-scanned hour as a COMPLETED archive covering the whole hour, and
+        de-duplication then hid the unscanned tail forever. An exception unwinds
+        through the same cleanup path a failure takes (partial file deleted) and
+        reaches one handler that files the run as cancelled.
+        """
+        if self._cancelled:
+            raise ExportCancelled("Job cancelled by user")
 
     async def export(
         self,
@@ -246,7 +290,8 @@ class Exporter:
                 # Adaptive backpressure guard: pauses the export whenever Graylog
                 # ingestion falls behind (heap high, or journal/buffers climbing)
                 # and resumes once it drains. Fail-safe if Graylog is unreachable.
-                guard = HealthGuard(monitor, self.export_config, progress_callback)
+                guard = HealthGuard(monitor, self.export_config, progress_callback,
+                                    cancel_check=lambda: self._cancelled)
                 search = GraylogSearch(
                     client, monitor,
                     delay_between_requests_ms=self.export_config.delay_between_requests_ms,
@@ -270,126 +315,124 @@ class Exporter:
                 except Exception as e:
                     log.warning("Failed to pre-count records", error=str(e))
 
-                for stream_id in stream_list:
-                    stream_name = (stream_names or {}).get(stream_id, None) if stream_id else None
+                try:
+                    for stream_id in stream_list:
+                        stream_name = (stream_names or {}).get(stream_id, None) if stream_id else None
 
-                    # Fail-fast: if many chunks fail in a row without a single
-                    # success, the problem is systematic (e.g. a Graylog/OpenSearch
-                    # error on every search) — abort instead of grinding through
-                    # thousands of chunks for hours.
-                    consecutive_failures = 0
-                    for chunk_idx, (chunk_from, chunk_to) in enumerate(chunks):
-                        if self._cancelled:
-                            log.info("Export cancelled by user", job_id=job_id,
-                                     records_kept=result.messages_total)
-                            result.cancelled = True
-                            break
+                        # Fail-fast: if many chunks fail in a row without a single
+                        # success, the problem is systematic (e.g. a Graylog/OpenSearch
+                        # error on every search) — abort instead of grinding through
+                        # thousands of chunks for hours.
+                        consecutive_failures = 0
+                        for chunk_idx, (chunk_from, chunk_to) in enumerate(chunks):
+                            self._check_cancel()
 
-                        # Check if already exported (same-mode exact match)
-                        existing = self.db.find_archive(
-                            self.server_config.name, stream_id, chunk_from, chunk_to
-                        )
-                        # Cross-mode dedup: check if any archive covers this time range
-                        if not existing:
-                            if self.db.is_time_range_covered(self.server_config.name, chunk_from, chunk_to):
-                                existing = True  # Treat as already exported
-                                log.debug("Chunk covered by cross-mode archive, skipping",
-                                          time_from=str(chunk_from), time_to=str(chunk_to))
-                        if (existing is True) or (existing and existing.status == ArchiveStatus.COMPLETED):
-                            result.chunks_skipped += 1
-                            log.debug("Chunk already exported, skipping",
-                                      time_from=str(chunk_from), time_to=str(chunk_to))
-                            if progress_callback:
-                                # Progress is CHUNK-based (time progress), consistent with the
-                                # DB progress_pct and every other view. A message-based percentage
-                                # (messages_done / total_records) is misleading here: messages_done
-                                # counts only NEWLY-exported messages while total_records is the full
-                                # pre-count of the whole range — on a resume with many already-archived
-                                # (skipped) chunks it collapses to ~0% even though most of the range is done.
-                                pct = ((chunk_idx + 1) / total_chunks) * 100 if total_chunks else 0
-                                progress_callback({
-                                    "phase": "skipping",
-                                    "chunk_index": chunk_idx + 1,
-                                    "total_chunks": total_chunks,
-                                    "stream_id": stream_id,
-                                    "messages_done": result.messages_total,
-                                    "messages_total": total_records,
-                                    "pct": min(pct, 99),
-                                    "detail": f"skipped {result.chunks_skipped}/{total_chunks} (archived)",
-                                })
-                            # Update DB periodically during skip phase (every 50 chunks)
-                            if result.chunks_skipped % 50 == 0:
-                                pct = ((chunk_idx + 1) / total_chunks) * 100 if total_chunks else 0
-                                self.db.update_job(job_id, progress_pct=min(pct, 99))
-                            continue
-
-                        # Export this chunk
-                        try:
-                            msgs_in_chunk = await self._export_chunk(
-                                search, stream_id, stream_name,
-                                chunk_from, chunk_to, chunk_idx, total_chunks,
-                                progress_callback, result, total_records, job_id,
-                                guard=guard,
+                            # Check if already exported (same-mode exact match)
+                            existing = self.db.find_archive(
+                                self.server_config.name, stream_id, chunk_from, chunk_to
                             )
-                            result.chunks_exported += 1
-                            result.messages_total += msgs_in_chunk
-                            consecutive_failures = 0
+                            # Cross-mode dedup: check if any archive covers this time range
+                            if not existing:
+                                if self.db.is_time_range_covered(self.server_config.name, chunk_from, chunk_to):
+                                    existing = True  # Treat as already exported
+                                    log.debug("Chunk covered by cross-mode archive, skipping",
+                                              time_from=str(chunk_from), time_to=str(chunk_to))
+                            if (existing is True) or (existing and existing.status == ArchiveStatus.COMPLETED):
+                                result.chunks_skipped += 1
+                                log.debug("Chunk already exported, skipping",
+                                          time_from=str(chunk_from), time_to=str(chunk_to))
+                                if progress_callback:
+                                    # Progress is CHUNK-based (time progress), consistent with the
+                                    # DB progress_pct and every other view. A message-based percentage
+                                    # (messages_done / total_records) is misleading here: messages_done
+                                    # counts only NEWLY-exported messages while total_records is the full
+                                    # pre-count of the whole range — on a resume with many already-archived
+                                    # (skipped) chunks it collapses to ~0% even though most of the range is done.
+                                    pct = ((chunk_idx + 1) / total_chunks) * 100 if total_chunks else 0
+                                    progress_callback({
+                                        "phase": "skipping",
+                                        "chunk_index": chunk_idx + 1,
+                                        "total_chunks": total_chunks,
+                                        "stream_id": stream_id,
+                                        "messages_done": result.messages_total,
+                                        "messages_total": total_records,
+                                        "pct": min(pct, 99),
+                                        "detail": f"skipped {result.chunks_skipped}/{total_chunks} (archived)",
+                                    })
+                                # Update DB periodically during skip phase (every 50 chunks)
+                                if result.chunks_skipped % 50 == 0:
+                                    pct = ((chunk_idx + 1) / total_chunks) * 100 if total_chunks else 0
+                                    self.db.update_job(job_id, progress_pct=min(pct, 99))
+                                continue
 
-                        except Exception as e:
-                            if _is_cancellation(e):
-                                # The operator pressed Cancel. Recording that as
-                                # "Chunk N failed — will retry next run" and then
-                                # finishing the job as COMPLETED at 100% is how a
-                                # cancelled run came to look like a successful one.
-                                self._cancelled = True
-                                result.cancelled = True
-                                log.info("Export cancelled by user", job_id=job_id,
-                                         chunk=chunk_idx + 1,
-                                         records_kept=result.messages_total)
-                                break
-                            err_msg = f"Chunk {chunk_idx+1} failed: {e}"
-                            log.error(err_msg, chunk_from=str(chunk_from))
-                            result.errors.append(err_msg)
-                            consecutive_failures += 1
-                            # Abort fast on a systematic failure. Two trips:
-                            #  - 10 in a row with NOTHING exported yet (bad creds,
-                            #    cluster RED from the very start), and
-                            #  - 25 in a row at ANY point (a cluster that goes RED
-                            #    mid-run must not grind through thousands of failing
-                            #    chunks for hours just because chunk 1 succeeded).
-                            conn_limit = getattr(self.export_config, "connection_failure_limit", 20)
-                            if (consecutive_failures >= 10 and result.chunks_exported == 0) \
-                                    or consecutive_failures >= conn_limit:
-                                raise RuntimeError(
-                                    f"Aborting export after {consecutive_failures} consecutive "
-                                    f"chunk failures. Last error: {e}")
-                            # otherwise continue with the next chunk
+                            # Export this chunk
+                            try:
+                                msgs_in_chunk = await self._export_chunk(
+                                    search, stream_id, stream_name,
+                                    chunk_from, chunk_to, chunk_idx, total_chunks,
+                                    progress_callback, result, total_records, job_id,
+                                    guard=guard,
+                                )
+                                result.chunks_exported += 1
+                                result.messages_total += msgs_in_chunk
+                                consecutive_failures = 0
 
-                        # Update DB progress periodically (every chunk)
-                        pct = ((chunk_idx + 1) / total_chunks) * 100 if total_chunks else 0
-                        self.db.update_job(
-                            job_id,
-                            progress_pct=min(pct, 99),
-                            messages_done=result.messages_total,
-                        )
+                            except Exception as e:
+                                if _is_cancellation(e):
+                                    raise   # not a chunk failure — one handler files it
+                                err_msg = f"Chunk {chunk_idx+1} failed: {e}"
+                                log.error(err_msg, chunk_from=str(chunk_from))
+                                result.errors.append(err_msg)
+                                consecutive_failures += 1
+                                # Abort fast on a systematic failure. Two trips:
+                                #  - 10 in a row with NOTHING exported yet (bad creds,
+                                #    cluster RED from the very start), and
+                                #  - 25 in a row at ANY point (a cluster that goes RED
+                                #    mid-run must not grind through thousands of failing
+                                #    chunks for hours just because chunk 1 succeeded).
+                                conn_limit = getattr(self.export_config, "connection_failure_limit", 20)
+                                if (consecutive_failures >= 10 and result.chunks_exported == 0) \
+                                        or consecutive_failures >= conn_limit:
+                                    raise RuntimeError(
+                                        f"Aborting export after {consecutive_failures} consecutive "
+                                        f"chunk failures. Last error: {e}")
+                                # otherwise continue with the next chunk
 
-                        # Periodic disk space check
-                        if (chunk_idx + 1) % 10 == 0:
-                            has_space, _ = self.storage.check_disk_space()
-                            if not has_space:
-                                raise RuntimeError("Disk space exhausted during export")
+                            # Update DB progress periodically (every chunk)
+                            pct = ((chunk_idx + 1) / total_chunks) * 100 if total_chunks else 0
+                            self.db.update_job(
+                                job_id,
+                                progress_pct=min(pct, 99),
+                                messages_done=result.messages_total,
+                            )
 
-                        # Adaptive backpressure guard (every chunk): pause if
-                        # Graylog is falling behind on ingestion — JVM heap high,
-                        # or disk journal / ring buffers climbing — and resume once
-                        # they drain. Fail-safe: an unreachable Graylog pauses too.
-                        await guard.checkpoint({
-                            "chunk_index": chunk_idx + 1,
-                            "total_chunks": total_chunks,
-                            "messages_done": result.messages_total,
-                            "messages_total": total_records,
-                            "pct": ((chunk_idx + 1) / total_chunks) * 100 if total_chunks else 0,
-                        })
+                            # Periodic disk space check
+                            if (chunk_idx + 1) % 10 == 0:
+                                has_space, _ = self.storage.check_disk_space()
+                                if not has_space:
+                                    raise RuntimeError("Disk space exhausted during export")
+
+                            # Adaptive backpressure guard (every chunk): pause if
+                            # Graylog is falling behind on ingestion — JVM heap high,
+                            # or disk journal / ring buffers climbing — and resume once
+                            # they drain. Fail-safe: an unreachable Graylog pauses too.
+                            await guard.checkpoint({
+                                "chunk_index": chunk_idx + 1,
+                                "total_chunks": total_chunks,
+                                "messages_done": result.messages_total,
+                                "messages_total": total_records,
+                                "pct": ((chunk_idx + 1) / total_chunks) * 100 if total_chunks else 0,
+                            })
+
+                except Exception as e:
+                    if not _is_cancellation(e):
+                        raise
+                    # THE cancel handler for an API run. Every checkpoint,
+                    # callback and guard pause lands here; the final write
+                    # below then records it as CANCELLED with the real count.
+                    result.cancelled = True
+                    log.info("Export cancelled by user", job_id=job_id,
+                             records_kept=result.messages_total)
 
             # Single-millisecond overflows: the chunk WAS exported (everything
             # except the unreadable tail of one millisecond), so it is not a
@@ -453,16 +496,20 @@ class Exporter:
             # Omitting progress_pct leaves the bar where the work stopped.
             final_fields = dict(
                 messages_done=result.messages_total,
-                messages_total=result.messages_total,
                 completed_at=datetime.utcnow(),
                 error_message=note,
             )
             if result.cancelled:
+                # Keep the pre-count as the denominator and the bar where the
+                # work stopped: "N of N" beside a 7% bar hides how much was
+                # NOT archived, which is the one thing a cancelled row must say.
                 final_fields.update(status=JobStatus.CANCELLED)
             else:
-                final_fields.update(status=JobStatus.COMPLETED, progress_pct=100.0)
+                final_fields.update(status=JobStatus.COMPLETED, progress_pct=100.0,
+                                    messages_total=result.messages_total)
             self.db.update_job(job_id, **final_fields)
-            log.info("Export completed", job_id=job_id,
+            log.info("Export cancelled" if result.cancelled else "Export completed",
+                     job_id=job_id,
                      chunks_exported=result.chunks_exported,
                      chunks_skipped=result.chunks_skipped,
                      messages_total=result.messages_total)
@@ -491,6 +538,17 @@ class Exporter:
                     log.warning("Export notification failed", error=str(e))
 
         except Exception as e:
+            if _is_cancellation(e):
+                # Belt and braces: a cancel raised outside the stream loop (the
+                # pre-count, a guard pause between phases) must never be filed
+                # as FAILED with an error notification.
+                self.db.update_job(job_id, status=JobStatus.CANCELLED,
+                                   messages_done=result.messages_total,
+                                   completed_at=datetime.utcnow(),
+                                   error_message="Cancelled by user")
+                result.cancelled = True
+                log.info("Export cancelled by user", job_id=job_id)
+                return result
             err_str = str(e)
             if "401" in err_str or "Unauthorized" in err_str:
                 err_str = (f"Graylog API authentication failed (401). "
@@ -588,6 +646,11 @@ class Exporter:
                 fields=fields,
                 batch_size=self.export_config.batch_size,
             ):
+                # A scheduled run has no progress callback, so the flag is its
+                # ONLY cancel signal — and a busy hour-chunk is 1-2.5 h of
+                # rate-limited requests. Check it per batch, not per chunk.
+                self._check_cancel()
+
                 # Skip empty batches
                 if not batch:
                     continue
@@ -690,7 +753,7 @@ class Exporter:
         result.files_written.append(str(file_path))
 
         if progress_callback:
-            progress_callback({
+            fire_progress_after_record(self, progress_callback, {
                 "phase": "done",
                 "chunk_index": chunk_idx + 1,
                 "total_chunks": total_chunks,
@@ -700,6 +763,7 @@ class Exporter:
             })
 
         return msg_count
+
 
     @staticmethod
     def _cleanup_writer(writer, path):

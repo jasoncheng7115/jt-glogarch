@@ -461,20 +461,27 @@ nowhere) while the API, the flag and every unit test were fine. The rule:
       recorded as covering their time range, so dedup hides the gap on every
       later run. Production indices have 4 shards; the e2e cluster has 1, which
       is why no data-path test could ever have caught this.*
-- [ ] **Cancelling an export marks it CANCELLED, never completed** — press
-      Cancel mid-run in the UI: the badge is the muted "Cancelled by user" (both
-      languages, not a raw English status string), the progress bar stays where
-      it stopped rather than snapping to 100%, and the note says the archives
-      written so far are kept. *A cancelled run used to finish as "completed,
-      100%, 0 records" beside a note saying 54.2 MB had been written — a real
-      customer could not tell whether data had been lost.*
-- [ ] **The record count survives the cancel** — the number shown after
-      cancelling matches what the live counter had reached, not 0. Cross-check
-      against the Archive list for that time range. *`messages_total` only grows
-      when a unit FINISHES; the interrupted unit's archives are on disk and in
-      the DB and must be counted.*
-- [ ] **No completion notification for a cancelled run** — and no error one
-      either. Cancel is a deliberate act.
+- [ ] **Cancelling an export never records a partial hour** —
+      `test_export_cancel_paths.py` (runtime, both real exporters, faked
+      backends): a flag-only cancel mid-index records ONLY the whole hours
+      (`..._never_records_a_partial_hour`), and the next run brings the
+      discarded hour back whole (`..._resumes_from_the_discarded_hour`).
+      *A `break` fell through to "close the last writer" and stamped a
+      half-scanned hour as complete; dedup then hid its tail forever. Scheduled
+      runs always took that path.*
+- [ ] **Every cancel path ends CANCELLED, never COMPLETED or FAILED** — same
+      file: flag path (scheduled), callback path (Web UI), Phase A dedup loop,
+      API mid-chunk, and the backpressure pause
+      (`test_backpressure_pause_honours_cancel`). No error notification on any
+      of them. Manually: press Cancel while the job shows "Paused — source
+      under load" and confirm it stops within one pause tick, not 30 minutes.
+- [ ] **The cancelled row is honest** — `messages_done` = what is on disk,
+      `messages_total` keeps the plan's denominator, `progress_pct` stays where
+      the work stopped (not 100), no "Covered all N index set(s)" and no green
+      coverage chip, the note says the hour in progress was discarded. Live
+      export page shows "Cancelled by user (N records)", not "Completed!".
+      Release script: `scripts/ui-cancel-test.py` now cancels a real
+      OpenSearch-direct EXPORT (not only an import) and asserts all of this.
 - [ ] **Cancel and backpressure are never reported as data loss** — breaking
       out of the scan closes the generator, so the reconciliation must not run.
       A user pressing Cancel must not be told the archive lost records.

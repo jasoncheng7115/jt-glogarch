@@ -2912,6 +2912,10 @@ async function startExport() {
 // (from the job's structured `result`). Green = all covered; amber = some skipped.
 function coverageChip(job) {
     const r = job && job.result;
+    // A cancelled run never covered "all index sets" — it covered whatever
+    // Phase B reached. The server omits index_sets_covered for it; this guard
+    // holds even for rows written by an older version.
+    if (job && job.status === 'cancelled') return '';
     if (!r || r.index_sets_covered === undefined || r.index_sets_covered === null) return '';
     const skipped = r.index_sets_skipped || [];
     if (skipped.length === 0) {
@@ -3441,9 +3445,19 @@ function watchJob(jobId, type, onComplete) {
 
     function showResult(job) {
         const msgs = job.messages_done || 0;
-        if (bar) bar.style.width = '100%';
+        const cancelled = job.status === 'cancelled' || job.phase === 'cancelled';
+        // A cancelled run stays where it stopped; snapping to 100% is how the
+        // live page came to say "Completed!" over a job the operator had just
+        // cancelled (only the Job History badge disagreed).
+        if (bar && !cancelled) bar.style.width = '100%';
         if (text) {
-            if (job.status === 'failed' || job.phase === 'error') {
+            if (cancelled) {
+                let html = `<span class="status-cancelled">${t('status_cancelled')} (${formatNumber(msgs)} ${t('unit_records')})</span>`;
+                if (job.error_message) {
+                    html += `<div data-style="margin-top:8px;padding:8px 10px;background:rgba(108,99,255,0.08);border-left:3px solid var(--text-dim);border-radius:4px;font-size:0.85em">${esc(job.error_message)}</div>`;
+                }
+                text.innerHTML = html;
+            } else if (job.status === 'failed' || job.phase === 'error') {
                 text.innerHTML = `<span class="status-failed">${t('progress_error')}${esc(job.error_message || job.error || '')}</span>`;
             } else if (msgs === 0) {
                 text.innerHTML = `<span class="u030">${t('export_no_data')}</span>`;
@@ -3482,6 +3496,12 @@ function watchJob(jobId, type, onComplete) {
     es.addEventListener('progress', (e) => {
         sseOk = true;
         const data = JSON.parse(e.data);
+        if (data.phase === 'cancelling') {
+            // Cancel acknowledged; the exporter is finishing its current batch
+            // and will publish the real final state. Keep the bar, say so.
+            if (text) text.textContent = data.detail || '';
+            return;
+        }
         renderProgress(data.pct, data.messages_done, data.messages_total, data.index, data.detail, data.phase);
     });
     // Heartbeat: the server sends these while a running import is paused on
