@@ -40,6 +40,7 @@
     <a href="#audit">行為稽核</a>
     <a href="#screenshots">畫面</a>
     <a href="#reports">報表</a>
+    <a href="#record-search">記錄搜尋</a>
     <a href="https://github.com/jasoncheng7115/jt-glogarch" target="_blank" rel="noopener">GitHub</a>
     <a href="index.html" class="lang">English</a>
   </div>
@@ -331,6 +332,27 @@ sudo bash upgrade-offline.sh                # pip 全程不連網；會先自動
       <img class="ss-img" src="reports/wazuh_screenshot_zhtw.png" alt="截圖版報表" loading="lazy">
       <div class="label">截圖版<small>像素級忠實擷取實際儀表板——每個頁籤、含世界地圖</small></div>
     </button>
+  </div>
+</section>
+
+<section id="record-search">
+  <h2>記錄搜尋</h2>
+  <p class="subhead">不必還原、也不必匯回 Graylog，直接在歸檔檔案裡找記錄。「六個月前那台主機到底發生什麼事」這種一次性的查證，把整段時間匯回去要花好幾十分鐘，這裡幾秒到幾分鐘就有答案。點一下可放大。</p>
+  <div class="shots">
+    <button class="shot" type="button" data-lightbox="screenshots/8_search_zhtw.png">
+      <img class="ss-img" src="screenshots/8_search_zhtw.png" alt="記錄搜尋" loading="lazy">
+      <div class="label">搜尋歸檔<small>命中處就地醒目提示，搜尋前先告訴你要掃多少、大概多久</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="screenshots/8_search_expanded_zhtw.png">
+      <img class="ss-img" src="screenshots/8_search_expanded_zhtw.png" alt="展開單筆記錄" loading="lazy">
+      <div class="label">展開單筆記錄<small>一次列出全部欄位、標出命中位置，並指明來自哪一份歸檔檔案</small></div>
+    </button>
+  </div>
+  <div class="features">
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>時間範圍必填</h4><p>刻意如此：歸檔沒有索引，時間範圍是唯一能在開啟檔案之前先篩掉大部分資料的依據。搜尋前會先告訴你這次要掃幾份歸檔、約幾筆記錄、大概要多久——範圍越窄越快。</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>兩個輸入框，各做各的事</h4><p><strong>關鍵字</strong>是自由文字，比對整筆記錄的任何位置、不分大小寫；<strong>欄位條件</strong>則要求某個具名欄位的值完全相符。把 <code class="kbd">source=fw01</code> 打進關鍵字框會被當成字面文字、什麼都找不到——所以每個範例都標明該打在哪一個框。</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>整批下載，不只這一頁</h4><p>CSV 或 JSON Lines，涵蓋這次搜尋跨所有分頁的全部符合記錄，直接串流寫入磁碟。CSV 含時間、來源、等級、記錄與歸檔檔名；JSON Lines 則是每一筆的完整欄位。</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01"/><path d="M11 12h1v4h1"/></svg>這不是查詢引擎</h4><p>沒有儀表板、圖表、統計聚合，也沒有查詢語言、萬用字元、正規表示式、OR／NOT 或依欄位排序。需要真正的分析，就把那段時間匯回 Graylog，用它完整的查詢功能——這正是本工具的匯入流程存在的理由。</p></div>
   </div>
 </section>
 

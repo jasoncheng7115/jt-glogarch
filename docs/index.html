@@ -35,6 +35,7 @@
     <a href="#audit">Audit</a>
     <a href="#screenshots">Screenshots</a>
     <a href="#reports">Reports</a>
+    <a href="#record-search">Search</a>
     <a href="https://github.com/jasoncheng7115/jt-glogarch" target="_blank" rel="noopener">GitHub</a>
     <a href="index_zh-TW.html" class="lang">繁體中文</a>
   </div>
@@ -332,6 +333,27 @@ sudo bash upgrade-offline.sh                # pip never touches the network; DB 
       <img class="ss-img" src="reports/wazuh_screenshot_en.png" alt="Screenshot-mode report" loading="lazy">
       <div class="label">Screenshot mode<small>Pixel-faithful capture of the live dashboard — every tab, world map included</small></div>
     </button>
+  </div>
+</section>
+
+<section id="record-search">
+  <h2>Search inside the archives</h2>
+  <p class="subhead">Look inside the archived files without importing them back into Graylog first — for the one-off question ("what did that host do six months ago?") where re-importing the whole period would take tens of minutes and this takes seconds to a few minutes. Click to enlarge.</p>
+  <div class="shots">
+    <button class="shot" type="button" data-lightbox="screenshots/8_search_en.png">
+      <img class="ss-img" src="screenshots/8_search_en.png" alt="Record search" loading="lazy">
+      <div class="label">Search the archives<small>Matches highlighted in place, and it tells you the cost before it runs</small></div>
+    </button>
+    <button class="shot" type="button" data-lightbox="screenshots/8_search_expanded_en.png">
+      <img class="ss-img" src="screenshots/8_search_expanded_en.png" alt="Expanded record" loading="lazy">
+      <div class="label">Expand a record<small>Every field at once, the match marked, and the archive file it came from</small></div>
+    </button>
+  </div>
+  <div class="features">
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>A time range is mandatory</h4><p>Deliberately: archives have no index, so the range is the only thing that can prune the corpus before a file is opened. Before it runs it tells you how many archives and roughly how many records it will scan, and how long that should take — a narrower range is faster.</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>Two boxes, two jobs</h4><p><strong>Keywords</strong> are free text, matched anywhere in the record, case-insensitive. <strong>Field filters</strong> require one named field to match exactly. <code class="kbd">source=fw01</code> typed into the Keywords box is matched as literal text and finds nothing — so every example names the box it belongs in.</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>Download the whole result set</h4><p>CSV or JSON Lines, covering every record matching the search across all pages, streamed straight to disk. CSV carries time, source, level, record and archive file; JSON Lines carries every field of every record.</p></div>
+    <div class="feature"><h4><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01"/><path d="M11 12h1v4h1"/></svg>Not a query engine</h4><p>No dashboards, charts or aggregations, and no query language, wildcards, regular expressions, OR / NOT, or sorting by a field. For real analysis, import that period back into Graylog and use its full search — which is what this tool's import path is for.</p></div>
   </div>
 </section>
 
