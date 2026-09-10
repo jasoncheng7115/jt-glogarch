@@ -64,6 +64,13 @@ class ArchiveRecord(BaseModel):
     # whose archive contains string values, eliminating mapping conflicts before
     # any GELF send. Compliance requirement: zero indexer failures.
     field_schema: str | None = None
+    # JSON list of UTC millisecond timestamps ("2026-09-09T08:25:02.000Z") at
+    # which this archive is KNOWINGLY incomplete: an API-mode export hit
+    # Graylog's 10,000-per-query ceiling inside a single millisecond and could
+    # not read past it. `covered_ranges()` leaves a 1 ms hole at each, so an
+    # OpenSearch-direct re-run of the same window fetches exactly the missing
+    # records instead of being de-duplicated away by this archive.
+    overflow_ms: str | None = None
 
 
 class JobRecord(BaseModel):

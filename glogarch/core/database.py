@@ -7,6 +7,7 @@ from glogarch.utils.logging import get_logger
 
 log = get_logger(__name__)
 
+import json
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -173,6 +174,30 @@ def _dt_to_str(dt: datetime | None) -> str | None:
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _parse_ms_ts(s: str) -> datetime | None:
+    """Parse a millisecond UTC timestamp as Graylog emits it
+    ("2026-09-09T08:25:02.000Z") to a naive-UTC datetime."""
+    if not s:
+        return None
+    raw = str(s).strip().rstrip("Z")
+    if "." not in raw:
+        raw += ".000"          # one format, so one parse and one clear failure
+    try:
+        return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%S.%f")
+    except ValueError:
+        return None
+
+
+def _load_json_list(s: str | None) -> list:
+    if not s:
+        return []
+    try:
+        v = json.loads(s)
+        return v if isinstance(v, list) else []
+    except Exception:
+        return []
+
+
 def _str_to_dt(s: str | None) -> datetime | None:
     """Parse an ISO string from the DB back to a naive-UTC datetime.
 
@@ -253,6 +278,10 @@ class ArchiveDB:
             conn.execute("ALTER TABLE archives ADD COLUMN original_size_bytes INTEGER NOT NULL DEFAULT 0")
         if "field_schema" not in existing_arc:
             conn.execute("ALTER TABLE archives ADD COLUMN field_schema TEXT")
+        # Overflow holes: millisecond timestamps an API-mode archive
+        # is knowingly missing. Nullable; only set when an overflow occurred.
+        if "overflow_ms" not in existing_arc:
+            conn.execute("ALTER TABLE archives ADD COLUMN overflow_ms TEXT")
         # Optional tamper-evidence HMAC (v1.12+) — nullable, only set when the
         # integrity feature is enabled.
         if "hmac_sha256" not in existing_arc:
@@ -330,8 +359,8 @@ class ArchiveDB:
                     """INSERT OR REPLACE INTO archives
                        (server_name, stream_id, stream_name, time_from, time_to,
                         file_path, file_size_bytes, original_size_bytes, message_count, part_number, total_parts,
-                        checksum_sha256, status, created_at, field_schema)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        checksum_sha256, status, created_at, field_schema, overflow_ms)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         record.server_name,
                         record.stream_id,
@@ -348,6 +377,7 @@ class ArchiveDB:
                         record.status.value,
                         _dt_to_str(record.created_at),
                         self._maybe_compress_schema(record.field_schema),
+                        record.overflow_ms,
                     ),
                 )
                 self.conn.commit()
@@ -650,6 +680,37 @@ class ArchiveDB:
         rows = self.conn.execute(query, params).fetchall()
         return [self._row_to_archive(r) for r in rows]
 
+    def overflow_holes(
+        self,
+        server_name: str,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+    ) -> list[tuple[str, str]]:
+        """(overflow_ms_timestamp, archive_file_path) for every API-mode archive
+        that is knowingly missing part of a millisecond in this window.
+
+        The time-range hole in `covered_ranges()` lets an OpenSearch-direct run
+        fetch that millisecond — but the API archive already holds the first
+        10,000 records OF that millisecond, and a range cannot tell those from
+        the unread rest. The OS exporter reads the ids archived in the hole
+        from the file named here and excludes them by `gl2_message_id`, so the
+        refill is exactly the unread records and nothing is archived twice.
+        """
+        sql = ("SELECT overflow_ms, file_path FROM archives "
+               "WHERE server_name = ? AND status = 'completed' "
+               "AND stream_id IS NULL AND overflow_ms IS NOT NULL")
+        params: list = [server_name]
+        if time_to:
+            sql += " AND time_from <= ?"; params.append(_dt_to_str(time_to))
+        if time_from:
+            sql += " AND time_to >= ?"; params.append(_dt_to_str(time_from))
+        out: list[tuple[str, str]] = []
+        for o, fp in self.conn.execute(sql, params).fetchall():
+            for ts in _load_json_list(o):
+                if _parse_ms_ts(ts):
+                    out.append((str(ts), fp))
+        return out
+
     def covered_null_spans(
         self,
         server_name: str,
@@ -662,7 +723,7 @@ class ArchiveDB:
         to re-fetch them inside every covered_ranges() call — 54 times per
         scheduled run on a 27-index-set site. Compute once per run and pass
         the result to covered_ranges(null_spans=...)."""
-        sql = ("SELECT time_from, time_to FROM archives "
+        sql = ("SELECT time_from, time_to, overflow_ms FROM archives "
                "WHERE server_name = ? AND status = 'completed' "
                "AND stream_id IS NULL")
         params: list = [server_name]
@@ -670,7 +731,7 @@ class ArchiveDB:
             sql += " AND time_from <= ?"; params.append(_dt_to_str(time_to))
         if time_from:
             sql += " AND time_to >= ?"; params.append(_dt_to_str(time_from))
-        return self._merge_span_rows(self.conn.execute(sql, params).fetchall())
+        return self._merge_rows_with_holes(self.conn.execute(sql, params).fetchall())
 
     def covered_ranges(
         self,
@@ -706,11 +767,11 @@ class ArchiveDB:
             # Caller precomputed the (identical-for-every-index) NULL spans:
             # fetch only THIS index's rows — a direct seek on
             # idx_archives_srv_stream_time instead of a 70K-row scan.
-            sql = ("SELECT time_from, time_to FROM archives "
+            sql = ("SELECT time_from, time_to, overflow_ms FROM archives "
                    "WHERE server_name = ? AND status = 'completed' "
                    "AND stream_id = ?")
         else:
-            sql = ("SELECT time_from, time_to FROM archives "
+            sql = ("SELECT time_from, time_to, overflow_ms FROM archives "
                    "WHERE server_name = ? AND status = 'completed' "
                    "AND (stream_id IS NULL OR stream_id = ?)")
         params: list = [server_name, index_name]
@@ -723,7 +784,7 @@ class ArchiveDB:
         sql += " ORDER BY time_from"
 
         rows = self.conn.execute(sql, params).fetchall()
-        own = self._merge_span_rows(rows)
+        own = self._merge_rows_with_holes(rows)
         if not null_spans:
             return own
         # merge the per-index spans with the precomputed NULL spans
@@ -736,6 +797,52 @@ class ArchiveDB:
             else:
                 merged.append([a, b])
         return [(m[0], m[1]) for m in merged]
+
+    def _merge_rows_with_holes(self, rows) -> list[tuple[datetime, datetime]]:
+        """Merge (time_from, time_to, overflow_ms) rows into disjoint ranges,
+        leaving a 1 ms HOLE at every overflow timestamp.
+
+        An API-mode archive that hit Graylog's 10,000-per-query ceiling inside
+        one millisecond is complete everywhere EXCEPT that millisecond. Counting
+        it as full coverage meant the documented remedy — "re-run this window
+        in OpenSearch Direct" — was de-duplicated away and fetched nothing; the
+        only way to recover the records was to delete the whole hour's archive
+        and re-export it. With the hole, an OpenSearch-direct run of the same
+        window skips everything already archived and fetches exactly the
+        missing millisecond. Both dedup rules (the query's must_not filter and
+        the per-chunk skip) read this same list, so they cannot disagree.
+
+        Rows without holes take the fast string-merge path unchanged; holed
+        rows are rare (one per overflow) and are split with datetimes.
+        """
+        plain = [(a, b) for a, b, o in rows if not o]
+        holed = [(a, b, o) for a, b, o in rows if o]
+        spans: list[tuple[datetime, datetime]] = list(self._merge_span_rows(plain))
+        for a, b, o in holed:
+            fa, fb = _str_to_dt(a), _str_to_dt(b)
+            if not fa or not fb or fb <= fa:
+                continue
+            cuts = sorted(t for t in (_parse_ms_ts(x) for x in _load_json_list(o)) if t)
+            cur = fa
+            for t in cuts:
+                if t < cur or t >= fb:
+                    continue
+                if t > cur:
+                    spans.append((cur, t))
+                cur = t + timedelta(milliseconds=1)
+            if cur < fb:
+                spans.append((cur, fb))
+        if not spans:
+            return []
+        spans.sort()
+        merged: list[list[datetime]] = [list(spans[0])]
+        for a, b in spans[1:]:
+            if a <= merged[-1][1]:
+                if b > merged[-1][1]:
+                    merged[-1][1] = b
+            else:
+                merged.append([a, b])
+        return [(a, b) for a, b in merged]
 
     @staticmethod
     def _merge_span_rows(rows) -> list[tuple[datetime, datetime]]:
@@ -1498,6 +1605,7 @@ class ArchiveDB:
             total_parts=row["total_parts"],
             checksum_sha256=row["checksum_sha256"],
             hmac_sha256=(row["hmac_sha256"] if "hmac_sha256" in row.keys() else None),
+            overflow_ms=(row["overflow_ms"] if "overflow_ms" in row.keys() else None),
             status=ArchiveStatus(row["status"]),
             created_at=_str_to_dt(row["created_at"]),  # type: ignore
             deleted_at=_str_to_dt(row["deleted_at"]),

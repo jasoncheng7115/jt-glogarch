@@ -276,13 +276,16 @@ _MSG = {
         "export_ok": "✅ Export Complete",
         "export_err": "⚠️ Export Completed with Errors",
         "export_overflow": "⚠️ Export Complete (a few records exceeded the API per-query limit)",
+        "overflow_counts": "({total} in that millisecond: {kept} kept, {unread} unread)",
         "overflow_note": ("What this means: one single millisecond held more than 10,000 messages, "
                           "and 10,000 is the most Graylog's API can return for one query. At the {n} "
                           "timestamp(s) below, the messages past that limit could not be read.\n"
                           "Everything else in those chunks WAS archived — this run did not fail, and "
                           "these windows will NOT be retried.\n"
-                          "To collect the remainder, re-run just these windows in OpenSearch Direct "
-                          "mode, which has no such limit:"),
+                          "To collect the remainder, run an OpenSearch Direct export over the hour "
+                          "containing each timestamp below. What is already archived is kept and "
+                          "skipped; the missing millisecond is fetched (along with anything else in "
+                          "that index not yet archived):"),
         "export_body": ("Exported:   {chunks} chunks\n"
                         "Skipped:    {skipped}\n"
                         "Records:    {records}\n"
@@ -324,11 +327,13 @@ _MSG = {
         "export_ok": "✅ 匯出成功",
         "export_err": "⚠️ 匯出完成（有錯誤）",
         "export_overflow": "⚠️ 匯出完成（少數記錄超出 API 單次上限）",
+        "overflow_counts": "（該毫秒共 {total} 筆：已保留 {kept}，未讀取 {unread}）",
         "overflow_note": ("這是什麼意思：同一毫秒內出現超過 10000 筆記錄，而 Graylog API 單次查詢"
                           "最多只能回傳 10000 筆。以下 {n} 個時間點，超出上限的那些記錄無法讀取。\n"
                           "這些區段的其餘記錄都已完整歸檔——本次匯出並未失敗，這些時段也不會重試。\n"
-                          "若要補回未讀取的部分，請只針對以下時段改用 OpenSearch Direct 模式重跑"
-                          "（該模式沒有這個上限）："),
+                          "若要補回未讀取的部分，請以 OpenSearch Direct 模式匯出包含以下時間點的那個小時。"
+                          "已封存的部分會保留並自動略過，缺少的那一毫秒會被補抓"
+                          "（該索引內其他尚未封存的資料也會一併封存）："),
         "export_body": ("匯出區段：{chunks}\n"
                         "略過區段：{skipped}\n"
                         "記錄數　：{records}\n"
@@ -407,8 +412,10 @@ async def notify_export_complete(
     files: int = 0, original_bytes: int = 0, compressed_bytes: int = 0,
     duration_seconds: float = 0, mode: str = "api",
     truncations: list[str] | None = None,
+    overflows: list[dict] | None = None,
 ):
     truncations = truncations or []
+    overflows = overflows or []
     # Title precedence: a real failure outranks an overflow-only caveat, which
     # outranks a clean success. A run that archived everything except a few
     # over-full seconds is NOT "completed with errors" — that wording made a
@@ -450,10 +457,19 @@ async def notify_export_complete(
     if truncations:
         lines.append("")          # keep the stats block visually separate
         lines.append(_t("overflow_note", n=len(truncations)))
-        for tr in truncations[:5]:
-            # Just the timestamp — the full remedy is in the header note.
-            ts = tr.split(" had ")[0].replace("Timestamp ", "")
-            lines.append(f"  - {_fmt_overflow_ts(ts)}")
+        if overflows:
+            for ow in overflows[:5]:
+                line = f"  - {_fmt_overflow_ts(ow.get('timestamp', ''))}"
+                if isinstance(ow.get("unread"), int):
+                    # The one number that decides whether it is worth re-running.
+                    line += "  " + _t("overflow_counts", total=f"{ow['total']:,}",
+                                      kept=f"{ow['kept']:,}", unread=f"{ow['unread']:,}")
+                lines.append(line)
+        else:
+            for tr in truncations[:5]:
+                # Just the timestamp — the full remedy is in the header note.
+                ts = tr.split(" had ")[0].split(" held ")[0].replace("Timestamp ", "")
+                lines.append(f"  - {_fmt_overflow_ts(ts)}")
     # An overflow-only run is a warning, not an error event: everything that
     # could be read WAS archived.
     if errors:

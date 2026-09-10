@@ -76,6 +76,7 @@ class OpenSearchExporter:
         self.integrity = integrity   # IntegrityConfig or None (optional sealing)
         self._cancelled = False
         self._null_spans_run = None   # per-run cache (see _covered_and_filter)
+        self._hole_ids_run: dict | None = None   # per-run cache (see _covered_and_filter)
 
     def cancel(self) -> None:
         self._cancelled = True
@@ -557,17 +558,76 @@ class OpenSearchExporter:
             self.server_config.name, index_name,
             exclude_stream_id_prefix=prefix, time_from=idx_from, time_to=idx_to,
             null_spans=self._null_spans_run)
-        if not covered or len(covered) > self._MAX_EXCLUDE_RANGES:
+        if len(covered) > self._MAX_EXCLUDE_RANGES:
             return covered, None
 
         def _os_ts(dt: datetime) -> str:
             return dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
-        return covered, {"bool": {"must_not": [
+        must_not: list[dict] = [
             {"range": {"timestamp": {"gte": _os_ts(a), "lt": _os_ts(b),
                                      "format": "yyyy-MM-dd HH:mm:ss.SSS"}}}
             for a, b in covered
-        ]}}
+        ]
+        # Overflow holes: the range above lets the overflowed millisecond
+        # through, but the API archive already holds the FIRST 10,000 records
+        # of it. Exclude those by id so the refill is exactly the unread rest —
+        # otherwise the millisecond is archived twice and a GELF restore would
+        # duplicate 10,000 messages.
+        ids = self._hole_ids_for_window(idx_from, idx_to)
+        if ids:
+            must_not.append({"terms": {"gl2_message_id": ids}})
+        if not must_not:
+            return covered, None
+        return covered, {"bool": {"must_not": must_not}}
+
+    # Terms queries are bounded by index.max_terms_count (65,536 by default).
+    # Past this, fall back to the range-only filter (duplicates, never a
+    # failed query) and say so.
+    _MAX_HOLE_IDS = 60_000
+
+    def _hole_ids_for_window(self, idx_from: datetime, idx_to: datetime) -> list[str]:
+        """gl2_message_ids already archived inside every overflow hole that
+        falls within [idx_from, idx_to] — read once per run from the API
+        archives that declared the hole."""
+        if self._hole_ids_run is None:
+            self._hole_ids_run = {}
+        holes = self.db.overflow_holes(self.server_config.name, idx_from, idx_to)
+        ids: list[str] = []
+        for ms, path in holes:
+            key = (path, ms)
+            if key not in self._hole_ids_run:
+                self._hole_ids_run[key] = self._ids_archived_at(path, ms)
+            ids.extend(self._hole_ids_run[key])
+        if len(ids) > self._MAX_HOLE_IDS:
+            log.warning("Too many overflow ids to exclude by id — the overflowed "
+                        "milliseconds will be refilled whole (duplicates possible)",
+                        ids=len(ids), limit=self._MAX_HOLE_IDS)
+            return []
+        return ids
+
+    @staticmethod
+    def _ids_archived_at(path: str, ms: str) -> list[str]:
+        """The gl2_message_ids stored in `path` whose timestamp is exactly `ms`.
+
+        Streams the archive (never loads it whole); an unreadable or missing
+        file yields no ids, which degrades to the range-only refill.
+        """
+        from pathlib import Path
+        from glogarch.archive.storage import ArchiveIterator
+        out: list[str] = []
+        try:
+            for batch in ArchiveIterator(Path(path), batch_size=1000):
+                for m in batch:
+                    if m.get("timestamp") == ms and m.get("gl2_message_id"):
+                        out.append(m["gl2_message_id"])
+        except Exception as e:
+            log.warning("Could not read archived ids for an overflow hole — that "
+                        "millisecond will be refilled whole", path=path, ms=ms,
+                        error=str(e))
+            return []
+        log.info("Overflow hole: excluding already-archived ids", ms=ms, ids=len(out))
+        return out
 
     async def _export_index(
         self,

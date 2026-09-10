@@ -11,6 +11,8 @@
 #   [6] A deleted archive FILE is detected by verify and self-healed on re-export
 #   [8] A 4-SHARD index is scanned completely (production has 4 shards, this
 #       cluster has 1 — the blind spot that hid a real record-dropping bug)
+#   [9] An API export overflows one millisecond (10,500 msgs) and an OpenSearch
+#       Direct re-run fetches EXACTLY the missing 500 through the coverage hole
 #
 # Uses throwaway configs + DBs + archive dirs under /tmp, so it never touches
 # the live service's database. A GELF TCP input must be listening on GELF_PORT.
@@ -465,6 +467,77 @@ else
     echo "FAIL: multi-shard scan returned $s_new of $s_total docs, $s_inv order inversions"; FAIL=1
 fi
 osc -X DELETE "$OS_URL/$SIDX" >/dev/null 2>&1
+
+echo "=== [9] Overflow hole: OS Direct re-run fetches exactly the missing millisecond ==="
+# An API-mode export cannot read past Graylog's 10,000-per-query ceiling inside
+# ONE millisecond. It archives everything else and reports the overflow — and
+# its remedy ("re-run this window in OpenSearch Direct") used to fetch NOTHING,
+# because the hour's API archive counted as full coverage. Seed 10,500 messages
+# into a single millisecond, export via the API, then re-run OpenSearch Direct
+# over the same window and require exactly the missing 500 back.
+W9=/tmp/e2e-archive/ov; rm -rf "$W9"; mkdir -p "$W9/arch"
+OV_TS="$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:00.000Z)"
+python3 - "$GELF_PORT" "$OV_TS" <<'PYEOF'
+import socket, json, sys, datetime
+port, ts = int(sys.argv[1]), sys.argv[2]
+epoch = datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%fZ").replace(
+    tzinfo=datetime.timezone.utc).timestamp()
+s = socket.create_connection(("127.0.0.1", port), timeout=10)
+buf = b""
+for i in range(10500):
+    buf += (json.dumps({"version": "1.1", "host": "e2e-overflow", "timestamp": epoch,
+                        "short_message": f"overflow burst {i}", "level": 6,
+                        "_e2e_overflow": "1"}) + "\0").encode()
+    if len(buf) > 65536:
+        s.sendall(buf); buf = b""
+if buf:
+    s.sendall(buf)
+s.close(); print("  seeded 10,500 messages into", ts)
+PYEOF
+echo "  waiting 25s for Graylog to index the burst..."; sleep 25
+curl -s -u "$GL_USER:$GL_PASS" -H "X-Requested-By: cli" -X POST \
+    "$GL_URL/api/cluster/deflector/cycle" -o /dev/null -w '  cycle -> http %{http_code}\n'
+echo "  waiting 15s for index ranges to recompute..."; sleep 15
+cat > "$W9/cfg.yaml" <<YAML
+servers:
+  - {name: local, url: $GL_URL, username: $GL_USER, password: $GL_PASS, verify_ssl: false}
+default_server: local
+export_mode: api
+export: {base_path: $W9/arch}
+opensearch: {hosts: ["$OS_URL"], username: "$OS_USER", password: "$OS_PASS", verify_ssl: false}
+database_path: $W9/db.db
+log_level: WARNING
+YAML
+chown -R jt-glogarch:jt-glogarch "$W9"
+P9="sudo -u jt-glogarch python3 -m glogarch --config $W9/cfg.yaml"
+OV_FROM="$(date -u -d "$OV_TS" +%Y-%m-%dT%H:00:00)"
+OV_TO="$(date -u -d "$OV_TS + 1 hour" +%Y-%m-%dT%H:00:00)"
+# Scoped to THE HOUR: an OpenSearch-direct run scans the whole index minus what
+# is already archived (the requested window selects indices, not documents), so
+# it also picks up any other not-yet-archived data in that index. The claim
+# under test is about the hour with the hole: it must gain exactly the 500
+# records the API could not read, and nothing already archived is re-fetched.
+sum9() { sudo -u jt-glogarch python3 -c "import sqlite3;c=sqlite3.connect('$W9/db.db');print(c.execute('SELECT COALESCE(SUM(message_count),0) FROM archives WHERE status=\"completed\" AND time_from=?', ('${OV_FROM}Z',)).fetchone()[0])"; }
+holes9() { sudo -u jt-glogarch python3 -c "import sqlite3;c=sqlite3.connect('$W9/db.db');print(c.execute('SELECT COUNT(*) FROM archives WHERE overflow_ms IS NOT NULL').fetchone()[0])"; }
+
+api_out="$($P9 export --mode api --from "$OV_FROM" --to "$OV_TO" --no-resume 2>&1)"
+api_n="$(sum9)"; holes="$(holes9)"
+echo "  API export archived $api_n records in the hour; archives with an overflow hole: $holes"
+if [ "${holes:-0}" -ge 1 ] 2>/dev/null; then
+    echo "  PASS: API export recorded the overflow on the archive row"
+else
+    echo "FAIL: no overflow recorded — did the burst land in one millisecond? ($(echo "$api_out" | tail -2))"; FAIL=1
+fi
+
+$P9 export --mode opensearch --from "$OV_FROM" --to "$OV_TO" --no-resume >/dev/null 2>&1
+os_n="$(sum9)"
+added=$(( os_n - api_n ))
+echo "  OpenSearch Direct re-run added $added records to that hour (expect 500 — the missing millisecond only)"
+if [ "$added" = "500" ]; then
+    echo "  PASS: the hole let OS Direct fetch exactly the unread records of that hour, nothing already archived"
+else
+    echo "FAIL: expected +500 in the hour, got +$added (0 = de-duplicated away; ~10,000 = the hour was re-fetched)"; FAIL=1
+fi
 
 echo ""
 echo "=== RESULT: $([ $FAIL -eq 0 ] && echo 'ALL PASS' || echo 'FAILURES') ==="

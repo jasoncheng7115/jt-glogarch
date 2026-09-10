@@ -50,6 +50,8 @@
 | 36 | 取消 OpenSearch 直連匯出，可能**永久遺失進行中的那個小時**（既有問題；1.14.6 之後由審查發現，v1.14.7 修正） | 掃描迴圈的 `if self._cancelled: break` 跳出後落到「關閉最後一個 writer」，把掃到一半的小時以涵蓋整個小時的 COMPLETED 封存記錄下來；之後 `covered_ranges()` 在每次掃描中排除它。排程執行必走這條路 | 每個檢查點都**拋出** `ExportCancelled`（絕不 `break`）；未完成的 writer 在回溯途中刪除，只有完整的小時留下。`test_export_cancel_paths.py::test_flag_cancel_mid_index_never_records_a_partial_hour` 重現遺失的形狀，`..._the_next_run_resumes_from_the_discarded_hour` 斷言補回 |
 | 37 | 1.14.6 的取消修正漏掉只靠旗標與 `try` 之外的取消，仍以 COMPLETED 或 FAILED 結束（v1.14.7） | `result.cancelled` 只在每索引的 `except` 裡設定；`try` 之外的回呼拋出會衝到 FAILED 處理器；反壓暫停與 Phase A 從不讀旗標；API 的 chunk 迴圈只在每 chunk 讀一次 | 兩種模式共用一套取消模型：`ExportCancelled` + 每個檢查點的 `_check_cancel()`（Phase A 每候選、Phase B 每索引與每批、guard 暫停每 tick、API 每批）+ 每次執行一個處理器 + 外層保險。執行期測試驅動兩個真實匯出器走過旗標路徑、回呼路徑、Phase A 與 guard 暫停 |
 
+| 38 | 溢出通知的補救方法——「改用 OpenSearch Direct 重跑該時段」——什麼都抓不到（v1.14.8） | 該小時的 API 封存被視為完整涵蓋；OS 查詢的 `must_not` 排除整個小時，區段跳過也把它當成已封存。要補回記錄只能刪掉整個小時重新匯出 | `archives.overflow_ms` 把溢出的時間戳記在該列；`covered_ranges()` 在每個時間戳留下 1 毫秒的洞，兩條重複資料刪除規則都讓 OS 執行只抓缺少的那一毫秒。`tests/test_overflow_holes.py`；e2e 步驟 [9] 在同一毫秒灌入 10,500 筆並要求補回缺少的 500 筆 |
+
 ## 規模——成本隨資料量而非工作量成長
 
 | # | 缺陷 | 根因 | 防止再犯的機制 |

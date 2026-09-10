@@ -288,8 +288,22 @@ class GraylogSearch:
                     # precisely so the operator can re-fetch just that window in
                     # OpenSearch Direct mode. Advancing by +1ms always makes
                     # progress, so there is no infinite loop.
+                    # How many are actually in that millisecond? One extra
+                    # count, only on overflow, so the notification can say
+                    # "N records, 10,000 kept, N-10,000 unread" — without it
+                    # the operator could not tell 50 lost from 50,000.
+                    _ms_total = None
+                    try:
+                        _ms_from = self._parse_timestamp(last_ts)
+                        if _ms_from:
+                            _ms_total = await self.count_messages(
+                                query, _ms_from, _ms_from, streams)
+                    except Exception as e:
+                        log.debug("Could not count the overflowing millisecond",
+                                  timestamp=last_ts, error=str(e))
                     self.truncated_windows.append(
-                        {"timestamp": last_ts, "kept": RESULT_WINDOW})
+                        {"timestamp": last_ts, "kept": RESULT_WINDOW,
+                         "total": _ms_total})
                     log.warning(
                         "Single-millisecond overflow during API export: more "
                         "than %d messages share %s; Graylog's REST API cannot "

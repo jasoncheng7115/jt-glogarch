@@ -507,6 +507,17 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
 - [ ] 線上（選用）：對單一秒種入 >10000 筆＋之後幾筆，跑 API 匯出，確認「之後」的
       訊息已歸檔、溢出被回報（而非 chunk 失敗）。事後清除種子。
 
+### 溢出的洞（v1.14.8）
+
+- [ ] **對溢出的那個小時執行 OpenSearch Direct，只會抓回缺少的那一毫秒** —— e2e 步驟
+      [9]：在同一毫秒灌入 10,500 筆、API 匯出記下溢出、OS Direct 重跑恰好補回 500 筆。
+      `tests/test_overflow_holes.py` 釘住 `covered_ranges()` 的洞，以及**兩條**重複資料刪除規則
+      都看得到它。*通知給的補救方法過去會被該小時自己的 API 封存重複資料刪除掉。*
+- [ ] **溢出通知寫出未讀取的筆數** —— 「（該毫秒共 N 筆：已保留 10,000，未讀取 K）」。
+      `test_truncation_record_carries_the_count`。
+- [ ] **升級會新增 `archives.overflow_ms`** —— `upgrade-compat-test.sh`（自動遷移；
+      可為空、只增不改）。
+
 ### 測試結果
 
 - [ ] `./scripts/run-tests.sh` 通過 — `TEST-RESULTS.md` 已產生

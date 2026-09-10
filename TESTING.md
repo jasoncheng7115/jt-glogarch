@@ -653,6 +653,19 @@ failure.
       the API export, confirm the "after" messages are archived and the overflow
       is reported (not a chunk failure). Clean up the seed afterwards.
 
+### Overflow holes (v1.14.8)
+
+- [ ] **An OpenSearch Direct run over an overflowed hour fetches exactly the
+      missing millisecond** — e2e step [9]: 10,500 messages seeded into one
+      millisecond, API export records the overflow, OS Direct re-run adds
+      exactly 500. `tests/test_overflow_holes.py` pins the hole in
+      `covered_ranges()` and that BOTH dedup rules see it. *The notification's
+      remedy used to be de-duplicated away by the hour's own API archive.*
+- [ ] **The overflow notification names the unread count** — "(N in that
+      millisecond: 10,000 kept, K unread)". `test_truncation_record_carries_the_count`.
+- [ ] **Upgrade adds `archives.overflow_ms`** — `upgrade-compat-test.sh`
+      (auto-migration; nullable, additive).
+
 ### Test Results
 
 - [ ] `./scripts/run-tests.sh` passes — `TEST-RESULTS.md` generated

@@ -2,6 +2,38 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.14.8] - 2026-09-10
+
+### Fixed
+
+- **The overflow notification's remedy did not work.** When an API-mode export
+  hits Graylog's 10,000-per-query ceiling inside one millisecond, the
+  notification says to re-run that window in OpenSearch Direct mode. Following
+  it fetched nothing: the hour's API archive counted as full coverage, the
+  OpenSearch query excluded the whole hour with `must_not`, the chunk was
+  skipped as "already archived", and the run reported success. The only way to
+  recover the records was to delete the whole hour's archive and re-export it.
+  Overflow timestamps are now stamped on the archive row (`archives.overflow_ms`,
+  added by the auto-migration, nullable) and `covered_ranges()` leaves a 1 ms
+  hole at each — so an OpenSearch Direct run over the hour skips everything
+  already archived and fetches the missing millisecond. A range alone is not
+  enough there: the API archive already holds the FIRST 10,000 records of that
+  millisecond, and a range cannot tell those from the unread rest (a real run
+  re-archived two 10,500-record bursts in full — 20,000 duplicates). The OS
+  exporter therefore reads the ids archived at each hole from the API archive
+  file (`archives.file_path`, streamed) and excludes them by `gl2_message_id`,
+  so the refill is exactly the unread records and nothing is archived twice.
+  Both dedup rules (query filter and per-chunk skip) read the same coverage
+  list, so they cannot disagree. Note the OS run's window selects INDICES, not
+  documents: any other not-yet-archived data in that index is archived too —
+  harmless, and the notification says so. e2e step [9] seeds 10,500 messages
+  into one millisecond, exports via the API (overflow), re-runs OpenSearch
+  Direct and requires exactly the missing 500 back in that hour.
+- **The notification could not say how many records were unread** — 50 or
+  50,000 looked the same. The exporter now counts the overflowing millisecond
+  (one extra query, only on overflow) and the line reads
+  "(N in that millisecond: 10,000 kept, N−10,000 unread)".
+
 ## [1.14.7] - 2026-09-07
 
 ### Fixed

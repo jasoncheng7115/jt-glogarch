@@ -168,6 +168,10 @@ class ExportResult:
         # needs OpenSearch Direct mode. Kept separate from `errors` so a run
         # with only overflows is not mislabelled "chunks failed, will retry".
         self.truncations: list[str] = []
+        # Structured form of the same overflows for the notification:
+        # [{"timestamp", "kept", "total", "unread"}] — total/unread None when
+        # the count could not be taken.
+        self.overflow_windows: list[dict] = []
         self.job_id: str = ""
         self.original_bytes: int = 0
         self.compressed_bytes: int = 0
@@ -440,11 +444,23 @@ class Exporter:
             # operator must see. Surface each as an error line naming the exact
             # timestamp and the fix (OpenSearch Direct mode).
             for tw in getattr(search, "truncated_windows", []):
-                result.truncations.append(
-                    f"Timestamp {tw['timestamp']} had more than {tw['kept']} "
-                    f"messages in one millisecond; kept {tw['kept']:,}, the rest "
-                    f"could not be read via Graylog's API. Re-run this window in "
-                    f"OpenSearch Direct mode to capture them all.")
+                total = tw.get("total")
+                unread = (total - tw["kept"]) if isinstance(total, int) and total > tw["kept"] else None
+                result.overflow_windows.append({
+                    "timestamp": tw["timestamp"], "kept": tw["kept"],
+                    "total": total, "unread": unread})
+                if unread is not None:
+                    result.truncations.append(
+                        f"Timestamp {tw['timestamp']} held {total:,} messages in one "
+                        f"millisecond; kept {tw['kept']:,}, {unread:,} could not be read "
+                        f"via Graylog's API. An OpenSearch Direct run over this window "
+                        f"fetches those {unread:,} (plus anything else in the index not yet archived).")
+                else:
+                    result.truncations.append(
+                        f"Timestamp {tw['timestamp']} had more than {tw['kept']} "
+                        f"messages in one millisecond; kept {tw['kept']:,}, the rest "
+                        f"could not be read via Graylog's API. An OpenSearch Direct run "
+                        f"over this window fetches the missing ones (plus anything else in the index not yet archived).")
 
             # Update job status with skip + failure info. A chunk that raised is
             # NOT recorded as an archive, so it is retried on the next run (dedup
@@ -533,6 +549,7 @@ class Exporter:
                         duration_seconds=result.duration_seconds,
                         mode="api",
                         truncations=result.truncations,
+                        overflows=result.overflow_windows,
                     )
                 except Exception as e:
                     log.warning("Export notification failed", error=str(e))
@@ -636,6 +653,10 @@ class Exporter:
             raise RuntimeError(f"Cannot create archive file {path}: {e}")
 
         has_data = False
+        # Overflows are accumulated on the search object across the whole run;
+        # remember where this chunk starts so its own overflows can be stamped
+        # onto its archive row as 1 ms holes in the coverage.
+        _overflow_start = len(getattr(search, "truncated_windows", []))
 
         try:
             async for batch in search.iter_all_messages(
@@ -734,6 +755,7 @@ class Exporter:
                 checksum_sha256=checksum,
                 status=ArchiveStatus.COMPLETED,
                 field_schema=field_schema_json,
+                overflow_ms=self._overflow_ms_for_chunk(search, _overflow_start),
             )
             record.id = self.db.record_archive(record)
             # Optional tamper-evidence sealing (no-op unless integrity enabled).
@@ -764,6 +786,16 @@ class Exporter:
 
         return msg_count
 
+
+    @staticmethod
+    def _overflow_ms_for_chunk(search, start: int) -> str | None:
+        """The overflow timestamps this chunk hit, as the JSON the archive row
+        stores. None when there were none, so the fast dedup path stays fast."""
+        import json as _json
+        wins = getattr(search, "truncated_windows", [])[start:]
+        if not wins:
+            return None
+        return _json.dumps([w["timestamp"] for w in wins])
 
     @staticmethod
     def _cleanup_writer(writer, path):
