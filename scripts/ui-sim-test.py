@@ -321,6 +321,47 @@ async def main():
         check("download controls render for CSV and JSON, with icons",
               dl[0] == 2 and dl[1] and dl[2] == "csv,jsonl", repr(dl))
 
+        # 5) reports: manual "Generate" asks for an OPTIONAL one-off range first.
+        # The dialog is built by the page's own JS — assert what the operator
+        # sees (two inputs, the this-run-only hint, Cancel closes it), not that
+        # a function exists.
+        await pg.goto(f"{BASE}/reports", wait_until="networkidle")
+        await pg.wait_for_timeout(800)
+        n1 = len(errs)
+        await pg.evaluate("generateReport('ui-sim-probe')")
+        await pg.wait_for_timeout(300)
+        dlg = await pg.evaluate(
+            "() => { const m=document.getElementById('report-adhoc-modal');"
+            "  if(!m) return null;"
+            "  const cs=getComputedStyle(m);"
+            "  return {visible: cs.display !== 'none',"
+            "          inputs: m.querySelectorAll('input[type=datetime-local]').length,"
+            "          hint: (document.getElementById('report-adhoc-hint')||{}).textContent||'',"
+            "          run: !!m.querySelector('[data-act=doGenerateReportAdhoc]'),"
+            "          cancel: !!m.querySelector('[data-act=closeReportAdhoc]')}; }")
+        check("report Generate opens the one-off range dialog",
+              bool(dlg) and dlg["visible"] and dlg["inputs"] == 2 and dlg["run"] and dlg["cancel"],
+              str(dlg))
+        check("the dialog says the range is for this run only",
+              bool(dlg) and (("this run only" in dlg["hint"]) or ("這一次" in dlg["hint"])),
+              (dlg or {}).get("hint", "")[:80])
+        # an inverted range is refused in the dialog, before any request
+        await pg.fill("#report-adhoc-from", "2026-09-08T00:00")
+        await pg.fill("#report-adhoc-to", "2026-09-01T00:00")
+        await pg.evaluate("doGenerateReportAdhoc()")
+        await pg.wait_for_timeout(300)
+        err_shown = await pg.evaluate(
+            "() => { const e=document.getElementById('report-adhoc-err');"
+            "  return !!e && !e.classList.contains('is-hidden') && e.textContent.length > 0; }")
+        check("an inverted one-off range is refused in the dialog", err_shown)
+        await pg.evaluate("closeReportAdhoc()")
+        await pg.wait_for_timeout(200)
+        closed = await pg.evaluate(
+            "() => getComputedStyle(document.getElementById('report-adhoc-modal')).display === 'none'")
+        check("Cancel closes the one-off range dialog", closed)
+        check("no JS errors during report dialog flow", len(errs) == n1,
+              "; ".join(errs[n1:])[:200])
+
         check("no JS errors during record-search flow", len(errs) == n0,
               "; ".join(errs[n0:][:2]))
         await b.close()

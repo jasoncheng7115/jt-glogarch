@@ -666,6 +666,21 @@ failure.
 - [ ] **Upgrade adds `archives.overflow_ms`** — `upgrade-compat-test.sh`
       (auto-migration; nullable, additive).
 
+### Reports — one-off time range (v1.14.9)
+
+- [ ] **"Generate" opens the one-off range dialog** (`ui-sim-test.py`): two
+      datetime-local inputs, a hint that says the values are for this run only,
+      Cancel closes it. Left empty, the saved range applies.
+- [ ] **The range is used for this run and never saved**
+      (`tests/test_report_adhoc_range.py`): `effective_window()` overrides
+      per-widget ranges and snap-to-midnight, feeds the SAME bounds to both
+      dashboard modes; the API rejects a single bound / inverted / unparseable
+      / >400-day range with 400 before anything runs; the stored `config_json`
+      is byte-identical afterwards; the job note records the range.
+- [ ] Manually: generate a report with a past week as the range and check the
+      cover's period line shows that week, then confirm the report's settings
+      page still shows the original range.
+
 ### Test Results
 
 - [ ] `./scripts/run-tests.sh` passes — `TEST-RESULTS.md` generated

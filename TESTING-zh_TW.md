@@ -518,6 +518,17 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
 - [ ] **升級會新增 `archives.overflow_ms`** —— `upgrade-compat-test.sh`（自動遷移；
       可為空、只增不改）。
 
+### 統計報表——一次性起迄時間（v1.14.9）
+
+- [ ] **「產製」會先開啟一次性範圍對話框**（`ui-sim-test.py`）：兩個 datetime-local
+      輸入框、說明文字寫明只用於這一次、取消可關閉。兩欄留空就用報表設定的範圍。
+- [ ] **範圍只用於這一次、絕不寫回**（`tests/test_report_adhoc_range.py`）：
+      `effective_window()` 覆蓋小工具各自的範圍與對齊午夜，並把**相同**的起迄餵給兩種
+      儀表板模式；API 對只填一欄／顛倒／無法解析／超過 400 天的範圍在執行前就回 400；
+      事後儲存的 `config_json` 逐位元組相同；作業備註記下該範圍。
+- [ ] 人工：以過去某一週為範圍產製一份報表，確認封面期間顯示那一週，再確認報表設定頁
+      仍是原本的範圍。
+
 ### 測試結果
 
 - [ ] `./scripts/run-tests.sh` 通過 — `TEST-RESULTS.md` 已產生

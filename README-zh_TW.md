@@ -1,4 +1,4 @@
-# jt-glogarch v1.14.8
+# jt-glogarch v1.14.9
 
 **語言**： [English](README.md) | **繁體中文**  
 **網站**： <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.14.8-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.14.9-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -168,7 +168,7 @@ GELF 模式還有：
 - **通知設定** — 6 種管道含語言選擇
 - **系統記錄** — 即時記錄檢視器 + 稽核記錄
 - **行為稽核** — 追蹤 Graylog 上的所有操作（誰在什麼時候做了什麼），支援篩選、敏感操作通知（60+ 種操作類型）
-- **報表（Beta）** — 從 Graylog 儀表板與封存統計產生品牌化 PDF 報表（漸層封面、目錄、KPI 摘要、頁首/頁尾/頁碼、繁中字型）。支援排程與 Email 寄送。需選用的渲染引擎（無頭 Chromium）：執行 `sudo bash scripts/install-report-engine.sh` 啟用。
+- **報表（Beta）** — 從 Graylog 儀表板與封存統計產生品牌化 PDF 報表；手動「產製」可指定只用於該次的起迄時間，不改動報表設定（漸層封面、目錄、KPI 摘要、頁首/頁尾/頁碼、繁中字型）。支援排程與 Email 寄送。需選用的渲染引擎（無頭 Chromium）：執行 `sudo bash scripts/install-report-engine.sh` 啟用。
 - 深色/淺色主題、English/繁體中文 雙語
 - 可收摺側邊欄、HTTPS、Session 認證
 

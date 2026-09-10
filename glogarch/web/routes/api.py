@@ -3423,6 +3423,34 @@ async def generate_report_now(request: Request, name: str):
         log.warning("Report config_json could not be parsed", error=str(e))
     cfg["name"] = name
 
+    # Optional ONE-OFF time range for this run only. It rides on the cfg dict
+    # (a fresh parse of config_json), so it is never written back to the
+    # report — the next scheduled run uses the saved settings unchanged.
+    adhoc_note = ""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    a_from, a_to = (body.get("time_from") or "").strip(), (body.get("time_to") or "").strip()
+    if a_from or a_to:
+        if not (a_from and a_to):
+            return JSONResponse({"error": "Both time_from and time_to are required for a one-off range"},
+                                status_code=400)
+        from glogarch.report.generator import _parse_local
+        tz = datetime.now().astimezone().tzinfo
+        f, t = _parse_local(a_from, tz), _parse_local(a_to, tz)
+        if not f or not t:
+            return JSONResponse({"error": "Invalid time_from/time_to (use YYYY-MM-DDTHH:MM)"},
+                                status_code=400)
+        if t <= f:
+            return JSONResponse({"error": "time_to must be after time_from"}, status_code=400)
+        if (t - f).days > 400:
+            return JSONResponse({"error": "One-off range too wide (max 400 days)"}, status_code=400)
+        cfg["_adhoc_from"], cfg["_adhoc_to"] = f.isoformat(), t.isoformat()
+        adhoc_note = f" | one-off range {f:%Y-%m-%d %H:%M} → {t:%Y-%m-%d %H:%M}"
+
     # Guard against duplicate concurrent generations of the same report (double
     # clicks / overlapping runs) each spawning a heavy Chromium process.
     if name in _reports_running:
@@ -3444,7 +3472,7 @@ async def generate_report_now(request: Request, name: str):
         try:
             _res = asyncio.run(generator.generate_report(db, settings, cfg, triggered_by="manual", job_id=job_id))
             _units = int((_res or {}).get("units", 0) or 0)
-            _note = f"report={name}"
+            _note = f"report={name}{adhoc_note}"
             if (_res or {}).get("email_error"):
                 _note += f" | ⚠ Email failed: {_res['email_error']}"
             elif (_res or {}).get("emailed"):

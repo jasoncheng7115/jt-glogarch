@@ -761,10 +761,16 @@ class ArchiveScheduler:
         log.info("Report scheduled", report=name, cron=cron)
 
     def remove_report(self, name: str) -> None:
+        from apscheduler.jobstores.base import JobLookupError
         try:
             self.scheduler.remove_job(f"report:{name}")
+        except JobLookupError:
+            # Not registered — a disabled or never-scheduled report. Nothing to
+            # remove, and "may keep firing" would be a false alarm here.
+            log.debug("No scheduled job to remove for report", report=name)
         except Exception as e:
-            log.warning("Report job could not be removed - it may keep firing until restart", error=str(e))
+            log.warning("Report job could not be removed - it may keep firing until restart",
+                        report=name, error=str(e))
 
     def _run_report(self, name: str) -> None:
         """Generate a scheduled report in a worker thread (Chromium is heavy)."""

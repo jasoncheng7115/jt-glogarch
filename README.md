@@ -1,4 +1,4 @@
-# jt-glogarch v1.14.8
+# jt-glogarch v1.14.9
 
 **Language**: **English** | [繁體中文](README-zh_TW.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.14.8-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.14.9-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -173,7 +173,7 @@ GELF mode also has:
 - **Notification Settings** — 6 channels with language selection
 - **System Logs** — Real-time log viewer + audit log
 - **Operation Audit** — Track who did what on Graylog (60+ operation types, filterable, sensitive operation alerts)
-- **Reports (beta)** — Generate branded PDF reports from Graylog dashboards and archive statistics (gradient cover, table of contents, KPI summary, header/footer/page numbers, CJK fonts). Scheduling + email delivery. Needs the optional render engine (headless Chromium): run `sudo bash scripts/install-report-engine.sh` to enable.
+- **Reports (beta)** — Generate branded PDF reports from Graylog dashboards and archive statistics; "Generate" can take a one-off From/To for that run only, without changing the report (gradient cover, table of contents, KPI summary, header/footer/page numbers, CJK fonts). Scheduling + email delivery. Needs the optional render engine (headless Chromium): run `sudo bash scripts/install-report-engine.sh` to enable.
 - Dark/Light theme, English/Traditional Chinese
 - Collapsible sidebar, HTTPS, session authentication
 

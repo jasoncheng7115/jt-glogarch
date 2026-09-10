@@ -22,6 +22,78 @@ def _reports_dir(settings) -> Path:
     return d
 
 
+def effective_window(cfg: dict, now) -> dict:
+    """The report's time window, derived in ONE place.
+
+    Returns use_dash_time, trs (seconds), align_midnight_eff, snap_per_widget,
+    abs_from/abs_to (ISO strings, the rebuild path), cap_from/cap_to (aware
+    datetimes, the screenshot path) and `adhoc` — (from, to) when a ONE-OFF
+    range was supplied for this run only.
+
+    A one-off range (`_adhoc_from` / `_adhoc_to` on the cfg the caller passes;
+    never persisted) is an explicit instruction: it overrides each widget's own
+    saved range and snap-to-midnight, because the operator asked for exactly
+    these bounds. Naive inputs are read in the server's local timezone — the
+    same one snap-to-midnight and the cover's "generated at" use.
+    """
+    from datetime import timedelta
+    trs = int(cfg.get("time_range_seconds", 86400))
+    use_dash_time = bool(cfg.get("use_dashboard_time", True))
+    want_midnight = bool(cfg.get("align_midnight"))
+
+    adhoc = None
+    raw_from, raw_to = cfg.get("_adhoc_from"), cfg.get("_adhoc_to")
+    if raw_from and raw_to:
+        f, t = _parse_local(raw_from, now.tzinfo), _parse_local(raw_to, now.tzinfo)
+        if f and t and t > f:
+            adhoc = (f, t)
+
+    if adhoc:
+        f, t = adhoc
+        return {
+            "use_dash_time": False, "trs": int((t - f).total_seconds()),
+            "align_midnight_eff": False, "snap_per_widget": False,
+            "abs_from": f.isoformat(timespec="milliseconds"),
+            "abs_to": t.isoformat(timespec="milliseconds"),
+            "cap_from": f, "cap_to": t, "adhoc": adhoc,
+        }
+
+    # Report-WIDE snap-to-midnight: only when NOT using per-widget times, and
+    # only for a whole-day report window. PER-WIDGET snap: when using each
+    # widget's own range AND snap is on (decided per widget in rebuild).
+    align_midnight_eff = want_midnight and trs % 86400 == 0 and not use_dash_time
+    snap_per_widget = want_midnight and use_dash_time
+    abs_from = abs_to = None
+    cap_from = cap_to = None
+    if not use_dash_time:
+        cap_to = (now.replace(hour=0, minute=0, second=0, microsecond=0)
+                  if align_midnight_eff else now)
+        cap_from = cap_to - timedelta(seconds=trs)
+    if align_midnight_eff:
+        midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        abs_to = midnight.isoformat(timespec="milliseconds")
+        abs_from = (midnight - timedelta(seconds=trs)).isoformat(timespec="milliseconds")
+    return {
+        "use_dash_time": use_dash_time, "trs": trs,
+        "align_midnight_eff": align_midnight_eff, "snap_per_widget": snap_per_widget,
+        "abs_from": abs_from, "abs_to": abs_to,
+        "cap_from": cap_from, "cap_to": cap_to, "adhoc": None,
+    }
+
+
+def _parse_local(value, tz):
+    """ISO / 'YYYY-MM-DDTHH:MM' → aware datetime; naive values take `tz`."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=tz)
+    return dt
+
+
 async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manual",
                           job_id: str | None = None) -> dict:
     """cfg is the parsed report definition. Returns {ok, file_path, filename, error}.
@@ -115,24 +187,24 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
     if dashboards:
         server = _resolve_server(settings, cfg.get("server"))
         mode = cfg.get("dashboard_mode", "rebuild")
-        trs = int(cfg.get("time_range_seconds", 86400))
         maxw = int(cfg.get("max_widgets", 16))
         # "Use each widget's own time range" — each widget (and each tab) can have
-        # a DIFFERENT saved range in Graylog (e.g. one widget "last 5 days", another
-        # "last 1 day"), and this captures each exactly as configured. It is
-        # mutually exclusive with a report-wide window: when on, NO global time
-        # override is applied, so a report-wide range / snap-to-midnight is ignored.
-        use_dash_time = bool(cfg.get("use_dashboard_time", True))
-        want_midnight = bool(cfg.get("align_midnight"))
-        # Report-WIDE snap-to-midnight: only when NOT using per-widget times, and
-        # only for a whole-day report window.
-        align_midnight_eff = want_midnight and trs % 86400 == 0 and not use_dash_time
-        # PER-WIDGET snap-to-midnight: when using each widget's own time range AND
-        # snap is on, keep every widget's own duration but end its window at today
-        # 00:00. Whether a given widget actually snaps is decided per widget in
-        # rebuild (only whole-day durations snap; e.g. a "last 2 hours" widget is
-        # left as-is).
-        snap_per_widget = want_midnight and use_dash_time
+        # a DIFFERENT saved range in Graylog, and this captures each exactly as
+        # configured; it is mutually exclusive with a report-wide window. A
+        # ONE-OFF range for this run (cfg["_adhoc_*"], never saved) overrides
+        # both. All of it is derived in effective_window() so the two dashboard
+        # modes below cannot drift apart.
+        win = effective_window(cfg, now)
+        trs = win["trs"]
+        use_dash_time = win["use_dash_time"]
+        align_midnight_eff = win["align_midnight_eff"]
+        snap_per_widget = win["snap_per_widget"]
+        if win["adhoc"]:
+            f, t = win["adhoc"]
+            # The cover's period line must describe THIS run, not the saved one.
+            report["period"] = f"{f:%Y-%m-%d %H:%M} – {t:%Y-%m-%d %H:%M}"
+            log.info("Report using a one-off time range for this run",
+                     report=name, time_from=str(f), time_to=str(t))
         # Screenshot mode drives a real browser through Graylog's Web UI login
         # form (username + password) — an API token can't authenticate a browser
         # session. So fall back to the SERVER connection's own username/password
@@ -160,12 +232,7 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
                     # (so a "last 5 days" widget stays 5 days). Only when a report-
                     # wide range is chosen do we override: snap-to-midnight ends at
                     # today 00:00, otherwise it ends now.
-                    from datetime import timedelta
-                    cap_from = cap_to = None
-                    if not use_dash_time:
-                        cap_to = (now.replace(hour=0, minute=0, second=0, microsecond=0)
-                                  if align_midnight_eff else now)
-                        cap_from = cap_to - timedelta(seconds=trs)
+                    cap_from, cap_to = win["cap_from"], win["cap_to"]
                     # One capture per dashboard tab (state). dtabs = selected tab
                     # state_ids, or None/empty = every tab.
                     captures, reason = await graylog_data.capture_dashboard_png(
@@ -195,12 +262,7 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
                 # Snap-to-midnight: end the window at today's local 00:00 and go
                 # back `trs` seconds — so a Mon-05:00 run of a 1-day dashboard
                 # covers Sun 00:00 → Mon 00:00 instead of Sun 05:00 → Mon 05:00.
-                abs_from = abs_to = None
-                if align_midnight_eff:
-                    from datetime import timedelta
-                    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                    abs_to = midnight.isoformat(timespec="milliseconds")
-                    abs_from = (midnight - timedelta(seconds=trs)).isoformat(timespec="milliseconds")
+                abs_from, abs_to = win["abs_from"], win["abs_to"]
                 if server:
                     built = await graylog_data.rebuild_dashboard_sections(
                         server, did, time_range_seconds=trs, max_widgets=maxw, lang=lang,

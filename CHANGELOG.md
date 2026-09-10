@@ -2,6 +2,23 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.14.9] - 2026-09-10
+
+### Added
+
+- **A one-off time range when generating a report by hand.** "Generate" on the
+  Reports page now asks for an optional From / To first. Left empty, the
+  report's saved range applies as before; filled in, those bounds are used for
+  THIS run only — they override each widget's own saved range and
+  snap-to-midnight, because the operator asked for exactly these bounds — and
+  nothing is written back to the report, so the next scheduled run is
+  unchanged. The cover's period line describes the run, and the job note
+  records the range (`one-off range 2026-09-01 00:00 → 2026-09-08 00:00`).
+  `POST /api/reports/{name}/generate` takes `{time_from, time_to}` (both or
+  neither; `YYYY-MM-DDTHH:MM`, naive values in the server's timezone; max 400
+  days). The window derivation for both dashboard modes now lives in one
+  function, `effective_window()`, so rebuild and screenshot cannot drift apart.
+
 ## [1.14.8] - 2026-09-10
 
 ### Fixed

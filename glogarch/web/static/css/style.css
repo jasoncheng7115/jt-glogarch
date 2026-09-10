@@ -221,6 +221,11 @@
     z-index: 1000;
 }
 
+/* One-off range inputs in the report "Generate now" dialog: two labelled
+   datetime-local fields side by side, stacking on narrow screens. */
+.confirm-modal-card .form-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
+.confirm-modal-card .form-row label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 200px; font-size: 0.9em; }
+.confirm-modal-card .form-row input[type="datetime-local"] { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); }
 .confirm-modal-card {
     background: var(--card-bg);
     border: 1px solid var(--border);

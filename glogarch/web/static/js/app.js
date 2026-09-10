@@ -5657,9 +5657,64 @@ async function duplicateReport(name) {
     loadReportsPage();
 }
 
-async function generateReport(name) {
-    const r = await fetchJSON(`${API}/reports/${encodeURIComponent(name)}/generate`, {method:'POST'});
-    if (r.error) { showAlert(r.error); return; }
+let _adhocReportName = null;
+
+// Manual "Generate" asks for an OPTIONAL one-off time range first. Left empty,
+// the report's saved settings apply; filled in, these bounds are used for THIS
+// run only and nothing is written back to the report. Custom modal, never a
+// native prompt (project rule).
+function generateReport(name) {
+    _adhocReportName = name;
+    let modal = document.getElementById('report-adhoc-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'report-adhoc-modal';
+        modal.className = 'confirm-modal-overlay';
+        modal.innerHTML = `<div class="confirm-modal-card">
+            <h3>${esc(t('reports_adhoc_title'))}</h3>
+            <p class="muted" id="report-adhoc-hint">${esc(t('reports_adhoc_hint'))}</p>
+            <div class="form-row">
+              <label>${esc(t('reports_adhoc_from'))}<input type="datetime-local" id="report-adhoc-from" class="no-custom"></label>
+              <label>${esc(t('reports_adhoc_to'))}<input type="datetime-local" id="report-adhoc-to" class="no-custom"></label>
+            </div>
+            <p class="status-failed is-hidden" id="report-adhoc-err"></p>
+            <div class="btn-row">
+              <button class="btn-primary" data-act="doGenerateReportAdhoc">${icon('play', 15)} ${esc(t('reports_adhoc_run'))}</button>
+              <button class="btn-secondary" data-act="closeReportAdhoc">${icon('close', 15)} ${esc(t('btn_cancel'))}</button>
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+    }
+    document.getElementById('report-adhoc-from').value = '';
+    document.getElementById('report-adhoc-to').value = '';
+    document.getElementById('report-adhoc-err').classList.add('is-hidden');
+    modal.style.display = 'flex';
+}
+
+function closeReportAdhoc() {
+    const m = document.getElementById('report-adhoc-modal');
+    if (m) m.style.display = 'none';
+    _adhocReportName = null;
+}
+
+async function doGenerateReportAdhoc() {
+    const name = _adhocReportName;
+    if (!name) return;
+    const from = document.getElementById('report-adhoc-from').value;
+    const to = document.getElementById('report-adhoc-to').value;
+    const err = document.getElementById('report-adhoc-err');
+    // both or neither; and a real interval
+    if ((from && !to) || (!from && to) || (from && to && to <= from)) {
+        err.textContent = t('reports_adhoc_invalid');
+        err.classList.remove('is-hidden');
+        return;
+    }
+    const body = (from && to) ? {time_from: from, time_to: to} : {};
+    const r = await fetchJSON(`${API}/reports/${encodeURIComponent(name)}/generate`,
+                              {method: 'POST', headers: {'Content-Type': 'application/json'},
+                               body: JSON.stringify(body)});
+    if (r.error) { err.textContent = r.error; err.classList.remove('is-hidden'); return; }
+    closeReportAdhoc();
     showAlert(t('reports_started'));
     setTimeout(loadReportsPage, 4000);
     setTimeout(loadReportsPage, 12000);
