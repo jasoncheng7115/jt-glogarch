@@ -15,6 +15,10 @@ log = get_logger("audit.parser")
 
 # Sensitive operation patterns: (method_regex, uri_regex, operation_label)
 SENSITIVE_PATTERNS: list[tuple[str, str, str]] = [
+    # Token create/delete must precede the generic user entries — a new API
+    # token is a new credential, and "user.modify" hides that.
+    (r"POST", r"/api/users/.+/tokens/", "user.token_create"),
+    (r"DELETE", r"/api/users/.+/tokens/", "user.token_delete"),
     (r"DELETE", r"/api/users/", "user.delete"),
     (r"PUT|POST", r"/api/users/", "user.modify"),
     (r"POST", r"/api/system/sessions$", "auth.login"),
@@ -147,13 +151,17 @@ def decode_graylog_username(auth_header: str) -> tuple[str, str]:
 
 def classify_operation(method: str, uri: str) -> str:
     """Classify the API call into an operation label."""
-    # Check sensitive patterns first (more specific)
-    for m_re, u_re, label in _SENSITIVE_COMPILED:
-        if m_re.fullmatch(method) and u_re.search(uri):
-            return label
-    # Then check the whitelist patterns
+    # The whitelist is ordered most-specific-first, so it decides the label.
+    # (The sensitive list is deliberately broad — it answers "is this worth an
+    # alert", not "what exactly happened". Letting it name the operation made
+    # POST /api/users/X/tokens/Y read as "user.modify", hiding a new API token
+    # behind a generic profile edit.)
     for m, pat, label in _KEEP_COMPILED:
         if (m == "ANY" or m == method) and pat.search(uri):
+            return label
+    # Anything sensitive but outside the whitelist still gets named
+    for m_re, u_re, label in _SENSITIVE_COMPILED:
+        if m_re.fullmatch(method) and u_re.search(uri):
             return label
     # Fallback to broader patterns
     for m_re, u_re, label in _OP_COMPILED:
@@ -176,13 +184,13 @@ _KEEP_PATTERNS: list[tuple[str, re.Pattern, str]] = [
     # Authentication
     ("POST", re.compile(r"/api/system/sessions$"), "auth.login"),
     ("DELETE", re.compile(r"/api/system/sessions"), "auth.logout"),
-    # User management
-    ("POST", re.compile(r"/api/users"), "user.create"),
+    # User management — sub-resources first, generic user ops last
+    ("POST", re.compile(r"/api/users/.+/tokens/"), "user.token_create"),
+    ("DELETE", re.compile(r"/api/users/.+/tokens/"), "user.token_delete"),
     ("PUT", re.compile(r"/api/users/.+/password$"), "user.password_change"),
     ("PUT", re.compile(r"/api/users/.+/permissions$"), "user.permissions_change"),
     ("PUT", re.compile(r"/api/users/.+/status/"), "user.status_change"),
-    ("POST", re.compile(r"/api/users/.+/tokens/"), "user.token_create"),
-    ("DELETE", re.compile(r"/api/users/.+/tokens/"), "user.token_delete"),
+    ("POST", re.compile(r"/api/users/?$"), "user.create"),
     ("PUT", re.compile(r"/api/users/"), "user.modify"),
     ("DELETE", re.compile(r"/api/users/"), "user.delete"),
     # Role management
@@ -207,6 +215,10 @@ _KEEP_PATTERNS: list[tuple[str, re.Pattern, str]] = [
     # Stream management
     ("POST", re.compile(r"/api/streams$"), "stream.create"),
     ("POST", re.compile(r"/api/streams/.+/clone"), "stream.clone"),
+    # Stream rules — before the generic stream modify/delete below
+    ("POST", re.compile(r"/api/streams/.+/rules"), "stream_rule.create"),
+    ("PUT", re.compile(r"/api/streams/.+/rules/"), "stream_rule.modify"),
+    ("DELETE", re.compile(r"/api/streams/.+/rules/"), "stream_rule.delete"),
     ("PUT", re.compile(r"/api/streams/"), "stream.modify"),
     ("DELETE", re.compile(r"/api/streams/"), "stream.delete"),
     ("POST", re.compile(r"/api/streams/.+/pause"), "stream.pause"),
@@ -214,10 +226,6 @@ _KEEP_PATTERNS: list[tuple[str, re.Pattern, str]] = [
     ("POST", re.compile(r"/api/streams/bulk_delete"), "stream.bulk_delete"),
     ("POST", re.compile(r"/api/streams/bulk_pause"), "stream.bulk_pause"),
     ("POST", re.compile(r"/api/streams/bulk_resume"), "stream.bulk_resume"),
-    # Stream rules
-    ("POST", re.compile(r"/api/streams/.+/rules"), "stream_rule.create"),
-    ("PUT", re.compile(r"/api/streams/.+/rules/"), "stream_rule.modify"),
-    ("DELETE", re.compile(r"/api/streams/.+/rules/"), "stream_rule.delete"),
     # Index set management
     ("POST", re.compile(r"/api/system/indices/index_sets$"), "indexset.create"),
     ("PUT", re.compile(r"/api/system/indices/index_sets/.+/default$"), "indexset.set_default"),
@@ -252,6 +260,12 @@ _KEEP_PATTERNS: list[tuple[str, re.Pattern, str]] = [
     ("POST", re.compile(r"/api/events/notifications$"), "event_notif.create"),
     ("PUT", re.compile(r"/api/events/notifications/"), "event_notif.modify"),
     ("DELETE", re.compile(r"/api/events/notifications/"), "event_notif.delete"),
+    # Dashboards (legacy Graylog path; current versions use /api/views)
+    ("PUT", re.compile(r"/api/dashboards/"), "dashboard.modify"),
+    ("DELETE", re.compile(r"/api/dashboards/"), "dashboard.delete"),
+    # Pipelines exposed under the plugin path (older Graylog builds)
+    ("PUT", re.compile(r"/api/plugins/org\.graylog\.plugins\.pipelineprocessor/"), "pipeline.modify"),
+    ("DELETE", re.compile(r"/api/plugins/org\.graylog\.plugins\.pipelineprocessor/"), "pipeline.delete"),
     # Dashboard/view management (exclude searchjobs/export/search sub-paths)
     ("POST", re.compile(r"/api/views$"), "view.create"),
     ("PUT", re.compile(r"/api/views/[a-f0-9]{24}$"), "view.modify"),

@@ -16,8 +16,13 @@ These operations trigger notification alerts when `op_audit.alert_sensitive` is 
 | **Authentication** | `auth.login` | User login |
 | | `auth.logout` | User logout |
 | **User Management** | `user.create` | Create user account |
-| | `user.modify` | Modify user (password, permissions, status) |
+| | `user.modify` | Modify a user account |
 | | `user.delete` | Delete user account |
+| | `user.password_change` | Change a user's password |
+| | `user.permissions_change` | Change a user's permissions |
+| | `user.status_change` | Enable / disable a user account |
+| | `user.token_create` | Issue a new API token (a new credential) |
+| | `user.token_delete` | Revoke an API token |
 | **Input Management** | `input.create` | Create input |
 | | `input.modify` | Modify input configuration |
 | | `input.delete` | Delete input |

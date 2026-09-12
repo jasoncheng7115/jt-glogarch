@@ -214,6 +214,16 @@ GL_PASS='<graylog-admin-pw>' bash scripts/e2e-archive-test.sh
 - [ ] Username resolved correctly (Basic Auth, Token, Session, Cookie)
 - [ ] Target name shows human-readable resource names (not raw IDs)
 - [ ] Sensitive operations trigger notification alerts
+- [ ] **A nested URI is named for the nested resource, not its parent**
+      (`tests/test_audit_operation_labels.py`) — creating an API token is
+      `user.token_create`, not `user.modify`; deleting a stream rule is
+      `stream_rule.delete`, not `stream.delete`. The whitelist is ordered
+      most-specific-first and it, not the broad sensitive list, names the
+      operation
+- [ ] **Every sensitive pattern has a sample request that reaches the database**
+      — a pattern the whitelist does not keep would alert and store nothing
+- [ ] Token targets name the token (`local:admin / token 'backup-tool'`) and a
+      delete-by-value never shows any part of the secret
 - [ ] Heartbeat alert when no syslog received for 10+ minutes while Graylog is up
 - [ ] Filter dropdowns show correct language labels (Method/Status vs 方法/狀態碼)
 

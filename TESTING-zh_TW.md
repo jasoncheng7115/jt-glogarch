@@ -170,6 +170,15 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
 - [ ] 帳號正確解析（Basic Auth、Token、Session、Cookie）
 - [ ] 項目名稱顯示人類可讀的資源名稱（非原始 ID）
 - [ ] 敏感操作觸發通知警報
+- [ ] **巢狀 URI 要以巢狀資源命名，而非其上層**
+      （`tests/test_audit_operation_labels.py`）——建立 API token 是
+      `user.token_create` 而非 `user.modify`；刪除串流規則是 `stream_rule.delete`
+      而非 `stream.delete`。白名單由細到粗排序，操作名稱由它決定，而不是由寬鬆的
+      敏感樣式清單決定
+- [ ] **每一條敏感樣式都要有一個能寫進資料庫的範例請求**——白名單沒有保留的樣式，
+      只會示警而不留任何紀錄
+- [ ] token 的項目名稱要指出是哪一把（`local:admin / token 'backup-tool'`），以 token
+      值刪除時不得顯示祕密的任何片段
 - [ ] Graylog 正常運作但超過 10 分鐘未收到 syslog → 心跳警報
 - [ ] 篩選下拉選單顯示正確語言標籤（Method/Status 對 方法/狀態碼）
 

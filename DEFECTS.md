@@ -79,6 +79,7 @@ these into questions to ask **before** writing code.
 | # | Defect | Root cause | What prevents recurrence |
 |---|---|---|---|
 | 22 | Notification webhook URLs had no SSRF check (v1.13.63) | Every other URL-taking endpoint used `ssrf_block_reason()`; this one was missed | The guard is applied to `webhook_url` / `server_url` on save |
+| 39 | Creating an API token was audited as `user.modify` (v1.14.10) | Two lists answer two questions — a broad "is this sensitive" list and a specific "what happened" whitelist — and the broad one named the operation, so `POST /api/users/X/tokens/Y` stopped at `PUT\|POST /api/users/`. Seven other operations were mislabelled the same way, and two sensitive ones were alerted but never stored | The specific list names the operation; `test_audit_operation_labels.py` pins the label for each nested URI and keeps a sample request for every sensitive pattern, failing if one would not reach the database |
 
 ## Testing gaps that let the above survive
 

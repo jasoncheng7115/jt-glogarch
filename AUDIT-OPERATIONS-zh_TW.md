@@ -16,8 +16,13 @@ jt-glogarch 的行為稽核透過 nginx 反向代理的 syslog 記錄 Graylog AP
 | **認證** | `auth.login` | 使用者登入 |
 | | `auth.logout` | 使用者登出 |
 | **使用者管理** | `user.create` | 建立使用者帳號 |
-| | `user.modify` | 修改使用者（密碼、權限、狀態） |
+| | `user.modify` | 修改使用者帳號 |
 | | `user.delete` | 刪除使用者帳號 |
+| | `user.password_change` | 變更使用者密碼 |
+| | `user.permissions_change` | 變更使用者權限 |
+| | `user.status_change` | 啟用／停用使用者帳號 |
+| | `user.token_create` | 核發新的 API token（等於一組新憑證） |
+| | `user.token_delete` | 撤銷 API token |
 | **Input 管理** | `input.create` | 建立 Input |
 | | `input.modify` | 修改 Input 設定 |
 | | `input.delete` | 刪除 Input |

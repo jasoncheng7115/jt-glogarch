@@ -2,6 +2,37 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.14.10] - 2026-09-12
+
+### Fixed
+
+- **Creating a Graylog API token was recorded as "user.modify".** A new API
+  token is a new credential, and the audit trail named it the same as editing a
+  profile — the alert read `user.modify [local:admin]` with nothing to say a
+  token had been issued. Cause: two lists answer two different questions, and
+  the wrong one was naming the operation. The sensitive-pattern list is
+  deliberately broad (it decides "is this worth an alert"), the whitelist is
+  ordered most-specific-first (it decides "what happened"), and classification
+  consulted the broad one first, so `POST /api/users/X/tokens/Y` matched
+  `PUT|POST /api/users/` and stopped there. Operations are now named by the
+  specific list. Token creation and deletion appear as `user.token_create` /
+  `user.token_delete`, still flagged sensitive, and the target names the token
+  — `local:admin / token 'backup-tool'`. A token deleted by its secret value
+  instead of its id is shown as `local:admin / token` with nothing of the
+  secret in it.
+- **The same shadowing mislabelled seven other operations.** Deleting an index
+  set was recorded as `indexset.modify`, deleting a stream rule as
+  `stream.delete`, editing an extractor as `input.modify`, deleting an event
+  definition as `alert.modify`, deleting a pipeline rule as `pipeline.modify`,
+  and a permissions change as `user.modify`. All are now named for what they
+  are.
+- **Two sensitive operations were alerted but never stored.** Deleting a
+  dashboard on the legacy `/api/dashboards/` path and editing a pipeline
+  through the `pipelineprocessor` plugin path matched no whitelist entry, so
+  they were dropped as noise and left no audit record. Both are now recorded.
+  `tests/test_audit_operation_labels.py` keeps a sample request for every
+  sensitive pattern and fails if one of them would not reach the database.
+
 ## [1.14.9] - 2026-09-10
 
 ### Added

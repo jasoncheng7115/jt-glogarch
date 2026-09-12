@@ -8,7 +8,7 @@ import asyncio
 import re
 from datetime import datetime
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from glogarch.audit.parser import (
     parse_syslog_payload, parse_syslog_hostname,
@@ -514,7 +514,7 @@ class AuditSyslogListener:
         if fallback and entry.get("username") == session_id:
             entry["username"] = fallback
 
-    def _resolve_target_name(self, uri: str) -> str:
+    def _resolve_target_name(self, uri: str, method: str = "") -> str:
         """Extract resource ID from URI and resolve to human-readable name."""
         # Match patterns like /api/.../inputs/XXXX or /api/.../inputstates/XXXX
         m = re.search(r"/api/(?:system|cluster)/(?:inputs|inputstates)/([a-f0-9]{24})", uri)
@@ -525,6 +525,18 @@ class AuditSyslogListener:
         if m:
             rid = m.group(1)
             return self._resource_cache.get(f"stream:{rid}", f"stream:{rid[:8]}...")
+        # API tokens: name the token, not just its owner. On DELETE the last
+        # segment may be the token VALUE itself (Graylog accepts id-or-token),
+        # so only a Mongo-style id is ever shown — never a secret.
+        m = re.search(r"/api/users/([^/]+)/tokens(?:/([^/?]+))?", uri)
+        if m:
+            owner = unquote(m.group(1))
+            tok = unquote(m.group(2) or "")
+            if tok and re.fullmatch(r"[a-f0-9]{24}", tok):
+                return f"{owner} / token {tok[:8]}..."
+            if tok and method == "POST":
+                return f"{owner} / token '{tok[:64]}'"
+            return f"{owner} / token"
         m = re.search(r"/api/users/([a-f0-9]{24})(?:/|$)", uri)
         if m:
             rid = m.group(1)
@@ -937,7 +949,7 @@ class AuditSyslogListener:
             entry["server_name"] = self.settings.servers[0].name
 
         # Resolve target resource name (input/stream/user ID → human name)
-        target_name = self._resolve_target_name(uri)
+        target_name = self._resolve_target_name(uri, method)
         if target_name:
             entry["target_name"] = target_name
 
@@ -946,7 +958,6 @@ class AuditSyslogListener:
             # GET /api/search/universal/relative?query=xxx
             qs = entry.get("query_string", "")
             if qs:
-                from urllib.parse import parse_qs, unquote
                 params = parse_qs(qs)
                 q = params.get("query", params.get("q", [""]))[0]
                 if q:

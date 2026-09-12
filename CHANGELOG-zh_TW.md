@@ -2,6 +2,28 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.14.10] - 2026-09-12
+
+### 修正
+
+- **建立 Graylog API token 被記成「user.modify」。** 新的 API token 就是一組新的憑證，
+  稽核紀錄卻把它與修改個人資料記成同一件事，警示只寫著 `user.modify [local:admin]`，
+  看不出有人發了一把新鑰匙。原因是兩份清單各自回答不同問題，卻由錯的那份來命名操作：
+  敏感樣式清單刻意寫得寬（它負責判斷「這件事要不要示警」），白名單則由細到粗排序
+  （它負責判斷「發生了什麼事」），而分類時先查了寬的那份，因此
+  `POST /api/users/X/tokens/Y` 命中 `PUT|POST /api/users/` 就停住了。現在操作名稱一律
+  由細的那份決定：建立與刪除 token 會顯示為 `user.token_create` ／ `user.token_delete`，
+  仍然標記為敏感，對象欄也會指出是哪一把 token——`local:admin / token 'backup-tool'`。
+  若刪除時帶的是 token 值而非 id，只會顯示 `local:admin / token`，不會留下任何一段祕密。
+- **同一個遮蔽問題還誤標了另外七種操作。** 刪除索引集被記成 `indexset.modify`、刪除
+  串流規則記成 `stream.delete`、修改擷取器記成 `input.modify`、刪除事件定義記成
+  `alert.modify`、刪除管線規則記成 `pipeline.modify`、變更權限記成 `user.modify`。
+  現在都以實際發生的操作命名。
+- **有兩種敏感操作會示警卻沒有留下紀錄。** 以舊版 `/api/dashboards/` 路徑刪除儀表板，
+  以及透過 `pipelineprocessor` 外掛路徑修改管線，都沒有命中白名單，因此被當成雜訊丟棄，
+  稽核紀錄裡什麼都沒有。兩者現在都會寫入。`tests/test_audit_operation_labels.py` 為每一條
+  敏感樣式保留一個範例請求，只要其中一條不會進到資料庫就會讓測試失敗。
+
 ## [1.14.9] - 2026-09-10
 
 ### 新增
