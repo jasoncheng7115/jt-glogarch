@@ -7,6 +7,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="stylesheet" href="/static/css/style.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/util.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/refine.css?v={{ version }}">
 </head>
 <body>
     <nav class="sidebar" id="sidebar">
@@ -25,6 +26,7 @@
             <li><a href="/op-audit" class="{% if page == 'op-audit' %}active{% endif %}" data-i18n="nav_op_audit" data-icon="shield"><span>Operation Audit</span></a></li>
             <li><a href="/reports" class="{% if page == 'reports' %}active{% endif %}" data-i18n="nav_reports" data-icon="report"><span>Reports</span></a></li>
             <li><a href="/alerting" class="{% if page == 'alerting' %}active{% endif %}" data-i18n="nav_alerting" data-icon="warning"><span>Alerting</span></a></li>
+            <li><a href="/packs" class="{% if page == 'packs' %}active{% endif %}" data-i18n="nav_packs" data-icon="db"><span>Content Packs</span></a></li>
             <li><a href="/settings" class="{% if page == 'settings' %}active{% endif %}" data-i18n="nav_settings" data-icon="settings"><span>Settings</span></a></li>
         </ul>
         <div id="sidebar-job-status" class="sidebar-job-status hidden">
@@ -33,7 +35,7 @@
         <div class="sidebar-footer">
             <div class="sidebar-controls">
                 <div class="lang-switcher">
-                    <select id="lang-select" class="no-custom">
+                    <select id="lang-select">
                         <option value="en">English</option>
                         <option value="zh-TW">繁體中文</option>
                         <option value="ja">日本語</option>
@@ -87,12 +89,17 @@
         </div>
         <div class="section">
             <h2 data-i18n="opensearch_connection" data-icon="db">OpenSearch Connection</h2>
-            <div class="card mb15" id="opensearch-card">
-                <!-- Each OpenSearch row carries its OWN test button (per Graylog
-                     server), matching the Graylog servers table above. -->
-                <div id="opensearch-info" class="muted-flex1">Loading...</div>
-                <div id="opensearch-result" class="mt8"></div>
-            </div>
+            <!-- Same table as the Graylog servers above; each row has its own test button. -->
+            <table id="opensearch-table">
+                <thead><tr>
+                    <th data-i18n="th_name">Name</th>
+                    <th data-i18n="th_source">Source</th>
+                    <th data-i18n="th_os_nodes">Nodes</th>
+                    <th data-i18n="th_actions">Actions</th>
+                </tr></thead>
+                <tbody id="opensearch-info"><tr><td colspan="4" class="text-center text-muted"><span class="spinner-text" data-i18n="loading">Loading</span></td></tr></tbody>
+            </table>
+            <div id="opensearch-result" class="test-result-line"></div>
         </div>
         <!-- Hardware sizing advice, computed from THIS box: /proc/meminfo, CPU
              count and the co-located Graylog/OpenSearch JVM -Xmx. Hidden unless
@@ -432,7 +439,7 @@
                     <!-- Batch size -->
                     <div class="form-group">
                         <label data-i18n="import_batch_size" data-icon="database">Batch Size</label>
-                        <select id="modal-batch-size" class="no-custom">
+                        <select id="modal-batch-size">
                             <option value="50">50</option>
                             <option value="500" selected>500</option>
                             <option value="1000">1000</option>
@@ -830,7 +837,7 @@
         <div class="section">
             <h2 data-i18n="log_realtime" data-icon="log">Real-time Log</h2>
             <div class="u056">
-                <select id="log-lines" class="no-custom u129">
+                <select id="log-lines" class="u129">
                     <option value="50">50</option>
                     <option value="100" selected>100</option>
                     <option value="200">200</option>
@@ -914,7 +921,7 @@
               <span class="u022">~</span>
               <input type="datetime-local" id="alog-to" data-i18n-title="th_to">
               <input type="text" id="alog-user" data-i18n-placeholder="login_username">
-              <select id="alog-action" class="no-custom">
+              <select id="alog-action">
                 <option value="" data-i18n-opt="alog_all_actions">All actions</option>
               </select>
               <button class="btn-primary btn-sm" data-act="loadAppAudit" data-args="[1]"
@@ -1033,6 +1040,111 @@
                     <button class="btn-primary" data-act="saveReport" data-i18n="btn_save" data-icon="shield">Save</button>
                     <button class="btn-secondary" data-act="closeReportModal" data-i18n="btn_cancel" data-icon="close">Cancel</button>
                     <span id="report-modal-result"></span>
+                </div>
+            </div>
+        </div>
+
+        {% elif page == 'packs' %}
+        <h1 data-i18n="page_packs" data-icon="db">Content Packs</h1>
+        <div class="text-muted fs-085 mb15" data-i18n="pk_subtitle">View, install, uninstall, edit, download and upload Graylog content packs.</div>
+
+        <div class="card mb15 al-toolbar">
+            <div class="al-bar">
+                <div class="al-bar-left">
+                    <label class="al-inline-label" for="pk-server" data-i18n="al_server">Graylog</label>
+                    <select id="pk-server" data-act-change="pkServerChange"></select>
+                    <span class="al-who" id="pk-who"><span class="spinner-text" data-i18n="loading">Loading</span></span>
+                </div>
+                <div class="al-bar-right">
+                    <button class="btn-secondary btn-sm" data-act="pkReload" data-i18n="btn_refresh" data-icon="refresh">Refresh</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="arch-tabs" id="pk-tabs">
+            <button class="arch-tab active" data-act="pkTab" data-arg="graylog" data-i18n="pk_tab_graylog" data-icon="server">Connected Graylog</button>
+            <button class="arch-tab" data-act="pkTab" data-arg="library" data-i18n="pk_tab_library" data-icon="shield">By Jason Tools</button>
+        </div>
+
+        <div class="card">
+            <div class="pk-toolbar">
+                <input type="text" class="pk-input pk-search" data-i18n-placeholder="pk_search" placeholder="Search" data-act-input="pkSearch">
+                <label class="pk-check" id="pk-installed-wrap"><input type="checkbox" data-act-change="pkToggleInstalled" data-pass="checked"> <span data-i18n="pk_only_installed">Installed only</span></label>
+                <span class="pk-sub" id="pk-count"></span>
+                <span class="pk-spacer"></span>
+                <button class="btn-primary btn-sm" data-act="pkUploadPick" data-i18n="pk_upload" data-icon="upload">Upload</button>
+                <input type="file" id="pk-upload-file" class="hidden" accept=".json,application/json" data-act-change="pkFilePicked" data-act-self>
+            </div>
+            <div class="pk-sub mb15" id="pk-hint"></div>
+            <div id="pk-message" class="pk-message hidden"></div>
+            <div id="pk-table" class="table-wrap"><div class="u143" data-i18n="loading">Loading</div></div>
+        </div>
+
+        <div id="pk-viewer" class="modal-overlay hidden">
+            <div class="modal-card modal-wide pk-viewer-card">
+                <button type="button" class="pk-modal-x" data-act="pkAskCloseViewer" data-i18n-title="pk_close" aria-label="Close" title="Close"></button>
+                <div class="pk-v-head"><h3 id="pk-v-title"></h3><span id="pk-v-rev"></span></div>
+                <div class="arch-tabs" id="pk-v-tabs"></div>
+                <div id="pk-v-body" class="pk-v-body"></div>
+                <div class="u048 pk-v-buttons" id="pk-v-buttons"></div>
+            </div>
+        </div>
+
+        <div id="pk-review" class="modal-overlay hidden pk-top">
+            <div class="modal-card modal-wide pk-viewer-card">
+                <button type="button" class="pk-modal-x" data-act="pkCloseReview" data-i18n-title="pk_close" aria-label="Close" title="Close"></button>
+                <h3 data-i18n="pk_review_title">Review</h3>
+                <div id="pk-review-body" class="pk-v-body"></div>
+                <div class="u048">
+                    <button class="btn-primary" id="pk-review-save" data-act="pkSave" data-i18n="pk_save" data-icon="check">Save</button>
+                    <button class="btn-secondary" data-act="pkCloseReview" data-i18n="pk_close" data-icon="close">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="pk-leave" class="modal-overlay hidden pk-top">
+            <div class="modal-card modal-wide pk-viewer-card">
+                <button type="button" class="pk-modal-x" data-act="pkCloseLeave" data-i18n-title="pk_close" aria-label="Close" title="Close"></button>
+                <h3 id="pk-leave-title"></h3>
+                <div class="form-group hidden" id="pk-leave-version-wrap">
+                    <label for="pk-leave-version" data-i18n="pk_target_version">Graylog version</label>
+                    <select id="pk-leave-version"></select>
+                    <div class="pk-sub" data-i18n="pk_target_note">Older versions lose the fields they do not know.</div>
+                </div>
+                <div id="pk-leave-body" class="pk-v-body"></div>
+                <div class="u048 pk-v-buttons" id="pk-leave-buttons"></div>
+            </div>
+        </div>
+
+        <div id="pk-uninstall" class="modal-overlay hidden pk-top">
+            <div class="modal-card modal-wide">
+                <button type="button" class="pk-modal-x" data-act="pkCloseUninstall" data-i18n-title="pk_close" aria-label="Close" title="Close"></button>
+                <h3 id="pk-uninstall-title"></h3>
+                <div id="pk-uninstall-body" class="pk-v-body"></div>
+                <div class="u048">
+                    <button class="btn-danger" data-act="pkDoUninstall" data-i18n="pk_uninstall" data-icon="trash">Uninstall</button>
+                    <button class="btn-secondary" data-act="pkCloseUninstall" data-i18n="btn_cancel" data-icon="close">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="pk-signin-modal" class="modal-overlay hidden pk-top">
+            <div class="modal-card">
+                <button type="button" class="pk-modal-x" data-act="pkCloseSignin" data-i18n-title="pk_close" aria-label="Close" title="Close"></button>
+                <h3 data-i18n="al_signin_title" data-icon="lock">Sign in to Graylog</h3>
+                <p class="u028" id="pk-signin-why"></p>
+                <div class="form-group">
+                    <label data-i18n="monitor_username">Username</label>
+                    <input type="text" id="pk-signin-user" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="monitor_password">Password</label>
+                    <input type="password" id="pk-signin-pass" autocomplete="off">
+                </div>
+                <div class="u048">
+                    <button class="btn-primary" data-act="pkSignin" data-i18n="btn_login" data-icon="login">Login</button>
+                    <button class="btn-secondary" data-act="pkCloseSignin" data-i18n="btn_cancel" data-icon="close">Cancel</button>
+                    <span id="pk-signin-result"></span>
                 </div>
             </div>
         </div>
@@ -1234,7 +1346,7 @@
             <div class="text-muted fs-085 mb8" data-i18n="settings_export_mode_desc"></div>
             <div class="override-note" data-i18n="settings_export_mode_sched_note"></div>
             <div class="form-card u039">
-                <select id="settings-export-mode" class="no-custom u131" data-act-change="saveExportMode">
+                <select id="settings-export-mode" class="u131" data-act-change="saveExportMode">
                     <option value="api" data-i18n-opt="settings_mode_api">Graylog API</option>
                     <option value="opensearch" data-i18n-opt="settings_mode_os">OpenSearch Direct</option>
                 </select>
@@ -1324,5 +1436,6 @@ sudo bash upgrade-offline.sh</pre>
     <script src="/static/js/i18n.js?v={{ version }}"></script>
     <script src="/static/js/app.js?v={{ version }}"></script>
     <script src="/static/js/alerting.js?v={{ version }}"></script>
+    <script src="/static/js/packs.js?v={{ version }}"></script>
 </body>
 </html>

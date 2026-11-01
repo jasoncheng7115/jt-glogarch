@@ -1,4 +1,4 @@
-# jt-glogarch v1.17.2
+# jt-glogarch v1.18.0
 
 **Language**: [English](README.md) | [繁體中文](README-zh_TW.md) | **日本語**  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open（6.x / 7.x）向けのログのアーカイブ・リストアツール
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.17.2-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.18.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 > **作者：** Jason Cheng（[Jason Tools](https://github.com/jasoncheng7115)）
@@ -176,6 +176,10 @@ Telegram・Discord・Slack・Microsoft Teams・Nextcloud Talk・Zulip・Email（
 タスクログ（リアルタイム進捗、キャンセル）、スケジュール、通知設定、システムログ、操作監査、アラート管理、
 レポート、設定の各画面を備えています。ライト / ダークテーマ、English / 繁體中文 / 日本語 に対応しています。
 ログインには Graylog のアカウントを使います（別途ユーザー管理は不要です）。
+
+### コンテンツパック（v1.18.0 以降）
+
+接続中の各 Graylog のコンテンツパックを表示、編集、インストール、アンインストール、ダウンロード、アップロードできます。Jason Tools ライブラリもあります（パックが公開されるまでは空で、サイト独自のパックはローカルにのみ保存されます）。ダッシュボードのレイアウトをプレビューし、インストール前にその Graylog への影響を確認し、編集内容は差分で確認できます。編集は新しいリビジョンとして保存され、インストール済みの内容は変わりません。
 
 ### アラート管理（v1.17.0 以降）
 

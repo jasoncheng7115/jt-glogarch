@@ -62,7 +62,7 @@ version = {attr = "glogarch.__version__"}
 include = ["glogarch*"]
 
 [tool.setuptools.package-data]
-glogarch = ["web/templates/*.html", "web/static/**/*", "report/templates/*.j2", "report/assets/*"]
+glogarch = ["web/templates/*.html", "web/static/**/*", "report/templates/*.j2", "report/assets/*", "jt_library/*"]
 
 [tool.ruff]
 target-version = "py310"

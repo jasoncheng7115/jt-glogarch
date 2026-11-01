@@ -1,4 +1,4 @@
-# jt-glogarch v1.17.2
+# jt-glogarch v1.18.0
 
 **語言**： [English](README.md) | **繁體中文** | [日本語](README-ja.md)  
 **網站**： <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.17.2-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.18.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -142,8 +142,8 @@ sudo -u jt-glogarch glogarch integrity-manifest -o /機器外/manifest.json   # 
 
 兩種匯入模式（對話框中選擇）：
 
-- **GELF (Graylog Pipeline)** — 預設。每筆訊息透過 GELF TCP/UDP 經過完整的
-  Graylog input → process → indexer 處理流程。相容 pipeline 規則、extractors、
+- **GELF (Graylog 管線)** — 預設。每筆訊息透過 GELF TCP/UDP 經過完整的
+  Graylog input → process → indexer 處理流程。相容管線規則、extractors、
   stream routing 與 alerts。
 - **OpenSearch Bulk** — 直接透過 `_bulk` API 寫入 OpenSearch。速度快 5-10×，
   完全跳過 Graylog 處理流程。適合「原樣還原」場景。
@@ -169,6 +169,7 @@ GELF 模式還有：
 - **系統記錄** — 即時記錄檢視器 + 稽核記錄
 - **行為稽核** — 追蹤 Graylog 上的所有操作（誰在什麼時候做了什麼），支援篩選、敏感操作通知（60+ 種操作類型）
 - **報表（Beta）** — 從 Graylog 儀表板與封存統計產生品牌化 PDF 報表；手動「產製」可指定只用於該次的起迄時間，不改動報表設定（漸層封面、目錄、KPI 摘要、頁首/頁尾/頁碼、繁中字型）。支援排程與 Email 寄送。需選用的渲染引擎（無頭 Chromium）：執行 `sudo bash scripts/install-report-engine.sh` 啟用。
+- **內容套件（v1.18.0 起）** — 檢視、修改、安裝、解除安裝、下載和上傳每台已連接 Graylog 上的內容套件，另有 Jason Tools 套件庫（公開版是空的，站台自己的套件只留在地端）。可預覽看板版面，安裝前先看會對該 Graylog 造成什麼影響，每次修改都能先看差異；修改會存成新修訂版，已安裝的內容不受影響。
 - **告警管理（v1.17.0 起）** — 批次管理 Graylog 的事件定義與通知方式：快速篩選、依標題標籤（`[廠商]`／`產品 - `）點選、多關鍵字搜尋（`checkpoint -notif:Zulip`）、Shift 點選範圍與全選符合的結果，再對數百個定義一次加入／移除／替換通知方式。每次變更都先預覽，每個定義維持原本的啟用／停用狀態；預覽之後被人在 Graylog 改過的定義會略過；以作業執行並記錄在作業歷程，可在「變更紀錄」復原。健檢會列出啟用中卻沒有人會收到通知的定義、已刪除或沒人使用的通知方式，以及從未或已久未觸發的定義。所有變更都以登入者自己的 Graylog 帳號執行（套用該帳號的權限）；登入時密碼會換成 Graylog 工作階段，不會儲存。
 - 深色/淺色主題、English／繁體中文／日本語 三種介面語言
 - 可收摺側邊欄、HTTPS、Session 認證
@@ -341,7 +342,7 @@ OpenSearch 只保留最近的資料供搜尋。
 
 ### 6. 行為稽核 — 獨立追蹤 Graylog 上的所有操作
 
-法規（ISO 27001、PCI-DSS、個資法等）要求保留管理者操作軌跡，但 Graylog 內建的 audit log 由 Graylog 本身管理，**具有 admin 權限者可以自行刪除或竄改**，從稽核角度不可信。jt-glogarch 透過 nginx access log → syslog 旁路，獨立側錄所有經過 nginx 進入 Graylog 的 API 操作（建立/修改/刪除 stream、pipeline、user、search、content pack、lookup table…等 60 種以上），存進 SQLite，**Graylog 端 admin 無權限存取此資料庫**。也支援敏感行為即時通知（多管道）與心跳偵測（nginx 轉送中斷立即告警）。
+法規（ISO 27001、PCI-DSS、個資法等）要求保留管理者操作軌跡，但 Graylog 內建的 audit log 由 Graylog 本身管理，**具有 admin 權限者可以自行刪除或竄改**，從稽核角度不可信。jt-glogarch 透過 nginx access log → syslog 旁路，獨立側錄所有經過 nginx 進入 Graylog 的 API 操作（建立/修改/刪除 stream、管線、user、search、content pack、lookup table…等 60 種以上），存進 SQLite，**Graylog 端 admin 無權限存取此資料庫**。也支援敏感行為即時通知（多管道）與心跳偵測（nginx 轉送中斷立即告警）。
 
 > 設定：行為稽核頁 → 取得 nginx 設定範本 → 套用至各 Graylog 節點 → 啟用通知
 
@@ -1024,7 +1025,7 @@ OpenSearch 模式可選擇**保留最近 N 份 index**。下方的「可用 indi
 **項目名稱解析：**
 
 URI 中的資源 ID 自動透過 Graylog API 快取解析為人類可讀名稱（每 6 分鐘重新整理）：
-inputs、streams、index sets、dashboards/views、pipelines、pipeline rules、event definitions、event notifications、lookup tables/adapters/caches、content packs、authentication services、outputs、users、roles。
+inputs、streams、index sets、dashboards/views、管線、管線規則、event definitions、event notifications、lookup tables/adapters/caches、content packs、authentication services、outputs、users、roles。
 
 **敏感操作警報：**
 
@@ -1086,14 +1087,14 @@ op_audit:
 
 | 模式 | 速度 | 經過 | 適用情境 |
 |---|---|---|---|
-| **GELF (Graylog Pipeline)**（預設） | ~5,000 筆/秒 | Graylog Input → Process buffer → Output buffer → OpenSearch | 你需要 Graylog 規則（pipeline、extractors、stream routing、alerts）在匯入資料上跑 |
+| **GELF (Graylog 管線)**（預設） | ~5,000 筆/秒 | Graylog Input → Process buffer → Output buffer → OpenSearch | 你需要 Graylog 規則（管線、extractors、stream routing、alerts）在匯入資料上跑 |
 | **OpenSearch Bulk** | ~30,000-100,000 筆/秒 | 直接 OpenSearch `_bulk` API | 還原已處理過的歷史資料，要最快速度 |
 
 **Bulk 模式取捨：**
 - ✅ **5-10 倍速度**（沒有 GELF framing、沒有 Graylog journal 寫入磁碟、沒有 buffer 壓力）
 - ✅ **每筆精確對帳**從 `_bulk` response（不依賴 Graylog 的 circular failure buffer)
 - ✅ **不會誤觸 alert**（訊息不經過 stream routing)
-- ❌ **跳過所有 Graylog 處理規則** — pipeline、extractors、stream routing、alerts。資料原樣從歸檔進到 OpenSearch。
+- ❌ **跳過所有 Graylog 處理規則** — 管線、extractors、stream routing、alerts。資料原樣從歸檔進到 OpenSearch。
 - ❌ **需要 OpenSearch 帳密**（預設會自動偵測）。
 
 **Bulk 匯入的資料寫到哪：**

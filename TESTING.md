@@ -868,6 +868,31 @@ failure.
       `autocomplete="off"`, and so does the login form (`tests/test_password_autocomplete.py`).
       `curl -sk https://<host>:8990/login | grep -E '<form|type="password"'` shows it.
 
+### Look and feel (v1.18.0)
+
+`glogarch/web/static/css/refine.css` holds the site-wide scale; colours are tokens at the top of `style.css`. `test_no_select_uses_the_browsers_own_dropdown` keeps native dropdowns out.
+
+**By hand, after any style change**
+- [ ] Every page in light and dark at about 1440 px and 1180 px: nothing crosses the page's right padding, and no number is clipped.
+- [ ] Open a dropdown on a form, in a dialog and in the sidebar: the list is not cut off.
+- [ ] A dropdown whose value code sets (Settings export mode) shows that value.
+
+### Content Packs page (v1.18.0)
+
+**Automated**: `tests/test_packs.py` (the four real packs, install checks, the library, routes against a fake Graylog that copies measured behaviour, and the publishing boundary).
+
+**Live, in a real browser**: `tests/live_packs_check.py` uploads, edits, installs, starts, uninstalls and deletes a throwaway `ZZTEST` pack on a real Graylog, then checks nothing is left. Its stream matches a hostname that does not exist and its rule is `when false`. Ask before pointing it at production.
+
+**Download bundle**: `tests/test_pack_guide.py` covers the guide's text in all three languages, the facts it reads from the pack, escaping and the ZIP. `tests/live_packs_check.py` downloads through a real browser and checks that the ZIP holds the pack and a guide.
+
+**Sensitive values and versions**: `tests/test_packs.py` covers the scan, the removal and the refusal at each way out. `tests/live_packs_check.py` uploads a pack with an address in its notification and checks that what reaches Graylog holds none, and that a 6.3 download really is converted.
+
+**By hand**
+- [ ] The Jason Tools tab on a site with no local packs says it is empty, and no file in `glogarch/jt_library/` is a pack.
+- [ ] Open a pack with several dashboards and check each tab's layout against Graylog.
+- [ ] Sign in as a user with fewer permissions: the install preview lists what it could not read as not checked.
+- [ ] A library pack whose rule titles exist on the target cannot be installed, and the reason names them.
+
 ### Alerting — Graylog event definitions + notifications in bulk (v1.17.0)
 
 Writes go to a REAL Graylog, so the two live layers run against a TEST Graylog

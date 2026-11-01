@@ -242,11 +242,11 @@ def main():
             print("[7] health check + language")
             pg.click("button[data-act=alTab][data-arg=health]")
             check(pg.locator(".al-hcard").count() >= 6, "health cards render")
-            pg.select_option("#lang-select", "zh-TW")
+            pg.evaluate("setLang('zh-TW')")
             pg.wait_for_timeout(500)
             check("告警管理" in pg.inner_text("h1"), "zh-TW title")
             check("健檢" in pg.inner_text("#al-tabs"), "zh-TW tabs")
-            pg.select_option("#lang-select", "en")
+            pg.evaluate("setLang('en')")
 
             if RESTART:
                 print("[8] after a service restart the page asks to sign in to Graylog again")

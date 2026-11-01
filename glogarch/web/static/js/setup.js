@@ -175,6 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('s2-test').addEventListener('click', testServer);
     $('s3-test').addEventListener('click', testOs);
     const ls = $('lang-select'); if (ls) { ls.value = getLang(); ls.addEventListener('change', e => { setLang(e.target.value); render(); }); }
+    initCustomSelects();
     const tt = $('theme-toggle'); if (tt) tt.addEventListener('click', toggleTheme);
     render();
 });

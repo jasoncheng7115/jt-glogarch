@@ -11,6 +11,9 @@ config.yaml.bak*
 certs/
 .playwright/
 
+# A site's own content packs: never published
+jt-library/
+
 # Generated report output
 reports/
 backups/

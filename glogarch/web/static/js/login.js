@@ -5,6 +5,7 @@ document.cookie = 'session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
 document.addEventListener('DOMContentLoaded', () => {
     const ls = document.getElementById('lang-select');
     if (ls) { ls.value = getLang(); ls.addEventListener('change', e => setLang(e.target.value)); }
+    initCustomSelects();
     const tt = document.getElementById('theme-toggle');
     if (tt) tt.addEventListener('click', toggleTheme);
     const form = document.getElementById('login-form');

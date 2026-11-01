@@ -77,13 +77,13 @@ def _ident(request: Request, srv):
     return gl_identity.get(request.session, srv.name) if srv else None
 
 
-async def _call(request: Request, srv, fn):
+async def _call(request: Request, srv, fn, client_cls=None):
     """Run `fn(client)` as the signed-in user, mapping Graylog's auth errors."""
     ident = _ident(request, srv)
     if ident is None:
         return None, _need_signin(srv)
     try:
-        async with gla.AlertingClient(srv.url, ident.auth, srv.verify_ssl) as c:
+        async with (client_cls or gla.AlertingClient)(srv.url, ident.auth, srv.verify_ssl) as c:
             return await fn(c), None
     except gla.GraylogAuthError:
         gl_identity.drop(request.session, srv.name)

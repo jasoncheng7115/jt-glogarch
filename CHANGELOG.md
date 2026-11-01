@@ -2,6 +2,46 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.18.0] - 2026-11-01
+
+### Added
+
+- **A download comes with a usage guide.** Downloading a content pack gives a ZIP with the pack's `.json` and a guide in the language the page is showing (English, Traditional Chinese or Japanese). The guide is built from that pack: which streams to start, stream rules still holding another site's hostnames, how its pipelines are connected, which lookup tables it expects, and how to check that it works.
+- **Content Packs page (`/packs`).** Two tabs:
+  - **Connected Graylog** lists the content packs on the selected Graylog. View, edit,
+    install, uninstall, download, upload and delete them there, or copy one to the library.
+  - **Jason Tools** is a library of content packs. It ships empty; a site's own packs live in
+    `jt-library/` next to the database, which is gitignored and in neither the wheel nor the
+    offline bundle. The same actions apply, and an edit of a published pack is kept locally.
+- **Preview before anything changes.** A file is shown before it is uploaded. A dashboard
+  preview draws each tab's widgets at their stored size, with their chart type and the pack's
+  own column names and metrics; no query runs, so the shapes and numbers are illustrations and
+  the page says so. The install preview reads the target first and says what would go wrong: a rule
+  or pipeline title already there (Graylog answers a bare HTTP 500 and rolls back, so the
+  install is refused here with the reason), a version the target does not meet, lookup tables,
+  rules or streams the pack refers to but nobody has, pipelines attached to the default
+  stream, and streams that will start paused. What it could not read is listed as not
+  checked, never as clean. Uninstall lists what it removes and what it keeps.
+- **Edit without losing anything.** Change the details, rule and pipeline source (checked by
+  Graylog's own parser), stream rules, event definition query and priority, any item as JSON
+  or the whole pack as JSON, or drop items. A rename follows into the rule source and the
+  pipelines that use it. A review shows the differences, and saving adds the next revision:
+  the old revision stays and nothing installed changes. If someone saved a newer revision
+  meanwhile, the save is refused rather than burying theirs.
+- **Streams can be started from the install result.** Graylog creates a pack's streams paused
+  whatever the pack says, which left a customer's dashboards empty. The result lists them and
+  offers a button; it is not done automatically, because starting one begins processing.
+- **Nothing leaves with an address or credential in it unless someone decides so.** A pack exports whatever its notifications hold, and Graylog says nothing about it. Every pack is scanned for e-mail addresses (anywhere, including inside a widget's query), passwords, tokens, API keys and webhooks, and endpoints in notifications, outputs and lookup adapters. A flagged pack carries a badge in the list and shows the values, masked, on opening it. A download, an upload to a Graylog or an install from the library stops and asks: remove them and continue, or keep them, which is recorded in the audit log. Internal addresses and links are shown but do not stop anything. Graylog's own default packs are not flagged, so a warning still means something.
+- **Download for a chosen Graylog version: 6.3, 7.0 or 7.1, or as stored.** Rewriting the version a pack claims is not enough, because Graylog rejects any field it does not know with a bare HTTP 500 and rolls the install back. Each conversion was found by installing real packs on those versions: 7.0 loses three fields a 7.1 export carries, and 6.3 loses four more, such as widget descriptions and thresholds.
+- All Graylog calls run as the logged-in user's own account, as on the Alerting page, and
+  every write is in the audit log.
+
+### Changed
+
+- **The dashboard's OpenSearch connection is now a table like the Graylog servers above it**, with column headers.
+- **The whole interface was restyled.** One scale for type, control heights, radii and elevation across every page, in both themes, on a calmer palette; a Traditional Chinese and Japanese font stack; lighter table headers; underlined tabs; a focus ring in place of the browser's outline. Buttons inside a table are tinted and turn solid under the pointer, so a list reads as data instead of a column of red and blue. Sparklines have their own band and no longer run through the number. A long job note is held to three lines until hovered.
+- **No page uses the browser's own dropdown any more**, including the sign-in page. The app's dropdown now follows values set from code and refilled options, which was the reason many selects stayed native. One exception: the live batch size in the import progress view, rewritten by the status poll while it may be open.
+
 ## [1.17.2] - 2026-10-22
 
 ### Security

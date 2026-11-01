@@ -1,0 +1,322 @@
+/* The site's look: one scale for type, control sizes, radii and elevation, on top of the
+   component rules in style.css. Loaded last on every page, so it decides what they share.
+   Prefixed with :root where a rule must outrank `[data-theme="light"] .x` or `button:hover`.
+   Colours come from the tokens at the top of style.css; a colour written here would not
+   follow the theme. */
+
+:root {
+    --r-sm: 6px;
+    --r-md: 8px;
+    --r-lg: 12px;
+    --h-control: 34px;
+    --h-control-sm: 28px;
+}
+
+[data-theme="dark"], :root:not([data-theme]) { color-scheme: dark; }
+[data-theme="light"] { color-scheme: light; }
+
+/* ---- Type ---------------------------------------------------------------- */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Noto Sans TC',
+                 'Microsoft JhengHei', 'Hiragino Sans', 'Noto Sans JP', Roboto, sans-serif;
+    font-size: 14.5px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.content { padding: 28px 32px 48px; }
+
+h1 { margin-bottom: 18px; font-size: 1.5em; font-weight: 650; letter-spacing: -0.01em; gap: 10px; }
+h1 svg { width: 22px; height: 22px; color: var(--accent); }
+h2 { margin-bottom: 12px; font-size: 1.08em; font-weight: 620; gap: 7px; }
+h2 svg { width: 18px; height: 18px; color: var(--text-muted); }
+h3 { font-weight: 600; }
+.section { margin-bottom: 28px; }
+
+/* ---- Sidebar ------------------------------------------------------------- */
+.sidebar { border-right: 1px solid var(--sidebar-line); }
+.sidebar-header { padding-bottom: 16px; border-bottom-color: var(--sidebar-line); }
+.sidebar-header h2 { font-size: 1.25em; font-weight: 650; letter-spacing: -0.01em; }
+.sidebar-footer { border-top-color: var(--sidebar-line); }
+.nav-links { padding: 10px 10px; }
+.nav-links li { margin-bottom: 2px; }
+.nav-links li a {
+    gap: 10px;
+    padding: 8px 10px;
+    border-left: none;
+    border-radius: var(--r-sm);
+    font-size: 0.95em;
+    transition: background 0.15s, color 0.15s;
+}
+.nav-links li a svg { width: 17px; height: 17px; opacity: 0.8; }
+.nav-links li a:hover { border-left: none; background: var(--sidebar-hover-bg); }
+.nav-links li a.active { border-left: none; background: var(--sidebar-active-bg); font-weight: 600; }
+.nav-links li a.active svg { color: var(--sidebar-active-icon); opacity: 1; }
+.sidebar.collapsed .nav-links { padding: 10px 6px; }
+.lang-switcher select, .theme-toggle { border-color: var(--sidebar-line); border-radius: var(--r-sm); }
+
+/* ---- Cards --------------------------------------------------------------- */
+.card, .form-card {
+    border-color: var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-sm);
+}
+.card { padding: 18px 20px; }
+[data-theme="light"] .card, [data-theme="light"] .form-card { box-shadow: var(--shadow-sm); }
+.cards { gap: 14px; margin-bottom: 28px; }
+
+/* The sparkline keeps its own band under the value, so the two never overlap. */
+.stat-card { min-height: 128px; padding-bottom: 46px; }
+.stat-card h3 { margin-bottom: 0; color: var(--text-muted); font-size: 0.86em; font-weight: 500; }
+.stat-card h3 svg { width: 15px; height: 15px; }
+.card-value { margin-top: 6px; font-size: 1.65em; font-weight: 650; letter-spacing: -0.015em; font-variant-numeric: tabular-nums; }
+:root .card-value, [data-theme="light"] .card-value { color: var(--text); }
+.sparkline-svg { height: 40px; opacity: 0.9; }
+
+/* ---- Tables -------------------------------------------------------------- */
+table {
+    border-color: var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-sm);
+    font-variant-numeric: tabular-nums;
+}
+:root thead, [data-theme="light"] thead { background: var(--thead-bg); }
+th {
+    padding: 9px 14px;
+    color: var(--text-muted);
+    font-size: 0.8em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+th:hover { color: var(--text); }
+th.sort-asc, th.sort-desc { color: var(--accent); }
+td { padding: 9px 14px; border-bottom-color: var(--line); font-size: 0.93em; }
+th { border-bottom-color: var(--border); }
+tbody tr:last-child > td { border-bottom: none; }
+tr:hover { background: transparent; }
+tbody tr:hover { background: var(--hover-bg); }
+tr { transition: background 0.1s; }
+
+#jobs-table th, #jobs-table td { padding-left: 9px; padding-right: 9px; }
+.u-nowrap { white-space: nowrap; font-size: 0.88em; }
+td.u149 .progress-bar { width: 72px; height: 8px; margin: 0 6px 0 0; display: inline-block; vertical-align: middle; }
+td.u147 { font-size: 0.88em; white-space: nowrap; }
+.job-note {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+    line-height: 1.4;
+}
+.job-note:hover { -webkit-line-clamp: unset; }
+
+/* ---- Buttons ------------------------------------------------------------- */
+:root .btn-primary, :root .btn-secondary, :root .btn-danger, :root .btn-success, :root .btn-info {
+    height: var(--h-control);
+    padding: 0 14px;
+    border-radius: var(--r-sm);
+    font-family: inherit;
+    font-size: 0.92em;
+    font-weight: 500;
+    line-height: 1;
+    gap: 6px;
+    transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+:root .btn-primary { background: var(--accent); border: 1px solid var(--accent); color: #fff; box-shadow: var(--shadow-xs); }
+:root .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+:root .btn-secondary, [data-theme="light"] .btn-secondary {
+    background: var(--card-bg);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    box-shadow: var(--shadow-xs);
+}
+:root .btn-secondary:hover, [data-theme="light"] .btn-secondary:hover {
+    background: var(--hover-solid);
+    border-color: var(--border-strong);
+    color: var(--text);
+}
+:root .btn-danger { background: var(--danger); border: 1px solid var(--danger); color: #fff; }
+:root .btn-danger:hover { background: var(--danger-hover); border-color: var(--danger-hover); }
+:root .btn-sm { height: var(--h-control-sm); padding: 0 10px; font-size: 0.84em; gap: 4px; }
+:root .btn-primary svg, :root .btn-secondary svg, :root .btn-danger svg { width: 15px; height: 15px; flex: none; }
+:root .btn-sm svg { width: 14px; height: 14px; }
+
+/* A row of solid red and blue buttons shouts over the data. Inside a table they are tinted
+   and turn solid when the pointer is on them. */
+:root td .btn-primary { background: var(--tint-accent); border-color: transparent; color: var(--accent-text); box-shadow: none; }
+:root td .btn-primary:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+:root td .btn-danger { background: var(--tint-danger); border-color: transparent; color: var(--danger-text); }
+:root td .btn-danger:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+:root td .btn-success { background: var(--tint-success); border-color: transparent; color: var(--success-text); box-shadow: none; }
+:root td .btn-success:hover { background: var(--success); border-color: var(--success); color: #fff; }
+:root td .btn-info { background: var(--card-bg); border: 1px solid var(--border-strong); color: var(--text); box-shadow: var(--shadow-xs); }
+:root td .btn-info:hover { background: var(--hover-solid); }
+
+:root .theme-toggle { width: 34px; padding: 0; background: rgba(255, 255, 255, 0.06); color: var(--sidebar-text); }
+:root .theme-toggle:hover { background: var(--sidebar-hover-bg); color: #fff; }
+
+/* ---- Inputs -------------------------------------------------------------- */
+input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color: var(--accent); }
+input[type="checkbox"], input[type="radio"] { width: 15px; height: 15px; margin: 0; vertical-align: middle; cursor: pointer; }
+
+input[type="text"], input[type="password"], input[type="number"], input[type="search"],
+input[type="email"], input[type="url"], input[type="date"], input[type="time"],
+input[type="datetime-local"], textarea, select, .custom-select-trigger {
+    border-color: var(--border-strong);
+    border-radius: var(--r-sm);
+    background-color: var(--field-bg);
+    font-family: inherit;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+input::placeholder, textarea::placeholder { color: var(--text-dim); opacity: 0.85; }
+.form-group input, .form-group select, .form-group textarea { background-color: var(--field-bg); }
+.form-group label { margin-bottom: 5px; font-size: 0.88em; font-weight: 500; }
+.form-group input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.form-group select { height: var(--h-control); }
+.custom-select-trigger { min-height: var(--h-control); padding: 6px 12px; }
+.custom-select-trigger:hover { border-color: var(--accent); }
+.custom-select-trigger .arrow { font-size: 0.75em; color: var(--text-muted); }
+.custom-select-options {
+    border-color: var(--border);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-lg);
+    background: var(--card-bg);
+    padding: 4px;
+}
+.custom-select-option { border-radius: var(--r-sm); padding: 6px 10px; }
+
+:focus { outline: none; }
+input:focus-visible, textarea:focus-visible, select:focus-visible {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--ring);
+    outline: none;
+}
+button:focus-visible, a:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--ring);
+}
+
+/* A native select still shows the browser's own popup; closed, it at least looks like ours. */
+select:not(.custom-done) {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 28px;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+}
+.lang-switcher select { background-color: rgba(255, 255, 255, 0.06); }
+
+/* Where a skinned select sits in a row rather than filling a form column. */
+.custom-select[data-for="log-lines"] { width: 110px; }
+.custom-select[data-for="settings-export-mode"], .custom-select[data-for="settings-imp-proto"] { width: 260px; }
+.custom-select[data-for="alog-action"] { width: 150px; flex: none; }
+.audit-filters .custom-select { width: 120px; flex: none; }
+.audit-filters .custom-select-trigger { min-height: 34px; padding: 0 10px; font-size: 0.85em; }
+.lang-switcher .custom-select { width: 100%; }
+.lang-switcher .custom-select-trigger { height: 34px; min-height: 34px; padding: 0 10px; font-size: 0.85em; }
+.login-card .custom-select, .setup-card .custom-select { width: auto; min-width: 110px; }
+.custom-select-options .custom-select-option { white-space: nowrap; }
+
+/* ---- Tabs ---------------------------------------------------------------- */
+.arch-tabs { gap: 2px; margin: 4px 0 14px; border-bottom: 1px solid var(--border); }
+:root .arch-tab {
+    height: auto;
+    margin-bottom: -1px;
+    padding: 8px 14px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.94em;
+    font-weight: 500;
+}
+:root .arch-tab:hover { background: transparent; color: var(--text); }
+:root .arch-tab.active, :root .arch-tab.active:hover {
+    background: transparent;
+    border-bottom-color: var(--accent);
+    color: var(--accent-text);
+    font-weight: 600;
+}
+.arch-tab svg { width: 16px; height: 16px; }
+
+/* ---- Dialogs ------------------------------------------------------------- */
+.modal-overlay, .confirm-modal-overlay { background: var(--scrim); backdrop-filter: blur(2px); }
+.modal-card, .confirm-modal-card { border-color: var(--border); border-radius: 14px; box-shadow: var(--shadow-lg); }
+.modal-card h3 { border-radius: 14px 14px 0 0; border-bottom-color: var(--line); font-size: 1.05em; }
+
+:root .pk-modal-x {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: none;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+:root .pk-modal-x:hover { background: var(--hover-solid); color: var(--text); }
+.pk-viewer-card, #pk-uninstall .modal-card, #pk-signin-modal .modal-card { position: relative; }
+.pk-v-head { padding-right: 34px; }
+
+.pk-name-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.pk-name-row .pk-name { min-width: 0; }
+.pk-name-row .pk-badge { flex: none; }
+.pk-badge-danger { color: var(--danger-text); border-color: var(--danger); background: var(--tint-danger); }
+#pk-leave .modal-card { position: relative; }
+#pk-leave .pk-v-body { min-height: 0; }
+.custom-select[data-for="pk-leave-version"] { width: 240px; }
+#pk-leave .form-group { margin: 10px 0 0; }
+
+/* ---- Small things -------------------------------------------------------- */
+#notify-card .flex-row { align-items: center; }
+#notify-card .muted-flex1 { font-size: 0.95em; }
+.progress-bar { background: var(--line); }
+.progress-fill { background: var(--accent); }
+.host-label { border-color: var(--border); }
+.job-badge { border-radius: 4px; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar); border: 2px solid transparent; border-radius: 6px; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---- Content packs list -------------------------------------------------- */
+:root .btn-sm.pk-btn { padding: 0 8px; gap: 3px; }
+@media (max-width: 1400px) {
+    :root .btn-sm.pk-btn { width: 28px; height: 28px; padding: 0; }
+}
+.pk-check { font-size: 0.92em; }
+.pk-input { font-size: 0.93em; }
+.pk-search { height: var(--h-control); }
+.pk-canvas { background: var(--bg-subtle); }
+.pk-finding { background: var(--bg-subtle); }
+.pk-chip { background: var(--bg-subtle); }
+.pk-mini { border: none; border-radius: 0; box-shadow: none; background: transparent; margin: 0; }
+.pk-mini thead, :root .pk-mini thead { background: transparent; }
+.pk-mini td { border-bottom-color: var(--line); }
+.pk-kv, .pk-table.pk-kv { border: none; box-shadow: none; background: transparent; border-radius: 0; }
+
+/* ---- Narrower windows ---------------------------------------------------- */
+@media (max-width: 1320px) {
+    .content { padding: 22px 20px 40px; }
+    th, td { padding-left: 10px; padding-right: 10px; }
+    .u-nowrap, td.u147 { white-space: normal; }
+    td.u149 .progress-bar { width: 44px; }
+    .job-note { -webkit-line-clamp: 2; }
+}
+
+/* ---- Sign-in ------------------------------------------------------------- */
+.login-card { border-radius: 16px; box-shadow: var(--shadow-lg); }
+.login-header h1 { font-size: 1.5em; color: var(--text); }
+.login-card input { height: 40px; padding: 0 12px; }
+:root .login-card button[type="submit"] { height: 40px; padding: 0; font-size: 1em; }

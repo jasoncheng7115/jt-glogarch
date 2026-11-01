@@ -6,51 +6,91 @@
        fallbacks (#f3f4f6, #e5e7eb) were used in BOTH themes — the report
        fingerprint box rendered as a pale panel with pale text on a dark page.
        A colour whose only real definition is a fallback cannot follow a theme. */
-    --bg-subtle: #22243d;
-    --line: #3a3a66;
-    --brand: #6c63ff;
-    --text-dim: #9a9ab8;
-    --text-primary: #e8e8f0;
-    --bg: #1a1b2e;
-    --sidebar-bg: #0f1025;
-    --card-bg: #222344;
-    --text: #e8e8f0;
-    --text-muted: #b0b0cc;
-    --text-label: #c8c8dd;
-    --accent: #6c63ff;
+    --bg-subtle: #1b1d2a;
+    --line: #272a3a;
+    --brand: #7d75ff;
+    --text-dim: #7f8398;
+    --text-primary: #e7e8ef;
+    --bg: #12131c;
+    --sidebar-bg: #0e0f17;
+    --sidebar-line: rgba(255, 255, 255, 0.07);
+    --card-bg: #191b27;
+    --text: #e7e8ef;
+    --text-muted: #a0a4b8;
+    --text-label: #c6c8d6;
+    --accent: #7168f5;
     --accent-hover: #8a82ff;
-    --success: #4caf50;
-    --warning: #ff9800;
-    --danger: #f44336;
-    --border: #3a3a66;
-    --input-bg: #181930;
-    --hover-bg: rgba(108, 99, 255, 0.08);
-    --sidebar-text: #c8c8e0;
-    --sidebar-active-bg: rgba(108, 99, 255, 0.15);
+    --accent-text: #a29cff;
+    --success: #4cc38a;
+    --warning: #f5a524;
+    --danger: #e5484d;
+    --danger-hover: #f2555a;
+    --danger-text: #ff8f92;
+    --border: #2b2e40;
+    --border-strong: #363a50;
+    --input-bg: #151621;
+    --field-bg: #151621;
+    --thead-bg: #1e2030;
+    --hover-bg: rgba(255, 255, 255, 0.03);
+    --hover-solid: #222536;
+    --tint-accent: rgba(125, 117, 255, 0.15);
+    --tint-danger: rgba(229, 72, 77, 0.14);
+    --tint-success: rgba(76, 195, 138, 0.14);
+    --success-text: #63d6a0;
+    --ring: rgba(125, 117, 255, 0.35);
+    --scrim: rgba(5, 6, 12, 0.6);
+    --scrollbar: #3a3e55;
+    --shadow-xs: none;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+    --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+    --sidebar-text: #b4b7c9;
+    --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
+    --sidebar-active-bg: rgba(125, 117, 255, 0.18);
+    --sidebar-active-icon: #a29cff;
 }
 
 [data-theme="light"] {
-    --bg-subtle: #f3f4f6;
-    --line: #e5e7eb;
+    --bg-subtle: #f4f5f8;
+    --line: #eceef3;
     --brand: #5b52e0;
-    --text-dim: #6b6b85;
-    --text-primary: #1a1a2e;
-    --bg: #f0f2f5;
-    --sidebar-bg: #2b2d42;
+    --text-dim: #8589a0;
+    --text-primary: #1c1e2b;
+    --bg: #f6f7f9;
+    --sidebar-bg: #1b1d2b;
+    --sidebar-line: rgba(255, 255, 255, 0.08);
     --card-bg: #ffffff;
-    --text: #1a1a2e;
-    --text-muted: #555577;
-    --text-label: #3a3a55;
+    --text: #1c1e2b;
+    --text-muted: #5e6277;
+    --text-label: #3b3e50;
     --accent: #5b52e0;
     --accent-hover: #4a42cc;
-    --success: #2e7d32;
-    --warning: #e65100;
-    --danger: #c62828;
-    --border: #d0d0e0;
-    --input-bg: #f5f5fa;
-    --hover-bg: rgba(91, 82, 224, 0.06);
-    --sidebar-text: #d0d0e8;
-    --sidebar-active-bg: rgba(255, 255, 255, 0.12);
+    --accent-text: #4a42cc;
+    --success: #1b7f4c;
+    --warning: #b45d00;
+    --danger: #cd2b31;
+    --danger-hover: #b0252a;
+    --danger-text: #b0252a;
+    --border: #e2e4eb;
+    --border-strong: #d3d6e0;
+    --input-bg: #f4f5f8;
+    --field-bg: #ffffff;
+    --thead-bg: #f7f8fa;
+    --hover-bg: rgba(91, 82, 224, 0.035);
+    --hover-solid: #f4f5f8;
+    --tint-accent: rgba(91, 82, 224, 0.1);
+    --tint-danger: rgba(205, 43, 49, 0.09);
+    --tint-success: rgba(27, 127, 76, 0.1);
+    --success-text: #15693e;
+    --ring: rgba(91, 82, 224, 0.22);
+    --scrim: rgba(20, 22, 35, 0.42);
+    --scrollbar: #cfd2dc;
+    --shadow-xs: 0 1px 1px rgba(20, 22, 35, 0.04);
+    --shadow-sm: 0 1px 2px rgba(20, 22, 35, 0.05);
+    --shadow-lg: 0 16px 48px rgba(20, 22, 35, 0.18);
+    --sidebar-text: #b9bccd;
+    --sidebar-hover-bg: rgba(255, 255, 255, 0.06);
+    --sidebar-active-bg: rgba(255, 255, 255, 0.11);
+    --sidebar-active-icon: #b3adff;
 }
 
 [data-theme="light"] .sidebar {
@@ -637,23 +677,7 @@
     color: var(--text);
 }
 
-/* Per-server OpenSearch rows on the dashboard (multi-cluster view) */
-.os-server-row {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 6px 0;
-    border-bottom: 1px solid var(--border);
-}
-.os-server-row:last-child { border-bottom: none; }
-.os-server-name {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-weight: 600;
-    min-width: 140px;
-}
+/* OpenSearch table on the dashboard */
 .os-hosts { display: inline-flex; flex-wrap: wrap; align-items: center; }
 .os-src {
     font-size: 0.72em;
@@ -1683,7 +1707,6 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
 .link-inline:hover { opacity: 0.8; }
 
 /* Per-server OpenSearch test button sits at the right edge of its row */
-.os-server-row .os-test-btn { margin-left: auto; flex-shrink: 0; }
 
 /* Import-done button: hidden until the import finishes (JS toggles display via
    CSSOM). Kept in CSS, not an inline style, to satisfy the strict CSP. */

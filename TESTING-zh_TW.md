@@ -667,6 +667,31 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
 - [ ] `login.html`／`index.html` 中每個 `type="password"` 欄位與登入表單都有 `autocomplete="off"`（`tests/test_password_autocomplete.py`）。
       可用 `curl -sk https://<host>:8990/login | grep -E '<form|type="password"'` 確認。
 
+### 外觀與樣式（v1.18.0）
+
+全站共用的尺度在 `glogarch/web/static/css/refine.css`，顏色在 `style.css` 開頭的變數。`test_no_select_uses_the_browsers_own_dropdown` 防止原生下拉再次出現。
+
+**人工，每次改樣式後**
+- [ ] 每一頁的亮色與暗色，在約 1440 與 1180 像素寬：內容不超過頁面右側內距，數字不被裁切。
+- [ ] 分別打開表單、對話框和側邊欄的下拉：清單沒有被切掉。
+- [ ] 由程式設定值的下拉（系統設定的匯出模式）顯示正確的值。
+
+### 內容套件頁面（v1.18.0）
+
+**自動**：`tests/test_packs.py`（4 個真實套件、安裝檢查、套件庫、以仿照實測行為的假 Graylog 測試路由，以及發布邊界）。
+
+**下載內容**：`tests/test_pack_guide.py` 涵蓋三種語言的說明文字、從套件讀出的內容、跳脫處理與 ZIP。`tests/live_packs_check.py` 以真瀏覽器下載，確認 ZIP 內有套件與使用說明。
+
+**實機，真瀏覽器**：`tests/live_packs_check.py` 在真實 Graylog 上傳、修改、安裝、啟動、解除安裝並刪除一個暫時的 `ZZTEST` 套件，最後確認沒有殘留。它的串流只比對不存在的主機名，規則是 `when false`。要對正式環境執行前先詢問。
+
+**敏感資料與版本**：`tests/test_packs.py` 涵蓋掃描、清除，以及每條離開路徑的拒絕。`tests/live_packs_check.py` 上傳通知裡含 email 的套件，確認到達 Graylog 的內容沒有 email，也確認 6.3 版下載確實經過轉換。
+
+**人工**
+- [ ] 沒有地端套件的站台，Jason Tools 頁顯示為空，`glogarch/jt_library/` 內沒有套件檔。
+- [ ] 開啟含多個看板的套件，逐一對照 Graylog 上每個分頁的版面。
+- [ ] 以權限較少的帳號登入：安裝預覽會把無權讀取的項目列為未檢查。
+- [ ] 規則標題已存在於目標的套件無法安裝，且原因會列出這些標題。
+
 ### 告警管理：批次管理 Graylog 事件定義與通知方式（v1.17.0）
 
 寫入會直接改到真實的 Graylog，所以兩個實機層級都只能對「測試用」Graylog（.83）執行，絕不能對正式環境。

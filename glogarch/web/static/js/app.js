@@ -510,15 +510,14 @@ async function loadOpenSearchStatus() {
         // Fallback (no server list): single global status.
         const data = await fetchJSON(`${API}/opensearch/status`);
         el.innerHTML = data.configured ? renderOsServerRow(null, data)
-            : `<span class="u030">${t('opensearch_not_configured')}</span> <span class="text-muted">${t('opensearch_optional_note')}</span>`;
+            : `<tr><td colspan="4"><span class="u030">${t('opensearch_not_configured')}</span> <span class="text-muted">${t('opensearch_optional_note')}</span></td></tr>`;
     } catch (e) {}
 }
 
 function renderOsServerRow(serverName, data) {
-    const nameLabel = serverName
-        ? `<span class="os-server-name">${icon('server')} ${esc(serverName)}</span>` : '';
+    const name = esc(serverName || t('settings_global_os'));
     if (!data || !data.configured) {
-        return `<div class="os-server-row">${nameLabel} <span class="u030">${t('opensearch_not_configured')}</span></div>`;
+        return `<tr><td>${name}</td><td colspan="3"><span class="u030">${t('opensearch_not_configured')}</span></td></tr>`;
     }
     let src = '';
     if (serverName) {
@@ -537,8 +536,8 @@ function renderOsServerRow(serverName, data) {
     }).join(' ');
     // Per-server test button (tests THIS server's resolved OpenSearch cluster),
     // so two servers each get their own button like the Graylog table.
-    const testBtn = `<button class="btn-sm btn-secondary os-test-btn" data-act="osTestServer" data-arg="${esc(serverName || '')}">${icon('refresh', 14)} ${t('btn_test_connection')}</button>`;
-    return `<div class="os-server-row">${nameLabel}${src} <span class="os-hosts">${hosts}</span>${testBtn}</div>`;
+    const testBtn = `<button class="btn-sm btn-secondary" data-act="osTestServer" data-arg="${esc(serverName || '')}">${icon('refresh', 14)} ${t('btn_test_connection')}</button>`;
+    return `<tr><td>${name}</td><td>${src}</td><td><span class="os-hosts">${hosts}</span></td><td>${testBtn}</td></tr>`;
 }
 
 // Test one server's whole OpenSearch cluster (server-aware endpoint resolves its
@@ -3015,10 +3014,10 @@ async function loadJobs() {
                 ${j.current_detail && j.status === 'running' ? `<div class="u074" title="${esc(jobNote(j.current_detail))}">${esc(jobNote(j.current_detail))}</div>` : ''}
             </td>
             <td class="u147">${recordsHtml}</td>
-            <td>${formatDT(j.started_at)}</td>
-            <td>${formatDT(j.completed_at)}</td>
-            <td>${elapsedWithEta(j)}</td>
-            <td data-style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : (j.error_message || '').indexOf('Skipped') !== -1 ? 'var(--text-muted)' : 'var(--text-muted)'};font-size:0.85em;max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${esc(jobNote(j.error_message))}">${coverageChip(j)}${esc(jobNote(j.error_message))}</td>
+            <td class="u-nowrap">${formatDT(j.started_at)}</td>
+            <td class="u-nowrap">${formatDT(j.completed_at)}</td>
+            <td class="u-nowrap">${elapsedWithEta(j)}</td>
+            <td data-style="color:${j.status === 'failed' || (j.error_message || '').indexOf('Compliance violation') !== -1 || (j.error_message || '').indexOf('Interrupted') !== -1 ? 'var(--danger)' : (j.error_message || '').indexOf('Skipped') !== -1 ? 'var(--text-muted)' : 'var(--text-muted)'};font-size:0.85em;max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${esc(jobNote(j.error_message))}"><div class="job-note">${coverageChip(j)}${esc(jobNote(j.error_message))}</div></td>
             <td>${cancelBtn}${retryBtn}</td>
         </tr>`;
     }).join('');
@@ -3982,75 +3981,6 @@ async function testNotifyFromSettings() {
 }
 
 // ---- Custom Dropdown ----
-function initCustomSelects() {
-    document.querySelectorAll('select:not(.no-custom)').forEach(sel => {
-        // Remove old wrapper if exists (for reinit)
-        const oldWrapper = sel.closest('.custom-select');
-        if (oldWrapper) {
-            oldWrapper.parentNode.insertBefore(sel, oldWrapper);
-            oldWrapper.remove();
-            sel.classList.remove('custom-done');
-        }
-
-        sel.classList.add('custom-done');
-        sel.style.display = 'none';
-
-        const wrapper = document.createElement('div');
-        wrapper.className = 'custom-select';
-
-        const trigger = document.createElement('div');
-        trigger.className = 'custom-select-trigger';
-        const selectedOpt = sel.options[sel.selectedIndex];
-        trigger.innerHTML = `<span>${selectedOpt ? selectedOpt.text : ''}</span><span class="arrow">&#9662;</span>`;
-
-        const optionsDiv = document.createElement('div');
-        optionsDiv.className = 'custom-select-options';
-        Array.from(sel.options).forEach((opt, i) => {
-            const d = document.createElement('div');
-            d.className = 'custom-select-option' + (i === sel.selectedIndex ? ' selected' : '');
-            d.textContent = opt.text;
-            d.setAttribute('data-value', opt.value);
-            d.addEventListener('click', () => {
-                sel.value = opt.value;
-                // MUST bubble: the app's data-act-change handlers are delegated
-                // on `document`, so a non-bubbling change event never reaches
-                // them (that's why some selects needed `class="no-custom"` to
-                // work). Bubbling makes custom selects behave like native ones.
-                sel.dispatchEvent(new Event('change', { bubbles: true }));
-                trigger.querySelector('span').textContent = opt.text;
-                optionsDiv.querySelectorAll('.custom-select-option').forEach(o => o.classList.remove('selected'));
-                d.classList.add('selected');
-                wrapper.classList.remove('open');
-            });
-            optionsDiv.appendChild(d);
-        });
-
-        trigger.addEventListener('click', (e) => {
-            e.stopPropagation();
-            document.querySelectorAll('.custom-select.open').forEach(cs => { if (cs !== wrapper) cs.classList.remove('open'); });
-            // Auto-detect: drop up or down based on viewport position
-            const rect = trigger.getBoundingClientRect();
-            const spaceBelow = window.innerHeight - rect.bottom;
-            if (spaceBelow > 220) {
-                optionsDiv.classList.add('drop-down');
-            } else {
-                optionsDiv.classList.remove('drop-down');
-            }
-            wrapper.classList.toggle('open');
-        });
-
-        sel.parentNode.insertBefore(wrapper, sel);
-        wrapper.appendChild(trigger);
-        wrapper.appendChild(optionsDiv);
-        wrapper.appendChild(sel);
-    });
-}
-
-// Close custom selects on outside click
-document.addEventListener('click', () => {
-    document.querySelectorAll('.custom-select.open').forEach(cs => cs.classList.remove('open'));
-});
-
 // ---- Confirm Modal ----
 let _confirmCallback = null;
 
@@ -4708,7 +4638,7 @@ function renderImportDefaultsForm(c) {
         <div class="form-group"><label>${t('settings_imp_gelf_port')}</label>
           <input type="text" id="settings-imp-port" value="${esc(String(c.gelf_port || 32202))}"></div>
         <div class="form-group"><label>${t('settings_imp_gelf_proto')}</label>
-          <select id="settings-imp-proto" class="no-custom u131">
+          <select id="settings-imp-proto" class="u131">
             <option value="tcp" ${(c.gelf_protocol || 'tcp') === 'tcp' ? 'selected' : ''}>TCP</option>
             <option value="udp" ${c.gelf_protocol === 'udp' ? 'selected' : ''}>UDP</option>
           </select></div>
@@ -4797,7 +4727,7 @@ function buildServerForm(s) {
       <div class="form-group"><label>${t('settings_srv_url')}</label>
         <input type="text" id="srv-url" value="${esc(s.url || '')}" placeholder="http://192.168.1.10:9000"></div>
       <div class="form-group"><label>${t('settings_srv_auth_type')}</label>
-        <select id="srv-auth-type" class="no-custom u131" data-act-change="_toggleSrvAuth">
+        <select id="srv-auth-type" class="u131" data-act-change="_toggleSrvAuth">
           <option value="token" ${authType === 'token' ? 'selected' : ''}>${t('settings_auth_token')}</option>
           <option value="userpass" ${authType === 'userpass' ? 'selected' : ''}>${t('settings_auth_userpass')}</option>
         </select></div>
@@ -5500,11 +5430,11 @@ async function openReportModal(name) {
     const _mwVal = String((cfg.max_widgets === undefined || cfg.max_widgets === null) ? 0 : cfg.max_widgets);
     let _mwList = ['0', '10', '20', '30', '50'];
     if (!_mwList.includes(_mwVal)) _mwList.push(_mwVal);
-    const _mwSelect = `<select id="rp-maxw" class="no-custom">${_mwList.map(v => `<option value="${v}"${v===_mwVal?' selected':''}>${v==='0'?esc(t('reports_maxw_all')):v}</option>`).join('')}</select>`;
+    const _mwSelect = `<select id="rp-maxw">${_mwList.map(v => `<option value="${v}"${v===_mwVal?' selected':''}>${v==='0'?esc(t('reports_maxw_all')):v}</option>`).join('')}</select>`;
     // A saved report keeps its language (none saved = the generator's zh-TW
     // default). A NEW report starts in the language the operator is using.
     const _rpLang = cfg.lang || (existing ? 'zh-TW' : getLang());
-    const _rpLangSelect = `<select id="rp-lang" class="no-custom">${[['zh-TW', '繁體中文'], ['en', 'English'], ['ja', '日本語']]
+    const _rpLangSelect = `<select id="rp-lang">${[['zh-TW', '繁體中文'], ['en', 'English'], ['ja', '日本語']]
         .map(([v, l]) => `<option value="${v}"${_rpLang === v ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
     document.getElementById('report-modal-form').innerHTML = `
       <input type="hidden" id="rp-orig" value="${esc(cfg.__name||'')}">
@@ -5522,10 +5452,10 @@ async function openReportModal(name) {
       ${_reportLogoField('rp-hlogo2', cfg.header_logo_light_data_uri, '', 'reports_f_hlogo_light', 'reports_hlogo_light_hint')}
       <div class="form-group"><label class="inline-check"><input type="checkbox" id="rp-archive" ${cfg.include_archive_summary===true?'checked':''}> ${t('reports_f_archive')}</label></div>
       <hr class="u003">
-      <div class="form-group"><label>${t('reports_f_server')}</label><select id="rp-server" class="no-custom" data-act-change="reportLoadDashboards"><option value="">-</option>${serverOpts}</select></div>
+      <div class="form-group"><label>${t('reports_f_server')}</label><select id="rp-server" data-act-change="reportLoadDashboards"><option value="">-</option>${serverOpts}</select></div>
       <div class="form-group"><label>${t('reports_f_dashboards')}</label><div id="rp-dashboards" class="text-muted fs-085">${t('reports_pick_server')}</div></div>
       <div class="form-group"><label>${t('reports_f_mode')}</label>
-        <select id="rp-mode" class="no-custom" data-act-change="reportToggleMode">
+        <select id="rp-mode" data-act-change="reportToggleMode">
           <option value="rebuild"${cfg.dashboard_mode!=='screenshot'?' selected':''}>${t('reports_mode_rebuild')}</option>
           <option value="screenshot"${cfg.dashboard_mode==='screenshot'?' selected':''}>${t('reports_mode_shot')}</option>
         </select>
@@ -5542,7 +5472,7 @@ async function openReportModal(name) {
           <div class="form-group"><label>${t('reports_f_msgrows')}</label><input type="text" id="rp-msgrows" value="${esc(String(cfg.message_rows!==undefined?cfg.message_rows:20))}" placeholder="20"></div>
           <div class="form-group"><label>${t('reports_f_msgcols')}</label><input type="text" id="rp-msgcols" value="${esc(String(cfg.message_max_cols!==undefined?cfg.message_max_cols:8))}" placeholder="8"></div>
           <div class="form-group"><label>${t('reports_f_bardir')}</label>
-            <select id="rp-bardir" class="no-custom">
+            <select id="rp-bardir">
               <option value="v"${cfg.bar_horizontal?'':' selected'}>${esc(t('reports_bar_vertical'))}</option>
               <option value="h"${cfg.bar_horizontal?' selected':''}>${esc(t('reports_bar_horizontal'))}</option>
             </select></div>
@@ -5562,13 +5492,13 @@ async function openReportModal(name) {
         <div class="form-group"><label>${t('reports_f_wm_text')}</label><input type="text" id="rp-wm-text" value="${esc(cfg.watermark_text||'')}" placeholder="${esc(t('reports_wm_text_ph'))}"></div>
         <div class="rp-grid3">
           <div class="form-group"><label>${t('reports_f_wm_size')}</label>
-            <select id="rp-wm-size" class="no-custom">
+            <select id="rp-wm-size">
               <option value="small"${cfg.watermark_size==='small'?' selected':''}>${t('reports_wm_small')}</option>
               <option value="medium"${cfg.watermark_size==='medium'?' selected':''}>${t('reports_wm_medium')}</option>
               <option value="large"${(cfg.watermark_size||'large')==='large'?' selected':''}>${t('reports_wm_large')}</option>
             </select></div>
           <div class="form-group"><label>${t('reports_f_wm_dir')}</label>
-            <select id="rp-wm-dir" class="no-custom">
+            <select id="rp-wm-dir">
               <option value="diagonal"${(cfg.watermark_direction||'diagonal')==='diagonal'?' selected':''}>${t('reports_wm_diagonal')}</option>
               <option value="horizontal"${cfg.watermark_direction==='horizontal'?' selected':''}>${t('reports_wm_horizontal')}</option>
             </select></div>
@@ -5581,7 +5511,7 @@ async function openReportModal(name) {
       </div>
       <div class="form-group"><label>${t('reports_f_recipients')}</label><input type="text" id="rp-recipients" value="${esc((cfg.recipients||[]).join(', '))}" placeholder="a@x.com, b@y.com"></div>
       <div class="form-group"><label>${t('reports_f_cron')}</label>
-        <select id="rp-cron-freq" class="no-custom" data-act-change="reportCronPreset">
+        <select id="rp-cron-freq" data-act-change="reportCronPreset">
           <option value="">${t('reports_cron_none')}</option>
           <option value="0 * * * *">${t('reports_cron_hourly')}</option>
           <option value="0 5 * * *">${t('reports_cron_daily')}</option>

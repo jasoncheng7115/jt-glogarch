@@ -40,13 +40,13 @@ jt-glogarch 的行為稽核透過 nginx 反向代理的 syslog 記錄 Graylog AP
 | | `index.close` | 關閉 Index |
 | | `index.reopen` | 重新開啟 Index |
 | | `deflector.cycle` | 強制 Index 輪替（Cycle Deflector） |
-| **Pipeline** | `pipeline.create` | 建立 Pipeline |
-| | `pipeline.modify` | 修改 Pipeline |
-| | `pipeline.delete` | 刪除 Pipeline |
-| | `pipeline_rule.create` | 建立 Pipeline 規則 |
-| | `pipeline_rule.modify` | 修改 Pipeline 規則 |
-| | `pipeline_rule.delete` | 刪除 Pipeline 規則 |
-| | `pipeline.connect` | 連結 Stream 至 Pipeline |
+| **管線** | `pipeline.create` | 建立管線 |
+| | `pipeline.modify` | 修改管線 |
+| | `pipeline.delete` | 刪除管線 |
+| | `pipeline_rule.create` | 建立管線規則 |
+| | `pipeline_rule.modify` | 修改管線規則 |
+| | `pipeline_rule.delete` | 刪除管線規則 |
+| | `pipeline.connect` | 連結 Stream 至管線 |
 | **事件 / 告警** | `event.create` | 建立事件定義 |
 | | `event.modify` | 修改事件定義 |
 | | `event.delete` | 刪除事件定義 |

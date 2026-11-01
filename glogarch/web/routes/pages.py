@@ -290,6 +290,16 @@ def logs_page(request: Request):
     return _render("index.html", request, {"page": "logs"})
 
 
+@router.get("/packs", response_class=HTMLResponse)
+def packs_page(request: Request):
+    """Content packs: each connected Graylog's, and the Jason Tools library."""
+    if _is_unconfigured(request):
+        return RedirectResponse(url="/setup", status_code=303)
+    if not _is_logged_in(request):
+        return RedirectResponse(url="/login", status_code=303)
+    return _render("index.html", request, {"page": "packs"})
+
+
 @router.get("/alerting", response_class=HTMLResponse)
 def alerting_page(request: Request):
     """Graylog event definitions + notifications, managed in bulk."""
