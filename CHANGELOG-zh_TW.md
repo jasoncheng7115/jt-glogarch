@@ -2,6 +2,24 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.18.1] - 2026-11-02
+
+### 新增
+
+- **Jason Tools 套件庫內建 4 個內容套件：** Windows Active Directory、Linux 登入與 SSH、Apache HTTP Server、QNAP NAS，各附翻譯好的使用說明。這 4 包是作者逐一同意公開的；`glogarch/jt_library/` 只要出現其他套件，`tests/test_packs.py` 就會失敗。地端套件庫已有相同修訂版的站台，仍會顯示地端那一份。
+
+### 變更
+
+- **看板預覽改為點選 widget 才顯示查詢條件，並使用本程式自己的提示框。** 原本是滑鼠停住時的瀏覽器提示：出現慢、無法複製，外觀也和程式其他地方不同。提示框會列出 widget 的查詢條件、所在分頁的查詢條件和用到的欄位，文字可以選取，按「複製」會把查詢條件放進剪貼簿。按 Esc、點其他地方或捲動頁面就會關閉。
+- **看板預覽的分頁選擇改成分段式頁籤。** 原本全站的 `button:hover` 會讓滑鼠停住的分頁變成深色底配主色字，看不清楚；現在兩種主題都有自己的配色。
+- **圓餅圖與環圈圖預覽的圖例改放在圖的下方**，和 Graylog 相同，不再放在右邊。
+
+### 修正
+
+- **全新安裝的 Graylog 7 上，接在套件自己串流的管線完全不會執行。** 在 7.1.9 實測：預設的 Message Processors 順序先執行 Pipeline Processor、後執行 Stream Rule Processor，記錄雖然進了套件的串流，卻沒有被解析。Linux 登入與 SSH 修訂版 2 把管線也接到預設串流，並在第一個 stage 重複串流規則的條件，不會動到其他記錄；兩種順序都已實測可以解析。它的告警原本對文字欄位 `message` 計數，OpenSearch 每次執行都拒絕，現在改為計算筆數。
+- **下載附的使用說明有一句建議會讓解析失效。** 原本建議把接在預設串流的管線改接到範圍較小的串流以減輕負擔，但在全新安裝的 Graylog 7 上這樣做會讓管線停止運作。現在改為說明這些管線不受順序影響、「Remove matches from Default Stream」何時會有影響；管線只接在自己串流或還沒接串流的套件，則說明如何調整 Message Processors 順序。QNAP NAS 與 Windows Active Directory 修訂版 2 的說明也加上同樣的提醒。
+- **Windows Active Directory 套件修訂版 2：** DNS 物件的查詢把 `SubjectUserName` 打成 `ubjectUserName`，SYSTEM 從來沒有被排除；兩個 widget 標題多了「理者」；一則告警說明寫會寄 Email，但套件並沒有掛通知；「日誌」改為「記錄」。
+
 ## [1.18.0] - 2026-11-01
 
 ### 新增

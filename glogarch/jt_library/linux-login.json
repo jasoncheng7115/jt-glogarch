@@ -1,0 +1,1580 @@
+{
+  "v": "1",
+  "id": "6df1684c-1f7e-501b-b551-0281dfe5fb86",
+  "rev": 2,
+  "name": "Linux 登入與 SSH",
+  "summary": "Linux SSH、sudo 登入看板與登入失敗告警",
+  "description": "Linux SSH、sudo 登入看板與登入失敗告警\n收集方式：Syslog UDP。這個套件不會建立 Input，請自行建立並把來源指向它。\n★ 安裝後必做：到 Streams 啟動串流。Graylog 建立的串流都是暫停狀態，啟動前管線和看板都沒有資料。\n告警預設不掛通知，事件只會寫進 Graylog；需要通知請自行加上。",
+  "vendor": "Jason Cheng (Jason Tools)",
+  "url": "",
+  "server_version": "7.0.0",
+  "parameters": [],
+  "entities": [
+    {
+      "id": "966967de-5a75-5adb-8f16-a0e4ea0d1b68",
+      "type": {
+        "name": "stream",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "Linux 登入與 SSH"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Linux 登入與 SSH 的記錄（比對訊息內容，不看主機名）"
+        },
+        "disabled": {
+          "@type": "boolean",
+          "@value": false
+        },
+        "matching_type": {
+          "@type": "string",
+          "@value": "AND"
+        },
+        "alert_conditions": [],
+        "alarm_callbacks": [],
+        "outputs": [],
+        "default_stream": {
+          "@type": "boolean",
+          "@value": false
+        },
+        "remove_matches": {
+          "@type": "boolean",
+          "@value": false
+        },
+        "stream_rules": [
+          {
+            "type": {
+              "@type": "string",
+              "@value": "REGEX"
+            },
+            "field": {
+              "@type": "string",
+              "@value": "message"
+            },
+            "value": {
+              "@type": "string",
+              "@value": "sshd|sudo|pam_unix|authentication failure"
+            },
+            "inverted": {
+              "@type": "boolean",
+              "@value": false
+            },
+            "description": {
+              "@type": "string",
+              "@value": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "bbc57d3c-35da-5d4a-ad23-6c48d40f865d",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-00-passthrough"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-00-passthrough\"\nwhen\n    true\nthen\nend"
+        }
+      }
+    },
+    {
+      "id": "78851c09-53fc-58e6-a15f-da0b01ea3b82",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-10-syslog-result-user-sourceip-protocol"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-10-syslog-result-user-sourceip-protocol\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"from \")\nthen\n    set_fields(grok(pattern: \": %{DATA:syslog_result} for %{USERNAME:syslog_user} from %{IPV4:sourceip} port .* %{WORD:syslog_protocol}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "3c6f3941-1d47-55e1-8ec8-b062a3bab5e2",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-10-syslog-sudo-auth-failed"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-10-syslog-sudo-auth-failed\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"sudo:auth\")\nthen\n    set_fields(grok(pattern: \"\\\\(sudo:auth\\\\): %{DATA:syslog_result}; logname=%{USERNAME:syslog_logname} uid=%{WORD:syslog_uid} .* ruser=%{USERNAME:syslog_ruser} rhost=%{GREEDYDATA:syslog_rhost} user=%{USERNAME:syslog_user}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "13466213-f1b9-59cd-98f9-710f35630681",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-10-syslog-sudo-session-opened"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-10-syslog-sudo-session-opened\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"pam_unix(sudo:session)\")\nthen\n    set_fields(grok(pattern: \" session opened for user %{USERNAME:syslog_sudo_to_user}\\\\(uid=%{WORD:syslog_sudo_to_uid}\\\\) by %{USERNAME:syslog_user}\\\\(uid=%{WORD:syslog_uid}\\\\)\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "9b9642cb-0648-5f7c-ae7f-469f76ac5b01",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-10-syslog-pam-auth-failed"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-10-syslog-pam-auth-failed\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"pam_unix\")\nthen\n    set_fields(grok(pattern: \"auth\\\\): %{DATA:syslog_result}; .*user=%{USERNAME:syslog_user}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "a0034f9e-ae24-50e4-92f0-53361750590e",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-10-syslog-pam-session-opened"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-10-syslog-pam-session-opened\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"pam_unix\")\nthen\n    set_fields(grok(pattern: \"session opened for user %{USERNAME:syslog_user}\\\\(uid=%{WORD:syslog_uid}\\\\)\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "930ac3cd-2d71-53a9-932e-d0b28252466e",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-10-syslog-application"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-10-syslog-application\"\nwhen\n    has_field(\"message\")\nthen\n    set_fields(grok(pattern: \"pam_unix\\\\(%{GREEDYDATA:application}\\\\)\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "1a4a7c74-095a-51a1-a3ff-03722d7104ad",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-10-syslog-sourceip"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-10-syslog-sourceip\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"authentication failure\")\nthen\n    set_fields(grok(pattern: \"%{IPV4:sourceip}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "34f94e4e-34b3-50ad-8807-111f19ae415e",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-10-syslog-user"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-10-syslog-user\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"user=\")\nthen\n    set_fields(grok(pattern: \"user=%{DATA:user} \", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "e9bfb28e-2fb3-5ce9-8242-f22bfc837e11",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-10-syslog-application-2"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-10-syslog-application-2\"\nwhen\n    has_field(\"message\")\nthen\n    set_fields(grok(pattern: \" %{DATA:application}\\\\[\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "e670362c-6279-5157-a52a-bd238f41cbd8",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-10-syslog-accept-pwd-user"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-10-syslog-accept-pwd-user\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"Accepted password for \")\nthen\n    set_fields(grok(pattern: \"Accepted password for %{USERNAME:user} \", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "67f411a7-3b95-5c59-a977-62d3901e90f0",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-10-syslog-accept-pwd-sourceip"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-10-syslog-accept-pwd-sourceip\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"Accepted password for \")\nthen\n    set_fields(grok(pattern: \"Accepted password for .* %{IPV4:sourceip} port\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "8ec1540b-b250-5880-bba9-6002ddae047c",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-10-syslog-failed-pwd-user"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-10-syslog-failed-pwd-user\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"Failed password for \")\nthen\n    set_fields(grok(pattern: \"Failed password for %{USERNAME:user} \", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "bcaf4106-cab2-5395-8fe7-f0dffa8d1c20",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-10-syslog-failed-pwd-sourceip"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-10-syslog-failed-pwd-sourceip\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"Failed password for \")\nthen\n    set_fields(grok(pattern: \"Failed password for .* %{IPV4:sourceip} port\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "7a675ce2-6bdb-59ec-8417-5d8add720e57",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-10-syslog-user2"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-10-syslog-user2\"\nwhen\n    has_field(\"full_message\") && contains(to_string($message.full_message), \"user=\")\nthen\n    set_fields(grok(pattern: \" user=%{WORD:user}\", value: to_string($message.full_message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "621f06b3-6fe4-5095-b714-fc50fd9c6de7",
+      "type": {
+        "name": "pipeline",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "Linux 登入與 SSH - parse"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "pipeline \"Linux 登入與 SSH - parse\"\nstage -1 match either\nrule \"linux-login-00-gate\"\nstage 0 match either\nrule \"linux-login-00-passthrough\"\nrule \"linux-login-10-syslog-result-user-sourceip-protocol\"\nrule \"linux-login-10-syslog-sudo-auth-failed\"\nrule \"linux-login-10-syslog-sudo-session-opened\"\nrule \"linux-login-10-syslog-pam-auth-failed\"\nrule \"linux-login-10-syslog-pam-session-opened\"\nrule \"linux-login-10-syslog-application\"\nrule \"linux-login-10-syslog-sourceip\"\nrule \"linux-login-10-syslog-user\"\nrule \"linux-login-10-syslog-application-2\"\nrule \"linux-login-10-syslog-accept-pwd-user\"\nrule \"linux-login-10-syslog-accept-pwd-sourceip\"\nrule \"linux-login-10-syslog-failed-pwd-user\"\nrule \"linux-login-10-syslog-failed-pwd-sourceip\"\nrule \"linux-login-10-syslog-user2\"\nend"
+        },
+        "connected_streams": [
+          {
+            "@type": "string",
+            "@value": "000000000000000000000001"
+          },
+          {
+            "@type": "string",
+            "@value": "966967de-5a75-5adb-8f16-a0e4ea0d1b68"
+          }
+        ]
+      }
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "dashboard",
+        "version": "2"
+      },
+      "id": "4f5caeae-3213-5714-bdf9-5ce4be32a3a6",
+      "data": {
+        "summary": {
+          "@type": "string",
+          "@value": "Linux SSH、sudo 登入看板與登入失敗告警"
+        },
+        "search": {
+          "queries": [
+            {
+              "id": "7b60460b-33cf-4947-94e6-4530d5933dcb",
+              "timerange": {
+                "type": "relative",
+                "from": 300
+              },
+              "query": {
+                "type": "elasticsearch",
+                "query_string": ""
+              },
+              "search_types": [
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \"sudo\" AND message: \"authentication failure\" AND _exists_: syslog_user"
+                  },
+                  "name": null,
+                  "timerange": {
+                    "type": "relative",
+                    "from": 86400
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "13f93055-d40b-4fd6-a971-1364fda8a9a8",
+                  "limit": 150
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \"sudo\" AND message: \"authentication failure\" AND _exists_: syslog_user"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "type": "relative",
+                    "from": 86400
+                  },
+                  "streams": [],
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "field": "syslog_user",
+                      "limit": 15
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "6e1459cd-f6e4-4892-b96e-70ec03d45553",
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \"session opened for user\" AND message:\"systemd-user:session\" AND NOT syslog_user:gdm AND _exists_:syslog_user"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "type": "relative",
+                    "from": 86400
+                  },
+                  "streams": [],
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "field": "syslog_user",
+                      "limit": 15
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "8480973e-f5c7-4c90-a5a3-816afb1926e1",
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \"sudo\" AND message: \"session opened for user\" AND _exists_: syslog_sudo_to_user"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "type": "relative",
+                    "from": 86400
+                  },
+                  "streams": [],
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "field": "syslog_user",
+                      "limit": 15
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "08ba860c-084d-4793-86d3-ca2a4cb7085f",
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \"sudo\" AND message: \"session opened for user\" AND _exists_: syslog_sudo_to_user"
+                  },
+                  "name": null,
+                  "timerange": {
+                    "type": "relative",
+                    "from": 86400
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "e7eddbab-7fe5-4832-8fc1-49c55b11ad70",
+                  "limit": 150
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \"Failed password for\""
+                  },
+                  "name": null,
+                  "timerange": {
+                    "type": "relative",
+                    "from": 86400
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "2625f95c-6e69-4c66-bb13-29ebab7ce19b",
+                  "limit": 150
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \"Accepted password for\""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "type": "relative",
+                    "from": 86400
+                  },
+                  "streams": [],
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "field": "syslog_user",
+                      "limit": 15
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "85a2ef24-04a9-48c6-adf3-8e18aeab62c2",
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \"pam_unix\" AND message: \"authentication failure\" AND _exists_: syslog_user"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "type": "relative",
+                    "from": 86400
+                  },
+                  "streams": [],
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "field": "syslog_user",
+                      "limit": 15
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "1d43aff8-a35a-4ec0-967f-9322a5112208",
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \"Failed password for\""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "type": "relative",
+                    "from": 86400
+                  },
+                  "streams": [],
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "field": "syslog_user",
+                      "limit": 15
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "3a149993-b0f1-460d-8b98-5efb16d934b1",
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \"Accepted password for\""
+                  },
+                  "name": null,
+                  "timerange": {
+                    "type": "relative",
+                    "from": 86400
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "96f1ab22-460a-417f-97a5-b8de86e72ee6",
+                  "limit": 150
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \"session opened for user\" AND message:\"systemd-user:session\" AND NOT syslog_user:gdm AND _exists_:syslog_user"
+                  },
+                  "name": null,
+                  "timerange": {
+                    "type": "relative",
+                    "from": 86400
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "8c0859f4-0ccc-4317-896b-96f0a08bd912",
+                  "limit": 150
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \"pam_unix\" AND message: \"authentication failure\" AND _exists_: syslog_user"
+                  },
+                  "name": null,
+                  "timerange": {
+                    "type": "relative",
+                    "from": 86400
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "143390f7-fd30-418b-917f-cc6c18b95a43",
+                  "limit": 150
+                }
+              ]
+            }
+          ],
+          "parameters": [],
+          "requires": {},
+          "owner": "bowen",
+          "created_at": "2023-07-03T08:40:10.119Z"
+        },
+        "created_at": "2026-11-01T00:00:00.000Z",
+        "requires": {},
+        "state": {
+          "7b60460b-33cf-4947-94e6-4530d5933dcb": {
+            "selected_fields": null,
+            "static_message_list_id": null,
+            "titles": {
+              "widget": {
+                "485e6997-778c-4a5a-aaf9-d4623c08a2fb": "sudo fail",
+                "5048ac51-925e-4fac-a123-b4539ecea164": "sudo success list",
+                "aa4ac935-c339-4982-b580-9a13d5abd40e": "local login success list",
+                "c50c7b5e-a9d8-4df0-b908-6bdcb605123e": "local login fail",
+                "6cabe78e-660f-49d3-9934-836b2239c895": "local login fail list",
+                "cc246258-e182-48b3-ba38-2b4f4cef64e1": "login fail",
+                "58aa8c96-141c-4155-8cd1-0aa0d4b3df9d": "login fail list",
+                "e12a060b-d523-49ab-bc33-e97ff718216c": "sudo fail list",
+                "46c9b345-b9e0-4415-a72d-5169f4a4c0ee": "local login success",
+                "954598d7-ab6c-4757-bb7e-6e562344889c": "login success",
+                "3893e61b-5d1e-4d2b-8989-e5e6290364a2": "sudo success",
+                "17b19384-e9e8-4ae0-ba5e-a354edbf0dbf": "login success list"
+              },
+              "tab": {
+                "title": "Linux Login (1D)"
+              }
+            },
+            "widgets": [
+              {
+                "id": "3893e61b-5d1e-4d2b-8989-e5e6290364a2",
+                "type": "aggregation",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "from": 86400
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \"sudo\" AND message: \"session opened for user\" AND _exists_: syslog_sudo_to_user"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "event_annotation": false,
+                  "row_pivots": [
+                    {
+                      "field": "syslog_user",
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "954598d7-ab6c-4757-bb7e-6e562344889c",
+                "type": "aggregation",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "from": 86400
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \"Accepted password for\""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "event_annotation": false,
+                  "row_pivots": [
+                    {
+                      "field": "syslog_user",
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "6cabe78e-660f-49d3-9934-836b2239c895",
+                "type": "messages",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "from": 86400
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \"pam_unix\" AND message: \"authentication failure\" AND _exists_: syslog_user"
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "syslog_user"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "5048ac51-925e-4fac-a123-b4539ecea164",
+                "type": "messages",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "from": 86400
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \"sudo\" AND message: \"session opened for user\" AND _exists_: syslog_sudo_to_user"
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "syslog_user",
+                    "syslog_sudo_to_user"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "e12a060b-d523-49ab-bc33-e97ff718216c",
+                "type": "messages",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "from": 86400
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \"sudo\" AND message: \"authentication failure\" AND _exists_: syslog_user"
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "syslog_user"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "485e6997-778c-4a5a-aaf9-d4623c08a2fb",
+                "type": "aggregation",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "from": 86400
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \"sudo\" AND message: \"authentication failure\" AND _exists_: syslog_user"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "event_annotation": false,
+                  "row_pivots": [
+                    {
+                      "field": "syslog_user",
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "c50c7b5e-a9d8-4df0-b908-6bdcb605123e",
+                "type": "aggregation",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "from": 86400
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \"pam_unix\" AND message: \"authentication failure\" AND _exists_: syslog_user"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "event_annotation": false,
+                  "row_pivots": [
+                    {
+                      "field": "syslog_user",
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "cc246258-e182-48b3-ba38-2b4f4cef64e1",
+                "type": "aggregation",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "from": 86400
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \"Failed password for\""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "event_annotation": false,
+                  "row_pivots": [
+                    {
+                      "field": "syslog_user",
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "aa4ac935-c339-4982-b580-9a13d5abd40e",
+                "type": "messages",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "from": 86400
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \"session opened for user\" AND message:\"systemd-user:session\" AND NOT syslog_user:gdm AND _exists_:syslog_user"
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "syslog_user"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "source",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "58aa8c96-141c-4155-8cd1-0aa0d4b3df9d",
+                "type": "messages",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "from": 86400
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \"Failed password for\""
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "syslog_user",
+                    "sourceip",
+                    "syslog_protocol"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "46c9b345-b9e0-4415-a72d-5169f4a4c0ee",
+                "type": "aggregation",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "from": 86400
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \"session opened for user\" AND message:\"systemd-user:session\" AND NOT syslog_user:gdm AND _exists_:syslog_user"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "event_annotation": false,
+                  "row_pivots": [
+                    {
+                      "field": "syslog_user",
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "17b19384-e9e8-4ae0-ba5e-a354edbf0dbf",
+                "type": "messages",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "from": 86400
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \"Accepted password for\""
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "syslog_user",
+                    "sourceip",
+                    "syslog_protocol"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              }
+            ],
+            "widget_mapping": {
+              "485e6997-778c-4a5a-aaf9-d4623c08a2fb": [
+                "6e1459cd-f6e4-4892-b96e-70ec03d45553"
+              ],
+              "5048ac51-925e-4fac-a123-b4539ecea164": [
+                "e7eddbab-7fe5-4832-8fc1-49c55b11ad70"
+              ],
+              "aa4ac935-c339-4982-b580-9a13d5abd40e": [
+                "8c0859f4-0ccc-4317-896b-96f0a08bd912"
+              ],
+              "c50c7b5e-a9d8-4df0-b908-6bdcb605123e": [
+                "1d43aff8-a35a-4ec0-967f-9322a5112208"
+              ],
+              "6cabe78e-660f-49d3-9934-836b2239c895": [
+                "143390f7-fd30-418b-917f-cc6c18b95a43"
+              ],
+              "cc246258-e182-48b3-ba38-2b4f4cef64e1": [
+                "3a149993-b0f1-460d-8b98-5efb16d934b1"
+              ],
+              "58aa8c96-141c-4155-8cd1-0aa0d4b3df9d": [
+                "2625f95c-6e69-4c66-bb13-29ebab7ce19b"
+              ],
+              "e12a060b-d523-49ab-bc33-e97ff718216c": [
+                "13f93055-d40b-4fd6-a971-1364fda8a9a8"
+              ],
+              "46c9b345-b9e0-4415-a72d-5169f4a4c0ee": [
+                "8480973e-f5c7-4c90-a5a3-816afb1926e1"
+              ],
+              "954598d7-ab6c-4757-bb7e-6e562344889c": [
+                "85a2ef24-04a9-48c6-adf3-8e18aeab62c2"
+              ],
+              "3893e61b-5d1e-4d2b-8989-e5e6290364a2": [
+                "08ba860c-084d-4793-86d3-ca2a4cb7085f"
+              ],
+              "17b19384-e9e8-4ae0-ba5e-a354edbf0dbf": [
+                "96f1ab22-460a-417f-97a5-b8de86e72ee6"
+              ]
+            },
+            "positions": {
+              "485e6997-778c-4a5a-aaf9-d4623c08a2fb": {
+                "col": 1,
+                "row": 24,
+                "height": 3,
+                "width": 3
+              },
+              "5048ac51-925e-4fac-a123-b4539ecea164": {
+                "col": 4,
+                "row": 27,
+                "height": 3,
+                "width": 9
+              },
+              "aa4ac935-c339-4982-b580-9a13d5abd40e": {
+                "col": 4,
+                "row": 12,
+                "height": 3,
+                "width": 9
+              },
+              "c50c7b5e-a9d8-4df0-b908-6bdcb605123e": {
+                "col": 1,
+                "row": 15,
+                "height": 3,
+                "width": 3
+              },
+              "6cabe78e-660f-49d3-9934-836b2239c895": {
+                "col": 4,
+                "row": 15,
+                "height": 3,
+                "width": 9
+              },
+              "cc246258-e182-48b3-ba38-2b4f4cef64e1": {
+                "col": 1,
+                "row": 18,
+                "height": 3,
+                "width": 3
+              },
+              "58aa8c96-141c-4155-8cd1-0aa0d4b3df9d": {
+                "col": 4,
+                "row": 18,
+                "height": 3,
+                "width": 9
+              },
+              "e12a060b-d523-49ab-bc33-e97ff718216c": {
+                "col": 4,
+                "row": 24,
+                "height": 3,
+                "width": 9
+              },
+              "46c9b345-b9e0-4415-a72d-5169f4a4c0ee": {
+                "col": 1,
+                "row": 12,
+                "height": 3,
+                "width": 3
+              },
+              "954598d7-ab6c-4757-bb7e-6e562344889c": {
+                "col": 1,
+                "row": 21,
+                "height": 3,
+                "width": 3
+              },
+              "3893e61b-5d1e-4d2b-8989-e5e6290364a2": {
+                "col": 1,
+                "row": 27,
+                "height": 3,
+                "width": 3
+              },
+              "17b19384-e9e8-4ae0-ba5e-a354edbf0dbf": {
+                "col": 4,
+                "row": 21,
+                "height": 3,
+                "width": 9
+              }
+            },
+            "formatting": {
+              "highlighting": []
+            },
+            "display_mode_settings": {
+              "positions": {}
+            }
+          }
+        },
+        "properties": [],
+        "title": {
+          "@type": "string",
+          "@value": "Linux 登入與 SSH"
+        },
+        "type": "DASHBOARD",
+        "description": {
+          "@type": "string",
+          "@value": "Linux SSH、sudo 登入看板與登入失敗告警"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.3.15+17ed3ac"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "event_definition",
+        "version": "1"
+      },
+      "id": "bbb5e771-3cef-5b92-8821-5e2bed497e6f",
+      "data": {
+        "field_spec": {},
+        "config": {
+          "type": "aggregation-v1",
+          "query": {
+            "@type": "string",
+            "@value": "message: \"authentication failure\""
+          },
+          "streams": [
+            "966967de-5a75-5adb-8f16-a0e4ea0d1b68"
+          ],
+          "group_by": [],
+          "series": [
+            {
+              "id": "count-message",
+              "function": "count",
+              "field": null
+            }
+          ],
+          "conditions": {
+            "expression": {
+              "expr": ">=",
+              "left": {
+                "expr": "number-ref",
+                "ref": "count-message"
+              },
+              "right": {
+                "expr": "number",
+                "value": 2
+              }
+            }
+          },
+          "search_within_ms": 300000,
+          "execute_every_ms": 300000
+        },
+        "priority": {
+          "@type": "integer",
+          "@value": 3
+        },
+        "notifications": [],
+        "notification_settings": {
+          "grace_period_ms": 0,
+          "backlog_size": 50
+        },
+        "title": {
+          "@type": "string",
+          "@value": "登入失敗 Linux"
+        },
+        "is_scheduled": {
+          "@type": "boolean",
+          "@value": true
+        },
+        "key_spec": [],
+        "storage": [
+          {
+            "type": "persist-to-streams-v1",
+            "streams": [
+              "000000000000000000000002"
+            ]
+          }
+        ],
+        "alert": {
+          "@type": "boolean",
+          "@value": true
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ]
+    },
+    {
+      "id": "6a6d2c93-4c87-56e1-b4f4-d72ea0e53014",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "linux-login-00-gate"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Only this pack's records: the same test as its stream rule."
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"linux-login-00-gate\"\nwhen\n    regex(\"(?s).*(?:sshd|sudo|pam_unix|authentication failure).*\", to_string($message.message)).matches == true\nthen\nend"
+        }
+      }
+    }
+  ]
+}

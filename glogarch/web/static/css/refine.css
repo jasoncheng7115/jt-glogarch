@@ -177,7 +177,11 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); opacity: 0.8
 .form-group select { height: var(--h-control); }
 .custom-select-trigger { min-height: var(--h-control); padding: 6px 12px; }
 .custom-select-trigger:hover { border-color: var(--accent); }
-.custom-select-trigger .arrow { font-size: 0.75em; color: var(--text-muted); }
+.custom-select-trigger .arrow { flex: none; display: inline-flex; width: 16px; height: 16px; margin-left: 10px; color: var(--text-muted); transition: transform 0.15s, color 0.15s; }
+.custom-select-trigger .arrow svg { width: 100%; height: 100%; }
+.custom-select-trigger:hover .arrow { color: var(--accent-text); }
+.custom-select.open .custom-select-trigger .arrow { transform: rotate(180deg); }
+.audit-filters .custom-select-trigger .arrow, .lang-switcher .custom-select-trigger .arrow { width: 14px; height: 14px; }
 .custom-select-options {
     border-color: var(--border);
     border-radius: var(--r-md);

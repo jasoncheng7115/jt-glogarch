@@ -2,6 +2,24 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.18.1] - 2026-11-02
+
+### Added
+
+- **Four content packs ship in the Jason Tools library:** Windows Active Directory (rev 2), Linux 登入與 SSH (rev 2, SSH and sudo logins), Apache HTTP Server and QNAP NAS (rev 2), each with a translated guide. The owner agreed to publish these four by name; `tests/test_packs.py` fails on any other pack in `glogarch/jt_library/`. A site whose local library holds the same revision keeps showing its local copy.
+
+### Changed
+
+- **A dashboard preview shows a widget's query on click, in the app's own box.** It used to be the browser's tooltip on hover: slow to appear, impossible to copy and unlike anything else in the app. The box shows the widget's query, the tab's query and the fields it uses, the text can be selected, and Copy puts the query on the clipboard. Esc, a click elsewhere or scrolling closes it.
+- **The tab picker in a dashboard preview is a segmented bar.** The global `button:hover` style painted a hovered tab dark accent under accent text, which could not be read; the picker now keeps its own colours in both themes.
+- **Pie and donut previews put the legend under the chart**, as Graylog does, instead of to its right.
+
+### Fixed
+
+- **A pipeline on a pack's own stream ran on nothing on a fresh Graylog 7.** Measured on 7.1.9: its default Message Processors order runs the Pipeline Processor before the Stream Rule Processor, so a message reached the pack's stream unparsed. Linux 登入與 SSH rev 2 connects its pipeline to the default stream as well, with a first stage that repeats the stream rule so nothing else is touched; it now parses in either order. Its alert counted the text field `message`, which OpenSearch refused on every run; it counts messages instead.
+- **The download guide gave advice that broke parsing.** It suggested moving default-stream pipelines to a narrower stream for less load, which on a fresh Graylog 7 stops them. It now says those pipelines run in any order, explains when "Remove matches from Default Stream" matters, and tells packs whose pipelines sit only on their own stream, or have none, how to set the Message Processors order. QNAP NAS and Windows Active Directory rev 2 say the same in their description.
+- **Windows Active Directory pack rev 2:** the DNS object queries excluded `ubjectUserName:SYSTEM`, a typo, so SYSTEM was never excluded; two widget titles had a stray "理者"; an alert description promised e-mail the pack never sends; "日誌" became "記錄".
+
 ## [1.18.0] - 2026-11-01
 
 ### Added

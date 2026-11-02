@@ -299,6 +299,7 @@ function pkEditLibrary(id, rev) { pkOpen('library', id, rev, 'overview', true); 
 function pkInstallLibrary(id, rev) { pkOpen('library', id, rev, 'install'); }
 
 function pkCloseViewer() {
+    pkClosePop();
     pkShow('pk-viewer', false);
     _pk.v = null;
 }
@@ -316,6 +317,7 @@ function pkAskCloseViewer() {
 }
 
 function pkPane(pane) {
+    pkClosePop();
     const v = _pk.v;
     if (!v) return;
     v.pane = pane;
@@ -850,7 +852,8 @@ function pkVizLabel(viz) {
 }
 
 function pkWidgetCaption(w) {
-    if (w.type === 'messages' || w.viz === 'table' || !w.viz) return '';
+    // Numbers and pies need the whole body; their fields are in the click box.
+    if (w.type === 'messages' || ['table', 'numeric', 'pie', 'donut'].includes(w.viz) || !w.viz) return '';
     return [...w.series, ...w.rows.filter(f => f !== 'timestamp'), ...w.cols].join(' · ');
 }
 
@@ -870,8 +873,7 @@ function pkPaneDashboards() {
     const tabs = `<div class="pk-dash-tabs">${d.tabs.map((x, i) => `<button class="pk-dash-tab${i === tIdx ? ' active' : ''}" data-act="pkPickTab" data-args="[${i}]">${esc(x.title || t('pk_tab_untitled'))}<span class="pk-dash-n">${esc(x.widgets.length)}</span></button>`).join('')}</div>`;
     const grid = tb ? `<div class="pk-canvas"><div class="pk-grid" id="pk-grid">${tb.widgets.map((w, i) => {
         const cap = pkWidgetCaption(w);
-        const tip = [pkVizLabel(w.viz), w.query].filter(Boolean).join('\n');
-        return `<div class="pk-widget pk-v-${esc(w.viz || 'table')}" data-i="${i}" title="${esc(tip)}">
+        return `<div class="pk-widget pk-v-${esc(w.viz || 'table')}" data-i="${i}" data-act="pkWidgetInfo" data-args="[${i}]" role="button" tabindex="0">
         <div class="pk-widget-title">${esc(w.title || t('pk_widget_untitled'))}</div>
         <div class="pk-widget-body">${pkDrawWidget(w)}</div>
         ${cap ? `<div class="pk-widget-cap">${esc(cap)}</div>` : ''}</div>`;
@@ -897,8 +899,94 @@ function pkApplyGrid() {
     host.querySelectorAll('.pk-ghost').forEach(el => { el.style.width = `${el.dataset.w}%`; });
 }
 
-function pkPickDash(i) { _pk.v.dash = i; _pk.v.tab = 0; pkRenderViewer(); }
-function pkPickTab(i) { _pk.v.tab = i; pkRenderViewer(); }
+function pkPickDash(i) { pkClosePop(); _pk.v.dash = i; _pk.v.tab = 0; pkRenderViewer(); }
+function pkPickTab(i) { pkClosePop(); _pk.v.tab = i; pkRenderViewer(); }
+
+function pkCurrentTab() {
+    const dashes = pkDashboards();
+    const d = dashes[Math.min(_pk.v.dash || 0, dashes.length - 1)];
+    return d.tabs[Math.min(_pk.v.tab || 0, d.tabs.length - 1)];
+}
+
+/** A widget's query, on click, in our own box: selectable and copyable. The browser's title
+ *  tooltip came late, could not be copied and looked like nothing else in the app. */
+function pkWidgetInfo(i) {
+    const open = document.getElementById('pk-pop');
+    if (open && open.dataset.i === String(i)) { pkClosePop(); return; }
+    pkClosePop();
+    const host = document.querySelector(`#pk-grid .pk-widget[data-i="${i}"]`);
+    const tb = pkCurrentTab();
+    const w = tb && tb.widgets[i];
+    if (!host || !w) return;
+    const fields = [...w.series, ...w.rows, ...w.cols, ...(w.fields || [])].filter(Boolean);
+    const block = (label, text, id) => `<div class="pk-pop-label">${esc(label)}</div><pre class="pk-pop-q"${id ? ` id="${id}"` : ''}>${esc(text)}</pre>`;
+    const pop = document.createElement('div');
+    pop.id = 'pk-pop';
+    pop.className = 'pk-pop';
+    pop.dataset.i = String(i);
+    pop.setAttribute('role', 'dialog');
+    pop.innerHTML = `<div class="pk-pop-head"><div class="pk-pop-title">${esc(w.title || t('pk_widget_untitled'))}</div>
+        <span class="pk-pop-type">${esc(pkVizLabel(w.viz))}</span>
+        <button type="button" class="pk-pop-x" data-act="pkClosePop" aria-label="${esc(t('btn_close'))}">${icon('close', 14)}</button></div>
+        ${w.query ? block(t('pk_w_query'), w.query, 'pk-pop-q') : `<div class="pk-pop-label">${esc(t('pk_w_query'))}</div><div class="pk-pop-none">${esc(t('pk_w_no_query'))}</div>`}
+        ${tb.query ? block(t('pk_w_page_query'), tb.query) : ''}
+        ${fields.length ? `<div class="pk-pop-label">${esc(t('pk_w_fields'))}</div><div class="pk-pop-fields">${fields.map(f => `<code>${esc(f)}</code>`).join('')}</div>` : ''}
+        ${w.query ? `<div class="pk-pop-actions"><button type="button" class="btn-sm btn-secondary" data-act="pkCopyQuery">${icon('copy', 14)}<span>${esc(t('btn_copy'))}</span></button></div>` : ''}`;
+    document.body.appendChild(pop);
+    host.classList.add('pk-widget-on');
+    pkPlacePop(pop, host);
+}
+
+function pkPlacePop(pop, host) {
+    const r = host.getBoundingClientRect();
+    const gap = 8, pad = 12;
+    const w = pop.offsetWidth, h = pop.offsetHeight;
+    let left = Math.min(Math.max(pad, r.left), window.innerWidth - w - pad);
+    let top = r.bottom + gap;
+    if (top + h > window.innerHeight - pad) top = Math.max(pad, r.top - h - gap);
+    pop.style.left = `${left}px`;
+    pop.style.top = `${top}px`;
+}
+
+function pkClosePop() {
+    const pop = document.getElementById('pk-pop');
+    if (pop) pop.remove();
+    document.querySelectorAll('.pk-widget-on').forEach(el => el.classList.remove('pk-widget-on'));
+}
+
+/** Feedback on the button itself: copyText() opens the app-wide alert, which would cover
+ *  the box and need its own click to dismiss. */
+function pkCopyQuery() {
+    const q = document.getElementById('pk-pop-q');
+    const btn = document.querySelector('#pk-pop [data-act="pkCopyQuery"]');
+    if (!q || !btn) return;
+    const done = ok => {
+        btn.innerHTML = `${icon(ok ? 'check' : 'warning', 14)}<span>${esc(t(ok ? 'msg_copied' : 'pk_copy_failed'))}</span>`;
+        setTimeout(() => { if (btn.isConnected) btn.innerHTML = `${icon('copy', 14)}<span>${esc(t('btn_copy'))}</span>`; }, 1600);
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(q.textContent).then(() => done(true), () => done(false));
+    } else {
+        done(false);
+    }
+}
+
+// The box is placed against the page, so it closes when the page under it moves or the
+// click lands elsewhere; a click inside it (to select text) keeps it open.
+document.addEventListener('click', e => {
+    if (!document.getElementById('pk-pop')) return;
+    if (e.target.closest('#pk-pop') || e.target.closest('#pk-grid .pk-widget')) return;
+    pkClosePop();
+}, true);
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.getElementById('pk-pop')) { e.stopPropagation(); pkClosePop(); }
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('#pk-grid .pk-widget')) {
+        e.preventDefault();
+        pkWidgetInfo(Number(e.target.dataset.i));
+    }
+}, true);
+window.addEventListener('resize', pkClosePop);
+document.addEventListener('scroll', e => { if (!(e.target.closest && e.target.closest('#pk-pop'))) pkClosePop(); }, true);
 
 // ---- JSON ------------------------------------------------------------------
 

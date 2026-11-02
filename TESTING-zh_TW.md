@@ -687,8 +687,11 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
 **敏感資料與版本**：`tests/test_packs.py` 涵蓋掃描、清除，以及每條離開路徑的拒絕。`tests/live_packs_check.py` 上傳通知裡含 email 的套件，確認到達 Graylog 的內容沒有 email，也確認 6.3 版下載確實經過轉換。
 
 **人工**
-- [ ] 沒有地端套件的站台，Jason Tools 頁顯示為空，`glogarch/jt_library/` 內沒有套件檔。
+- [ ] 沒有地端套件的站台，Jason Tools 頁只列出已公開的套件（Windows Active Directory、Linux 登入與 SSH、Apache HTTP Server、QNAP NAS），每一包都標示為公開，下載內容附有翻譯好的使用說明。`glogarch/jt_library/` 只要出現作者沒同意公開的套件，`tests/test_packs.py` 就會失敗。
 - [ ] 開啟含多個看板的套件，逐一對照 Graylog 上每個分頁的版面。
+- [ ] 看板預覽：滑鼠停在 widget 上不會出現瀏覽器提示；點一下會開啟本程式的提示框，列出 widget 查詢條件、分頁查詢條件和欄位；查詢文字可以選取，按「複製」會放進剪貼簿；按 Esc、點其他地方、捲動、切換分頁或關閉預覽都會收起。兩種主題、約 1436 px 寬都要看。
+- [ ] 把有串流的公開套件分別裝到全新的 Graylog 7（預設 Message Processors 順序）和 Stream Rule Processor 在前的 Graylog：兩種都會解析，其他來源的記錄不會被加上它的欄位。
+- [ ] 看板預覽：分頁選擇在滑鼠停住和選取時，兩種主題都看得清楚；圓餅圖和環圈圖的圖例在圖的下方。
 - [ ] 以權限較少的帳號登入：安裝預覽會把無權讀取的項目列為未檢查。
 - [ ] 規則標題已存在於目標的套件無法安裝，且原因會列出這些標題。
 

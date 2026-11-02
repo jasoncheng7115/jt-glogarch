@@ -888,8 +888,11 @@ failure.
 **Sensitive values and versions**: `tests/test_packs.py` covers the scan, the removal and the refusal at each way out. `tests/live_packs_check.py` uploads a pack with an address in its notification and checks that what reaches Graylog holds none, and that a 6.3 download really is converted.
 
 **By hand**
-- [ ] The Jason Tools tab on a site with no local packs says it is empty, and no file in `glogarch/jt_library/` is a pack.
+- [ ] On a site with no local packs, the Jason Tools tab lists exactly the published packs (Windows Active Directory, Linux 登入與 SSH, Apache HTTP Server, QNAP NAS), each marked published, and each download carries a translated guide. `tests/test_packs.py` fails on any pack in `glogarch/jt_library/` the owner did not agree to publish.
 - [ ] Open a pack with several dashboards and check each tab's layout against Graylog.
+- [ ] Dashboard preview: hovering a widget shows no browser tooltip; clicking it opens the app's box with the widget query, tab query and fields; the query text can be selected and Copy puts it on the clipboard; Esc, a click elsewhere, scrolling, switching tab and closing the viewer all close it. Check both themes at about 1436 px.
+- [ ] Install a published pack with a stream on a fresh Graylog 7 (default Message Processors order) and on one with the Stream Rule Processor first: its pipeline parses in both, and a message from another source gets none of its fields.
+- [ ] Dashboard preview: the tab picker is readable when hovered and when active in both themes, and a pie or donut widget has its legend under the chart.
 - [ ] Sign in as a user with fewer permissions: the install preview lists what it could not read as not checked.
 - [ ] A library pack whose rule titles exist on the target cannot be installed, and the reason names them.
 

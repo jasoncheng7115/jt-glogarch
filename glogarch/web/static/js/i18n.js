@@ -738,7 +738,12 @@ const I18N = {
         pk_save_note_graylog: 'Saved to {server} as revision {rev}. The old revision and anything already installed stay as they are.',
         pk_save_note_library: 'Saved in the library as revision {rev}. The old revision stays.',
         pk_saved: 'Saved as revision {rev}.',
-        pk_layout_note: 'Layout, chart types and column names come from the pack. No query runs: the shapes and numbers are illustrations, not data. Hover over a widget to see its query.',
+        pk_layout_note: 'Layout, chart types and column names come from the pack. No query runs: the shapes and numbers are illustrations, not data. Click a widget to see its query.',
+        pk_w_query: 'Query',
+        pk_w_no_query: 'No query of its own: it shows the records the tab query selects.',
+        pk_w_fields: 'Fields',
+        pk_w_page_query: 'Tab query',
+        pk_copy_failed: 'Select the text and copy it',
         pk_no_dashboards: 'This content pack has no dashboards.',
         pk_viz_bar: 'Bar',
         pk_viz_line: 'Line',
@@ -2137,7 +2142,12 @@ const I18N = {
         pk_save_note_graylog: '會存到 {server} 成為修訂版 {rev}，舊修訂版和已安裝的內容都不會變動。',
         pk_save_note_library: '會存到套件庫成為修訂版 {rev}，舊修訂版會保留。',
         pk_saved: '已存成修訂版 {rev}。',
-        pk_layout_note: '版面、圖表類型和欄位名稱都來自套件。不會執行查詢，圖形和數字只是示意，不是實際資料；游標移到圖表上可看查詢條件。',
+        pk_layout_note: '版面、圖表類型和欄位名稱都來自套件。不會執行查詢，圖形和數字只是示意，不是實際資料；點選圖表可看查詢條件。',
+        pk_w_query: '查詢條件',
+        pk_w_no_query: '沒有自己的查詢條件，顯示的是這個分頁查詢條件選出的記錄。',
+        pk_w_fields: '欄位',
+        pk_w_page_query: '分頁查詢條件',
+        pk_copy_failed: '請選取文字後自行複製',
         pk_no_dashboards: '這個內容套件沒有看板。',
         pk_viz_bar: '長條圖',
         pk_viz_line: '折線圖',
@@ -3536,7 +3546,12 @@ const I18N = {
         pk_save_note_graylog: '{server} にリビジョン {rev} として保存します。古いリビジョンとインストール済みの内容は変わりません。',
         pk_save_note_library: 'ライブラリにリビジョン {rev} として保存します。古いリビジョンは残ります。',
         pk_saved: 'リビジョン {rev} として保存しました。',
-        pk_layout_note: 'レイアウト、グラフの種類、列名はパックのものです。クエリは実行しないため、図形と数値はイメージで実データではありません。ウィジェットにカーソルを合わせるとクエリを確認できます。',
+        pk_layout_note: 'レイアウト、グラフの種類、列名はパックのものです。クエリは実行しないため、図形と数値はイメージで実データではありません。ウィジェットをクリックするとクエリを確認できます。',
+        pk_w_query: 'クエリ',
+        pk_w_no_query: '独自のクエリはありません。タブのクエリで選ばれたレコードを表示します。',
+        pk_w_fields: 'フィールド',
+        pk_w_page_query: 'タブのクエリ',
+        pk_copy_failed: 'テキストを選択してコピーしてください',
         pk_no_dashboards: 'このコンテンツパックにダッシュボードはありません。',
         pk_viz_bar: '棒グラフ',
         pk_viz_line: '折れ線',
@@ -4470,7 +4485,8 @@ function initCustomSelects() {
         if (sel.id) wrapper.dataset.for = sel.id;
         const trigger = document.createElement('div');
         trigger.className = 'custom-select-trigger';
-        trigger.innerHTML = '<span></span><span class="arrow">&#9662;</span>';
+        // A drawn chevron: the old ▾ glyph shrank to a few pixels at the select's font size.
+        trigger.innerHTML = '<span></span><span class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>';
         const optionsDiv = document.createElement('div');
         optionsDiv.className = 'custom-select-options';
 

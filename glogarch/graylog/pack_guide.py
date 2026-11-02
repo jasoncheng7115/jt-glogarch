@@ -22,7 +22,7 @@ import zipfile
 from typing import Any
 
 from glogarch.graylog import pack_compat
-from glogarch.graylog.packs import _title, analyze, val
+from glogarch.graylog.packs import DEFAULT_STREAM_ID, _title, analyze, val
 
 LANGS = ("en", "zh-TW", "ja")
 _GEO = re.compile(r"_(?:geolocation|country_code|city_name)\b")
@@ -62,11 +62,12 @@ _T: dict[str, dict[str, str]] = {
         "upgrade": "Uninstall it first. Graylog refuses a second pipeline or rule with the same title and the whole install fails with a bare error, leaving nothing behind.",
         "upgrade_warn": "Uninstalling also deletes anything you changed in what it installed, such as stream rules, thresholds and notifications. Write them down first and set them again afterwards.",
         "h_after": "After installing",
-        "a_start": "Start the stream under Streams → Start Stream: {v}. Graylog creates every installed stream paused, and until it runs its pipelines do nothing and the dashboards stay empty.",
+        "a_start": "Start the stream under Streams → Start Stream: {v}. Graylog creates every installed stream paused, and until it runs no message lands in it, so a pipeline or alert tied only to that stream does nothing.",
         "a_host": "Change this stream rule to match your own hosts: “{s}”, field {f}, value {v}. It still holds the values of the site this pack was built on, so nothing of yours would match.",
-        "a_default": "These pipelines are connected to the default stream, so they already run: {v}. They look at every message; for less load, connect them to a stream holding only these sources under System → Pipelines → Manage connections.",
-        "a_removed": "If you route these logs into your own stream with “Remove matches from Default Stream”, the default stream no longer sees them and the pipelines do not run. Connect all of the pipelines above to your stream under System → Pipelines → Manage connections.",
-        "a_connect": "Connect these pipelines to the stream that holds these logs, under System → Pipelines → Manage connections: {v}. A pipeline with no stream processes nothing.",
+        "a_default": "These pipelines are connected to the default stream, where every message starts, so they run whatever order your message processors are in: {v}.",
+        "a_removed": "If System → Configurations → Message Processors runs the Stream Rule Processor before the Pipeline Processor, and a stream with “Remove matches from Default Stream” takes these logs, the default stream no longer holds them when the pipelines run. Then connect the pipelines above to that stream as well, under System → Pipelines → Manage connections.",
+        "a_order": "These pipelines are connected only to their own stream: {v}. A fresh Graylog 7 runs the Pipeline Processor before the Stream Rule Processor, and then such a pipeline never sees a message. Under System → Configurations → Message Processors, move the Stream Rule Processor above the Pipeline Processor.",
+        "a_connect": "Connect these pipelines to the stream that holds these logs, under System → Pipelines → Manage connections: {v}. A pipeline with no stream processes nothing. A fresh Graylog 7 runs the Pipeline Processor before the Stream Rule Processor, and then a pipeline on your own stream never sees a message: under System → Configurations → Message Processors, move the Stream Rule Processor above the Pipeline Processor.",
         "a_alerts_quiet": "The {n} alerts have no notification: events are only written to Graylog. To be told, add one under Alerts → Event Definitions.",
         "a_alerts_notify": "This pack brings notifications. Check who they go to before relying on them: {v}.",
         "a_dash": "Open the dashboards under Dashboards: {v}.",
@@ -117,11 +118,12 @@ _T: dict[str, dict[str, str]] = {
         "upgrade": "請先移除舊版。Graylog 不接受標題相同的管線或規則，安裝會整包失敗並只顯示一般錯誤，不會留下任何項目。",
         "upgrade_warn": "移除時，您改過的設定也會一起刪掉，例如串流規則、告警門檻和通知。請先記下來，裝好後再設定一次。",
         "h_after": "安裝後要做的事",
-        "a_start": "到 Streams 按 Start Stream 啟動串流：{v}。Graylog 建立的串流都是暫停狀態，啟動前管線不會運作，看板也沒有資料。",
+        "a_start": "到 Streams 按 Start Stream 啟動串流：{v}。Graylog 建立的串流都是暫停狀態，啟動前不會有記錄進入這個串流，只綁在這個串流上的管線和告警都不會運作。",
         "a_host": "把這條串流規則改成您自己的主機：「{s}」，欄位 {f}，值 {v}。這裡還是打包環境的值，不修改就比對不到您的記錄。",
-        "a_default": "這些管線已接到預設串流，所以裝好就會運作：{v}。它們會檢查每一筆記錄；想減輕負擔，可到 System → Pipelines → Manage connections 改接到只含這類來源的串流。",
-        "a_removed": "如果您把這些記錄導到自建串流，並勾選「Remove matches from Default Stream」，預設串流就收不到這些記錄，管線也不會運作。請到 System → Pipelines → Manage connections，把上面所有管線都接到您的串流。",
-        "a_connect": "到 System → Pipelines → Manage connections，把這些管線接到存放這類記錄的串流：{v}。沒有接串流的管線不會處理任何記錄。",
+        "a_default": "這些管線已接到預設串流，每筆記錄一開始都在預設串流，所以不論訊息處理順序如何，裝好就會運作：{v}。",
+        "a_removed": "如果 System → Configurations → Message Processors 把 Stream Rule Processor 排在 Pipeline Processor 前面，而且有勾選「Remove matches from Default Stream」的串流收走了這些記錄，管線執行時預設串流裡已經沒有它們。這時請到 System → Pipelines → Manage connections，把上面的管線也接到那個串流。",
+        "a_order": "這些管線只接在自己的串流上：{v}。全新安裝的 Graylog 7 預設先執行 Pipeline Processor、後執行 Stream Rule Processor，這樣的管線永遠收不到記錄。請到 System → Configurations → Message Processors，把 Stream Rule Processor 移到 Pipeline Processor 前面。",
+        "a_connect": "到 System → Pipelines → Manage connections，把這些管線接到存放這類記錄的串流：{v}。沒有接串流的管線不會處理任何記錄。全新安裝的 Graylog 7 預設先執行 Pipeline Processor、後執行 Stream Rule Processor，這時接在自建串流上的管線收不到記錄：請到 System → Configurations → Message Processors，把 Stream Rule Processor 移到 Pipeline Processor 前面。",
         "a_alerts_quiet": "這 {n} 條告警沒有設定通知，事件只會寫進 Graylog。需要收到通知時，請到 Alerts → Event Definitions 加上。",
         "a_alerts_notify": "這個套件帶有通知。使用前請確認收件對象：{v}。",
         "a_dash": "到 Dashboards 開啟看板：{v}。",
@@ -172,11 +174,12 @@ _T: dict[str, dict[str, str]] = {
         "upgrade": "先にアンインストールしてください。Graylog は同じタイトルのパイプラインやルールを受け付けず、インストール全体が一般的なエラーで失敗します。何も作成されません。",
         "upgrade_warn": "アンインストールすると、変更した設定（ストリームルール、しきい値、通知など）も削除されます。先に控えておき、インストール後に設定し直してください。",
         "h_after": "インストール後の作業",
-        "a_start": "Streams で Start Stream をクリックしてストリームを開始します：{v}。作成されたストリームはすべて一時停止の状態で、開始するまでパイプラインは動作せず、ダッシュボードも空のままです。",
+        "a_start": "Streams で Start Stream をクリックしてストリームを開始します：{v}。作成されたストリームはすべて一時停止の状態で、開始するまでメッセージは入らず、このストリームだけに結び付いたパイプラインやアラートは動作しません。",
         "a_host": "このストリームルールをお使いのホストに合わせて変更してください：「{s}」、フィールド {f}、値 {v}。パックを作成した環境の値のままなので、変更しないとログに一致しません。",
-        "a_default": "次のパイプラインはデフォルトストリームに接続済みのため、すぐに動作します：{v}。すべてのメッセージを確認するので、負荷を減らすには System → Pipelines → Manage connections で、このソースのみを含むストリームに接続し直してください。",
-        "a_removed": "これらのログを「Remove matches from Default Stream」を有効にした独自のストリームに振り分けると、デフォルトストリームに届かなくなり、パイプラインは動作しません。System → Pipelines → Manage connections で、上記のパイプラインをすべてそのストリームに接続してください。",
-        "a_connect": "System → Pipelines → Manage connections で、次のパイプラインをこのログが入るストリームに接続してください：{v}。ストリームに接続していないパイプラインは何も処理しません。",
+        "a_default": "次のパイプラインはデフォルトストリームに接続済みです。すべてのメッセージは最初にデフォルトストリームに入るため、メッセージプロセッサーの順序に関係なく動作します：{v}。",
+        "a_removed": "System → Configurations → Message Processors で Stream Rule Processor が Pipeline Processor より前にあり、「Remove matches from Default Stream」を有効にしたストリームがこのログを受け取る場合、パイプラインの実行時にはデフォルトストリームにログが残っていません。その場合は System → Pipelines → Manage connections で、上記のパイプラインをそのストリームにも接続してください。",
+        "a_order": "次のパイプラインは独自のストリームにのみ接続されています：{v}。新規インストールの Graylog 7 は Pipeline Processor を Stream Rule Processor より先に実行するため、このようなパイプラインにはメッセージが届きません。System → Configurations → Message Processors で、Stream Rule Processor を Pipeline Processor より前に移動してください。",
+        "a_connect": "System → Pipelines → Manage connections で、次のパイプラインをこのログが入るストリームに接続してください：{v}。ストリームに接続していないパイプラインは何も処理しません。新規インストールの Graylog 7 は Pipeline Processor を Stream Rule Processor より先に実行するため、独自のストリームに接続したパイプラインにはメッセージが届きません。System → Configurations → Message Processors で、Stream Rule Processor を Pipeline Processor より前に移動してください。",
         "a_alerts_quiet": "この {n} 件のアラートには通知が設定されていません。イベントは Graylog に記録されるだけです。通知が必要な場合は Alerts → Event Definitions で追加してください。",
         "a_alerts_notify": "このパックには通知が含まれています。使用前に送信先を確認してください：{v}。",
         "a_dash": "Dashboards でダッシュボードを開きます：{v}。",
@@ -223,6 +226,18 @@ def pack_filename(pack: dict) -> str:
     return f"{name}-r{pack.get('rev')}.json"
 
 
+def _own_stream_only(pipelines: list) -> list[str]:
+    """Pipelines connected to streams but not to the default one. Measured on a fresh Graylog
+    7.1.9: its default order runs the Pipeline Processor before the Stream Rule Processor, so
+    these never see a message until that order is changed."""
+    out = []
+    for e in pipelines:
+        conn = [str(val(x)) for x in (e.get("data") or {}).get("connected_streams") or []]
+        if conn and DEFAULT_STREAM_ID not in conn:
+            out.append(_title(e))
+    return out
+
+
 def facts(pack: dict) -> dict:
     """What the steps depend on, read from this pack."""
     a = analyze(pack)
@@ -251,6 +266,7 @@ def facts(pack: dict) -> dict:
     return {
         "counts": a["counts"], "streams": a["streams"], "host_rules": host_rules,
         "default_pipelines": a["default_stream_pipelines"], "unconnected": a["unconnected_pipelines"],
+        "own_stream_only": _own_stream_only(of("pipeline")),
         "lookups": a["lookup_tables_used"], "dashboards": dashboards,
         "version": max(versions + ([needed] if needed else []), key=version_key, default=""),
         "plugins": sorted(plugins), "inputs": [_title(e) for e in of("input")],
@@ -346,6 +362,8 @@ def render(pack: dict, lang: str, notes: dict | None = None, target_version: str
     if f["default_pipelines"]:
         after.append(tx("a_default", v=code_list(f["default_pipelines"])))
         after.append(tx("a_removed"))
+    if f["own_stream_only"]:
+        after.append(tx("a_order", v=code_list(f["own_stream_only"])))
     if f["unconnected"]:
         after.append(tx("a_connect", v=code_list(f["unconnected"])))
     if f["notifications"]:

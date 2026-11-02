@@ -1,0 +1,50 @@
+{
+  "c1ac32e8-863f-5e57-bd56-31a654b67160": {
+    "summary": {
+      "en": "Active Directory changes, logins, groups, users, computers and DNS objects, with an out-of-hours alert.",
+      "zh-TW": "AD 異動、登入、群組、使用者、電腦、DNS 物件看板與非上班時間告警",
+      "ja": "Active Directory の変更、ログイン、グループ、ユーザー、コンピューター、DNS オブジェクトのダッシュボードと、業務時間外アラートです。"
+    },
+    "collect": {
+      "en": "GELF (Windows event logs, for example from NXLog)",
+      "zh-TW": "GELF（Windows 事件記錄，例如 NXLog）",
+      "ja": "GELF（Windows イベントログ、NXLog など）"
+    }
+  },
+  "6df1684c-1f7e-501b-b551-0281dfe5fb86": {
+    "summary": {
+      "en": "Linux SSH and sudo login dashboard with a failed-login alert.",
+      "zh-TW": "Linux SSH、sudo 登入看板與登入失敗告警",
+      "ja": "Linux の SSH と sudo のログインダッシュボード、およびログイン失敗アラートです。"
+    },
+    "collect": {
+      "en": "Syslog over UDP",
+      "zh-TW": "Syslog UDP",
+      "ja": "Syslog UDP"
+    }
+  },
+  "389eff60-13d3-5c05-8922-7d0450d8755b": {
+    "summary": {
+      "en": "Apache web access dashboard.",
+      "zh-TW": "Apache 網站存取看板",
+      "ja": "Apache Web アクセスのダッシュボードです。"
+    },
+    "collect": {
+      "en": "GELF",
+      "zh-TW": "GELF",
+      "ja": "GELF"
+    }
+  },
+  "2541a16a-cd49-54be-8234-697d9737abc3": {
+    "summary": {
+      "en": "QNAP NAS operation log dashboard.",
+      "zh-TW": "QNAP NAS 操作記錄看板",
+      "ja": "QNAP NAS の操作ログのダッシュボードです。"
+    },
+    "collect": {
+      "en": "Raw UDP",
+      "zh-TW": "Raw UDP",
+      "ja": "Raw UDP"
+    }
+  }
+}

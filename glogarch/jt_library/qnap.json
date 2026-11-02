@@ -1,0 +1,929 @@
+{
+  "v": "1",
+  "id": "2541a16a-cd49-54be-8234-697d9737abc3",
+  "rev": 2,
+  "name": "QNAP NAS",
+  "summary": "QNAP NAS 操作記錄看板",
+  "description": "QNAP NAS 操作記錄看板\n收集方式：Raw UDP。這個套件不會建立 Input，請自行建立並把來源指向它。\n★ 安裝後必做：把管線接到存放這類記錄的串流。沒有接串流的管線不會處理任何記錄。全新安裝的 Graylog 7 預設先執行管線、後分配串流，這時接在自建串流上的管線不會運作：請到 System → Configurations → Message Processors，把 Stream Rule Processor 移到 Pipeline Processor 前面。\n告警預設不掛通知，事件只會寫進 Graylog；需要通知請自行加上。",
+  "vendor": "Jason Cheng (Jason Tools)",
+  "url": "",
+  "server_version": "7.0.0",
+  "parameters": [],
+  "entities": [
+    {
+      "id": "bb6a52e4-24a4-507f-8e95-9e546a6cb7e3",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "qnap-00-passthrough"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"qnap-00-passthrough\"\nwhen\n    true\nthen\nend"
+        }
+      }
+    },
+    {
+      "id": "3a4a404c-f1e5-581a-83b4-59e90c7e3412",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "qnap-10-qnapuser"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"qnap-10-qnapuser\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"Users:\")\nthen\n    set_fields(grok(pattern: \"Users: %{WORD:QNAPuser},\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "da4b1ae7-710d-52c5-b542-c1e1dc89b2be",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "qnap-10-qnapsourceip"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"qnap-10-qnapsourceip\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"Source IP:\")\nthen\n    set_fields(grok(pattern: \"Source IP: %{IPV4:QNAPSourceIP},\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "d5b72f9b-fc44-553d-ae96-d0af136dc6fd",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "qnap-10-qnapcomputername"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"qnap-10-qnapcomputername\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"Computer name:\")\nthen\n    set_fields(grok(pattern: \"Computer name: %{WORD:QNAPComputerName},\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "61a65baa-6fc6-56c6-a931-becc86e12401",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "qnap-10-qnapconntype"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"qnap-10-qnapconntype\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"Connection type:\")\nthen\n    set_fields(grok(pattern: \"Connection type: %{WORD:QNAPConnType}, \", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "9c1fb1c2-6afe-531a-90b6-ade70c1a2221",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "qnap-10-qnapaccres"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"qnap-10-qnapaccres\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"Accessed resources: \")\nthen\n    set_fields(grok(pattern: \"Accessed resources: %{DATA:QNAPAccRes},\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "96503c40-3f9d-546b-aee1-c3dba48af64a",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "qnap-10-qnapaction"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"qnap-10-qnapaction\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"qulogd\")\nthen\n    set_fields(grok(pattern: \"Action: %{GREEDYDATA:QNAPAction}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "39f0e97d-465b-5446-aa08-93b8d32033c8",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "qnap-10-split-7"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"qnap-10-split-7\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"qulogd\")\nthen\n    let p = split(\"\\\\ \", to_string($message.message));\n    set_field(\"QNAPHostname\", p[4]);\nend"
+        }
+      }
+    },
+    {
+      "id": "b1ac7217-78cd-51ff-8686-b37bf3b0607c",
+      "type": {
+        "name": "pipeline",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "QNAP NAS - parse"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "pipeline \"QNAP NAS - parse\"\nstage 0 match either\nrule \"qnap-00-passthrough\"\nrule \"qnap-10-qnapuser\"\nrule \"qnap-10-qnapsourceip\"\nrule \"qnap-10-qnapcomputername\"\nrule \"qnap-10-qnapconntype\"\nrule \"qnap-10-qnapaccres\"\nrule \"qnap-10-qnapaction\"\nrule \"qnap-10-split-7\"\nend"
+        },
+        "connected_streams": []
+      }
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "dashboard",
+        "version": "2"
+      },
+      "id": "891e1409-e6ba-551a-8916-99fbbf0081c5",
+      "data": {
+        "summary": {
+          "@type": "string",
+          "@value": "QNAP NAS 操作記錄看板"
+        },
+        "search": {
+          "queries": [
+            {
+              "id": "1bc6599c-c2f0-4651-b456-77f4c6000777",
+              "timerange": {
+                "type": "relative",
+                "range": 300
+              },
+              "query": {
+                "type": "elasticsearch",
+                "query_string": ""
+              },
+              "search_types": [
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message:(qulogd OR qlogd)"
+                  },
+                  "name": null,
+                  "timerange": {
+                    "type": "relative",
+                    "range": 604800
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "c4d9ce4d-54d3-419a-8a4c-347d377ab208",
+                  "limit": 150
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message:(qulogd OR qlogd)"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "type": "relative",
+                    "range": 604800
+                  },
+                  "streams": [],
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "Total",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "field": "timestamp",
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 1
+                      }
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "fa7b5591-2311-425a-9b2e-d1d4f669d355",
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "field": "source",
+                      "limit": 15
+                    }
+                  ],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message:(qulogd OR qlogd)"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "type": "relative",
+                    "range": 604800
+                  },
+                  "streams": [],
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "field": "QNAPHostname",
+                      "limit": 15
+                    },
+                    {
+                      "type": "values",
+                      "field": "source",
+                      "limit": 15
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "ceebca3f-9903-4edb-b86e-72b298f2af78",
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message:(qulogd OR qlogd)"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "type": "relative",
+                    "range": 604800
+                  },
+                  "streams": [],
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "field": "QNAPuser",
+                      "limit": 15
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "c53956d5-b74a-4bb5-8db5-ded2ed709122",
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message:(qulogd OR qlogd)"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "type": "relative",
+                    "range": 0
+                  },
+                  "streams": [],
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "field": "source",
+                      "limit": 15
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "56768462-03fa-49de-bcee-06ad9f5615aa",
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message:(qulogd OR qlogd)"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "type": "relative",
+                    "range": 604800
+                  },
+                  "streams": [],
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "field": "QNAPAction",
+                      "limit": 15
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "b3878f87-a91b-4d34-896b-4e2a26012b33",
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message:(qulogd OR qlogd)"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "type": "relative",
+                    "range": 604800
+                  },
+                  "streams": [],
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "field": "QNAPAccRes",
+                      "limit": 15
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "ee2e8f0e-2176-4d4e-bb7f-c28265a4c1e2",
+                  "column_groups": [],
+                  "sort": []
+                }
+              ]
+            }
+          ],
+          "parameters": [],
+          "requires": {},
+          "owner": "admin",
+          "created_at": "2022-08-11T07:15:02.542Z"
+        },
+        "created_at": "2026-11-01T00:00:00.000Z",
+        "requires": {},
+        "state": {
+          "1bc6599c-c2f0-4651-b456-77f4c6000777": {
+            "selected_fields": null,
+            "static_message_list_id": null,
+            "titles": {
+              "tab": {
+                "title": "QNAP 記錄 (1W)"
+              },
+              "widget": {
+                "b390bfe9-8379-439a-9b0e-b38138d81c1b": "SourceIP",
+                "eb1b98d0-54de-4d1c-b64a-1f9d13200cfe": "Action",
+                "718897fe-eadf-4978-bdcc-02a3d988633f": "Accessed Resource",
+                "987daca6-8de8-44eb-86ca-95c5236c4178": "User",
+                "65e87173-fc85-4c45-805e-1db189ff60f3": "Host"
+              }
+            },
+            "widgets": [
+              {
+                "id": "718897fe-eadf-4978-bdcc-02a3d988633f",
+                "type": "aggregation",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "range": 604800
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message:(qulogd OR qlogd)"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "event_annotation": false,
+                  "row_pivots": [
+                    {
+                      "field": "QNAPAccRes",
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "79424709-be36-4708-84ab-354df51cc2d6",
+                "type": "messages",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "range": 604800
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message:(qulogd OR qlogd)"
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "QNAPuser",
+                    "QNAPAction",
+                    "QNAPSourceIP"
+                  ],
+                  "show_message_row": true,
+                  "show_summary": null,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "eb1b98d0-54de-4d1c-b64a-1f9d13200cfe",
+                "type": "aggregation",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "range": 604800
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message:(qulogd OR qlogd)"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "event_annotation": false,
+                  "row_pivots": [
+                    {
+                      "field": "QNAPAction",
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "987daca6-8de8-44eb-86ca-95c5236c4178",
+                "type": "aggregation",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "range": 604800
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message:(qulogd OR qlogd)"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "event_annotation": false,
+                  "row_pivots": [
+                    {
+                      "field": "QNAPuser",
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "19b08efe-ee7d-4cd0-a4f5-052ec715cea6",
+                "type": "aggregation",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "range": 604800
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message:(qulogd OR qlogd)"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "bar",
+                  "event_annotation": false,
+                  "row_pivots": [
+                    {
+                      "field": "timestamp",
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 1
+                        }
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": "Total"
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [
+                    {
+                      "field": "source",
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "visualization_config": {
+                    "barmode": "overlay"
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "b390bfe9-8379-439a-9b0e-b38138d81c1b",
+                "type": "aggregation",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "range": 0
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message:(qulogd OR qlogd)"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "event_annotation": false,
+                  "row_pivots": [
+                    {
+                      "field": "source",
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "65e87173-fc85-4c45-805e-1db189ff60f3",
+                "type": "aggregation",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "range": 604800
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message:(qulogd OR qlogd)"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "event_annotation": false,
+                  "row_pivots": [
+                    {
+                      "field": "QNAPHostname",
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    },
+                    {
+                      "field": "source",
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              }
+            ],
+            "widget_mapping": {
+              "65e87173-fc85-4c45-805e-1db189ff60f3": [
+                "ceebca3f-9903-4edb-b86e-72b298f2af78"
+              ],
+              "b390bfe9-8379-439a-9b0e-b38138d81c1b": [
+                "56768462-03fa-49de-bcee-06ad9f5615aa"
+              ],
+              "79424709-be36-4708-84ab-354df51cc2d6": [
+                "c4d9ce4d-54d3-419a-8a4c-347d377ab208"
+              ],
+              "eb1b98d0-54de-4d1c-b64a-1f9d13200cfe": [
+                "b3878f87-a91b-4d34-896b-4e2a26012b33"
+              ],
+              "718897fe-eadf-4978-bdcc-02a3d988633f": [
+                "ee2e8f0e-2176-4d4e-bb7f-c28265a4c1e2"
+              ],
+              "987daca6-8de8-44eb-86ca-95c5236c4178": [
+                "c53956d5-b74a-4bb5-8db5-ded2ed709122"
+              ],
+              "19b08efe-ee7d-4cd0-a4f5-052ec715cea6": [
+                "fa7b5591-2311-425a-9b2e-d1d4f669d355"
+              ]
+            },
+            "positions": {
+              "eb1b98d0-54de-4d1c-b64a-1f9d13200cfe": {
+                "col": 10,
+                "row": 5,
+                "height": 3,
+                "width": 3
+              },
+              "b390bfe9-8379-439a-9b0e-b38138d81c1b": {
+                "col": 1,
+                "row": 1,
+                "height": 4,
+                "width": 3
+              },
+              "79424709-be36-4708-84ab-354df51cc2d6": {
+                "col": 1,
+                "row": 8,
+                "height": 6,
+                "width": "Infinity"
+              },
+              "718897fe-eadf-4978-bdcc-02a3d988633f": {
+                "col": 7,
+                "row": 1,
+                "height": 4,
+                "width": 6
+              },
+              "987daca6-8de8-44eb-86ca-95c5236c4178": {
+                "col": 4,
+                "row": 1,
+                "height": 4,
+                "width": 3
+              },
+              "19b08efe-ee7d-4cd0-a4f5-052ec715cea6": {
+                "col": 1,
+                "row": 5,
+                "height": 3,
+                "width": 6
+              },
+              "65e87173-fc85-4c45-805e-1db189ff60f3": {
+                "col": 7,
+                "row": 5,
+                "height": 3,
+                "width": 3
+              }
+            },
+            "formatting": {
+              "highlighting": []
+            },
+            "display_mode_settings": {
+              "positions": {}
+            }
+          }
+        },
+        "properties": [],
+        "title": {
+          "@type": "string",
+          "@value": "QNAP NAS"
+        },
+        "type": "DASHBOARD",
+        "description": {
+          "@type": "string",
+          "@value": "QNAP NAS 操作記錄看板"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.3.5+32fa802"
+        }
+      ]
+    }
+  ]
+}

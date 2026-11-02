@@ -397,20 +397,29 @@ code.fp-hash { font-size: 11px; background: var(--bg-subtle, #f3f4f6); padding: 
 .pk-raw { margin-top: 10px; }
 .pk-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 .pk-v-head .custom-select { display: inline-block; width: auto; min-width: 72px; vertical-align: middle; }
-.pk-dash-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
-.pk-dash-tab { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 12px; background: none; border: 1px solid var(--border); border-radius: 16px; color: var(--text-muted); font-size: 0.86em; cursor: pointer; }
-.pk-dash-tab:hover { border-color: var(--accent); color: var(--accent); }
-.pk-dash-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-.pk-dash-n { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--input-bg); color: var(--text-muted); font-size: 0.85em; text-align: center; }
-.pk-dash-tab.active .pk-dash-n { background: rgba(255, 255, 255, 0.25); color: #fff; }
+/* A segmented bar, not loose pills. `:root` outranks the global `button:hover`, which paints
+   every button accent-dark and once left accent text on an accent background here. */
+.pk-dash-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0 12px; padding: 4px; border: 1px solid var(--border); border-radius: 10px; background: var(--input-bg); }
+:root .pk-dash-tab { display: inline-flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; background: transparent; border: 1px solid transparent; border-radius: 7px; color: var(--text-muted); font-size: 0.86em; font-weight: 500; line-height: 1.3; cursor: pointer; transition: background 0.15s, color 0.15s; }
+:root .pk-dash-tab:hover { background: var(--card-bg); color: var(--text); }
+:root .pk-dash-tab.active, :root .pk-dash-tab.active:hover { background: var(--card-bg); border-color: var(--border-strong); color: var(--accent-text); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.pk-dash-n { min-width: 20px; padding: 1px 6px; border-radius: 9px; background: var(--border); color: var(--text-muted); font-size: 0.82em; font-weight: 600; text-align: center; }
+.pk-dash-tab.active .pk-dash-n { background: var(--accent); color: #fff; }
 .pk-page-query { display: inline-block; max-width: 100%; margin-bottom: 8px; padding: 3px 8px; border-radius: 4px; background: var(--input-bg); color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.78em; overflow-wrap: anywhere; }
 .pk-canvas { padding: 10px; border-radius: 10px; background: var(--input-bg); }
 .pk-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: 26px; gap: 8px; }
 .pk-widget { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card-bg); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); }
 .pk-widget-title { flex: none; font-size: 0.8em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pk-widget-body { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; min-width: 0; padding-top: 4px; }
+.pk-widget { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+.pk-widget:hover, .pk-widget-on { border-color: var(--accent); }
+.pk-widget-on { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+.pk-widget:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .pk-widget-cap { flex: none; padding-top: 2px; color: var(--text-muted); font-size: 0.68em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pk-number { font-size: 1.75em; font-weight: 600; color: var(--accent); }
+/* Sized to the body it sits in: a two-row widget has about 20px, and a fixed 1.75em spilled
+   up over the title. */
+.pk-v-numeric .pk-widget-body { container-type: size; }
+.pk-number { font-size: clamp(1.05em, 88cqh, 1.75em); line-height: 1; font-weight: 600; color: var(--accent); white-space: nowrap; }
 .pk-chart { display: block; width: 100%; height: 100%; }
 .pk-gridline { stroke: var(--border); stroke-width: 0.25; vector-effect: non-scaling-stroke; }
 .pk-f0 { fill: #6c63ff; } .pk-f1 { fill: #22b8cf; } .pk-f2 { fill: #51cf66; }
@@ -422,9 +431,11 @@ code.fp-hash { font-size: 11px; background: var(--bg-subtle, #f3f4f6); padding: 
 .pk-arc-solid { stroke-width: 16; }
 .pk-b0 { background: #6c63ff; } .pk-b1 { background: #22b8cf; } .pk-b2 { background: #51cf66; } .pk-b3 { background: #fcc419; } .pk-b4 { background: #ff922b; }
 .pk-h0 { fill: #440154; } .pk-h1 { fill: #3b528b; } .pk-h2 { fill: #21918c; } .pk-h3 { fill: #5ec962; } .pk-h4 { fill: #fde725; }
-.pk-pie { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 100%; min-height: 0; }
-.pk-pie svg { height: 100%; max-height: 100%; max-width: 50%; min-height: 0; }
-.pk-legend { flex: 1; min-width: 0; max-width: 45%; display: flex; flex-direction: column; gap: 5px; }
+/* Graylog draws a pie's legend under the chart, in rows that wrap. */
+.pk-pie { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; height: 100%; min-height: 0; }
+.pk-pie svg { flex: 1 1 0; width: 100%; min-height: 0; }
+.pk-legend { flex: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 0 10px; max-width: 100%; height: 12px; overflow: hidden; }
+.pk-pie .pk-legend-row { width: 46px; height: 12px; }
 .pk-legend-row { display: flex; align-items: center; gap: 6px; }
 .pk-legend-row i { flex: none; width: 8px; height: 8px; border-radius: 2px; }
 .pk-ghost { display: inline-block; height: 7px; border-radius: 4px; background: var(--border); opacity: 0.8; vertical-align: middle; }
@@ -435,3 +446,17 @@ code.fp-hash { font-size: 11px; background: var(--bg-subtle, #f3f4f6); padding: 
 .pk-td-num { text-align: right; }
 @media (max-width: 800px) { .pk-split { grid-template-columns: 1fr; } .pk-grid { grid-auto-rows: 20px; } }
 .pk-hint { color: var(--text-muted); margin-top: 10px; }
+
+/* A widget's query, opened by a click. Fixed to the viewport, above the viewer. */
+.pk-pop { position: fixed; z-index: 3000; width: min(440px, calc(100vw - 24px)); max-height: min(60vh, 460px); overflow: auto; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--card-bg); color: var(--text); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22); font-size: 0.86em; }
+.pk-pop-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.pk-pop-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.pk-pop-type { flex: none; padding: 1px 8px; border-radius: 9px; background: var(--input-bg); color: var(--text-muted); font-size: 0.85em; }
+:root .pk-pop-x { flex: none; padding: 4px; background: transparent; color: var(--text-muted); border-radius: 6px; }
+:root .pk-pop-x:hover { background: var(--hover-solid); color: var(--text); }
+.pk-pop-label { margin: 8px 0 4px; color: var(--text-muted); font-size: 0.85em; font-weight: 600; }
+.pk-pop-q { margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; cursor: text; }
+.pk-pop-none { color: var(--text-muted); }
+.pk-pop-fields { display: flex; flex-wrap: wrap; gap: 4px; }
+.pk-pop-fields code { padding: 1px 6px; border-radius: 4px; background: var(--input-bg); font-size: 0.9em; user-select: text; }
+.pk-pop-actions { display: flex; justify-content: flex-end; margin-top: 10px; }

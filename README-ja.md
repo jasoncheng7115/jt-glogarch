@@ -1,4 +1,4 @@
-# jt-glogarch v1.18.0
+# jt-glogarch v1.18.1
 
 **Language**: [English](README.md) | [繁體中文](README-zh_TW.md) | **日本語**  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open（6.x / 7.x）向けのログのアーカイブ・リストアツール
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.18.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.18.1-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 > **作者：** Jason Cheng（[Jason Tools](https://github.com/jasoncheng7115)）
@@ -179,7 +179,12 @@ Telegram・Discord・Slack・Microsoft Teams・Nextcloud Talk・Zulip・Email（
 
 ### コンテンツパック（v1.18.0 以降）
 
-接続中の各 Graylog のコンテンツパックを表示、編集、インストール、アンインストール、ダウンロード、アップロードできます。Jason Tools ライブラリもあります（パックが公開されるまでは空で、サイト独自のパックはローカルにのみ保存されます）。ダッシュボードのレイアウトをプレビューし、インストール前にその Graylog への影響を確認し、編集内容は差分で確認できます。編集は新しいリビジョンとして保存され、インストール済みの内容は変わりません。
+接続中の各 Graylog のコンテンツパックを表示、編集、インストール、アンインストール、ダウンロード、アップロードできます。Jason Tools ライブラリもあります（下記の公開パックを収録し、サイト独自のパックはローカルにのみ保存されます）。ダッシュボードのレイアウトをプレビューし、インストール前にその Graylog への影響を確認し、編集内容は差分で確認できます。編集は新しいリビジョンとして保存され、インストール済みの内容は変わりません。
+
+**公開パック**：ここには作者が公開したパックのみ掲載します。
+
+- Jason Tools ライブラリに組み込み（v1.18.1 以降）：**Windows Active Directory**、**Linux 登入與 SSH**（Linux の SSH と sudo ログイン）、**Apache HTTP Server**、**QNAP NAS**。コンテンツパック画面から直接インストールでき、ダウンロードには使い方の説明が付きます。
+- 個別ダウンロード：[CubeCOS / OpenStack Log Pipeline](https://github.com/jasoncheng7115/it-scripts/blob/master/graylog/cubecos_contentpack_graylog63.json)。CubeCOS、OpenStack、Ceph、Masakari のログ用のパイプライン 1 つとルール 147 個です（パックの表記では Graylog 6.3 以降に対応）。リンク先からダウンロードし、コンテンツパック画面でアップロードしてください。
 
 ### アラート管理（v1.17.0 以降）
 
