@@ -330,6 +330,30 @@ async function loadDashboard() {
         setStatValue(document.getElementById('stat-size'), formatBytes(s.total_bytes || 0));
         setStatValue(document.getElementById('stat-disk'), formatMB(status.storage_stats.available_mb || 0));
 
+        // Days that hold an archive (host local dates), the range they span and
+        // the days in between with none. The span alone overstates it: one
+        // stray old archive stretches it by months.
+        const ad = status.archive_days || {};
+        setStatValue(document.getElementById('stat-days'),
+            (t('archive_days_value') || '{n} days').replace('{n}', formatNumber(ad.days || 0)));
+        const dr = document.getElementById('stat-days-range');
+        if (dr) {
+            if (!ad.days) {
+                dr.textContent = t('archive_days_none');
+            } else {
+                const span = (a, b) => t('archive_days_range').replace('{a}', a).replace('{b}', b);
+                const range = span(ad.first_day, ad.last_day);
+                if (ad.missing_days > 0) {
+                    const gaps = (ad.missing_ranges || []).map(r => r[0] === r[1] ? r[0] : span(r[0], r[1]));
+                    if ((ad.missing_ranges_total || 0) > gaps.length) gaps.push('…');
+                    const miss = t('archive_days_missing').replace('{n}', formatNumber(ad.missing_days));
+                    dr.innerHTML = `${esc(range)}<br><span class="days-missing" title="${esc(t('archive_days_missing_tip') + '\n' + gaps.join('\n'))}">${esc(miss)}</span>`;
+                } else {
+                    dr.textContent = range;
+                }
+            }
+        }
+
         // Projected remaining archive retention (compressed footprint per month
         // of log × free disk). Muted normally; red when below the alert months.
         const rel = document.getElementById('stat-disk-retention');

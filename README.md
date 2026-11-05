@@ -1,4 +1,4 @@
-# jt-glogarch v1.18.1
+# jt-glogarch v1.18.2
 
 **Language**: **English** | [繁體中文](README-zh_TW.md) | [日本語](README-ja.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.18.1-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.18.2-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -841,7 +841,7 @@ Login uses your Graylog credentials — there is no separate user database. Auth
 
 ![Dashboard](images/dashboard.png)
 
-The home page shows five key statistics with sparkline charts:
+The home page shows six key statistics, most with sparkline charts:
 
 | Card | What it shows |
 |---|---|
@@ -849,6 +849,7 @@ The home page shows five key statistics with sparkline charts:
 | **Total Records** | Total log records archived |
 | **Original Size** | Pre-compression total size |
 | **Compressed** | On-disk total size (after gzip) |
+| **Days Archived** | Days that hold at least one archive, the first and latest of them, and how many days in between have none (hover for the dates) |
 | **Disk Available** | Free space on the archive volume |
 
 The sparkline behind each card shows the last 30 days of daily activity.
@@ -1768,6 +1769,8 @@ without OS-specific dependencies — a Dockerfile would be straightforward to ad
 **Author:** Jason Cheng — [Jason Tools](https://github.com/jasoncheng7115)
 
 **Repository:** https://github.com/jasoncheng7115/jt-glogarch
+
+**Security:** report vulnerabilities as described in [SECURITY.md](SECURITY.md), not in a public issue.
 
 
 ### Third-Party Licenses

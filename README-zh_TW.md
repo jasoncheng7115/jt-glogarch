@@ -1,4 +1,4 @@
-# jt-glogarch v1.18.1
+# jt-glogarch v1.18.2
 
 **語言**： [English](README.md) | **繁體中文** | [日本語](README-ja.md)  
 **網站**： <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.18.1-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.18.2-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -789,7 +789,7 @@ Web UI 是**主要操作介面**，CLI 用於自動化和指令碼。
 
 ![儀表板](images/dashboard_zhtw.png)
 
-首頁顯示五個關鍵統計卡片（含 sparkline):
+首頁顯示六個關鍵統計卡片（多數含 sparkline）：
 
 | 卡片 | 顯示內容 |
 |---|---|
@@ -797,6 +797,7 @@ Web UI 是**主要操作介面**，CLI 用於自動化和指令碼。
 | **記錄總數** | 已歸檔的記錄總筆數 |
 | **歸檔前大小** | 壓縮前的總大小 |
 | **壓縮後大小** | 磁碟上的總大小（gzip 後） |
+| **歸檔涵蓋天數** | 有歸檔的日數、最早與最新的日期，以及中間有幾天沒有歸檔（滑鼠移上去看日期） |
 | **可用磁碟空間** | 歸檔磁區的剩餘空間 |
 
 每張卡片背後的 sparkline 顯示最近 30 天的每日活動。
@@ -1594,6 +1595,8 @@ API 模式在 stream 上操作。OpenSearch Direct 模式在 index 上操作。
 **作者：** Jason Cheng — [Jason Tools](https://github.com/jasoncheng7115)
 
 **專案網址：** https://github.com/jasoncheng7115/jt-glogarch
+
+**資安問題：** 請依 [SECURITY.md](SECURITY.md) 通報，不要開公開的 issue。
 
 
 ### 第三方授權

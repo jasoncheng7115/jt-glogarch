@@ -10,6 +10,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from glogarch.web.authz import check_graylog_role, mark_authenticated, session_is_authenticated
 from glogarch import __version__ as _APP_VERSION
 from glogarch.utils.logging import get_logger
 
@@ -30,7 +31,7 @@ def _render(name: str, request: Request, context: dict | None = None):
 
 
 def _is_logged_in(request: Request) -> bool:
-    return request.session.get("authenticated", False)
+    return session_is_authenticated(request.session)
 
 
 def _is_unconfigured(request: Request) -> bool:
@@ -38,7 +39,8 @@ def _is_unconfigured(request: Request) -> bool:
     return len(request.app.state.settings.servers) == 0
 
 
-_VALID_LOGIN_ERRORS = {"auth_failed", "graylog_offline_with_local", "graylog_offline"}
+_VALID_LOGIN_ERRORS = {"auth_failed", "graylog_offline_with_local", "graylog_offline",
+                       "role_not_allowed", "role_unknown"}
 
 @router.get("/setup", response_class=HTMLResponse)
 def setup_page(request: Request):
@@ -99,8 +101,7 @@ async def login_submit(request: Request):
     if username == "localadmin" and settings.web.localadmin_password_hash:
         import hashlib
         if hashlib.sha256(password.encode()).hexdigest() == settings.web.localadmin_password_hash:
-            request.session["authenticated"] = True
-            request.session["username"] = "localadmin"
+            mark_authenticated(request.session, "localadmin")
             request.session["emergency_mode"] = True
             _audit(request, "login_success", "User: localadmin (local admin)")
             return RedirectResponse(url="/", status_code=303)
@@ -121,20 +122,36 @@ async def login_submit(request: Request):
         servers = [dflt] + [s for s in servers if s.name != dflt.name]
     except ValueError:
         servers = []
+    denied = None   # "role_not_allowed" / "role_unknown" once valid credentials were refused
     for server in servers:
         try:
             async with httpx.AsyncClient(verify=server.verify_ssl, timeout=10.0) as client:
+                auth = httpx.BasicAuth(username, password)
                 resp = await client.get(
                     f"{server.url.rstrip('/')}/api/system",
-                    auth=httpx.BasicAuth(username, password),
+                    auth=auth,
                     headers={"Accept": "application/json"},
                 )
                 if resp.status_code == 200:
-                    display_name = username
-                    if len(username) > 30:
+                    # Valid credentials are not enough: the account also needs
+                    # an allowed role (web.allowed_graylog_roles).
+                    rc = await check_graylog_role(client, server.url, auth,
+                                                  settings.web.allowed_graylog_roles)
+                    if not rc.allowed:
+                        graylog_ok = True
+                        if denied != "role_not_allowed":
+                            denied = "role_not_allowed" if rc.allowed is False else "role_unknown"
+                        who = rc.username or ("token-user" if len(username) > 30 else username)
+                        _audit(request, "login_failed",
+                               f"User: {who} @ {server.name}: {rc.reason}; roles={','.join(rc.roles)}")
+                        log.warning("Graylog login refused: no role allowed to use jt-glogarch",
+                                    user=who, server=server.name, reason=rc.reason, roles=rc.roles,
+                                    allowed=settings.web.allowed_graylog_roles)
+                        continue
+                    display_name = rc.username or username
+                    if len(display_name) > 30:
                         display_name = "token-user"
-                    request.session["authenticated"] = True
-                    request.session["username"] = display_name
+                    mark_authenticated(request.session, display_name)
                     request.session["gl_server"] = server.name
                     await _remember_graylog_identity(request, server, username, password)
                     _audit(request, "login_success", f"User: {display_name} @ {server.name}")
@@ -146,6 +163,9 @@ async def login_submit(request: Request):
             # This server is unreachable — try the next one.
             log.debug("Graylog server unreachable during login; trying the next one", error=str(e))
             continue
+
+    if denied:
+        return RedirectResponse(url=f"/login?error={denied}", status_code=303)
 
     _audit(request, "login_failed", f"User: {username}")
 

@@ -970,6 +970,59 @@ class ArchiveDB:
         ).fetchone()
         return dict(row) if row else {}
 
+    def get_archive_day_coverage(self, max_ranges: int = 20) -> dict:
+        """How many calendar days (host local time) the completed archives hold.
+
+        The span MIN(time_from)..MAX(time_to) is not the answer: one stray old
+        archive stretches it (.36 had one archive on 01-01 and nothing again
+        until 02-11). So count the days that hold an archive and list the
+        days in between that hold none.
+        """
+        w = "status = 'completed'"
+        # time_to is exclusive: a 23:00-00:00 hour belongs to the day it starts.
+        rows = self.conn.execute(
+            f"""SELECT date(time_from, 'localtime') FROM archives WHERE {w}
+                UNION
+                SELECT date(time_to, '-1 second', 'localtime') FROM archives WHERE {w}"""  # nosec B608 - fixed literal
+        ).fetchall()
+        days = {r[0] for r in rows if r[0]}
+        # An archive longer than a day also covers the days in between.
+        for tf, tt in self.conn.execute(
+            f"""SELECT date(time_from, 'localtime'), date(time_to, '-1 second', 'localtime')
+                FROM archives WHERE {w} AND julianday(time_to) - julianday(time_from) > 1"""  # nosec B608 - fixed literal
+        ):
+            if not (tf and tt):
+                continue
+            d, end = datetime.fromisoformat(tf).date(), datetime.fromisoformat(tt).date()
+            while d <= end:
+                days.add(d.isoformat())
+                d += timedelta(days=1)
+        if not days:
+            return {"days": 0, "first_day": None, "last_day": None,
+                    "span_days": 0, "missing_days": 0, "missing_ranges": [],
+                    "missing_ranges_total": 0}
+        first, last = min(days), max(days)
+        d, end = datetime.fromisoformat(first).date(), datetime.fromisoformat(last).date()
+        span = (end - d).days + 1
+        ranges, run = [], None
+        while d <= end:
+            iso = d.isoformat()
+            if iso not in days:
+                run = [iso, iso] if run is None else [run[0], iso]
+            elif run is not None:
+                ranges.append(run)
+                run = None
+            d += timedelta(days=1)
+        return {
+            "days": len(days),
+            "first_day": first,
+            "last_day": last,
+            "span_days": span,
+            "missing_days": span - len(days),
+            "missing_ranges": ranges[:max_ranges],
+            "missing_ranges_total": len(ranges),
+        }
+
     # --- Jobs ---
 
     def create_job(self, job: JobRecord) -> None:

@@ -449,6 +449,22 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
       文字寬度與卡片寬度比對，涵蓋數千到 10^18 的量級。*`.stat-card` 為折線圖設了
       overflow:hidden，因此 1,060,702,960 筆被顯示成 `1,060,702,96`（v1.13.93）。
       算繪後的字體寬度，沒有任何 Python 測試量得到——這一項必須用瀏覽器。*
+- [ ] **「歸檔涵蓋天數」算的是有歸檔的日數，不是起訖跨度** —— 一筆很舊的零星歸檔
+      不能把它拉長，已刪除的歸檔不計入，結束在本地午夜的那一小時算在開始那天，
+      中間沒有歸檔的日期要列出。單元測試：`tests/test_archive_day_coverage.py`。
+      在 .36 目視：卡片的數值、日期範圍、「其中 N 天沒有歸檔」與滑鼠移上去的日期，
+      淺色與深色主題都看。*.36 在 01-01 有一筆歸檔，之後到 02-11 才再有：
+      跨度是 307 天，實際有歸檔的是 266 天。*
+- [ ] **只有具備允許角色的 Graylog 帳號能登入** —— Reader 帳號（密碼或權杖）被拒並回
+      `role_not_allowed`，也拿不到 API 權限；Admin、`*` 權限，以及加進
+      `web.allowed_graylog_roles` 的角色可以登入；讀不到角色時拒絕登入；1.18.2 以前的
+      session 視為已登出。單元測試：`tests/test_login_roles.py`。實機：拋棄式 Graylog
+      6.3 與 7.x，建立 Reader 帳號與權杖（1.18.2 兩個版本都跑過）。
+- [ ] **在排程頁儲存的清理保存天數，重新啟動後仍保留** —— 存一個比
+      `retention.retention_days` 短的值，重新啟動後頁面仍顯示它。單元測試：
+      `tests/test_cleanup_schedule_retention.py`
+      （`test_retention_saved_through_the_api_survives_the_startup_reconciliation`）。
+      *1.13.57 的升級保護每次啟動都跑，2026-11-03 部署時把 .36 的 150 天改回 1095。*
 - [ ] **樣板中不得出現行內 `style="…"`** —— 本應用自己的 `style-src 'self'` CSP
       會拒絕它們（`style-src-attr`），所以它們看起來有套用、實際上毫無作用。曾有
       兩個應該預設隱藏的區塊因此是可見的。靜態掃描：`tests/test_static_sweeps.py`

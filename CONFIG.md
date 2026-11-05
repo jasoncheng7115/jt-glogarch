@@ -407,7 +407,22 @@ web:
   ssl_certfile: /opt/jt-glogarch/certs/server.crt
   ssl_keyfile: /opt/jt-glogarch/certs/server.key
   localadmin_password_hash: ""          # Emergency login (SHA256 hash)
+  allowed_graylog_roles: [Admin]        # Graylog roles that may sign in (since 1.18.2)
 ```
+
+### Who can sign in
+
+A Graylog account signs in only if it holds a role listed in `allowed_graylog_roles`
+(case-insensitive, default `Admin`) or the `*` permission, which Graylog's built-in
+`admin` has. jt-glogarch reads the roles from Graylog at every sign-in, for password
+and API-token logins alike; if it cannot read them, the sign-in is refused.
+
+- Add a role to let its members in, for example `allowed_graylog_roles: [Admin, Archive Operators]`.
+- `["*"]` admits every Graylog account and gives each of them every function here.
+  Not recommended.
+- Upgrading to 1.18.2 signs everybody out once. An account without an allowed role
+  then sees "This Graylog account may not use jt-glogarch"; sign in with a Graylog
+  administrator or `localadmin`, or add the role.
 
 ### Emergency Local Admin
 
@@ -421,7 +436,7 @@ glogarch hash-password
 
 **Login credentials:** Username: `localadmin`, Password: the emergency password you set.
 
-The login page will show an orange warning when Graylog is unreachable, instructing users to use the `localadmin` account. This only activates when Graylog is unreachable (connection error). It does NOT activate when Graylog rejects credentials (wrong password).
+`localadmin` works whether or not Graylog is reachable (since 1.12.10), and the role check above does not apply to it. When Graylog is unreachable the login page shows an orange warning pointing to it.
 
 ---
 

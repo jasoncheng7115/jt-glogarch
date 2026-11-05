@@ -1726,6 +1726,7 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
    default; the .low variant (red) only when below the alert threshold. */
 .stat-card .card-sub { margin-top: 4px; font-size: 0.8em; color: var(--text-muted); }
 .stat-card .card-sub .low { color: var(--danger); font-weight: 600; }
+.stat-card .card-sub .days-missing { cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
 
 /* Import "paused/waiting" banner — a stalled progress bar during backpressure
    should read as "waiting for the target to drain", not "stuck/failed". Amber,

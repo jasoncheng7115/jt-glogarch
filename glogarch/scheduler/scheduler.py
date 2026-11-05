@@ -727,6 +727,14 @@ class ArchiveScheduler:
         it was, and the number on screen finally matches reality. The operator can
         then set it deliberately in the UI, and from that point it is honoured.
         A LONGER stored value is applied as-is — that only keeps more data.
+
+        It used to run on EVERY startup, so an operator who shortened the
+        retention in the UI had it put back to config.yaml's value by the next
+        restart (.36, 2026-11-03: set to 150 days, run, reset to 1095 by a
+        deploy a minute later). A schedule saved from the UI since then carries
+        `retention_set_in_ui` and is left alone. One saved by an older version
+        cannot be told apart from a pre-1.13.56 value, so it is still
+        reconciled: the safe direction.
         """
         import json as _json
         in_force = int(getattr(self.settings.retention, "retention_days", 0) or 0)
@@ -745,18 +753,19 @@ class ArchiveScheduler:
                 stored = int(stored) if stored else None
             except (TypeError, ValueError):
                 stored = None
-            if stored is None or stored >= in_force:
+            if stored is None or stored >= in_force or cfg.get("retention_set_in_ui"):
                 continue
             cfg["retention_days"] = in_force
             sched.config_json = _json.dumps(cfg)
             try:
                 self.db.save_schedule(sched)
                 log.warning(
-                    "Cleanup schedule retention reconciled on upgrade — the value "
-                    "shown in the UI was never actually applied, and honouring it "
-                    "now would have deleted archives this version was keeping. "
+                    "Cleanup schedule retention set back to retention.retention_days — "
+                    "it is shorter and was not saved by this version, so it may date "
+                    "from before cleanup schedules honoured their own value, and "
+                    "honouring it now could delete archives that version was keeping. "
                     "Set it again in the Schedules page if the shorter retention "
-                    "is what you want.",
+                    "is what you want; from then on it is kept.",
                     schedule=name, was_shown=stored, now_in_force=in_force)
             except Exception as e:
                 log.error("Could not reconcile cleanup schedule retention",

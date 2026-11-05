@@ -15,6 +15,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from glogarch.core.config import get_settings
+from glogarch.web.authz import session_is_authenticated
 from glogarch.core.database import ArchiveDB
 from glogarch.scheduler.scheduler import ArchiveScheduler
 from glogarch.utils.logging import get_logger, setup_logging
@@ -112,7 +113,7 @@ class APIAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
         if path.startswith("/api/") and path not in self.PUBLIC_API_PATHS:
-            authed = request.session.get("authenticated", False)
+            authed = session_is_authenticated(request.session)
             setup_ok = request.session.get("setup_mode", False) and path in self.SETUP_API_PATHS
             if not authed and not setup_ok:
                 return JSONResponse({"error": "Not authenticated"}, status_code=401)

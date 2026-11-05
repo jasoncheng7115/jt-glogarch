@@ -1,4 +1,4 @@
-# jt-glogarch v1.18.1
+# jt-glogarch v1.18.2
 
 **Language**: [English](README.md) | [繁體中文](README-zh_TW.md) | **日本語**  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open（6.x / 7.x）向けのログのアーカイブ・リストアツール
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.18.1-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.18.2-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 > **作者：** Jason Cheng（[Jason Tools](https://github.com/jasoncheng7115)）
@@ -930,6 +930,8 @@ API モードはストリーム単位、OpenSearch 直接モードはインデ�
 **作者：** Jason Cheng — [Jason Tools](https://github.com/jasoncheng7115)
 
 **リポジトリ：** https://github.com/jasoncheng7115/jt-glogarch
+
+**セキュリティ：** 脆弱性は公開の issue ではなく、[SECURITY.md](SECURITY.md) の手順で報告してください。
 
 ### サードパーティライセンス
 

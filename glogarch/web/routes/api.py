@@ -1322,6 +1322,10 @@ async def save_schedule(request: Request):
     elif job_type == "cleanup":
         config_data = {
             "retention_days": body.get("retention_days", _settings(request).retention.retention_days),
+            # Set here by the operator under a version that honours it: the
+            # startup reconciliation must leave it alone (it used to reset it
+            # on every restart).
+            "retention_set_in_ui": True,
         }
     elif job_type == "report_cleanup":
         config_data = {"days": int(body.get("days", 720) or 720)}
@@ -1671,6 +1675,7 @@ def get_status(request: Request):
         "archive_stats": stats,
         "storage_stats": storage_stats,
         "retention_estimate": retention_estimate,
+        "archive_days": db.get_archive_day_coverage(),
         "disk_alert_months": settings.retention.disk_alert_months,
         "sparkline": sparkline,
         "servers": [
@@ -3361,8 +3366,8 @@ async def setup_admin_password(request: Request):
                   lambda cfg: cfg.setdefault("web", {}).update({"localadmin_password_hash": h}))
     # Password set (the wizard's last input) → authenticate as the local admin
     # and close the pre-auth setup window.
-    request.session["authenticated"] = True
-    request.session["username"] = "localadmin"
+    from glogarch.web.authz import mark_authenticated
+    mark_authenticated(request.session, "localadmin")
     request.session["emergency_mode"] = True
     request.session.pop("setup_mode", None)
     _audit(request, "setup_admin_password", "First-run admin password set")

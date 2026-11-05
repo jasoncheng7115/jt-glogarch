@@ -18,6 +18,10 @@
 
         {% if error == "auth_failed" %}
         <div class="login-error" data-i18n="login_failed">Login failed. Please check your Graylog credentials.</div>
+        {% elif error == "role_not_allowed" %}
+        <div class="login-error" data-i18n="login_role_not_allowed">This Graylog account may not use jt-glogarch. Sign in with a Graylog administrator, or add the account's role to web.allowed_graylog_roles in config.yaml.</div>
+        {% elif error == "role_unknown" %}
+        <div class="login-error" data-i18n="login_role_unknown">Could not read this account's roles from Graylog, so the sign-in was refused. Try again, or sign in as localadmin; the system log says why.</div>
         {% elif error == "graylog_offline_with_local" %}
         <div class="login-error is-warn">
             <strong data-i18n="login_graylog_offline_title">⚠ Graylog is unreachable</strong><br>

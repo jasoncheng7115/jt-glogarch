@@ -374,11 +374,23 @@ Token 認證會自動解析為實際 Graylog 帳號（透過 Users API 快取，
 ```yaml
 web:
   host: 0.0.0.0                         # 監聽位址
-  port: 8990                            # 監聯埠號
+  port: 8990                            # 監聽埠號
   ssl_certfile: /opt/jt-glogarch/certs/server.crt
   ssl_keyfile: /opt/jt-glogarch/certs/server.key
   localadmin_password_hash: ""          # 緊急登入密碼（SHA256 hash）
+  allowed_graylog_roles: [Admin]        # 可登入的 Graylog 角色（1.18.2 起）
 ```
+
+### 誰可以登入
+
+Graylog 帳號必須具有 `allowed_graylog_roles` 列出的角色（不分大小寫，預設 `Admin`），
+或具有 `*` 權限（Graylog 內建的 `admin` 有）才能登入。每次登入時 jt-glogarch 都會向 Graylog
+讀取該帳號的角色，密碼登入與 API 權杖登入都一樣；讀不到角色時拒絕登入。
+
+- 要讓某個角色的成員登入，就把角色加進去，例如 `allowed_graylog_roles: [Admin, Archive Operators]`。
+- `["*"]` 讓所有 Graylog 帳號都能登入，並使用這裡的所有功能。不建議。
+- 升級到 1.18.2 會讓所有人登出一次。沒有允許角色的帳號會看到「這個 Graylog 帳號不能使用 jt-glogarch」；
+  請改用 Graylog 管理員帳號或 `localadmin` 登入，或把角色加進設定。
 
 ### 緊急本機管理員
 
@@ -392,7 +404,7 @@ glogarch hash-password
 
 **登入帳密：** 帳號 `localadmin`，密碼為你設定的緊急密碼。
 
-Graylog 連不上時登入頁面會顯示橘色警告，提示使用 `localadmin` 帳號登入。本機管理員**只在 Graylog 連不上時**啟用。Graylog 正常但密碼錯誤時**不會** fallback。
+`localadmin` 不論 Graylog 是否連得上都能登入（1.12.10 起），也不受上面的角色檢查限制。Graylog 連不上時，登入頁面會顯示橘色警告，提示改用它。
 
 ---
 

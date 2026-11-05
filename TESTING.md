@@ -586,6 +586,25 @@ nowhere) while the API, the flag and every unit test were fine. The rule:
       *`.stat-card` sets overflow:hidden for the sparkline, so 1,060,702,960
       records rendered as `1,060,702,96` (v1.13.93). No Python test can measure
       type — this needs the browser.*
+- [ ] **Days Archived counts days that hold an archive, not the span** — one
+      stray old archive must not stretch it, deleted archives do not count, an
+      hour ending at local midnight belongs to the day it starts, and the gaps
+      are listed. Unit: `tests/test_archive_day_coverage.py`. By eye on .36:
+      the card's value, range and "N day(s) in between have no archive" with
+      the dates on hover, in both themes. *.36 had one archive on 01-01 and
+      nothing again until 02-11: the span said 307 days, the archive held 266.*
+- [ ] **Only Graylog accounts with an allowed role sign in** — a Reader account
+      (password or token) is refused with `role_not_allowed` and gets no API access;
+      Admin, the `*` permission and a role added to `web.allowed_graylog_roles` sign
+      in; roles that cannot be read refuse the login; a session from before 1.18.2
+      counts as signed out. Unit: `tests/test_login_roles.py`. Live: a throwaway
+      Graylog 6.3 and 7.x with a Reader user and tokens (the 1.18.2 run used both).
+- [ ] **A cleanup retention saved in the Schedules page survives a restart** —
+      save a value shorter than `retention.retention_days`, restart, the page
+      still shows it. Unit: `tests/test_cleanup_schedule_retention.py`
+      (`test_retention_saved_through_the_api_survives_the_startup_reconciliation`).
+      *The 1.13.57 safety net ran on every startup and reset .36's 150 days to
+      1095 at a deploy (2026-11-03).*
 - [ ] **No template carries an inline `style="…"`** — the app's own
       `style-src 'self'` CSP refuses them (`style-src-attr`), so they look
       applied and do nothing. Two elements meant to start hidden rendered

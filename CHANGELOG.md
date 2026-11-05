@@ -2,6 +2,21 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.18.2] - 2026-11-03
+
+### Added
+
+- **The dashboard shows how many days the archive holds.** A new card, Days Archived, counts the calendar days (this host's time zone) that hold at least one archive, shows the first and latest of them, and says how many days in between have none; hovering that line lists the dates. It counts days rather than taking the span from the oldest to the newest archive: .36 had one archive on 01-01 and nothing again until 02-11, so the span said 307 days while the archive held 266. Deleted archives do not count. `GET /api/status` returns it as `archive_days`.
+- **`SECURITY.md`:** how to report a vulnerability (GitHub "Report a vulnerability" or e-mail, not a public issue) and where advisories are published. The READMEs and the project site link to it.
+
+### Security
+
+- **Only Graylog accounts with an allowed role can sign in.** A Graylog account now needs a role listed in the new `web.allowed_graylog_roles` (default `Admin`) or the `*` permission; jt-glogarch reads its roles from Graylog at every sign-in, for password and API-token logins alike, and refuses the sign-in when it cannot read them. `localadmin` is unaffected. Upgrading signs everybody out once. An account without an allowed role sees "This Graylog account may not use jt-glogarch": sign in with a Graylog administrator or `localadmin`, or add the role (`["*"]` admits every account and is not recommended). A token login is now recorded under its owner's name instead of "token-user". Verified with real logins on Graylog 6.3.15 and 7.1.9.
+
+### Fixed
+
+- **A cleanup retention shortened in the Schedules page was put back to `retention.retention_days` by the next restart.** The upgrade safety net from 1.13.57 (never shorten what the previous version kept) was meant to run once but ran on every startup. On .36 the retention was set to 150 days and run; a deploy a minute later reset it to 1095. Nothing was deleted, since the reset only keeps more, but the setting was lost. A cleanup schedule saved from the Schedules page now carries a mark and the reconciliation leaves it alone. One saved by an older version still gets set back once, because it cannot be told apart from a value older than 1.13.56; save it again in the Schedules page and it stays.
+
 ## [1.18.1] - 2026-11-02
 
 ### Added

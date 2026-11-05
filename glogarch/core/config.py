@@ -244,6 +244,10 @@ class WebConfig(BaseModel):
     # when Graylog API is unreachable. Empty string = disabled (default).
     # Generate with: python3 -c "import hashlib;print(hashlib.sha256(input('Password: ').encode()).hexdigest())"
     localadmin_password_hash: str = ""
+    # Graylog roles that may sign in (case-insensitive); an account holding the
+    # `*` permission always may. ["*"] admits every Graylog account (not
+    # recommended).
+    allowed_graylog_roles: list[str] = Field(default_factory=lambda: ["Admin"])
 
 
 class Settings(BaseModel):
