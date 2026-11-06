@@ -1,4 +1,4 @@
-# jt-glogarch v1.18.2
+# jt-glogarch v1.18.3
 
 **語言**： [English](README.md) | **繁體中文** | [日本語](README-ja.md)  
 **網站**： <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.18.2-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.18.3-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -171,7 +171,7 @@ GELF 模式還有：
 - **報表（Beta）** — 從 Graylog 儀表板與封存統計產生品牌化 PDF 報表；手動「產製」可指定只用於該次的起迄時間，不改動報表設定（漸層封面、目錄、KPI 摘要、頁首/頁尾/頁碼、繁中字型）。支援排程與 Email 寄送。需選用的渲染引擎（無頭 Chromium）：執行 `sudo bash scripts/install-report-engine.sh` 啟用。
 - **內容套件（v1.18.0 起）** — 檢視、修改、安裝、解除安裝、下載和上傳每台已連接 Graylog 上的內容套件，另有 Jason Tools 套件庫（內含下列公開套件，站台自己的套件只留在地端）。可預覽看板版面，安裝前先看會對該 Graylog 造成什麼影響，每次修改都能先看差異；修改會存成新修訂版，已安裝的內容不受影響。
   - **公開的套件：**這裡只列出作者已公開的套件。
-    - 內建在 Jason Tools 套件庫（v1.18.1 起）：**Windows Active Directory**、**Linux 登入與 SSH**、**Apache HTTP Server**、**QNAP NAS**。在內容套件頁面直接安裝，下載時附使用說明。
+    - 內建在 Jason Tools 套件庫（v1.18.1 起）：**Windows Active Directory**、**Linux 登入與 SSH**、**Apache HTTP Server**、**QNAP NAS**。在內容套件頁面直接安裝，下載時附 SOP（.md），涵蓋新安裝、舊版升級與解除安裝。
     - 另外下載：[CubeCOS / OpenStack Log Pipeline](https://github.com/jasoncheng7115/it-scripts/blob/master/graylog/cubecos_contentpack_graylog63.json)，CubeCOS、OpenStack、Ceph、Masakari 記錄用的 1 條管線與 147 條規則（套件標示適用 Graylog 6.3 以上）。請從該連結下載，再到內容套件頁面上傳。
 - **告警管理（v1.17.0 起）** — 批次管理 Graylog 的事件定義與通知方式：快速篩選、依標題標籤（`[廠商]`／`產品 - `）點選、多關鍵字搜尋（`checkpoint -notif:Zulip`）、Shift 點選範圍與全選符合的結果，再對數百個定義一次加入／移除／替換通知方式。每次變更都先預覽，每個定義維持原本的啟用／停用狀態；預覽之後被人在 Graylog 改過的定義會略過；以作業執行並記錄在作業歷程，可在「變更紀錄」復原。健檢會列出啟用中卻沒有人會收到通知的定義、已刪除或沒人使用的通知方式，以及從未或已久未觸發的定義。所有變更都以登入者自己的 Graylog 帳號執行（套用該帳號的權限）；登入時密碼會換成 Graylog 工作階段，不會儲存。
 - 深色/淺色主題、English／繁體中文／日本語 三種介面語言

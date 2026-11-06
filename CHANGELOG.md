@@ -2,6 +2,12 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.18.3] - 2026-11-06
+
+### Changed
+
+- **A downloaded content pack comes with an SOP for all three cases.** The ZIP now holds the pack's `.json` and one Markdown SOP in the page's language with three parts: a new install, an upgrade from an earlier version, and an uninstall. The upgrade part says why an earlier version has to come off first (Graylog cannot update an installed pack, and a pipeline or rule with the same title fails the whole install), what to write down before (an uninstall deletes the customer's changes too), and a checklist of what this pack leaves behind if anything is still there: its pipelines, its rules by their shared prefix, its dashboards, streams and alerts, each by title. The uninstall part says to cancel when Graylog's removal list holds an Input that still receives logs. Packs in the library can add their own upgrade notes, such as the names earlier versions went by. It replaces the HTML guide; titles from the pack are escaped so they cannot become markup.
+
 ## [1.18.2] - 2026-11-03
 
 ### Added

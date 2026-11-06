@@ -696,7 +696,9 @@ GL_PASS='<graylog-admin-密碼>' bash scripts/e2e-archive-test.sh
 
 **自動**：`tests/test_packs.py`（4 個真實套件、安裝檢查、套件庫、以仿照實測行為的假 Graylog 測試路由，以及發布邊界）。
 
-**下載內容**：`tests/test_pack_guide.py` 涵蓋三種語言的說明文字、從套件讀出的內容、跳脫處理與 ZIP。`tests/live_packs_check.py` 以真瀏覽器下載，確認 ZIP 內有套件與使用說明。
+**下載內容**：`tests/test_pack_guide.py` 涵蓋三種語言的 SOP 文字、從套件讀出的內容、每份 SOP 都有新安裝／舊版升級／解除安裝三段、升級與解除安裝的檢查清單列出這個套件會留下的項目、跳脫處理與 ZIP。`tests/live_packs_check.py` 以真瀏覽器下載，確認 ZIP 內有套件與 SOP。
+
+- [ ] 每種語言各下載一個套件庫的套件：ZIP 內有 `.json` 與一個 `.md`；`.md` 用純文字編輯器開也好讀，有三個段落，升級的檢查清單寫出這個套件的管線、規則前置碼與看板。
 
 **實機，真瀏覽器**：`tests/live_packs_check.py` 在真實 Graylog 上傳、修改、安裝、啟動、解除安裝並刪除一個暫時的 `ZZTEST` 套件，最後確認沒有殘留。它的串流只比對不存在的主機名，規則是 `when false`。要對正式環境執行前先詢問。
 

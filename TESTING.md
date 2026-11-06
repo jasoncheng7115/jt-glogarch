@@ -902,7 +902,9 @@ failure.
 
 **Live, in a real browser**: `tests/live_packs_check.py` uploads, edits, installs, starts, uninstalls and deletes a throwaway `ZZTEST` pack on a real Graylog, then checks nothing is left. Its stream matches a hostname that does not exist and its rule is `when false`. Ask before pointing it at production.
 
-**Download bundle**: `tests/test_pack_guide.py` covers the guide's text in all three languages, the facts it reads from the pack, escaping and the ZIP. `tests/live_packs_check.py` downloads through a real browser and checks that the ZIP holds the pack and a guide.
+**Download bundle**: `tests/test_pack_guide.py` covers the SOP's text in all three languages, the facts it reads from the pack, that every SOP has the new-install, upgrade and uninstall parts, that the upgrade and uninstall checklists name what this pack leaves behind, escaping and the ZIP. `tests/live_packs_check.py` downloads through a real browser and checks that the ZIP holds the pack and its SOP.
+
+- [ ] Download a library pack in each language: the ZIP holds the `.json` and one `.md`; the `.md` reads cleanly in a plain text editor and has the three parts, and its upgrade checklist names this pack's pipelines, rules prefix and dashboards.
 
 **Sensitive values and versions**: `tests/test_packs.py` covers the scan, the removal and the refusal at each way out. `tests/live_packs_check.py` uploads a pack with an address in its notification and checks that what reaches Graylog holds none, and that a 6.3 download really is converted.
 
