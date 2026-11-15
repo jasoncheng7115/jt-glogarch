@@ -462,9 +462,20 @@ def import_cmd(archive_id: tuple[int, ...], time_from: str | None, time_to: str 
             verify_ssl=_target_verify,
         )
 
+        # Target is a configured server with a Graylog Data Node certificate
+        # (beta): preflight's OpenSearch reads and Bulk use that certificate.
+        from glogarch.graylog.datanode import os_config_for_url, ensure_fresh_for
+        target_os_cfg = None if target_os_url else os_config_for_url(settings, target_api_url)
+        if target_os_cfg is not None:
+            target_os_cfg = asyncio.run(ensure_fresh_for(settings, target_api_url)) or target_os_cfg
+            preflight.os_config = target_os_cfg
+
         # Bulk mode: build BulkImporter
         if mode == "bulk":
             os_url = target_os_url
+            if not os_url and target_os_cfg is not None:
+                os_url = target_os_cfg.hosts[0].rstrip("/")
+                console.print(f"[dim]Data Node OpenSearch (client certificate, beta): {os_url}[/dim]")
             if not os_url:
                 # Auto-detect from Graylog API URL
                 os_url = asyncio.run(preflight.auto_detect_opensearch_url())
@@ -483,6 +494,7 @@ def import_cmd(archive_id: tuple[int, ...], time_from: str | None, time_to: str 
                 target_index_pattern=target_index_pattern,
                 dedup_strategy=dedup_strategy,
                 batch_docs=batch_docs,
+                os_config=target_os_cfg,
             )
             ok, err = asyncio.run(bulk_importer.verify_opensearch())
             if not ok:

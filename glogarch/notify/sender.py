@@ -376,6 +376,16 @@ _MSG = {
         "disk_low_body": ("Only ~{months} month(s) of archive capacity left at the current rate.\n"
                           "Free space: {avail} · growing ~{rate}/month.\n"
                           "Expand the archive disk or lower retention before it fills up."),
+        "datanode_fallback_title": "⚠️ Data Node certificate unusable — archived via Graylog API",
+        "datanode_fallback_body": ("Schedule: {schedule}\nServer: {server}\n"
+                                   "The Graylog Data Node client certificate could not be used: {problem}\n"
+                                   "This run archived through the Graylog API instead, so nothing was skipped.\n"
+                                   "Reconnect Data Node access in Settings → Graylog servers."),
+        "datanode_renew_failed_title": "⚠️ Data Node certificate renewal failed",
+        "datanode_renew_failed_body": ("Server: {server}\nThe certificate expires {expires} ({days} day(s) left).\n"
+                                       "Error: {problem}\n"
+                                       "jt-glogarch retries daily; if it keeps failing, reconnect "
+                                       "Data Node access in Settings → Graylog servers."),
     },
     "zh-TW": {
         "export_ok": "✅ 匯出成功",
@@ -424,6 +434,15 @@ _MSG = {
         "disk_low_body": ("依目前增長速度，歸檔空間大約只剩 ~{months} 個月。\n"
                           "可用空間：{avail} · 每月約增加 {rate}。\n"
                           "請在空間用盡前擴充歸檔磁碟或調低保留設定。"),
+        "datanode_fallback_title": "⚠️ Data Node 憑證無法使用，已改用 Graylog API 歸檔",
+        "datanode_fallback_body": ("排程：{schedule}\n伺服器：{server}\n"
+                                   "無法使用 Graylog Data Node 用戶端憑證：{problem}\n"
+                                   "本次已改用 Graylog API 歸檔，沒有略過任何資料。\n"
+                                   "請到「設定 → Graylog 伺服器」重新連接 Data Node。"),
+        "datanode_renew_failed_title": "⚠️ Data Node 憑證更新失敗",
+        "datanode_renew_failed_body": ("伺服器：{server}\n憑證到期：{expires}（剩 {days} 天）。\n"
+                                       "錯誤：{problem}\n"
+                                       "jt-glogarch 每天會再試一次；若持續失敗，請到「設定 → Graylog 伺服器」重新連接 Data Node。"),
     },
     "ja": {
         "export_ok": "✅ エクスポート完了",
@@ -475,6 +494,15 @@ _MSG = {
         "disk_low_body": ("現在のペースでは、アーカイブ容量は残り約 {months} か月分です。\n"
                           "空き容量：{avail} · 毎月約 {rate} 増加。\n"
                           "容量が尽きる前に、アーカイブディスクを拡張するか保持期間を短くしてください。"),
+        "datanode_fallback_title": "⚠️ Data Node 証明書が使用できないため、Graylog API でアーカイブしました",
+        "datanode_fallback_body": ("スケジュール：{schedule}\nサーバー：{server}\n"
+                                   "Graylog Data Node のクライアント証明書を使用できません：{problem}\n"
+                                   "今回は Graylog API でアーカイブしたため、スキップされたデータはありません。\n"
+                                   "「設定 → Graylog サーバー」で Data Node に再接続してください。"),
+        "datanode_renew_failed_title": "⚠️ Data Node 証明書の更新に失敗しました",
+        "datanode_renew_failed_body": ("サーバー：{server}\n証明書の有効期限：{expires}（残り {days} 日）。\n"
+                                       "エラー：{problem}\n"
+                                       "jt-glogarch は毎日再試行します。失敗が続く場合は「設定 → Graylog サーバー」で Data Node に再接続してください。"),
     },
 }
 
@@ -646,6 +674,25 @@ async def notify_error(operation: str, error: str):
         NotifyEvent.ERROR,
         _t("error_title", op=operation),
         error[:500],
+    )
+
+
+async def notify_datanode_fallback(schedule: str, server: str, problem: str):
+    """A scheduled OpenSearch-direct run could not use the Data Node
+    certificate and archived through the Graylog API instead."""
+    await send_notification(
+        NotifyEvent.ERROR,
+        _t("datanode_fallback_title"),
+        _t("datanode_fallback_body", schedule=schedule, server=server, problem=problem[:300]),
+    )
+
+
+async def notify_datanode_renew_failed(server: str, expires: str, days, problem: str):
+    await send_notification(
+        NotifyEvent.ERROR,
+        _t("datanode_renew_failed_title"),
+        _t("datanode_renew_failed_body", server=server, expires=expires, days=days,
+           problem=problem[:300]),
     )
 
 

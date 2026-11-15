@@ -1,4 +1,4 @@
-# jt-glogarch v1.18.3
+# jt-glogarch v1.19.0
 
 **Language**: [English](README.md) | [繁體中文](README-zh_TW.md) | **日本語**  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open（6.x / 7.x）向けのログのアーカイブ・リストアツール
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.18.3-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.19.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 > **作者：** Jason Cheng（[Jason Tools](https://github.com/jasoncheng7115)）
@@ -106,7 +106,7 @@ v1.14.0 から、アーカイブファイルを **Graylog にインポートし�
 | ページング | 時間ウィンドウ方式（10,000 件の offset 上限を回避） | `search_after`（上限なし） |
 | ストリーム単位の絞り込み | ✅ 可 | ❌ 不可（インデックス単位） |
 | 必要な認証情報 | Graylog API トークン | OpenSearch の認証情報 |
-| Graylog 7 Data Node | ✅ 対応 | ❌ 非対応（[サポート表](#対応環境機能サポート表)参照） |
+| Graylog 7 Data Node | ✅ 対応 | ✅ beta：先に Data Node 接続を設定（[サポート表](#対応環境機能サポート表)参照） |
 | 向いている用途 | ストリーム単位の保存、OpenSearch に直接接続できない環境 | 大量の過去データの一括保存 |
 
 - **重複排除** — すでにアーカイブ済みの時間範囲は自動的にスキップします。API モードと OpenSearch
@@ -216,25 +216,38 @@ Graylog のダッシュボードとアーカイブ統計から PDF レポート�
 | 機能 | Graylog 6.x（OpenSearch 自前運用） | Graylog 7.x（OpenSearch 自前運用） | Graylog 7.x + Data Node |
 |---|---|---|---|
 | Graylog API エクスポート | ✅ 対応 | ✅ 対応 | ✅ 対応 |
-| OpenSearch 直接エクスポート | ✅ 対応 | ✅ 対応 | ❌ **非対応** |
+| OpenSearch 直接エクスポート | ✅ 対応 | ✅ 対応 | ✅ beta（Data Node 接続が必要） |
 | GELF インポート | ✅ 対応 | ✅ 対応 | ✅ 対応 |
-| OpenSearch Bulk インポート | ✅ 対応 | ✅ 対応 | ❌ **非対応** |
+| OpenSearch Bulk インポート | ✅ 対応 | ✅ 対応 | ✅ beta（Data Node 接続が必要） |
 | アーカイブ内検索 | ✅ 対応 | ✅ 対応 | ✅ 対応 |
 | 操作監査（nginx 経由） | ✅ 対応 | ✅ 対応 | ✅ 対応 |
 
-**Data Node で非対応となる理由：** Graylog 7 の Data Node は Graylog が管理する OpenSearch で、
-TLS クライアント証明書による認証のみを使い、外部ツール向けのユーザー名・パスワードを公開しません。
-また Graylog API 経由のプロキシも、ヘルスやインデックス情報など限られたエンドポイントしか通さず、
-`_search` や `_bulk` は利用できません。そのため、OpenSearch へ直接アクセスする 2 つのモードは使えません。
+**Graylog 7 Data Node（beta、1.19.0 以降）：** Data Node の OpenSearch はクライアント証明書でのみ
+接続でき、jt-glogarch は Graylog に証明書の発行を依頼できます：**設定 → Graylog サーバー → 編集 →
+Graylog Data Node（beta）→ Data Node に接続**。接続後は、そのサーバーで OpenSearch 直接エクスポートと
+Bulk インポートを使用できます。接続するまでは、Graylog API エクスポートと GELF インポートを使用してください。
 
-- アーカイブ内検索は jt-glogarch 側のアーカイブファイルを読むため、Graylog の構成に依存しません。
-- 本書や英語版に記載している **OpenSearch 直接エクスポート（API モードの約 5 倍）や Bulk インポート
-  （GELF の約 5〜10 倍）の速度は、Data Node 環境には当てはまりません。** Data Node 環境では
-  Graylog API エクスポートと GELF インポートの速度で容量計画を立ててください。
-- jt-glogarch は `GET /api/datanodes` で Data Node を検出し、該当するモードが使えないことを画面上で
-  警告します。
-- アーカイブとリストアの速度を重視する場合は、Graylog 導入時に Data Node ではなく、独立した
-  OpenSearch に接続する構成をおすすめします。
+- **必要なもの：** サーバーに設定した Graylog アカウントが Admin であること（Graylog 権限
+  `ca_clientcert:create`）、およびこのホストから各 Data Node の 9200 番ポートに接続できること。画面には
+  Graylog が報告するアドレス（`https://<ホスト名>:9200`）が入ります。このホストでホスト名を解決できない
+  場合は IP アドレスに置き換えてください。
+- **付与される権限：** Graylog はクラスター自身の CA で証明書に署名し、OpenSearch ロール `all_access` に
+  割り当てます。読み取り専用ロール `readall` ではインデックスやエイリアスを一覧できないため（7.2.2 で実測）、
+  エクスポートには足りません。鍵・証明書・CA は `config.yaml` と同じ場所の `certs/datanode/<サーバー>/` に
+  権限 0600（サービスユーザーのみ）で保存され、画面や API には表示されません。サーバー証明書は常にこの CA
+  で検証され、「Data Node のホスト名も確認する」を選ぶとホスト名も検証します。
+- **更新：** 有効期間の 3 分の 1 が残った時点で自動更新します（既定の有効期間は 90 日）。更新は
+  OpenSearch 直接エクスポートの実行前と、毎日 04:45 の確認で行います。証明書が拒否された場合（ロール
+  マッピングが削除された場合など）は再発行します。それでも使えない場合、スケジュールの OpenSearch 直接
+  エクスポートは Graylog API でアーカイブして通知するため、アーカイブは止まりません。
+- **接続の解除**では、証明書を OpenSearch のロールマッピングから外し、ファイルを削除します。このサーバーを
+  OpenSearch 直接でエクスポートするスケジュールがある場合は、先に確認します。
+- 検出には `GET /api/system/cluster/datanodes` を使います。以前の `GET /api/datanodes` は 7.2.2 で 404 を返す
+  ため、旧バージョンではそこで Data Node を検出できませんでした。
+- `scripts/e2e-datanode-test.py` で、Graylog 6.3.15・7.0.15・7.1.11・7.2.2 とそれぞれの Data Node
+  （OpenSearch 2.15.0・2.19.3・2.19.5・3.7.0）を実測済み：OpenSearch 直接エクスポート、Bulk インポート
+  （Graylog の検索で確認）、証明書の更新、ロールマッピング削除後の復旧、スケジュールの API への切り替え。
+  Graylog 6.3 の証明書申請はロールを 1 つしか受け付けませんが、jt-glogarch はどちらの形式にも対応します。
 
 ---
 
@@ -563,7 +576,7 @@ database_path: /opt/jt-glogarch/jt-glogarch.db
 | 本番データとの関係 | 本番のインデックスセットに混在します | 分離され、不要になれば削除しやすい |
 | 重複 | 同じアーカイブを再インポートすると重複します | `gl2_message_id` を `_id` に使うため重複しません（既定） |
 | 照合の精度 | Graylog の indexer failures 件数の差分（最大約 1 万件の循環バッファ） | `_bulk` 応答をドキュメント単位で確認（正確） |
-| Data Node | 対応 | 非対応 |
+| Data Node | 対応 | beta（Data Node 接続が必要） |
 
 - **GELF は TCP を使ってください。** TCP にはバックプレッシャーがあり、取りこぼしが起きません。
   UDP は受信側が追いつかないとエラーなしにパケットが失われます。
@@ -746,11 +759,11 @@ jt-glogarch 自体の常駐メモリは約 200 MB で、アーカイブはスト
 
 これらは参考値であり、ハードウェア、ストレージ、メッセージサイズ、クラスターの負荷によって大きく
 変わります。容量計画の前に、ご利用の環境で数時間分のエクスポートとリストアを実行して実測することを
-推奨します。Data Node 環境では OpenSearch 直接モードの値は当てはまりません。
+推奨します。Data Node 環境の OpenSearch 直接モード（beta）は、まだ大規模な実測値がありません。
 
 ### モードの選び方
 
-**Graylog API モード：** ストリーム単位で保存したい、OpenSearch に直接接続できない（Data Node を含む）、
+**Graylog API モード：** ストリーム単位で保存したい、OpenSearch に直接接続できない（Data Node 接続を設定していない場合を含む）、
 Graylog の保持期間内のデータにアクセスしたい場合。
 
 **OpenSearch 直接モード：** 大量の過去データを速く保存したい、OpenSearch の認証情報がある、

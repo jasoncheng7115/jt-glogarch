@@ -13,6 +13,7 @@ from typing import Any, AsyncIterator
 import httpx
 
 from glogarch.core.config import OpenSearchConfig
+from glogarch.opensearch.tls import httpx_options
 from glogarch.utils.logging import get_logger
 
 log = get_logger("opensearch.client")
@@ -53,13 +54,8 @@ class OpenSearchClient:
 
     def __init__(self, config: OpenSearchConfig):
         self.config = config
-        auth = None
-        if config.username and config.password:
-            auth = httpx.BasicAuth(config.username, config.password)
-
         self._client = httpx.AsyncClient(
-            auth=auth,
-            verify=config.verify_ssl,
+            **httpx_options(config),
             timeout=httpx.Timeout(120.0, connect=10.0),
             headers={"Content-Type": "application/json"},
         )

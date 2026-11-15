@@ -139,7 +139,7 @@ sudo bash upgrade-offline.sh                # pip 全程不連網；會先自動
 
 <section id="flow">
   <h2>兩種匯出、兩種匯入。</h2>
-  <p class="subhead">依需求自由搭配：匯出可選 API（相容性高）或 OpenSearch Direct（約 5 倍速），匯入可選 GELF（走完整 Graylog pipeline）或 OpenSearch Bulk（約 5～10 倍速）。跨模式重複資料刪除確保切換時資料一致。</p>
+  <p class="subhead">依需求自由搭配：匯出可選 API（相容性高）或 OpenSearch Direct（約 5 倍速），匯入可選 GELF（走完整 Graylog 處理流程）或 OpenSearch Bulk（約 5～10 倍速）。跨模式重複資料刪除確保切換時資料一致。</p>
   <div class="modes">
     <div class="mode">
       <div class="icon">
@@ -166,7 +166,7 @@ sudo bash upgrade-offline.sh                # pip 全程不連網；會先自動
         </svg>
       </div>
       <h3>GELF 匯入</h3>
-      <p>預設還原方式。每筆訊息透過 GELF 重播完整 Graylog input → process → indexer 處理流程。Pipeline 規則、Extractor、Stream routing、告警全部沿用。</p>
+      <p>預設還原方式。每筆訊息透過 GELF 重播完整 Graylog input → process → indexer 處理流程。管線規則、Extractor、Stream routing、告警全部沿用。</p>
     </div>
     <div class="mode">
       <div class="icon">
@@ -178,6 +178,7 @@ sudo bash upgrade-offline.sh                # pip 全程不連網；會先自動
       <p><strong>速度 5～10 倍</strong>，透過 <code class="kbd">_bulk</code> 直接寫入 OpenSearch，完全跳過 Graylog 處理流程。適合「原樣還原」場景：災難復原、遷移、時間點調查。</p>
     </div>
   </div>
+  <p class="subhead">※ Graylog Data Node（beta，已在 Graylog 6.3～7.2 實測）：在系統設定 → Graylog 伺服器連接 Data Node 後，也能使用 OpenSearch Direct 匯出和 Bulk 匯入，憑證由 Graylog 簽發、jt-glogarch 自動更新。連接之前，請使用 Graylog API 匯出和 GELF 匯入。</p>
 </section>
 
 <section id="use-cases">

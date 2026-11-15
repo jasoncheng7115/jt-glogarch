@@ -779,6 +779,18 @@ UI 測試用的 jt-glogarch 也必須指向那台測試 Graylog（在任何主�
       訊息出現在該串流／主題，標題為粗體、內文對齊；重新整理頁面後金鑰以遮罩顯示，且仍可正常發送。
 - [ ] API 金鑰錯誤時，測試結果顯示「HTTP 401: Invalid API key」。
 
+### Graylog Data Node 連線，beta（v1.19.0）
+
+**自動化**
+
+- [ ] `tests/test_datanode.py`（22）：主機位址取自 `transport_address`（略過未運作的節點，6.3 的 `data_node_status` 也讀）；6.3 憑證申請改用單一 `role` 重試；連線測試按鈕與容量估算保留憑證；列表端點是 `/api/system/cluster/datanodes`（儀表板偵測會先試它）；憑證名稱依伺服器而不同；一般 OpenSearch 區塊維持 `verify=bool` 加 Basic 認證，憑證區塊不送 Basic 認證並固定 CA（只有 `verify_ssl` 才檢查主機名稱）；檔案不見時錯誤訊息清楚；以標準函式庫讀取到期日；PEM 檔 0600、目錄 0700、不留暫存檔；更新時機（剩三分之一有效期，至少 7 天，最多一半）；更新失敗時保留可用的憑證；只有 401／403／憑證被拒才重新簽發；匯入目標只採用憑證區塊；Bulk 與 preflight 都經過這個設定；排程 OpenSearch 作業在憑證無法使用時改用 API 歸檔並通知一次；編輯伺服器會保留區塊且永不回傳金鑰路徑；連接時拒絕 `http://`；有 OpenSearch 排程時中斷連線會先詢問。
+- [ ] **對真實 Data Node 執行 `scripts/e2e-datanode-test.py`**（凡改動 Data Node／憑證／OpenSearch 用戶端路徑都必須執行）：`bash scripts/datanode-stack/up.sh`（以 docker 啟動 Graylog + Data Node + MongoDB，只聽 loopback、限制記憶體，會印出所需環境變數），再執行它，必須印出 `RESULT: ALL PASS`：連接、送入測試訊息並輪替、以 OpenSearch 直連匯出全部測試訊息、Bulk 匯入全部、強制更新憑證、角色對應被背後移除後復原、排程改用 API 備援、中斷連線。`bash scripts/datanode-stack/down.sh` 會移除測試環境。請在不只一個 Graylog 版本線上執行（`GL_VERSION=6.3.15／7.0.15／7.1.11／7.2.2`）：6.3 的憑證申請只接受單一 `role`，狀態欄位名稱也不同。
+
+**人工（每次改到這部分的版本）**
+
+- [ ] 系統設定 → Graylog 伺服器 → 編輯有 Data Node 的伺服器：方框列出節點，以預設位址（或 IP）連接後顯示「已連線：… green」；個別 OpenSearch 欄位隱藏；測試／更新／中斷連線都能用；英文／繁中／日文、淺色與深色主題在約 1436 px 寬下都正確。
+- [ ] 匯出頁：連接後，這台 Data Node 伺服器不再被鎖定為 Graylog API，提示寫著 beta；匯入對話框可選 Bulk。
+
 ### 測試結果
 
 - [ ] `./scripts/run-tests.sh` 通過 — `TEST-RESULTS.md` 已產生

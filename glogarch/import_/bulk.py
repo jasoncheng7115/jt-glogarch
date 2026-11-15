@@ -92,6 +92,7 @@ class BulkImporter:
         marker_value: str | None = None,
         verify_tls: bool = False,
         max_bulk_bytes: int = DEFAULT_MAX_BULK_BYTES,
+        os_config=None,
     ):
         self.opensearch_url = opensearch_url.rstrip("/")
         self.os_username = os_username
@@ -103,6 +104,11 @@ class BulkImporter:
         self.marker_field = marker_field
         self.marker_value = marker_value or datetime.utcnow().isoformat() + "Z"
         self.verify_tls = verify_tls
+        # An OpenSearchConfig for this target (client certificate of a Graylog
+        # Data Node, or a configured cluster). When set it decides TLS + auth
+        # through the same helper the exporter uses; url/username/password
+        # above stay for the ad-hoc target typed into the import dialog.
+        self.os_config = os_config
         # If set, BulkImporter overwrites each doc's `streams` field with this
         # ID. Required for the doc to be searchable via Graylog UI: Graylog
         # Search routes via streams → index sets, and the source-archive
@@ -112,6 +118,13 @@ class BulkImporter:
         self.target_stream_id: str = ""
 
     def _client(self) -> httpx.AsyncClient:
+        if self.os_config is not None:
+            from glogarch.opensearch.tls import httpx_options
+            return httpx.AsyncClient(
+                **httpx_options(self.os_config),
+                timeout=120,
+                headers={"Content-Type": "application/x-ndjson"},
+            )
         auth = None
         if self.os_username:
             auth = (self.os_username, self.os_password)

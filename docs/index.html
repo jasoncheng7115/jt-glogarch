@@ -176,6 +176,7 @@ sudo bash upgrade-offline.sh                # pip never touches the network; DB 
       <p><strong>5–10× faster</strong> direct write to OpenSearch via <code class="kbd">_bulk</code>. Skips Graylog processing entirely. For "restore as-is" — disaster recovery, migration, point-in-time investigations.</p>
     </div>
   </div>
+  <p class="subhead">Graylog Data Node (beta, tested on Graylog 6.3 – 7.2): connect the Data Node in Settings → Graylog servers and OpenSearch Direct export and Bulk import work there too, through a client certificate that Graylog issues and jt-glogarch renews on its own. Until then, use Graylog API export and GELF import.</p>
 </section>
 
 <section id="use-cases">

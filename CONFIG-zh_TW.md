@@ -212,6 +212,38 @@ opensearch:
 
 > CLI：`glogarch test-opensearch --server <名稱>` 會測試該伺服器解析到的叢集。
 
+### Graylog Data Node（用戶端憑證，beta）
+
+Data Node 的 OpenSearch 只接受用戶端憑證。**請在網頁介面設定**（系統設定 → Graylog 伺服器 → 編輯 → Graylog Data Node（beta）→ 連接 Data Node），它會寫入下面這個 per-server 區塊，請不要手動修改：
+
+```yaml
+servers:
+  - name: graylog-dn
+    url: "http://192.168.1.20:9000"
+    username: admin                     # 必須是 Graylog Admin（ca_clientcert:create）
+    password: "..."
+    opensearch:
+      hosts: ["https://datanode1:9200"] # Graylog 回報的 transport_address，或 IP
+      verify_ssl: false                 # true = 同時檢查 Data Node 主機名稱
+      client_cert_file: /opt/jt-glogarch/certs/datanode/graylog-dn/client.crt
+      client_key_file:  /opt/jt-glogarch/certs/datanode/graylog-dn/client.key   # 0600
+      ca_file:          /opt/jt-glogarch/certs/datanode/graylog-dn/ca.crt       # 一律驗證
+      datanode: true                    # 經由 Graylog 簽發，自動更新
+      datanode_principal: jt-glogarch-<主機>-graylog-dn
+      datanode_roles: [all_access]
+      datanode_lifetime_days: 90
+      cert_not_after: '2027-02-12T15:42:21'
+```
+
+| 鍵 | 說明 |
+|---|---|
+| `client_cert_file` / `client_key_file` | 雙向 TLS 用的 PEM 憑證與未加密金鑰。設定後不會再送 Basic 認證。 |
+| `ca_file` | 伺服器憑證一律以這個 CA 驗證；`verify_ssl` 只再加上主機名稱檢查。 |
+| `datanode` | `true`：jt-glogarch 會在剩下三分之一有效期時更新憑證（每次 OpenSearch Direct 作業之前，以及每天 04:45），OpenSearch 拒絕時會重新簽發。排程的 OpenSearch Direct 作業若仍無法使用，會改用 Graylog API 歸檔並通知。 |
+| `datanode_roles` | `all_access`：唯讀的 `readall` 無法列出索引與別名（7.2.2 實測）。Graylog 只接受已有角色對應的角色。 |
+
+這三個檔案放在 `config.yaml` 旁的 `certs/` 底下，升級不會動到。同一個對話框的「中斷連線」會把憑證名稱從角色對應中移除並刪除檔案。匯入目標網址是這台伺服器的網址時，Bulk 匯入也會使用這個區塊。
+
 ---
 
 ## schedule — 排程

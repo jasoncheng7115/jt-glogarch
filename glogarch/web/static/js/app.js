@@ -453,8 +453,10 @@ async function loadDashboard() {
     if (_stb0) _stb0.innerHTML = `<tr><td colspan="5" class="text-center text-muted"><span class="spinner-text">${t('loading')}...</span></td></tr>`;
     try {
         const servers = await fetchJSON(`${API}/servers`);
-        // Detect Data Node — set global flag for export/import mode warnings
-        window._hasDataNode = (servers.items || []).some(s => s.has_datanode);
+        // Detect Data Node — set global flag for export/import mode warnings.
+        // A Data Node server that jt-glogarch holds a certificate for (beta)
+        // does NOT lock OpenSearch Direct / Bulk any more.
+        window._hasDataNode = (servers.items || []).some(s => s.has_datanode && !s.datanode_access);
         // Store default server name for schedule table display
         if (servers.items && servers.items.length > 0) {
             window._defaultServerName = servers.items[0].name;
@@ -465,7 +467,7 @@ async function loadDashboard() {
                 <td>${esc(s.name)}</td>
                 <td>${esc(s.url)}</td>
                 <td>${s.connected ? statusBadge('completed') : statusBadge('failed')}</td>
-                <td>${s.version || '-'}${s.has_datanode ? ' <span class="u031">(Data Node)</span>' : ''}</td>
+                <td>${s.version || '-'}${s.has_datanode ? ' <span class="u031">(Data Node' + (s.datanode_access ? ' · ' + esc(t('datanode_access_short')) : '') + ')</span>' : ''}</td>
                 <td><button class="btn-sm btn-secondary" data-act="testGraylogServer" data-args="${esc(JSON.stringify([s.name, i]))}">${icon('refresh', 14)} ${t('btn_test_connection')}</button></td>
             </tr>
             <tr class="srv-result-row hidden" id="srv-result-row-${i}"><td colspan="5"><div id="srv-result-${i}" class="test-result-line"></div></td></tr>
@@ -980,7 +982,7 @@ async function batchImport() {
 async function _applyImportDataNodeLock() {
     let dn = window._hasDataNode;
     if (dn === undefined) {
-        try { const s = await fetchJSON(`${API}/servers`); dn = (s.items || []).some(x => x.has_datanode); window._hasDataNode = dn; }
+        try { const s = await fetchJSON(`${API}/servers`); dn = (s.items || []).some(x => x.has_datanode && !x.datanode_access); window._hasDataNode = dn; }
         catch (e) { dn = false; }
     }
     const bulkRadio = document.querySelector('input[name="import-mode"][value="bulk"]');
@@ -2582,11 +2584,16 @@ async function loadExportPage() {
         const servers = await fetchJSON(`${API}/servers`);
         const items = servers.items || [];
         window._exportServerDN = {};
-        items.forEach(s => { window._exportServerDN[s.name] = !!s.has_datanode; });
+        window._exportServerDNAccess = {};
+        // Locked only while jt-glogarch has no Data Node certificate for it.
+        items.forEach(s => {
+            window._exportServerDN[s.name] = !!s.has_datanode && !s.datanode_access;
+            window._exportServerDNAccess[s.name] = !!s.datanode_access;
+        });
         const sel = document.getElementById('export-server');
         if (sel) {
             sel.innerHTML = items.map(s =>
-                `<option value="${esc(s.name)}">${esc(s.name)} (${esc(s.url)})${s.has_datanode ? ' — Data Node' : ''}</option>`).join('');
+                `<option value="${esc(s.name)}">${esc(s.name)} (${esc(s.url)})${s.has_datanode ? ' — Data Node' : ''}${s.datanode_access ? ' (beta)' : ''}</option>`).join('');
         }
         onExportServerChange();   // apply the Data Node lock for the initial server
     } catch (e) {}
@@ -2710,8 +2717,12 @@ function onExportModeChange() {
         const dn = _selectedExportServerIsDN();
         // Data Node: OpenSearch Direct is disabled → explain why the export is
         // locked to Graylog API. Also keep the plain warning if OS is somehow shown.
-        if (dn || (mode === 'opensearch' && window._hasDataNode)) {
+        const srvSel2 = document.getElementById('export-server');
+        const dnAccess = !!(srvSel2 && window._exportServerDNAccess && window._exportServerDNAccess[srvSel2.value]);
+        if (dn || (mode === 'opensearch' && window._hasDataNode && !dnAccess)) {
             hintText += '\n\n' + t('datanode_warning');
+        } else if (mode === 'opensearch' && dnAccess) {
+            hintText += '\n\n' + t('datanode_beta_hint');
         }
         hint.textContent = hintText;
         hint.style.color = (dn || mode === 'opensearch') ? 'var(--warning)' : '';
@@ -3143,7 +3154,7 @@ async function _retryPlan(jobId) {
     const ids = rc.archive_ids || [];
     let dn = window._hasDataNode;
     if (dn === undefined) {
-        try { const s = await fetchJSON(`${API}/servers`); dn = (s.items || []).some(x => x.has_datanode); window._hasDataNode = dn; }
+        try { const s = await fetchJSON(`${API}/servers`); dn = (s.items || []).some(x => x.has_datanode && !x.datanode_access); window._hasDataNode = dn; }
         catch (e) { dn = false; }
     }
     const sent = Number((j && j.messages_done) || 0);
@@ -4742,6 +4753,7 @@ function renderServersTable(data) {
 function buildServerForm(s) {
     s = s || {};
     const os = s.opensearch || {};
+    const dnOn = !!(s.datanode && s.datanode.connected);
     const hasOs = !!s.has_opensearch;
     const authType = s.auth_token ? 'token' : (s.username ? 'userpass' : 'token');
     return `
@@ -4762,9 +4774,10 @@ function buildServerForm(s) {
       <div class="form-group"><label class="u065">
         <input type="checkbox" id="srv-verify-ssl" ${s.verify_ssl ? 'checked' : ''}> ${t('settings_verify_ssl')}</label></div>
       <hr class="u003">
-      <div class="form-group"><label class="u065">
-        <input type="checkbox" id="srv-os-enable" ${hasOs ? 'checked' : ''} data-act-change="_toggleSrvOs"> ${t('settings_per_os_enable')}</label></div>
-      <div id="srv-os-group" data-style="${hasOs ? '' : 'display:none'}">
+      <div class="form-group u022 dn-managed" id="srv-dn-managed" ${dnOn ? '' : 'data-style="display:none"'}>${esc(t('dn_managed_note'))}</div>
+      <div class="form-group" id="srv-os-enable-group" ${dnOn ? 'data-style="display:none"' : ''}><label class="u065">
+        <input type="checkbox" id="srv-os-enable" ${hasOs && !dnOn ? 'checked' : ''} data-act-change="_toggleSrvOs"> ${t('settings_per_os_enable')}</label></div>
+      <div id="srv-os-group" data-style="${hasOs && !dnOn ? '' : 'display:none'}">
         <div class="form-group"><label>${t('settings_os_hosts')}</label>
           <textarea class="u150" id="srv-os-hosts" rows="2">${esc((os.hosts || []).join('\n'))}</textarea></div>
         <div class="form-group"><label>${t('settings_os_user')}</label>
@@ -4772,7 +4785,184 @@ function buildServerForm(s) {
         <div class="form-group"><label>${t('settings_os_pass')}</label>${_secretField('srv-os-pass', os.password)}</div>
         <div class="form-group"><label class="u065">
           <input type="checkbox" id="srv-os-verify" ${os.verify_ssl ? 'checked' : ''}> ${t('settings_verify_ssl')}</label></div>
+      </div>
+      <hr class="u003">
+      <div class="form-group"><label>${icon('server', 14)} ${esc(t('dn_section_title'))}</label>
+        <div id="srv-dn-box" class="dn-box">${s.name ? `<span class="u022">${esc(t('loading'))}…</span>` : `<span class="u022">${esc(t('dn_new_server_note'))}</span>`}</div>
       </div>`;
+}
+
+// ---- Graylog Data Node access (beta) ------------------------------------
+// Only for a SAVED server: the certificate is issued with that server's own
+// stored Graylog account, never with what the form currently shows.
+let _dnServer = null;
+
+async function loadServerDataNode(name) {
+    _dnServer = name;
+    const box = document.getElementById('srv-dn-box');
+    if (!box) return;
+    box.innerHTML = `<span class="u022">${esc(t('loading'))}…</span>`;
+    const r = await fetchJSON(`${API}/config/servers/${encodeURIComponent(name)}/datanode`);
+    if (_dnServer !== name) return;
+    box.innerHTML = _dnBoxHtml(r || {});
+    _dnSyncOsFields(!!(r && r.status && r.status.connected));
+    initCustomSelects();
+}
+
+// CJK labels take a full-width colon and parentheses.
+function _dnColon() { return getLang() === 'en' ? ': ' : '：'; }
+function _dnParen(x) { return getLang() === 'en' ? ` (${x})` : `（${x}）`; }
+
+// A connected Data Node owns the server's OpenSearch block: hide the manual
+// per-server OpenSearch fields and say why.
+function _dnSyncOsFields(connected) {
+    const g = document.getElementById('srv-os-enable-group');
+    const os = document.getElementById('srv-os-group');
+    const note = document.getElementById('srv-dn-managed');
+    if (g) g.style.display = connected ? 'none' : '';
+    if (note) note.style.display = connected ? '' : 'none';
+    if (connected && os) os.style.display = 'none';
+    if (connected) { const cb = document.getElementById('srv-os-enable'); if (cb) cb.checked = false; }
+}
+
+function _dnStatusHtml(st) {
+    if (!st || !st.connected) return '';
+    const days = (st.days_left != null) ? t('dn_days_left').replace('{n}', st.days_left) : '';
+    let warn = '';
+    if (!st.files_present) warn = `<div class="status-failed">${esc(t('dn_files_missing'))}</div>`;
+    else if (st.renewal_due) warn = `<div class="u030">${esc(t('dn_renewal_due'))}</div>`;
+    return `<div class="dn-meta">
+        <div><span class="status-completed">${esc(t('dn_connected'))}</span></div>
+        <div>${esc(t('dn_hosts_label_short') + _dnColon())}<code>${esc((st.hosts || []).join(', '))}</code></div>
+        <div>${esc(t('dn_principal') + _dnColon())}<code>${esc(st.principal || '')}</code> · ${esc(t('dn_role') + _dnColon())}<code>${esc((st.roles || []).join(', '))}</code></div>
+        <div>${esc(t('dn_valid_until') + _dnColon() + formatDT(st.not_after ? st.not_after + 'Z' : ''))}${days ? ' · ' + esc(days) : ''}</div>
+        ${warn}
+    </div>`;
+}
+
+function _dnBoxHtml(r) {
+    const st = r.status || {};
+    const nodes = r.nodes || [];
+    let html = '';
+    if (r.error && !st.connected) {
+        return `<div class="status-failed">${esc(r.error)}</div>`;
+    }
+    if (nodes.length) {
+        html += `<div class="u022">${esc(t('dn_found').replace('{n}', nodes.length))} `
+            + nodes.map(n => `<code>${esc(n.hostname || '')}</code>` + esc(_dnParen((n.status || '?') + (n.version ? ', ' + n.version : '')))).join(', ')
+            + `</div>`;
+    } else if (!st.connected) {
+        return `<div class="u022">${esc(t('dn_none'))}</div>`;
+    }
+    if (st.connected) {
+        html += _dnStatusHtml(st);
+        html += `<div class="dn-actions">
+            <button type="button" class="btn-sm btn-secondary" data-act="testServerDataNode">${icon('refresh', 14)} ${esc(t('btn_test_connection'))}</button>
+            <button type="button" class="btn-sm btn-secondary" data-act="renewServerDataNode">${icon('shield', 14)} ${esc(t('dn_btn_renew'))}</button>
+            <button type="button" class="btn-sm btn-danger" data-act="disconnectServerDataNode">${icon('trash', 14)} ${esc(t('dn_btn_disconnect'))}</button>
+        </div>`;
+    } else {
+        const hosts = (r.discovered_hosts || []).join('\n');
+        html += `<div class="u022 dn-intro">${esc(t('dn_intro'))}</div>
+          <div class="form-group"><label>${esc(t('dn_hosts_label'))}</label>
+            <textarea class="u150" id="srv-dn-hosts" rows="2">${esc(hosts)}</textarea>
+            <div class="u022">${esc(t('dn_hosts_hint'))}</div></div>
+          <div class="form-group"><label>${esc(t('dn_lifetime_label'))}</label>
+            <input type="number" id="srv-dn-lifetime" min="7" max="3650" value="90"></div>
+          <div class="form-group"><label class="u065">
+            <input type="checkbox" id="srv-dn-verify-host"> ${esc(t('dn_verify_host'))}</label></div>
+          <div class="dn-actions">
+            <button type="button" class="btn-sm btn-primary" data-act="connectServerDataNode">${icon('lock', 14)} ${esc(t('dn_btn_connect'))}</button>
+          </div>`;
+    }
+    html += `<div id="srv-dn-result" class="test-result-line"></div>`;
+    return html;
+}
+
+function _dnResult(ok, msg, extraHtml) {
+    const el = document.getElementById('srv-dn-result');
+    if (!el) return;
+    el.innerHTML = `<span class="${ok ? 'status-completed' : 'status-failed'}">${esc(msg)}</span>` + (extraHtml || '');
+}
+
+function _dnTestText(tst) {
+    if (!tst) return '';
+    return t('dn_connect_ok').replace('{cluster}', tst.cluster_name || '?')
+        .replace('{version}', tst.version || '?').replace('{status}', tst.status || '?');
+}
+
+async function connectServerDataNode(replace) {
+    const name = _dnServer;
+    if (!name) return;
+    const hosts = (document.getElementById('srv-dn-hosts')?.value || '').split('\n').map(h => h.trim()).filter(Boolean);
+    const lifetime = parseInt(document.getElementById('srv-dn-lifetime')?.value || '90', 10) || 90;
+    const verify = !!document.getElementById('srv-dn-verify-host')?.checked;
+    _dnResult(true, t('dn_connecting'));
+    const r = await fetchJSON(`${API}/config/servers/${encodeURIComponent(name)}/datanode/connect`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hosts, lifetime_days: lifetime, verify_hostname: verify, replace_opensearch: !!replace }),
+    });
+    if (r && r.code === 'replace_opensearch') {
+        showConfirm(t('dn_section_title'), t('dn_replace_confirm'), () => connectServerDataNode(true));
+        _dnResult(false, r.error || '');
+        return;
+    }
+    if (!r || r.error) { _dnResult(false, (r && r.error) || t('unknown_error')); return; }
+    await _refreshServersCacheAfterDn(name);
+    _dnResult(true, _dnTestText(r.test));
+}
+
+async function _refreshServersCacheAfterDn(name) {
+    try {
+        const d = await fetchJSON(`${API}/config/servers`);
+        if (d && d.items) { _serversCache = d.items; renderServersTable(d); }
+    } catch (e) { console.warn('servers refresh failed', e); }
+    const keep = document.getElementById('srv-dn-result')?.innerHTML || '';
+    await loadServerDataNode(name);
+    const el = document.getElementById('srv-dn-result');
+    if (el && keep) el.innerHTML = keep;
+}
+
+async function testServerDataNode() {
+    const name = _dnServer;
+    if (!name) return;
+    _dnResult(true, t('loading') + '…');
+    const r = await fetchJSON(`${API}/config/servers/${encodeURIComponent(name)}/datanode/test`, { method: 'POST' });
+    if (!r || r.error) { _dnResult(false, (r && r.error) || t('unknown_error')); return; }
+    if (r.test && r.test.connected) _dnResult(true, _dnTestText(r.test));
+    else _dnResult(false, `${t('test_failed')}: ${(r.test && r.test.error) || t('unknown_error')}`);
+}
+
+async function renewServerDataNode() {
+    const name = _dnServer;
+    if (!name) return;
+    _dnResult(true, t('dn_connecting'));
+    const r = await fetchJSON(`${API}/config/servers/${encodeURIComponent(name)}/datanode/renew`, { method: 'POST' });
+    if (!r || r.error) { _dnResult(false, (r && r.error) || t('unknown_error')); return; }
+    await _refreshServersCacheAfterDn(name);
+    _dnResult(true, t('dn_renewed') + (r.test && r.test.connected ? ' · ' + _dnTestText(r.test) : ''));
+}
+
+function disconnectServerDataNode() {
+    const name = _dnServer;
+    if (!name) return;
+    showConfirm(t('dn_section_title'), t('dn_disconnect_confirm').replace('{name}', name), () => _doDisconnectDn(name, false));
+}
+
+async function _doDisconnectDn(name, confirmSchedules) {
+    const r = await fetchJSON(`${API}/config/servers/${encodeURIComponent(name)}/datanode/disconnect`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: !!confirmSchedules }),
+    });
+    if (r && r.code === 'schedules_use_datanode') {
+        showConfirm(t('dn_section_title'),
+            t('dn_schedules_confirm').replace('{list}', (r.schedules || []).join(', ')),
+            () => _doDisconnectDn(name, true));
+        return;
+    }
+    if (!r || r.error) { _dnResult(false, (r && r.error) || t('unknown_error')); return; }
+    await _refreshServersCacheAfterDn(name);
+    _dnResult(true, t('dn_disconnected') + ((r.revoke_errors || []).length ? ' (' + r.revoke_errors.join('; ') + ')' : ''));
 }
 
 function _toggleSrvAuth() {
@@ -4800,6 +4990,8 @@ function openServerModal(name) {
     document.getElementById('server-modal-result').innerHTML = '';
     document.getElementById('server-modal').style.display = 'flex';
     _toggleSrvAuth();
+    _dnServer = null;
+    if (s && s.name) loadServerDataNode(s.name);
 }
 
 function _gatherServerBody() {

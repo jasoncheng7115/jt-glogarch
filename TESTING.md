@@ -996,6 +996,45 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
       still works.
 - [ ] A wrong API key: the test result says "HTTP 401: Invalid API key".
 
+### Graylog Data Node access, beta (v1.19.0)
+
+**Automated**
+
+- [ ] `tests/test_datanode.py` (22): hosts from `transport_address` (nodes not
+      serving skipped; 6.3's `data_node_status` read too); a 6.3 `roles` refusal
+      retries with one `role`; the Test button and capacity probes keep the
+      certificate; the listing endpoint is `/api/system/cluster/datanodes`
+      (the dashboard probe tries it first); principal unique per server; a plain
+      OpenSearch block keeps `verify=bool` + Basic auth, a certificate block sends
+      NO Basic auth and pins the CA (hostname only with `verify_ssl`); a missing
+      file is a clear error; expiry read with the stdlib; PEM files 0600 in a 0700
+      dir, no temp files left; renewal timing (a third of the lifetime, at least
+      7 days, never more than half); a failed renewal keeps the working
+      certificate; only 401/403/bad-certificate re-issues; an import target picks
+      up ONLY certificate blocks; bulk + preflight route through the config; a
+      scheduled OS run with an unusable certificate archives via the API and
+      notifies once; editing a server keeps the block and never returns the key
+      path; connect refuses `http://`; disconnect asks when OS schedules use it.
+- [ ] **`scripts/e2e-datanode-test.py` against a REAL Data Node** (MANDATORY for
+      any change to the Data Node / certificate / OpenSearch client path):
+      `bash scripts/datanode-stack/up.sh` (Graylog + Data Node + MongoDB in
+      docker, loopback, memory-capped; prints the env), then run it; must print
+      `RESULT: ALL PASS`: connect, seed + rotate, OS-direct export of every seeded
+      message, Bulk import of all of them, forced renewal, recovery after the role
+      mapping is removed behind our back, scheduled fallback to the API,
+      disconnect. `bash scripts/datanode-stack/down.sh` removes it. Run it on
+      more than one Graylog line (`GL_VERSION=6.3.15 / 7.0.15 / 7.1.11 / 7.2.2`):
+      6.3 differs in the certificate request (one `role`) and the status field.
+
+**By hand (each release that touches it)**
+
+- [ ] Settings → Graylog servers → Edit a Data Node server: the box lists the
+      nodes, Connect with the default host (or an IP) shows "Connected: … green";
+      the per-server OpenSearch fields hide; Test / Renew / Disconnect work; en /
+      zh-TW / ja and both themes read correctly at ~1436 px.
+- [ ] Export page: the Data Node server is not locked to Graylog API once
+      connected, and the hint says beta; the import dialog allows Bulk.
+
 ### Test Results
 
 - [ ] `./scripts/run-tests.sh` passes — `TEST-RESULTS.md` generated

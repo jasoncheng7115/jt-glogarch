@@ -408,6 +408,27 @@ class ArchiveScheduler:
                  initial_from=str(time_from), to=str(time_to))
 
         os_config = self.settings.get_opensearch(cfg.get("server"))
+        if export_mode == "opensearch" and os_config.hosts and os_config.datanode:
+            # Graylog Data Node certificate (beta): renew it when due and prove
+            # it works. If it still cannot be used, archive THIS run through the
+            # Graylog API instead of not archiving at all (upgrade principle 3);
+            # dedup counts API archives as coverage, so the next OpenSearch run
+            # does not fetch the same hours again.
+            from glogarch.graylog.datanode import ensure_working
+            os_config, dn_problem = await ensure_working(self.settings, server_config.name)
+            if dn_problem:
+                from glogarch.utils.sanitize import sanitize as _san
+                log.error("Data Node OpenSearch unusable — this scheduled run uses the "
+                          "Graylog API instead", schedule=schedule_name,
+                          server=server_config.name, problem=_san(dn_problem))
+                try:
+                    from glogarch.notify.sender import notify_datanode_fallback
+                    await notify_datanode_fallback(schedule_name, server_config.name,
+                                                   _san(dn_problem))
+                except Exception as e:
+                    log.warning("Could not send the Data Node fallback notification",
+                                error=str(e))
+                export_mode = "api"
         if export_mode == "opensearch" and os_config.hosts:
             from glogarch.opensearch.exporter import OpenSearchExporter
             exporter = OpenSearchExporter(
@@ -969,9 +990,45 @@ class ArchiveScheduler:
         except Exception as e:
             log.warning("Disk retention check failed", error=str(e))
 
+    def _run_datanode_cert_renewal(self) -> None:
+        """Daily internal job: renew Graylog Data Node client certificates
+        (beta) that are within a third of their lifetime of expiring. A failed
+        renewal leaves the current certificate in place and notifies once it is
+        close to expiring; the scheduled export itself also renews, and falls
+        back to the Graylog API if the certificate cannot be used."""
+        servers = [s for s in self.settings.servers
+                   if s.opensearch is not None and s.opensearch.datanode]
+        if not servers:
+            return
+        from glogarch.graylog.datanode import ensure_fresh, status as dn_status
+
+        async def _all():
+            for srv in servers:
+                cfg, renewed, err = await ensure_fresh(self.settings, srv.name)
+                if err:
+                    st = dn_status(cfg)
+                    days = st.get("days_left")
+                    if days is None or days <= 14:
+                        from glogarch.notify.sender import notify_datanode_renew_failed
+                        await notify_datanode_renew_failed(
+                            srv.name, st.get("not_after") or "?",
+                            days if days is not None else "?", err)
+        try:
+            asyncio.run(_all())
+        except Exception as e:
+            log.warning("Data Node certificate renewal check failed", error=str(e))
+
     def start(self) -> None:
         """Start the scheduler."""
         self.setup()
+        try:
+            self.scheduler.add_job(
+                self._run_datanode_cert_renewal,
+                trigger=CronTrigger.from_crontab("45 4 * * *"),
+                id="internal-datanode-cert-renewal", replace_existing=True,
+                misfire_grace_time=3600)
+        except Exception as e:
+            log.warning("Failed to register Data Node certificate renewal", error=str(e))
         # Internal daily heartbeat (not a user schedule): warn when the projected
         # archive-disk retention drops below retention.disk_alert_months.
         try:

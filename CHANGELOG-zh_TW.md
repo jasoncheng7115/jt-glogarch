@@ -2,6 +2,17 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.19.0] - 2026-11-15
+
+### 新增
+
+- **支援 Graylog Data Node（beta）：以用戶端憑證進行 OpenSearch 直連匯出與 Bulk 匯入。** Data Node 的 OpenSearch 只接受用戶端憑證，所以過去 Data Node 環境只能用 Graylog API 匯出與 GELF 匯入。在「系統設定 → Graylog 伺服器 → 編輯」新增的「Graylog Data Node（beta）」方框會列出 Graylog 所知的 Data Node；按「連接 Data Node」後，jt-glogarch 會請 Graylog 簽發一張憑證（`POST /api/ca/clientcert`，需要 Graylog Admin），先用它連 OpenSearch 測試成功才儲存。憑證對應 OpenSearch 角色 `all_access`：唯讀角色 `readall` 無法列出索引與別名（7.2.2 實測）。金鑰、憑證與 CA 存在 `config.yaml` 旁的 `certs/datanode/<伺服器>/`（0600，介面與 API 都不會顯示），伺服器憑證一律以叢集自己的 CA 驗證。連接後，匯出頁不再把這台伺服器鎖定為 Graylog API，排程可以用 OpenSearch 直連，匯入目標是這台伺服器時 Bulk 匯入也會使用這張憑證。已在 Graylog 6.3.15、7.0.15、7.1.11、7.2.2 及各自的 Data Node（OpenSearch 2.15.0、2.19.3、2.19.5、3.7.0）完整實測：每個版本都由 OpenSearch 直連歸檔 3,000 筆測試記錄中的 3,000 筆，Bulk 匯入 3,000 筆全部寫回，Graylog 搜尋找得到（`scripts/e2e-datanode-test.py`，搭配 `scripts/datanode-stack/` 啟動測試環境）。
+- **憑證會自己維護。** 在剩下三分之一有效期時自動更新（預設有效 90 天），時機是每次 OpenSearch 直連作業之前，以及每天 04:45 的檢查。OpenSearch 拒絕這張憑證時（例如角色對應被移除）會重新簽發。若仍無法使用，排程的 OpenSearch 直連作業會改用 Graylog API 歸檔並發出通知，歸檔不會中斷；手動執行則會說明為什麼無法開始。「中斷連線」會把憑證從角色對應中移除並刪除檔案；若有 OpenSearch 直連排程在用，會先詢問。匯入的容量估算也會用同一張憑證讀取 Data Node 的磁碟與文件大小，OpenSearch 的「測試」按鈕亦同。
+
+### 修正
+
+- **Graylog 7.2 上偵測不到 Data Node。** 儀表板查詢的 `GET /api/datanodes` 在 7.2.2 回 404，現在會先讀 `GET /api/system/cluster/datanodes`。在此之前，匯出與匯入對話框會對 Data Node 環境提供 OpenSearch 直連與 Bulk，使用時才失敗。
+
 ## [1.18.3] - 2026-11-06
 
 ### 變更

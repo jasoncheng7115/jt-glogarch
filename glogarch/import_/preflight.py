@@ -114,6 +114,20 @@ class PreflightChecker:
         self.api_password = api_password
         self.gelf_port = gelf_port
         self.verify_ssl = verify_ssl
+        # The target's OpenSearch as a configured cluster (a Graylog Data Node
+        # certificate, beta). When set, EVERY direct OpenSearch call below goes
+        # through it instead of the "Graylog URL with port 9200" guess, whose
+        # Graylog credentials a Data Node would refuse.
+        self.os_config = None
+
+    def _os_client(self, timeout: float, auth=None, headers: dict | None = None) -> httpx.AsyncClient:
+        """httpx client for the target's OpenSearch (os_config wins)."""
+        if self.os_config is not None:
+            from glogarch.opensearch.tls import httpx_options
+            return httpx.AsyncClient(**httpx_options(self.os_config), timeout=timeout,
+                                     headers=headers or {})
+        return httpx.AsyncClient(verify=self.verify_ssl, timeout=timeout, auth=auth,
+                                 headers=headers or {})
 
     # ---------------------------------------------------------------- HTTP
 
@@ -624,9 +638,7 @@ class PreflightChecker:
         if not os_url:
             return
         auth = (self.api_username, self.api_password) if self.api_username else None
-        async with httpx.AsyncClient(
-            verify=self.verify_ssl, timeout=15, auth=auth
-        ) as osc:
+        async with self._os_client(15, auth=auth) as osc:
             deflector = f"{prefix}_deflector"
             r = await osc.get(f"{os_url}/{deflector}/_mapping")
             if r.status_code != 200:
@@ -695,7 +707,8 @@ class PreflightChecker:
             #
             # For now: try a heuristic — derive OpenSearch URL from the Graylog
             # API URL (replace port 9000 -> 9200).
-            os_url = self.api_url.replace(":9000", ":9200")
+            os_url = (self.os_config.hosts[0].rstrip("/") if self.os_config is not None
+                      and self.os_config.hosts else self.api_url.replace(":9000", ":9200"))
             template_name = "jt-glogarch-field-limit"
             template_body = {
                 "index_patterns": [f"{index_prefix}_*"],
@@ -709,15 +722,24 @@ class PreflightChecker:
                 },
             }
             try:
-                r = await c.put(
-                    f"{os_url}/_template/{template_name}",
-                    content=json.dumps(template_body),
-                )
+                if self.os_config is not None:
+                    async with self._os_client(30, headers={"Content-Type": "application/json"}) as oc:
+                        r = await oc.put(f"{os_url}/_template/{template_name}",
+                                         content=json.dumps(template_body))
+                        if r.status_code in (200, 201, 204):
+                            await self._raise_limit_on_existing_indices(
+                                oc, os_url, index_prefix, limit)
+                else:
+                    r = await c.put(
+                        f"{os_url}/_template/{template_name}",
+                        content=json.dumps(template_body),
+                    )
+                    if r.status_code in (200, 201, 204):
+                        await self._raise_limit_on_existing_indices(
+                            c, os_url, index_prefix, limit)
                 if r.status_code in (200, 201, 204):
                     log.info("Field limit override template installed",
                              os_url=os_url, limit=limit)
-                    await self._raise_limit_on_existing_indices(
-                        c, os_url, index_prefix, limit)
                     return
                 log.warning(
                     "Could not PUT field limit template via OpenSearch endpoint",
@@ -824,6 +846,8 @@ class PreflightChecker:
         the same docker stack). Replace port 9000 → 9200 and try to reach it.
         Returns the URL if reachable, else None.
         """
+        if self.os_config is not None and self.os_config.hosts:
+            return self.os_config.hosts[0].rstrip("/")
         # Strategy 1: Same host, port 9200
         candidates = [
             self.api_url.replace(":9000", ":9200"),
@@ -1041,7 +1065,7 @@ class PreflightChecker:
             body["mappings"] = {"properties": properties}
 
         auth = (os_username, os_password) if os_username else None
-        async with httpx.AsyncClient(verify=self.verify_ssl, timeout=30, auth=auth) as c:
+        async with self._os_client(30, auth=auth) as c:
             r = await c.put(
                 f"{opensearch_url.rstrip('/')}/_template/{template_name}",
                 content=json.dumps(body),

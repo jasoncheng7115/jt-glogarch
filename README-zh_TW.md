@@ -1,4 +1,4 @@
-# jt-glogarch v1.18.3
+# jt-glogarch v1.19.0
 
 **語言**： [English](README.md) | **繁體中文** | [日本語](README-ja.md)  
 **網站**： <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.18.3-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.19.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -69,11 +69,16 @@ Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
 | 需要 | Graylog API Token | OpenSearch 帳密 |
 | 記憶體保護 | 依 GC 指標判斷 Graylog heap：自動控速，真的有壓力才暫停 | 不需要 |
 | 適用 | 串流篩選匯出、OpenSearch 鎖定的環境 | 大量歷史匯出、時間敏感任務 |
-| Graylog 7 Data Node | ✅ 支援 | ❌ 不支援（見下方說明） |
+| Graylog 7 Data Node | ✅ 支援 | ✅ beta：先連接 Data Node（見下方說明） |
 
-> **Graylog 7 Data Node 使用者注意：** Data Node 環境的 OpenSearch 使用 Graylog 自動管理的 TLS 憑證認證，不對外暴露帳密，外部工具無法直接存取。因此 **OpenSearch Direct 匯出**與 **OpenSearch Bulk 匯入**在 Data Node 環境下不可用。請改用 **Graylog API 匯出**與 **GELF 匯入**。獨立安裝的 OpenSearch 不受此限制。
+> **Graylog 7 Data Node（beta，1.19.0 起）：** Data Node 的 OpenSearch 只接受用戶端憑證，jt-glogarch 可以請你的 Graylog 簽發一張：**系統設定 → Graylog 伺服器 → 編輯 → Graylog Data Node（beta）→ 連接 Data Node**。連接後，這台伺服器就能使用 **OpenSearch Direct 匯出**與 **OpenSearch Bulk 匯入**；連接之前，請用 Graylog API 匯出與 GELF 匯入。
 >
-> **建議不要使用 Data Node：** 安裝 Graylog 時建議直接設定連線到獨立部署的 OpenSearch，不要使用 Data Node。這樣才能使用 OpenSearch Direct 高速匯出（約 5 倍速）和 OpenSearch Bulk 高速匯入（約 5-10 倍速）。Data Node 雖然簡化了初始安裝，但會鎖死 OpenSearch 的外部存取，嚴重限制歸檔與還原的效能。
+> - **需要：** 這台伺服器設定的 Graylog 帳號是 Admin（Graylog 權限 `ca_clientcert:create`），而且這台主機連得到每個 Data Node 的 9200 埠。對話框會帶入 Graylog 回報的位址（`https://<主機名稱>:9200`）；若這台主機解析不到主機名稱，請改填 IP 位址。
+> - **取得的權限：** Graylog 用叢集自己的 CA 簽發憑證，並對應到 OpenSearch 角色 `all_access`。唯讀角色 `readall` 無法列出索引與別名（7.2.2 實測），不足以匯出。金鑰、憑證與 CA 存在 `config.yaml` 旁的 `certs/datanode/<伺服器>/`，權限 0600、只有服務帳號能讀，介面與 API 都不會顯示。伺服器憑證一律以這個 CA 驗證；勾選「同時檢查 Data Node 主機名稱」才會再驗證名稱。
+> - **更新：** 自動進行，在剩下三分之一有效期時更新（預設有效 90 天），時機是每次 OpenSearch Direct 作業之前，以及每天 04:45 的檢查。憑證若被拒絕（例如角色對應被移除）會重新簽發；若仍無法使用，排程的 OpenSearch Direct 作業會改用 Graylog API 歸檔並通知你，歸檔不會中斷。
+> - **中斷連線**會把憑證從 OpenSearch 角色對應中移除並刪除檔案；若有排程以 OpenSearch Direct 匯出這台伺服器，會先詢問。
+> - 偵測改讀 `GET /api/system/cluster/datanodes`；舊的 `GET /api/datanodes` 在 7.2.2 回 404，所以先前的版本在那裡認不出 Data Node。
+> - 已用 `scripts/e2e-datanode-test.py` 在 Graylog 6.3.15、7.0.15、7.1.11、7.2.2 及各自的 Data Node（OpenSearch 2.15.0、2.19.3、2.19.5、3.7.0）完整實測：OpenSearch Direct 匯出、Bulk 匯入（Graylog 搜尋找得到）、憑證更新、角色對應被移除後的復原，以及排程改用 API 的備援。Graylog 6.3 的憑證申請只接受單一角色，jt-glogarch 兩種格式都能處理。
 
 > **Graylog API 模式與 `index.max_result_window`：** Graylog API 匯出採用時間視窗位移分頁，受 OpenSearch 的 `index.max_result_window`（預設 **10000**）限制。jt-glogarch 會自動將每次請求控制在此上限內，因此在預設叢集上**無需任何調整**。但若您的叢集已將 `max_result_window` **調低**於 10000，API 模式匯出可能出現 `500 Result window is too large` 錯誤。請將其還原為至少預設值：
 >
@@ -1546,7 +1551,7 @@ sudo systemctl restart graylog-server
 
 OpenSearch 模式完全不經過 Graylog — JVM 零影響，速度快 5 倍。適合 OpenSearch 可直接存取的環境。
 
-> **注意：** Graylog 7 Data Node 環境無法使用 OpenSearch Direct 模式，請使用方案 1 或 2。
+> **注意：** Graylog 7 Data Node 環境要先在系統設定連接 Data Node（beta），見「雙模式匯出」。
 
 
 ### 歸檔時間軸有紅色標記(缺口)

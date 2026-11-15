@@ -16,6 +16,26 @@ class OpenSearchConfig(BaseModel):
     username: str | None = None
     password: str | None = None
     verify_ssl: bool = False
+    # Client-certificate (mutual TLS) authentication, PEM files. A Graylog
+    # Data Node's OpenSearch accepts nothing else. When `ca_file` is set the
+    # server certificate is ALWAYS checked against that CA; `verify_ssl` then
+    # only adds the hostname check (a Data Node certificate names the node's
+    # hostname, which jt-glogarch often reaches by IP).
+    client_cert_file: str | None = None
+    client_key_file: str | None = None
+    ca_file: str | None = None
+    # Set when the block was provisioned from a Graylog Data Node by
+    # jt-glogarch (beta): the certificate is issued through Graylog's
+    # `POST /api/ca/clientcert` and renewed automatically before it expires.
+    datanode: bool = False
+    datanode_principal: str | None = None
+    datanode_roles: list[str] = Field(default_factory=list)
+    datanode_lifetime_days: int = 90
+    # ISO time the current certificate stops being valid (UTC, naive).
+    cert_not_after: str | None = None
+
+    def uses_client_cert(self) -> bool:
+        return bool(self.client_cert_file and self.client_key_file)
 
 
 class GraylogServerConfig(BaseModel):

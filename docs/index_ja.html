@@ -176,7 +176,7 @@ sudo bash upgrade-offline.sh                # pip はネットワークに接続
       <p><code class="kbd">_bulk</code> で OpenSearch に直接書き込み、<strong>5〜10 倍高速</strong>です。Graylog の処理は完全にスキップします。災害復旧、移行、特定時点の調査など「そのまま戻す」用途に向いています。</p>
     </div>
   </div>
-  <p class="subhead">※ Graylog 7 Data Node では OpenSearch 直接エクスポートと Bulk インポートは利用できません（Graylog API エクスポートと GELF インポートは利用可能）。</p>
+  <p class="subhead">※ Graylog Data Node（beta、Graylog 6.3〜7.2 で検証済み）では、設定画面で Data Node に接続すると、OpenSearch 直接エクスポートと Bulk インポートを利用できます。設定するまでは Graylog API エクスポートと GELF インポートを使用してください。</p>
 </section>
 
 <section id="use-cases">

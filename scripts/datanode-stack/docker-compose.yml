@@ -1,0 +1,54 @@
+# jt-glogarch Data Node test stack (e2e-datanode-test.py). Loopback only and
+# memory-capped: it is meant to run on a box that also does other work.
+# Start with: bash scripts/datanode-stack/up.sh   Remove with: bash scripts/datanode-stack/down.sh
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: dn-mongo
+    mem_limit: 1g
+    volumes: [ "mongo:/data/db" ]
+    networks: [ dn ]
+  datanode:
+    image: graylog/graylog-datanode:7.2.2
+    container_name: dn-datanode
+    hostname: datanode
+    mem_limit: 3g
+    environment:
+      GRAYLOG_DATANODE_NODE_ID_FILE: /var/lib/graylog-datanode/node-id
+      GRAYLOG_DATANODE_PASSWORD_SECRET: ${GRAYLOG_PASSWORD_SECRET}
+      GRAYLOG_DATANODE_MONGODB_URI: mongodb://mongodb:27017/graylog
+      GRAYLOG_DATANODE_OPENSEARCH_HEAP: 1g
+      GRAYLOG_DATANODE_JAVA_OPTS: "-Xms256m -Xmx256m"
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    ports:
+      - "127.0.0.1:18999:8999"
+      - "127.0.0.1:19200:9200"
+    volumes: [ "datanode:/var/lib/graylog-datanode" ]
+    networks: [ dn ]
+  graylog:
+    image: graylog/graylog:7.2.2
+    container_name: dn-graylog
+    hostname: graylog
+    mem_limit: 2g
+    depends_on: [ mongodb ]
+    entrypoint: "/usr/bin/tini --  /docker-entrypoint.sh"
+    environment:
+      GRAYLOG_NODE_ID_FILE: /usr/share/graylog/data/data/node-id
+      GRAYLOG_PASSWORD_SECRET: ${GRAYLOG_PASSWORD_SECRET}
+      GRAYLOG_ROOT_PASSWORD_SHA2: ${GRAYLOG_ROOT_PASSWORD_SHA2}
+      GRAYLOG_HTTP_BIND_ADDRESS: 0.0.0.0:9000
+      GRAYLOG_HTTP_EXTERNAL_URI: http://127.0.0.1:19000/
+      GRAYLOG_MONGODB_URI: mongodb://mongodb:27017/graylog
+      GRAYLOG_SERVER_JAVA_OPTS: "-Xms1g -Xmx1g"
+      GRAYLOG_ROOT_TIMEZONE: Asia/Taipei
+    ports:
+      - "127.0.0.1:19000:9000"
+      - "127.0.0.1:32212:32202/tcp"
+      - "127.0.0.1:12211:12201/udp"
+    volumes: [ "graylog:/usr/share/graylog/data/data" ]
+    networks: [ dn ]
+networks:
+  dn: {}
+volumes: { mongo: {}, datanode: {}, graylog: {} }

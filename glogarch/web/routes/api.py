@@ -335,6 +335,14 @@ async def trigger_export(request: Request, background_tasks: BackgroundTasks):
         os_config = settings.get_opensearch(server_name)
         if not os_config.hosts:
             return JSONResponse({"error": "OpenSearch not configured"}, status_code=400)
+        if os_config.datanode:
+            from glogarch.graylog.datanode import ensure_working
+            os_config, _dn_problem = await ensure_working(settings, server_config.name)
+            if _dn_problem:
+                from glogarch.utils.sanitize import sanitize as _san
+                return JSONResponse(
+                    {"error": f"Data Node OpenSearch is not usable: {_san(_dn_problem)}",
+                     "code": "datanode_unusable"}, status_code=400)
 
         os_exporter = OpenSearchExporter(
             server_config, os_config, settings.export,
@@ -452,8 +460,14 @@ async def trigger_import(request: Request, background_tasks: BackgroundTasks):
 
     # Bulk-mode-specific validation + setup
     bulk_importer = None
+    # The target is a configured server with a Graylog Data Node certificate
+    # (beta): Bulk import and preflight's direct OpenSearch reads use it.
+    from glogarch.graylog.datanode import os_config_for_url, ensure_fresh_for
+    target_os_cfg = os_config_for_url(settings, target_api_url)
+    if target_os_cfg is not None:
+        target_os_cfg = await ensure_fresh_for(settings, target_api_url) or target_os_cfg
     if import_mode == "bulk":
-        # Resolve OpenSearch URL: explicit > auto-detect from Graylog URL
+        # Resolve OpenSearch URL: explicit > Data Node certificate > auto-detect
         os_url = (body.get("target_os_url") or "").strip()
         os_username = (body.get("target_os_username") or "").strip()
         os_password = body.get("target_os_password") or ""
@@ -466,6 +480,10 @@ async def trigger_import(request: Request, background_tasks: BackgroundTasks):
                 status_code=400,
             )
 
+        bulk_os_cfg = None
+        if not os_url and target_os_cfg is not None:
+            os_url = target_os_cfg.hosts[0].rstrip("/")
+            bulk_os_cfg = target_os_cfg
         # Auto-detect OpenSearch URL if not provided
         if not os_url:
             preflight_tmp = PreflightChecker(
@@ -492,6 +510,7 @@ async def trigger_import(request: Request, background_tasks: BackgroundTasks):
             target_index_pattern=target_index_pattern,
             dedup_strategy=dedup_strategy,
             batch_docs=int(body.get("batch_docs", 10000)),
+            os_config=bulk_os_cfg,
         )
         # Verify reachability before starting
         ok, err = await bulk_importer.verify_opensearch()
@@ -523,6 +542,8 @@ async def trigger_import(request: Request, background_tasks: BackgroundTasks):
         gelf_port=import_cfg.gelf_port,
         verify_ssl=_target_verify,
     )
+    if target_os_cfg is not None and not (body.get("target_os_url") or "").strip():
+        preflight.os_config = target_os_cfg
 
     importer = Importer(
         import_cfg, settings.export, db,
@@ -710,15 +731,24 @@ async def import_capacity_estimate(request: Request):
     # target Graylog host → the app's global OS (last resort).
     os_cfg = settings.get_opensearch()
     body_os = (body.get("target_os_url") or "").strip()
+    # A configured server with a Graylog Data Node certificate (beta): measure
+    # its OpenSearch with that certificate, as the import itself will.
+    from glogarch.graylog.datanode import os_config_for_url
+    dn_cfg = None if body_os else os_config_for_url(settings, url)
     if body_os:
         os_hosts = [body_os]
+    elif dn_cfg is not None:
+        os_hosts = list(dn_cfg.hosts)
     else:
         auto = await pf.auto_detect_opensearch_url()
         os_hosts = [auto] if auto else list(os_cfg.hosts or [])
     # Try the app's OS creds first, then the target Graylog creds (co-located
     # setups often share admin creds; OS may also be open).
-    disk = await _query_os_data_disk(os_hosts, os_cfg.username, os_cfg.password, os_cfg.verify_ssl)
-    if not disk:
+    if dn_cfg is not None:
+        disk = await _query_os_data_disk(os_hosts, None, None, False, os_cfg=dn_cfg)
+    else:
+        disk = await _query_os_data_disk(os_hosts, os_cfg.username, os_cfg.password, os_cfg.verify_ssl)
+    if not disk and dn_cfg is None:
         disk = await _query_os_data_disk(os_hosts, user, pw, False)
     disk_total = disk[0] if disk else 0
     disk_avail = disk[1] if disk else 0
@@ -734,7 +764,7 @@ async def import_capacity_estimate(request: Request):
     measure_scope = ""
     if os_hosts:
         bpd = await _measure_bytes_per_doc(os_hosts, os_cfg.username, os_cfg.password,
-                                           os_cfg.verify_ssl, prefix)
+                                           os_cfg.verify_ssl, prefix, os_cfg=dn_cfg)
         if bpd:
             bytes_per_doc, measure_scope = bpd
     indexed_bytes_est = int(total_messages * bytes_per_doc) if bytes_per_doc else 0
@@ -783,7 +813,16 @@ async def import_capacity_estimate(request: Request):
     }
 
 
-async def _measure_bytes_per_doc(hosts, user, pw, verify, prefix):
+def _os_probe_client(verify, timeout, os_cfg=None):
+    """httpx client for a capacity probe; a certificate block (Data Node) wins."""
+    import httpx as _httpx
+    if os_cfg is not None:
+        from glogarch.opensearch.tls import httpx_options
+        return _httpx.AsyncClient(**httpx_options(os_cfg), timeout=timeout)
+    return _httpx.AsyncClient(verify=verify, timeout=timeout)
+
+
+async def _measure_bytes_per_doc(hosts, user, pw, verify, prefix, os_cfg=None):
     """Measure REAL indexed bytes-per-document (primary store size ÷ doc count) —
     the accurate proxy for OpenSearch on-disk size vs the raw archive JSON.
 
@@ -792,12 +831,12 @@ async def _measure_bytes_per_doc(hosts, user, pw, verify, prefix):
     the WHOLE cluster's existing data so the estimate is still measured, not a raw
     JSON guess. Returns (bytes_per_doc, scope) or None."""
     import httpx as _httpx
-    auth = _httpx.BasicAuth(user, pw) if user else None
+    auth = _httpx.BasicAuth(user, pw) if (user and os_cfg is None) else None
     # 1) the target index set's own indices (most representative)
     if prefix:
         for h in (hosts or []):
             try:
-                async with _httpx.AsyncClient(verify=verify, timeout=10.0) as c:
+                async with _os_probe_client(verify, 10.0, os_cfg) as c:
                     r = await c.get(f"{h.rstrip('/')}/{prefix}*/_stats/store,docs",
                                     auth=auth, headers={"Accept": "application/json"})
                     if r.status_code == 200:
@@ -814,7 +853,7 @@ async def _measure_bytes_per_doc(hosts, user, pw, verify, prefix):
     _SYS = ("top_queries", "gl-events", "gl-system-events", "gl_system_events")
     for h in (hosts or []):
         try:
-            async with _httpx.AsyncClient(verify=verify, timeout=10.0) as c:
+            async with _os_probe_client(verify, 10.0, os_cfg) as c:
                 r = await c.get(f"{h.rstrip('/')}/_cat/indices",
                                 params={"h": "index,docs.count,pri.store.size", "bytes": "b",
                                         "format": "json"},
@@ -839,16 +878,16 @@ async def _measure_bytes_per_doc(hosts, user, pw, verify, prefix):
     return None
 
 
-async def _query_os_data_disk(hosts, user, pw, verify):
+async def _query_os_data_disk(hosts, user, pw, verify, os_cfg=None):
     """Return (total_bytes, available_bytes, host, data_paths) of the OpenSearch
     DATA path across data nodes via _nodes/stats/fs, or None if unreachable. The
     host + data paths are returned so the UI can show WHICH disk was measured
     (avoids silently reading the wrong cluster)."""
     import httpx as _httpx
-    auth = _httpx.BasicAuth(user, pw) if user else None
+    auth = _httpx.BasicAuth(user, pw) if (user and os_cfg is None) else None
     for h in (hosts or []):
         try:
-            async with _httpx.AsyncClient(verify=verify, timeout=8.0) as c:
+            async with _os_probe_client(verify, 8.0, os_cfg) as c:
                 r = await c.get(f"{h.rstrip('/')}/_nodes/stats/fs", auth=auth,
                                 headers={"Accept": "application/json"})
                 if r.status_code != 200:
@@ -1465,6 +1504,14 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
         events.append(info)
 
     os_config = settings.get_opensearch(cfg.get("server"))
+    if export_mode == "opensearch" and os_config.hosts and os_config.datanode:
+        from glogarch.graylog.datanode import ensure_working
+        from glogarch.utils.sanitize import sanitize as _san
+        os_config, _dn_problem = await ensure_working(settings, server_config.name)
+        if _dn_problem:
+            return JSONResponse(
+                {"error": f"Data Node OpenSearch is not usable: {_san(_dn_problem)}",
+                 "code": "datanode_unusable"}, status_code=400)
     if export_mode == "opensearch" and os_config.hosts:
         from glogarch.opensearch.exporter import OpenSearchExporter
         os_exporter = OpenSearchExporter(
@@ -1770,6 +1817,10 @@ async def list_servers(request: Request):
             info["name"] = srv.name
             info["url"] = srv.url
             info["has_datanode"] = False
+            # jt-glogarch holds a Data Node client certificate for this server
+            # (beta): OpenSearch Direct export and Bulk import work through it.
+            info["datanode_access"] = bool(srv.opensearch is not None and srv.opensearch.datanode
+                                           and srv.opensearch.hosts)
             # Detect Data Node via a DIRECT, single-shot call (5s, NO retry).
             # On Graylog without data nodes /api/datanodes returns 404 — routing
             # it through client.get() would trip the retry decorator's 2+4+8s
@@ -1781,14 +1832,23 @@ async def list_servers(request: Request):
                         auth = _httpx.BasicAuth(srv.auth_token, "token")
                     else:
                         auth = _httpx.BasicAuth(srv.username or "", srv.password or "")
+                    # `/api/system/cluster/datanodes` is the listing (paginated,
+                    # `elements`). `/api/datanodes` answered 404 on 7.2.2, so
+                    # this probe never found a Data Node there; it stays as the
+                    # fallback for whatever version it once worked on.
                     async with _httpx.AsyncClient(verify=srv.verify_ssl, timeout=5.0) as hc:
-                        r = await hc.get(f"{srv.url.rstrip('/')}/api/datanodes",
-                                         auth=auth, headers={"Accept": "application/json"})
-                        if r.status_code == 200:
+                        for _p in ("/api/system/cluster/datanodes", "/api/datanodes"):
+                            r = await hc.get(f"{srv.url.rstrip('/')}{_p}",
+                                             auth=auth, headers={"Accept": "application/json"})
+                            if r.status_code != 200:
+                                continue
                             d = r.json()
+                            if isinstance(d, dict):
+                                d = d.get("elements") or []
                             if isinstance(d, list) and len(d) > 0:
                                 info["has_datanode"] = True
                                 info["datanode_count"] = len(d)
+                            break
                 except Exception as e:
                     log.debug("Data Node detection failed - assuming no Data Node", error=str(e))
             return info
@@ -2155,15 +2215,15 @@ async def test_opensearch(request: Request):
         if reason:
             return JSONResponse({"connected": False, "error": reason}, status_code=400)
 
-    from glogarch.core.config import OpenSearchConfig
     from glogarch.opensearch.client import OpenSearchClient
 
-    test_config = OpenSearchConfig(
-        hosts=hosts if isinstance(hosts, list) else [hosts],
-        username=username,
-        password=password,
-        verify_ssl=os_config.verify_ssl,
-    )
+    # Copy the resolved block so a client certificate (Graylog Data Node,
+    # beta) and its CA come along; only what the form overrides changes.
+    test_config = os_config.model_copy(update={
+        "hosts": hosts if isinstance(hosts, list) else [hosts],
+        "username": username,
+        "password": password,
+    })
 
     async with OpenSearchClient(test_config) as client:
         result = await client.test_connection()
@@ -2722,6 +2782,8 @@ def _server_to_dict(s) -> dict:
             "password": _mask(s.opensearch.password or ""),
             "verify_ssl": s.opensearch.verify_ssl,
         }
+    from glogarch.graylog.datanode import status as _dn_status
+    d["datanode"] = _dn_status(s.opensearch)
     return d
 
 
@@ -2769,7 +2831,15 @@ async def save_config_server(request: Request):
     # existing; present but empty hosts → drop it.
     os_block = None
     os_in = body.get("opensearch")
-    if os_in and os_in.get("hosts"):
+    existing_dn = (existing.opensearch if (existing and existing.opensearch is not None
+                                           and existing.opensearch.datanode) else None)
+    if existing_dn is not None:
+        # A Data Node certificate block is managed by Connect / Disconnect,
+        # never rebuilt from the edit form: rebuilding it from the form's
+        # hosts/user/password would drop the certificate and break every
+        # OpenSearch-direct schedule of this server.
+        os_block = existing_dn
+    elif os_in and os_in.get("hosts"):
         existing_os = existing.opensearch if (existing and existing.opensearch) else None
         os_block = OpenSearchConfig(
             hosts=[h.strip() for h in os_in.get("hosts", []) if isinstance(h, str) and h.strip()],
@@ -2957,6 +3027,151 @@ async def test_saved_server(request: Request, name: str):
         return {"connected": False, "error": sanitize(str(e))}
 
 
+# --- Graylog Data Node access (beta) ---------------------------------------
+# A Data Node's OpenSearch takes only client certificates. These endpoints ask
+# the server's Graylog to issue one (POST /api/ca/clientcert, needs an Admin
+# account), keep it next to config.yaml (0600) and point the server's
+# OpenSearch block at the Data Nodes. The private key never leaves this host
+# and is never returned by any endpoint.
+
+def _dn_server(request: Request, name: str):
+    settings = _settings(request)
+    if not settings.has_server(name):
+        return settings, None
+    return settings, settings.get_server(name)
+
+
+@router.get("/config/servers/{name}/datanode")
+async def get_server_datanode(request: Request, name: str):
+    """Data Nodes Graylog lists for this server + our certificate status."""
+    from glogarch.graylog import datanode as dn
+    from glogarch.utils.sanitize import sanitize as _san
+    settings, srv = _dn_server(request, name)
+    if srv is None:
+        return JSONResponse({"error": "Server not found"}, status_code=404)
+    out = {"status": dn.status(srv.opensearch), "nodes": [], "discovered_hosts": []}
+    try:
+        nodes = await dn.list_datanodes(srv)
+        out["nodes"] = [{"hostname": n.get("hostname"), "status": dn.node_status(n),
+                         "address": n.get("transport_address"),
+                         "version": n.get("datanode_version"),
+                         "cert_valid_until": n.get("cert_valid_until")} for n in nodes]
+        out["discovered_hosts"] = dn.opensearch_hosts(nodes)
+    except Exception as e:
+        out["error"] = _san(str(e))
+    out["has_other_opensearch"] = bool(srv.opensearch is not None and srv.opensearch.hosts
+                                       and not srv.opensearch.datanode)
+    return out
+
+
+@router.post("/config/servers/{name}/datanode/connect")
+async def connect_server_datanode(request: Request, name: str):
+    """Issue a client certificate through Graylog, test it, save it."""
+    from glogarch.graylog import datanode as dn
+    from glogarch.utils.sanitize import sanitize as _san
+    body = await request.json() if (await request.body()) else {}
+    settings, srv = _dn_server(request, name)
+    if srv is None:
+        return JSONResponse({"error": "Server not found"}, status_code=404)
+    if srv.opensearch is not None and srv.opensearch.hosts and not srv.opensearch.datanode \
+            and not body.get("replace_opensearch"):
+        return JSONResponse(
+            {"error": "This server already has its own OpenSearch connection, which "
+                      "connecting the Data Node replaces",
+             "code": "replace_opensearch"}, status_code=409)
+    hosts = [h for h in (body.get("hosts") or []) if isinstance(h, str) and h.strip()]
+    for h in hosts:
+        if not h.strip().lower().startswith("https://"):
+            return JSONResponse({"error": f"A Data Node address must start with https:// ({h})"},
+                                status_code=400)
+    try:
+        lifetime = int(body.get("lifetime_days") or dn.DEFAULT_LIFETIME_DAYS)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "lifetime_days must be a number"}, status_code=400)
+    try:
+        res = await dn.connect(settings, name, hosts=hosts or None, lifetime_days=lifetime,
+                               verify_hostname=bool(body.get("verify_hostname")))
+    except Exception as e:
+        _audit(request, "datanode_connect_failed", f"server={name} error={_san(str(e))[:200]}")
+        return JSONResponse({"error": _san(str(e))}, status_code=400)
+    _audit(request, "datanode_connected",
+           f"server={name} hosts={','.join(res['hosts'])} principal={res['principal']} "
+           f"roles={','.join(res['roles'])} not_after={res['not_after']}")
+    return {"status": "connected", **res, "datanode": dn.status(settings.get_server(name).opensearch)}
+
+
+@router.post("/config/servers/{name}/datanode/renew")
+async def renew_server_datanode(request: Request, name: str):
+    from glogarch.graylog import datanode as dn
+    settings, srv = _dn_server(request, name)
+    if srv is None:
+        return JSONResponse({"error": "Server not found"}, status_code=404)
+    if srv.opensearch is None or not srv.opensearch.datanode:
+        return JSONResponse({"error": "Data Node access is not set up for this server"},
+                            status_code=400)
+    cfg, renewed, err = await dn.ensure_fresh(settings, name, force=True)
+    if err or not renewed:
+        return JSONResponse({"error": err or "Another renewal of this certificate is in progress"},
+                            status_code=400)
+    test = await dn.probe(cfg)
+    _audit(request, "datanode_cert_renewed", f"server={name} not_after={cfg.cert_not_after}")
+    return {"status": "renewed", "test": test, "datanode": dn.status(cfg)}
+
+
+@router.post("/config/servers/{name}/datanode/test")
+async def test_server_datanode(request: Request, name: str):
+    from glogarch.graylog import datanode as dn
+    settings, srv = _dn_server(request, name)
+    if srv is None:
+        return JSONResponse({"error": "Server not found"}, status_code=404)
+    if srv.opensearch is None or not srv.opensearch.datanode:
+        return JSONResponse({"error": "Data Node access is not set up for this server"},
+                            status_code=400)
+    return {"test": await dn.probe(srv.opensearch), "datanode": dn.status(srv.opensearch)}
+
+
+@router.post("/config/servers/{name}/datanode/disconnect")
+async def disconnect_server_datanode(request: Request, name: str):
+    """Revoke our role mapping, delete the PEM files, drop the OpenSearch block.
+    Refused while an OpenSearch-direct export of this server is running, and
+    while a schedule of this server is set to OpenSearch Direct (it would
+    silently become an API export)."""
+    import json as _json
+    from glogarch.graylog import datanode as dn
+    from glogarch.opensearch.exporter import is_os_export_running
+    settings, srv = _dn_server(request, name)
+    if srv is None:
+        return JSONResponse({"error": "Server not found"}, status_code=404)
+    if srv.opensearch is None or not srv.opensearch.datanode:
+        return JSONResponse({"error": "Data Node access is not set up for this server"},
+                            status_code=400)
+    if is_os_export_running(name):
+        return JSONResponse({"error": f"An OpenSearch Direct export of '{name}' is running, "
+                                      "wait for it to finish or cancel it first",
+                             "code": "export_already_running"}, status_code=409)
+    users = []
+    for sch in _db(request).list_schedules():
+        try:
+            c = _json.loads(sch.config_json) if sch.config_json else {}
+        except Exception as e:
+            log.debug("Unreadable schedule config while checking Data Node use",
+                      schedule=sch.name, error=str(e))
+            continue
+        if (c.get("mode") or settings.export_mode) == "opensearch" and sch.job_type == "export" \
+                and (c.get("server") or settings.default_server) == name:
+            users.append(sch.name)
+    body = await request.json() if (await request.body()) else {}
+    if users and not body.get("confirm"):
+        return JSONResponse(
+            {"error": "These schedules export this server with OpenSearch Direct and will "
+                      "fall back to the Graylog API: " + ", ".join(users),
+             "code": "schedules_use_datanode", "schedules": users}, status_code=409)
+    res = await dn.disconnect(settings, name)
+    _audit(request, "datanode_disconnected",
+           f"server={name} revoke_errors={';'.join(res['revoke_errors'])}")
+    return {"status": "disconnected", **res}
+
+
 @router.get("/config/opensearch")
 def get_config_opensearch(request: Request):
     """Global OpenSearch config (password masked)."""
@@ -2974,7 +3189,6 @@ async def save_config_opensearch(request: Request):
     """Save the global OpenSearch config (password reconciled if masked)."""
     body = await request.json()
     settings = _settings(request)
-    from glogarch.core.config import OpenSearchConfig
     from glogarch.core.config_writer import update_config, reconcile_secret
     hosts = [h.strip() for h in body.get("hosts", []) if isinstance(h, str) and h.strip()]
     password = reconcile_secret(body.get("password"), settings.opensearch.password)
@@ -2982,8 +3196,11 @@ async def save_config_opensearch(request: Request):
     if username is None:
         username = settings.opensearch.username
     verify_ssl = bool(body.get("verify_ssl", settings.opensearch.verify_ssl))
-    new_os = OpenSearchConfig(hosts=hosts, username=(username or None),
-                              password=(password or None), verify_ssl=verify_ssl)
+    # model_copy: client-certificate fields set by hand in config.yaml (the
+    # form does not show them) survive a save from the Settings page.
+    new_os = settings.opensearch.model_copy(update={
+        "hosts": hosts, "username": (username or None),
+        "password": (password or None), "verify_ssl": verify_ssl})
     settings.opensearch = new_os
     update_config(_config_path(request),
                   lambda cfg: cfg.update({"opensearch": new_os.model_dump(exclude_none=True)}))

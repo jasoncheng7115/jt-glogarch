@@ -2,6 +2,17 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.19.0] - 2026-11-15
+
+### Added
+
+- **Graylog Data Node support (beta): OpenSearch Direct export and Bulk import through a client certificate.** A Data Node's OpenSearch accepts only client certificates, so until now a Data Node site could only use Graylog API export and GELF import. In Settings → Graylog servers → Edit, the new *Graylog Data Node (beta)* box lists the Data Nodes Graylog knows and, on *Connect Data Node*, asks Graylog to issue a certificate for jt-glogarch (`POST /api/ca/clientcert`, needs a Graylog Admin), tests it against OpenSearch and only then saves it. The certificate is mapped to the OpenSearch role `all_access`: the read-only `readall` role cannot list indices or aliases (measured on 7.2.2). The key, certificate and CA are stored in `certs/datanode/<server>/` next to `config.yaml` (0600, never shown by the UI or the API), and the server certificate is always checked against the cluster's own CA. Once connected, the export page no longer locks that server to Graylog API, schedules can use OpenSearch Direct, and Bulk import uses the certificate when the import target is that server. Tested end to end on Graylog 6.3.15, 7.0.15, 7.1.11 and 7.2.2 with their own Data Nodes (OpenSearch 2.15.0, 2.19.3, 2.19.5 and 3.7.0); on each, 3,000 of 3,000 seeded records archived by OpenSearch Direct and 3,000 of 3,000 back by Bulk import, which Graylog Search finds (`scripts/e2e-datanode-test.py`, with `scripts/datanode-stack/` to start a throwaway stack).
+- **The certificate looks after itself.** It is renewed a third of its lifetime before expiry (default lifetime 90 days), before every OpenSearch Direct run and in a daily check at 04:45. When OpenSearch refuses it (for example its role mapping was removed) it is issued again. When it still cannot be used, a scheduled OpenSearch Direct run archives through the Graylog API instead and sends a notification, so archiving never stops; a manual run says why it cannot start. *Disconnect* removes it from the role mapping and deletes the files, and asks first when OpenSearch Direct schedules use it. The import capacity estimate reads the Data Node's disk and document size with the same certificate, and the OpenSearch *Test* button uses it too.
+
+### Fixed
+
+- **A Data Node was not detected on Graylog 7.2.** The dashboard asked `GET /api/datanodes`, which answers 404 on 7.2.2; it now reads `GET /api/system/cluster/datanodes` first. Before this, the export and import dialogs offered OpenSearch Direct and Bulk to a Data Node site and failed when used.
+
 ## [1.18.3] - 2026-11-06
 
 ### Changed

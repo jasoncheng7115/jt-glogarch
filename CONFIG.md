@@ -231,6 +231,38 @@ opensearch:
 
 > CLI: `glogarch test-opensearch --server <name>` tests the cluster resolved for that server.
 
+### Graylog Data Node (client certificate, beta)
+
+A Data Node's OpenSearch takes only client certificates. **Set it up in the Web UI** (Settings → Graylog servers → Edit → Graylog Data Node (beta) → Connect Data Node); it writes this per-server block, which you should not edit by hand:
+
+```yaml
+servers:
+  - name: graylog-dn
+    url: "http://192.168.1.20:9000"
+    username: admin                     # must be a Graylog Admin (ca_clientcert:create)
+    password: "..."
+    opensearch:
+      hosts: ["https://datanode1:9200"] # Graylog's transport_address, or the IP
+      verify_ssl: false                 # true = also check the Data Node hostname
+      client_cert_file: /opt/jt-glogarch/certs/datanode/graylog-dn/client.crt
+      client_key_file:  /opt/jt-glogarch/certs/datanode/graylog-dn/client.key   # 0600
+      ca_file:          /opt/jt-glogarch/certs/datanode/graylog-dn/ca.crt       # always checked
+      datanode: true                    # issued through Graylog, renewed automatically
+      datanode_principal: jt-glogarch-<host>-graylog-dn
+      datanode_roles: [all_access]
+      datanode_lifetime_days: 90
+      cert_not_after: '2027-02-12T15:42:21'
+```
+
+| Key | Meaning |
+|---|---|
+| `client_cert_file` / `client_key_file` | PEM certificate and unencrypted key for mutual TLS. With them no Basic auth is sent. |
+| `ca_file` | The server certificate is always verified against this CA; `verify_ssl` then adds only the hostname check. |
+| `datanode` | `true`: jt-glogarch renews the certificate a third of its lifetime before expiry (before each OpenSearch Direct run and daily at 04:45), and re-issues it when OpenSearch refuses it. A scheduled OpenSearch Direct run that still cannot use it archives through the Graylog API and notifies. |
+| `datanode_roles` | `all_access`: the read-only `readall` cannot list indices or aliases (measured on 7.2.2). Graylog only accepts roles that already have a role mapping. |
+
+The three files live under `certs/` next to `config.yaml`, which upgrades never touch. *Disconnect* in the same dialog removes the principal from the role mappings and deletes them. Bulk import picks the block up when the import target URL is this server's URL.
+
 ---
 
 ## schedule — Scheduling

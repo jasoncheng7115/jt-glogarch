@@ -33,3 +33,6 @@ dist/
 venv/
 zap/
 CLAUDE.md
+
+# Data Node e2e stack secrets (scripts/datanode-stack/up.sh)
+scripts/datanode-stack/.env

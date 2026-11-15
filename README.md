@@ -1,4 +1,4 @@
-# jt-glogarch v1.18.3
+# jt-glogarch v1.19.0
 
 **Language**: **English** | [繁體中文](README-zh_TW.md) | [日本語](README-ja.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.18.3-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.19.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -70,11 +70,16 @@ and can restore them back into any Graylog instance via GELF (UDP / TCP).
 | Requires | Graylog API token | OpenSearch credentials |
 | Memory guard | Graylog heap from GC metrics: paces itself, pauses on real pressure | N/A |
 | Best for | Stream-specific exports, clusters where OpenSearch is locked down | Bulk historical exports, time-sensitive jobs |
-| Graylog 7 Data Node | ✅ Supported | ❌ Not supported (see note below) |
+| Graylog 7 Data Node | ✅ Supported | ✅ Beta: connect Data Node access first (see below) |
 
-> **Graylog 7 Data Node users:** Data Node environments use Graylog-managed TLS certificate authentication for OpenSearch. No credentials are exposed externally, so external tools cannot access OpenSearch directly. **OpenSearch Direct export** and **OpenSearch Bulk import** are not available in Data Node environments. Use **Graylog API export** and **GELF import** instead. Standalone OpenSearch deployments are unaffected.
+> **Graylog 7 Data Node (beta, since 1.19.0):** a Data Node's OpenSearch accepts only client certificates, and jt-glogarch can ask your Graylog to issue one: **Settings → Graylog servers → Edit → Graylog Data Node (beta) → Connect Data Node**. From then on **OpenSearch Direct export** and **OpenSearch Bulk import** work for that server; until you connect, use Graylog API export and GELF import.
 >
-> **Recommendation: Do not use Data Node.** When installing Graylog, configure it to connect directly to a standalone OpenSearch deployment instead of using Data Node. This enables OpenSearch Direct high-speed export (~5× faster) and OpenSearch Bulk high-speed import (~5-10× faster). Data Node simplifies initial setup but locks down external OpenSearch access, severely limiting archive and restore performance.
+> - **Needs:** the server's Graylog account is an Admin (Graylog permission `ca_clientcert:create`), and this host reaches port 9200 of every Data Node. The dialog fills in the addresses Graylog reports (`https://<hostname>:9200`); if a hostname does not resolve here, put the IP address instead.
+> - **What it gets:** Graylog signs a certificate with the cluster's own CA and maps it to the OpenSearch role `all_access`. The read-only role `readall` cannot list indices or aliases (measured on 7.2.2), so it is not enough for an export. The key, certificate and CA are kept in `certs/datanode/<server>/` next to `config.yaml`, mode 0600 for the service user, and are never shown by the UI or the API. The server certificate is always checked against that CA; tick *Also check the Data Node hostname* to verify the name as well.
+> - **Renewal:** automatic, a third of the lifetime before it expires (default lifetime 90 days), before each OpenSearch Direct run and in a daily check at 04:45. If the certificate is refused (for example its role mapping was removed) it is issued again. If it still cannot be used, a scheduled OpenSearch Direct run archives through the Graylog API and notifies you, so archiving does not stop.
+> - **Disconnect** removes the certificate from the OpenSearch role mapping and deletes the files. It asks first when a schedule exports that server with OpenSearch Direct.
+> - Detection now reads `GET /api/system/cluster/datanodes`; the old `GET /api/datanodes` probe answered 404 on 7.2.2, so earlier versions did not recognise a Data Node there.
+> - Tested end to end with `scripts/e2e-datanode-test.py` on Graylog 6.3.15, 7.0.15, 7.1.11 and 7.2.2 with their own Data Nodes (OpenSearch 2.15.0, 2.19.3, 2.19.5 and 3.7.0): OpenSearch Direct export, Bulk import found by Graylog Search, renewal, recovery after the role mapping was removed, and the scheduled fallback. Graylog 6.3 takes a single role in its certificate request; jt-glogarch handles both forms.
 
 > **Graylog API mode & `index.max_result_window`:** Graylog API export uses time-window offset pagination bounded by OpenSearch's `index.max_result_window` (default **10000**). jt-glogarch keeps every request within this limit automatically, so on a default cluster **no change is needed**. However, if your cluster has **lowered** `max_result_window` below 10000, API-mode export can fail with `500 Result window is too large`. Restore it to at least the default:
 >
@@ -1713,9 +1718,9 @@ The export's sustainable rate grows with Graylog's heap: each extra GB holds rou
 
 **Option 3 — Use OpenSearch Direct mode** (best for large exports):
 
-OpenSearch mode bypasses Graylog entirely — zero JVM impact, 5× faster. Use this when your OpenSearch is directly accessible (not behind Graylog Data Node).
+OpenSearch mode bypasses Graylog entirely — zero JVM impact, 5× faster. Use this when jt-glogarch can reach your OpenSearch.
 
-> **Note:** Graylog 7 Data Node users cannot use OpenSearch Direct mode. Use Option 1 or 2 instead.
+> **Note:** with a Graylog 7 Data Node, connect Data Node access (beta) in Settings first; see *Dual Export Modes*.
 
 
 ### Archive timeline shows red marks (gaps)
