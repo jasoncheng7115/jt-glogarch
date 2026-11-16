@@ -2,6 +2,21 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.19.1] - 2026-11-16
+
+### 新增
+
+- **每次發版都附 SBOM（CycloneDX 1.5）。** 專案裡的 `sbom.cdx.json` 列出這個版本建置和測試時使用的版本；`scripts/run-tests.sh` 會依已安裝的套件重新產生它，已安裝的版本和要發的版本不同時拒絕發版。每個離線安裝包附帶自己的 `sbom.cdx.json`，依包內的 wheel 產生（每個 wheel 的 SHA-256 和授權、Chromium 版本和壓縮檔雜湊值、中文字型），產生失敗就不打包。在已安裝的主機上，`glogarch sbom [-o 檔案]` 列出這台主機實際在跑的版本：相依套件是版本範圍，由 pip 在安裝時決定，要交給稽核的是這份。三份都列出 jt-glogarch、執行時用到的每個 Python 套件（不含 `dev` 開發工具）、套件內附的 Chart.js、Iconoir 圖示和報表世界地圖，以及 Playwright 使用的 Chromium。只用 Python 標準函式庫，不需要網路。
+
+### 變更
+
+- THIRD-PARTY-LICENSES 補列 Chart.js（MIT）和 Natural Earth（公有領域，報表世界地圖的圖資來源）。
+- CLI 的「以 root 執行」警告改輸出到 stderr，`glogarch sbom > 檔案`（以及其他指令的輸出）不會混入警告文字。
+
+### 修正
+
+- 歸檔清單：勾選歸檔後出現的「批次匯入／批次刪除」那一列，和上方「篩選／重新整理／欄位」那一列之間沒有間距，緊貼在一起。現在和下方的欄位設定一樣留 12 px。
+
 ## [1.19.0] - 2026-11-15
 
 ### 新增

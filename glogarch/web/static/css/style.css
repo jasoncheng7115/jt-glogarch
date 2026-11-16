@@ -1262,6 +1262,14 @@ tr:hover { background: var(--hover-bg); }
     align-items: center;
 }
 
+/* The batch row appears under the Filter/Refresh/Columns row once something
+   is ticked. `.filters` has no top margin, so the two rows touched; space it
+   like #column-settings (12px) and drop the 20px bottom margin, which only
+   padded the bottom of the card. */
+#batch-actions {
+    margin: 12px 0 0;
+}
+
 @media (max-width: 900px) {
     .filter-row { grid-template-columns: 1fr 1fr; }
 }

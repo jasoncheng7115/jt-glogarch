@@ -136,6 +136,17 @@ fi
 cp "$STAGE/deploy/install-offline.sh" "$STAGE/install-offline.sh"
 chmod +x "$STAGE/install-offline.sh" "$STAGE/deploy/"*.sh
 
+# 2e. SBOM of exactly what this bundle ships (CycloneDX 1.5): every wheel with
+#     its SHA-256 and licence, the Chromium build + tarball hash, the CJK font,
+#     and the third-party files inside the package. Read from the wheels'
+#     own METADATA, so it cannot drift from the bundle. No SBOM = no bundle.
+echo "[2e/4] Writing SBOM (sbom.cdx.json)..."
+if ! PYTHONPATH="$REPO_ROOT" python3 -m glogarch.sbom --wheels "$STAGE" -o "$STAGE/sbom.cdx.json"; then
+    echo "Error: SBOM generation failed - not shipping a bundle without one."
+    exit 1
+fi
+echo "  $(python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))["components"]))' "$STAGE/sbom.cdx.json") components listed."
+
 # 3. Include the source tree + upgrade script. The source is synced to
 #    /opt/jt-glogarch on the target so that `python -m glogarch` run from /opt
 #    (the CLI) uses the new code too — the wheel only updates dist-packages
@@ -178,6 +189,8 @@ Requires: Python ${PYVER} on the same platform this bundle was built on —
 compiled wheels do not load across minor versions, and install-offline.sh
 checks this before touching anything. pip never touches the network.
 Wheels included: $(ls "$STAGE"/*.whl 2>/dev/null | wc -l)
+SBOM: sbom.cdx.json (CycloneDX 1.5) lists every file above with its version,
+licence and SHA-256. After installing, \`glogarch sbom\` lists what this host runs.
 
 After a first install the service is NOT started automatically:
   systemctl enable --now jt-glogarch

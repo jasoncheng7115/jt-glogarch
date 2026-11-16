@@ -59,7 +59,8 @@ def cli(config_path: str | None, verbose: bool):
     import os
     user = os.environ.get("USER") or os.environ.get("LOGNAME") or ""
     if os.getuid() == 0 and user != "jt-glogarch":
-        console.print(
+        # stderr: `glogarch sbom > file` must stay valid JSON.
+        Console(stderr=True).print(
             "[yellow]⚠ Running as root. Directories created will be owned by root.[/yellow]\n"
             "[yellow]  Recommended: sudo -u jt-glogarch python3 -m glogarch ...[/yellow]"
         )
@@ -1164,6 +1165,21 @@ def streams_cleanup(server: str | None, prefix: str, dry_run: bool, yes: bool):
                     console.print(f"[red]Failed to delete index set {s.get('title')}: HTTP {rr.status_code}[/red]")
 
     asyncio.run(_run())
+
+
+@cli.command("sbom")
+@click.option("--output", "-o", default=None, help="Write the SBOM to this file (default: stdout)")
+def sbom_cmd(output: str | None):
+    """CycloneDX 1.5 SBOM of what is installed on this host.
+
+    Lists jt-glogarch, every Python package it runs on (the versions pip
+    actually installed here), the bundled third-party files and the Chromium
+    build the PDF reports use.
+    """
+    from glogarch import sbom
+    sbom.main(["-o", output] if output else [])
+    if output:
+        console.print(f"[green]SBOM written:[/green] {output}")
 
 
 @cli.command("db-backup")

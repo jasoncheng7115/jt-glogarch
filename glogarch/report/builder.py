@@ -250,6 +250,7 @@ def geo_map(points):
     SVG world map with count-sized bubbles (no map tiles / no network — renders
     offline in the PDF)."""
     import math
+    # Land outline: Natural Earth 1:110m Admin 0 - Countries (public domain).
     base = (_ASSETS / "worldmap.svg").read_text(encoding="utf-8")
     # The land layer is ONE concatenated path that contains two full-width, ~1px
     # thin FILLED strips (digitization artifacts at ~71°N and ~16°S) — they render

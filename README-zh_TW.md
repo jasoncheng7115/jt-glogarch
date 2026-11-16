@@ -1,4 +1,4 @@
-# jt-glogarch v1.19.0
+# jt-glogarch v1.19.1
 
 **語言**： [English](README.md) | **繁體中文** | [日本語](README-ja.md)  
 **網站**： <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.19.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.19.1-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -108,6 +108,7 @@ Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
 - 從磁碟重新掃描歸檔（偵測殘留檔案 / 遺失檔案）
 - **DB 備份** — `glogarch db-backup` 線上快照，支援自動清理舊備份
 - **DB 重建** — `glogarch db-rebuild` 從歸檔檔案重建 metadata DB（災難復原用）
+- **SBOM** — `glogarch sbom` 以 CycloneDX 1.5 列出這台主機實際在跑的元件（見「軟體物料清單」）
 
 
 ### 歸檔防竄改（選用，自 v1.12.0）
@@ -1611,3 +1612,15 @@ API 模式在 stream 上操作。OpenSearch Direct 模式在 index 上操作。
 - [APScheduler](https://apscheduler.readthedocs.io) — MIT License
 
 詳見 [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)。
+
+### 軟體物料清單（SBOM）
+
+jt-glogarch 從 v1.19.1 起在三個地方提供 CycloneDX 1.5 格式的 SBOM：
+
+| 位置 | 列出的內容 |
+|---|---|
+| 本專案的 [`sbom.cdx.json`](sbom.cdx.json) | 這個版本建置和測試時使用的版本，每次發版都重新產生。 |
+| 每個離線安裝包裡的 `sbom.cdx.json` | 這個安裝包實際附帶的檔案：每個 wheel 的版本、授權和 SHA-256，PDF 報表用的 Chromium，以及中文字型。 |
+| 在已安裝的主機執行 `glogarch sbom -o sbom.cdx.json` | 這台主機實際在跑的版本。相依套件由 pip 依版本範圍安裝，兩台主機可能裝到不同版本，要交給稽核的請用這份。 |
+
+每份都列出 jt-glogarch、執行時用到的每個 Python 套件（不含開發工具）、套件內附的第三方檔案（Chart.js、Iconoir 圖示、報表的世界地圖），以及 PDF 報表透過 Playwright 使用的 Chromium。`glogarch sbom` 不需要設定檔也不需要網路，可以用服務帳號執行：`sudo -u jt-glogarch glogarch sbom -o /tmp/sbom.cdx.json`。

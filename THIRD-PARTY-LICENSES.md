@@ -31,3 +31,30 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Chart.js
+
+- **Source**: https://www.chartjs.org (`glogarch/report/assets/chart.umd.min.js`, v4.4.1)
+- **License**: MIT License
+- **Copyright**: (c) 2023 Chart.js Contributors
+
+Used to draw charts in PDF reports; the file keeps its own licence header.
+
+## Natural Earth
+
+- **Source**: https://www.naturalearthdata.com (1:110m Admin 0 - Countries)
+- **License**: public domain ([terms of use](https://www.naturalearthdata.com/about/terms-of-use/))
+
+`glogarch/report/assets/worldmap.svg`, the land outline of the PDF report's world
+map, is drawn from this data (equirectangular, coordinates rounded to 0.01 degree,
+two digitising artefacts removed).
+
+## Python packages, Chromium, fonts
+
+Every Python package jt-glogarch runs on, the Chromium build used by PDF
+reports and the CJK font in the offline bundle are listed with version and
+licence in the SBOM (CycloneDX 1.5):
+
+- `sbom.cdx.json` in this repository: the versions this release was built and tested with.
+- `sbom.cdx.json` in each offline bundle: exactly the files that bundle ships, with SHA-256.
+- `glogarch sbom` on an installed host: what that host actually runs.

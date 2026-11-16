@@ -1252,6 +1252,23 @@ timestamp, platform, full pytest output, and version check result.
 
 See the latest results: [TEST-RESULTS.md](TEST-RESULTS.md)
 
+## SBOM (every release)
+
+`./scripts/run-tests.sh` writes `github/sbom.cdx.json` (CycloneDX 1.5) from the
+INSTALLED packages, run from `/tmp` so the checkout's stale `*.egg-info` cannot
+answer, and stops the release when the installed jt-glogarch is not the version
+being released (reinstall with `--force-reinstall` first). Commit it with every
+push, like `TEST-RESULTS.md`.
+
+- [ ] `github/sbom.cdx.json` shows this release's version and lists every runtime
+      dependency of `pyproject.toml` (`tests/test_sbom.py` checks both).
+- [ ] An offline bundle contains `sbom.cdx.json`; `build-offline-bundle.sh` aborts
+      without one. It lists every wheel in the bundle with SHA-256, the Chromium
+      build and the font.
+- [ ] `sudo -u jt-glogarch glogarch sbom -o /tmp/s.json` on the staging host gives
+      valid JSON with the deployed version (`glogarch sbom > file` too: warnings go
+      to stderr).
+
 ## Security scan (larger releases)
 
 Every **larger version change** (minor/major, e.g. `1.11.0`, `2.0.0` — not routine

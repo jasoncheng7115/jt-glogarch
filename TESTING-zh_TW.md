@@ -938,6 +938,20 @@ python3 -m pytest tests/test_integration.py -v
 
 最新結果：[TEST-RESULTS.md](TEST-RESULTS.md)
 
+## SBOM（每次發版）
+
+`./scripts/run-tests.sh` 會依**已安裝**的套件產生 `github/sbom.cdx.json`（CycloneDX 1.5）。
+它從 `/tmp` 執行，避免原始碼目錄裡過時的 `*.egg-info` 被讀到；已安裝的 jt-glogarch
+不是要發的版本時就停止發版（先用 `--force-reinstall` 重新安裝）。每次推送都要跟
+`TEST-RESULTS.md` 一起提交。
+
+- [ ] `github/sbom.cdx.json` 的版本是這次發的版本，且列出 `pyproject.toml` 的每個執行
+      相依套件（`tests/test_sbom.py` 會檢查這兩項）。
+- [ ] 離線安裝包裡有 `sbom.cdx.json`，沒有就 `build-offline-bundle.sh` 中止。裡面列出包內
+      每個 wheel 的 SHA-256、Chromium 版本和字型。
+- [ ] 在測試主機執行 `sudo -u jt-glogarch glogarch sbom -o /tmp/s.json`，得到有效的 JSON，
+      版本是部署的版本（`glogarch sbom > 檔案` 也一樣：警告輸出到 stderr）。
+
 ## 安全掃描（較大版本異動）
 
 每次**較大版本異動**（minor／major，例如 `1.11.0`、`2.0.0`——例行 patch 除非動到 Web 介面否則不需）

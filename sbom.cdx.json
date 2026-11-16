@@ -1,0 +1,1062 @@
+{
+ "bomFormat": "CycloneDX",
+ "specVersion": "1.5",
+ "serialNumber": "urn:uuid:ff73a5e3-d6be-4709-a1db-98bab1fbc8ed",
+ "version": 1,
+ "metadata": {
+  "timestamp": "2026-11-16T16:19:58+00:00",
+  "tools": {
+   "components": [
+    {
+     "type": "application",
+     "name": "glogarch.sbom",
+     "version": "1.19.1"
+    }
+   ]
+  },
+  "component": {
+   "type": "application",
+   "bom-ref": "pkg:pypi/jt-glogarch@1.19.1",
+   "name": "jt-glogarch",
+   "version": "1.19.1",
+   "purl": "pkg:pypi/jt-glogarch@1.19.1",
+   "licenses": [
+    {
+     "license": {
+      "id": "AGPL-3.0-or-later"
+     }
+    }
+   ],
+   "supplier": {
+    "name": "Jason Tools"
+   },
+   "externalReferences": [
+    {
+     "type": "vcs",
+     "url": "https://github.com/jasoncheng7115/jt-glogarch"
+    }
+   ]
+  },
+  "properties": [
+   {
+    "name": "jt-glogarch:sbom-source",
+    "value": "installed distributions on the host that ran it"
+   },
+   {
+    "name": "jt-glogarch:python",
+    "value": "CPython 3.10.12 (linux)"
+   },
+   {
+    "name": "jt-glogarch:extras",
+    "value": "report (included when present; dev extra excluded)"
+   }
+  ]
+ },
+ "components": [
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/click@8.3.1",
+   "name": "click",
+   "version": "8.3.1",
+   "purl": "pkg:pypi/click@8.3.1",
+   "licenses": [
+    {
+     "expression": "BSD-3-Clause"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/httpx@0.28.1",
+   "name": "httpx",
+   "version": "0.28.1",
+   "purl": "pkg:pypi/httpx@0.28.1",
+   "licenses": [
+    {
+     "license": {
+      "id": "BSD-3-Clause"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/certifi@2026.10.19",
+   "name": "certifi",
+   "version": "2026.10.19",
+   "purl": "pkg:pypi/certifi@2026.10.19",
+   "licenses": [
+    {
+     "license": {
+      "id": "MPL-2.0"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/pydantic@2.12.5",
+   "name": "pydantic",
+   "version": "2.12.5",
+   "purl": "pkg:pypi/pydantic@2.12.5",
+   "licenses": [
+    {
+     "expression": "MIT"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/pydantic-settings@2.13.1",
+   "name": "pydantic-settings",
+   "version": "2.13.1",
+   "purl": "pkg:pypi/pydantic-settings@2.13.1",
+   "licenses": [
+    {
+     "expression": "MIT"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/aiosqlite@0.22.1",
+   "name": "aiosqlite",
+   "version": "0.22.1",
+   "purl": "pkg:pypi/aiosqlite@0.22.1",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/fastapi@0.135.2",
+   "name": "fastapi",
+   "version": "0.135.2",
+   "purl": "pkg:pypi/fastapi@0.135.2",
+   "licenses": [
+    {
+     "expression": "MIT"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/uvicorn@0.42.0",
+   "name": "uvicorn",
+   "version": "0.42.0",
+   "purl": "pkg:pypi/uvicorn@0.42.0",
+   "licenses": [
+    {
+     "expression": "BSD-3-Clause"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/jinja2@3.1.6",
+   "name": "Jinja2",
+   "version": "3.1.6",
+   "purl": "pkg:pypi/jinja2@3.1.6",
+   "licenses": [
+    {
+     "license": {
+      "id": "BSD-3-Clause"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/apscheduler@3.11.2",
+   "name": "APScheduler",
+   "version": "3.11.2",
+   "purl": "pkg:pypi/apscheduler@3.11.2",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/structlog@25.5.0",
+   "name": "structlog",
+   "version": "25.5.0",
+   "purl": "pkg:pypi/structlog@25.5.0",
+   "licenses": [
+    {
+     "expression": "MIT OR Apache-2.0"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/python-dateutil@2.9.0.post0",
+   "name": "python-dateutil",
+   "version": "2.9.0.post0",
+   "purl": "pkg:pypi/python-dateutil@2.9.0.post0",
+   "licenses": [
+    {
+     "license": {
+      "id": "BSD-3-Clause"
+     }
+    },
+    {
+     "license": {
+      "id": "Apache-2.0"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/pyyaml@6.0.3",
+   "name": "PyYAML",
+   "version": "6.0.3",
+   "purl": "pkg:pypi/pyyaml@6.0.3",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/rich@14.3.3",
+   "name": "rich",
+   "version": "14.3.3",
+   "purl": "pkg:pypi/rich@14.3.3",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/tabulate@0.10.0",
+   "name": "tabulate",
+   "version": "0.10.0",
+   "purl": "pkg:pypi/tabulate@0.10.0",
+   "licenses": [
+    {
+     "expression": "MIT"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/sse-starlette@3.3.3",
+   "name": "sse-starlette",
+   "version": "3.3.3",
+   "purl": "pkg:pypi/sse-starlette@3.3.3",
+   "licenses": [
+    {
+     "expression": "BSD-3-Clause"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/itsdangerous@2.2.0",
+   "name": "itsdangerous",
+   "version": "2.2.0",
+   "purl": "pkg:pypi/itsdangerous@2.2.0",
+   "licenses": [
+    {
+     "license": {
+      "id": "BSD-3-Clause"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/python-multipart@0.0.22",
+   "name": "python-multipart",
+   "version": "0.0.22",
+   "purl": "pkg:pypi/python-multipart@0.0.22",
+   "licenses": [
+    {
+     "expression": "Apache-2.0"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/playwright@1.59.0",
+   "name": "playwright",
+   "version": "1.59.0",
+   "purl": "pkg:pypi/playwright@1.59.0",
+   "licenses": [
+    {
+     "expression": "Apache-2.0"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/pymupdf@1.28.0",
+   "name": "pymupdf",
+   "version": "1.28.0",
+   "purl": "pkg:pypi/pymupdf@1.28.0",
+   "licenses": [
+    {
+     "license": {
+      "name": "Dual Licensed - GNU AFFERO GPL 3.0 or Artifex Commercial License"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/pillow@12.1.0",
+   "name": "pillow",
+   "version": "12.1.0",
+   "purl": "pkg:pypi/pillow@12.1.0",
+   "licenses": [
+    {
+     "expression": "MIT-CMU"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/anyio@4.13.0",
+   "name": "anyio",
+   "version": "4.13.0",
+   "purl": "pkg:pypi/anyio@4.13.0",
+   "licenses": [
+    {
+     "expression": "MIT"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/httpcore@1.0.9",
+   "name": "httpcore",
+   "version": "1.0.9",
+   "purl": "pkg:pypi/httpcore@1.0.9",
+   "licenses": [
+    {
+     "expression": "BSD-3-Clause"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/idna@3.3",
+   "name": "idna",
+   "version": "3.3",
+   "purl": "pkg:pypi/idna@3.3",
+   "licenses": [
+    {
+     "license": {
+      "id": "BSD-3-Clause"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/annotated-types@0.7.0",
+   "name": "annotated-types",
+   "version": "0.7.0",
+   "purl": "pkg:pypi/annotated-types@0.7.0",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/pydantic-core@2.41.5",
+   "name": "pydantic_core",
+   "version": "2.41.5",
+   "purl": "pkg:pypi/pydantic-core@2.41.5",
+   "licenses": [
+    {
+     "expression": "MIT"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/typing-extensions@4.15.0",
+   "name": "typing_extensions",
+   "version": "4.15.0",
+   "purl": "pkg:pypi/typing-extensions@4.15.0",
+   "licenses": [
+    {
+     "expression": "PSF-2.0"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/typing-inspection@0.4.2",
+   "name": "typing-inspection",
+   "version": "0.4.2",
+   "purl": "pkg:pypi/typing-inspection@0.4.2",
+   "licenses": [
+    {
+     "expression": "MIT"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/python-dotenv@1.2.2",
+   "name": "python-dotenv",
+   "version": "1.2.2",
+   "purl": "pkg:pypi/python-dotenv@1.2.2",
+   "licenses": [
+    {
+     "license": {
+      "id": "BSD-3-Clause"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/starlette@1.0.0",
+   "name": "starlette",
+   "version": "1.0.0",
+   "purl": "pkg:pypi/starlette@1.0.0",
+   "licenses": [
+    {
+     "expression": "BSD-3-Clause"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/annotated-doc@0.0.4",
+   "name": "annotated-doc",
+   "version": "0.0.4",
+   "purl": "pkg:pypi/annotated-doc@0.0.4",
+   "licenses": [
+    {
+     "expression": "MIT"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/h11@0.16.0",
+   "name": "h11",
+   "version": "0.16.0",
+   "purl": "pkg:pypi/h11@0.16.0",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/httptools@0.7.1",
+   "name": "httptools",
+   "version": "0.7.1",
+   "purl": "pkg:pypi/httptools@0.7.1",
+   "licenses": [
+    {
+     "expression": "MIT"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/uvloop@0.22.1",
+   "name": "uvloop",
+   "version": "0.22.1",
+   "purl": "pkg:pypi/uvloop@0.22.1",
+   "licenses": [
+    {
+     "license": {
+      "id": "Apache-2.0"
+     }
+    },
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/watchfiles@1.1.1",
+   "name": "watchfiles",
+   "version": "1.1.1",
+   "purl": "pkg:pypi/watchfiles@1.1.1",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/websockets@15.0.1",
+   "name": "websockets",
+   "version": "15.0.1",
+   "purl": "pkg:pypi/websockets@15.0.1",
+   "licenses": [
+    {
+     "license": {
+      "id": "BSD-3-Clause"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/markupsafe@2.0.1",
+   "name": "MarkupSafe",
+   "version": "2.0.1",
+   "purl": "pkg:pypi/markupsafe@2.0.1",
+   "licenses": [
+    {
+     "license": {
+      "id": "BSD-3-Clause"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/tzlocal@5.3.1",
+   "name": "tzlocal",
+   "version": "5.3.1",
+   "purl": "pkg:pypi/tzlocal@5.3.1",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/six@1.16.0",
+   "name": "six",
+   "version": "1.16.0",
+   "purl": "pkg:pypi/six@1.16.0",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/markdown-it-py@4.0.0",
+   "name": "markdown-it-py",
+   "version": "4.0.0",
+   "purl": "pkg:pypi/markdown-it-py@4.0.0",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/pygments@2.19.2",
+   "name": "Pygments",
+   "version": "2.19.2",
+   "purl": "pkg:pypi/pygments@2.19.2",
+   "licenses": [
+    {
+     "license": {
+      "id": "BSD-3-Clause"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/pyee@13.0.1",
+   "name": "pyee",
+   "version": "13.0.1",
+   "purl": "pkg:pypi/pyee@13.0.1",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/greenlet@3.5.0",
+   "name": "greenlet",
+   "version": "3.5.0",
+   "purl": "pkg:pypi/greenlet@3.5.0",
+   "licenses": [
+    {
+     "expression": "MIT AND PSF-2.0"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/exceptiongroup@1.3.1",
+   "name": "exceptiongroup",
+   "version": "1.3.1",
+   "purl": "pkg:pypi/exceptiongroup@1.3.1",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/mdurl@0.1.2",
+   "name": "mdurl",
+   "version": "0.1.2",
+   "purl": "pkg:pypi/mdurl@0.1.2",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:npm/chart.js@4.4.1",
+   "name": "chart.js",
+   "version": "4.4.1",
+   "purl": "pkg:npm/chart.js@4.4.1",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ],
+   "hashes": [
+    {
+     "alg": "SHA-256",
+     "content": "d2af8974e95271638772e9e9524db5b9a6f58d6ec2d5d781400447b4a31c681e"
+    }
+   ],
+   "properties": [
+    {
+     "name": "jt-glogarch:location",
+     "value": "glogarch/report/assets/chart.umd.min.js (PDF reports)"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:npm/iconoir",
+   "name": "iconoir",
+   "purl": "pkg:npm/iconoir",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ],
+   "properties": [
+    {
+     "name": "jt-glogarch:location",
+     "value": "glogarch/web/static/js/i18n.js (SVG icons embedded)"
+    }
+   ]
+  },
+  {
+   "type": "data",
+   "bom-ref": "file:glogarch/report/assets/worldmap.svg",
+   "name": "worldmap.svg",
+   "description": "World land outline derived from Natural Earth 1:110m Admin 0 - Countries",
+   "licenses": [
+    {
+     "license": {
+      "name": "Public domain (Natural Earth)",
+      "url": "https://www.naturalearthdata.com/about/terms-of-use/"
+     }
+    }
+   ],
+   "hashes": [
+    {
+     "alg": "SHA-256",
+     "content": "aa25197c71e36fce9066ff4794211330d72203d8b3929344cdc6d3c1f437a1d2"
+    }
+   ],
+   "externalReferences": [
+    {
+     "type": "website",
+     "url": "https://www.naturalearthdata.com/"
+    }
+   ],
+   "properties": [
+    {
+     "name": "jt-glogarch:location",
+     "value": "glogarch/report/assets/worldmap.svg (PDF report map widget)"
+    }
+   ]
+  },
+  {
+   "type": "application",
+   "bom-ref": "browser:chromium@147.0.7727.15",
+   "name": "chromium",
+   "version": "147.0.7727.15",
+   "licenses": [
+    {
+     "license": {
+      "id": "BSD-3-Clause"
+     }
+    }
+   ],
+   "properties": [
+    {
+     "name": "playwright:revision",
+     "value": "1217"
+    },
+    {
+     "name": "jt-glogarch:used-by",
+     "value": "playwright 1.59.0 (PDF reports)"
+    }
+   ]
+  },
+  {
+   "type": "application",
+   "bom-ref": "browser:chromium-headless-shell@147.0.7727.15",
+   "name": "chromium-headless-shell",
+   "version": "147.0.7727.15",
+   "licenses": [
+    {
+     "license": {
+      "id": "BSD-3-Clause"
+     }
+    }
+   ],
+   "properties": [
+    {
+     "name": "playwright:revision",
+     "value": "1217"
+    },
+    {
+     "name": "jt-glogarch:used-by",
+     "value": "playwright 1.59.0 (PDF reports)"
+    }
+   ]
+  }
+ ],
+ "dependencies": [
+  {
+   "ref": "pkg:pypi/jt-glogarch@1.19.1",
+   "dependsOn": [
+    "pkg:pypi/click@8.3.1",
+    "pkg:pypi/httpx@0.28.1",
+    "pkg:pypi/certifi@2026.10.19",
+    "pkg:pypi/pydantic@2.12.5",
+    "pkg:pypi/pydantic-settings@2.13.1",
+    "pkg:pypi/aiosqlite@0.22.1",
+    "pkg:pypi/fastapi@0.135.2",
+    "pkg:pypi/uvicorn@0.42.0",
+    "pkg:pypi/jinja2@3.1.6",
+    "pkg:pypi/apscheduler@3.11.2",
+    "pkg:pypi/structlog@25.5.0",
+    "pkg:pypi/python-dateutil@2.9.0.post0",
+    "pkg:pypi/pyyaml@6.0.3",
+    "pkg:pypi/rich@14.3.3",
+    "pkg:pypi/tabulate@0.10.0",
+    "pkg:pypi/sse-starlette@3.3.3",
+    "pkg:pypi/itsdangerous@2.2.0",
+    "pkg:pypi/python-multipart@0.0.22",
+    "pkg:pypi/playwright@1.59.0",
+    "pkg:pypi/pymupdf@1.28.0",
+    "pkg:pypi/pillow@12.1.0",
+    "pkg:npm/chart.js@4.4.1",
+    "pkg:npm/iconoir",
+    "file:glogarch/report/assets/worldmap.svg",
+    "browser:chromium@147.0.7727.15",
+    "browser:chromium-headless-shell@147.0.7727.15"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/click@8.3.1",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/httpx@0.28.1",
+   "dependsOn": [
+    "pkg:pypi/anyio@4.13.0",
+    "pkg:pypi/certifi@2026.10.19",
+    "pkg:pypi/httpcore@1.0.9",
+    "pkg:pypi/idna@3.3"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/certifi@2026.10.19",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/pydantic@2.12.5",
+   "dependsOn": [
+    "pkg:pypi/annotated-types@0.7.0",
+    "pkg:pypi/pydantic-core@2.41.5",
+    "pkg:pypi/typing-extensions@4.15.0",
+    "pkg:pypi/typing-inspection@0.4.2"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/pydantic-settings@2.13.1",
+   "dependsOn": [
+    "pkg:pypi/pydantic@2.12.5",
+    "pkg:pypi/python-dotenv@1.2.2",
+    "pkg:pypi/typing-inspection@0.4.2"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/aiosqlite@0.22.1",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/fastapi@0.135.2",
+   "dependsOn": [
+    "pkg:pypi/starlette@1.0.0",
+    "pkg:pypi/pydantic@2.12.5",
+    "pkg:pypi/typing-extensions@4.15.0",
+    "pkg:pypi/typing-inspection@0.4.2",
+    "pkg:pypi/annotated-doc@0.0.4"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/uvicorn@0.42.0",
+   "dependsOn": [
+    "pkg:pypi/click@8.3.1",
+    "pkg:pypi/h11@0.16.0",
+    "pkg:pypi/typing-extensions@4.15.0",
+    "pkg:pypi/httptools@0.7.1",
+    "pkg:pypi/python-dotenv@1.2.2",
+    "pkg:pypi/pyyaml@6.0.3",
+    "pkg:pypi/uvloop@0.22.1",
+    "pkg:pypi/watchfiles@1.1.1",
+    "pkg:pypi/websockets@15.0.1"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/jinja2@3.1.6",
+   "dependsOn": [
+    "pkg:pypi/markupsafe@2.0.1"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/apscheduler@3.11.2",
+   "dependsOn": [
+    "pkg:pypi/tzlocal@5.3.1"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/structlog@25.5.0",
+   "dependsOn": [
+    "pkg:pypi/typing-extensions@4.15.0"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/python-dateutil@2.9.0.post0",
+   "dependsOn": [
+    "pkg:pypi/six@1.16.0"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/pyyaml@6.0.3",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/rich@14.3.3",
+   "dependsOn": [
+    "pkg:pypi/markdown-it-py@4.0.0",
+    "pkg:pypi/pygments@2.19.2"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/tabulate@0.10.0",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/sse-starlette@3.3.3",
+   "dependsOn": [
+    "pkg:pypi/starlette@1.0.0",
+    "pkg:pypi/anyio@4.13.0"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/itsdangerous@2.2.0",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/python-multipart@0.0.22",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/playwright@1.59.0",
+   "dependsOn": [
+    "pkg:pypi/pyee@13.0.1",
+    "pkg:pypi/greenlet@3.5.0"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/pymupdf@1.28.0",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/pillow@12.1.0",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/anyio@4.13.0",
+   "dependsOn": [
+    "pkg:pypi/exceptiongroup@1.3.1",
+    "pkg:pypi/idna@3.3",
+    "pkg:pypi/typing-extensions@4.15.0"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/httpcore@1.0.9",
+   "dependsOn": [
+    "pkg:pypi/certifi@2026.10.19",
+    "pkg:pypi/h11@0.16.0"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/idna@3.3",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/annotated-types@0.7.0",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/pydantic-core@2.41.5",
+   "dependsOn": [
+    "pkg:pypi/typing-extensions@4.15.0"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/typing-extensions@4.15.0",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/typing-inspection@0.4.2",
+   "dependsOn": [
+    "pkg:pypi/typing-extensions@4.15.0"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/python-dotenv@1.2.2",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/starlette@1.0.0",
+   "dependsOn": [
+    "pkg:pypi/anyio@4.13.0",
+    "pkg:pypi/typing-extensions@4.15.0"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/annotated-doc@0.0.4",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/h11@0.16.0",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/httptools@0.7.1",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/uvloop@0.22.1",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/watchfiles@1.1.1",
+   "dependsOn": [
+    "pkg:pypi/anyio@4.13.0"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/websockets@15.0.1",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/markupsafe@2.0.1",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/tzlocal@5.3.1",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/six@1.16.0",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/markdown-it-py@4.0.0",
+   "dependsOn": [
+    "pkg:pypi/mdurl@0.1.2"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/pygments@2.19.2",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/pyee@13.0.1",
+   "dependsOn": [
+    "pkg:pypi/typing-extensions@4.15.0"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/greenlet@3.5.0",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/exceptiongroup@1.3.1",
+   "dependsOn": [
+    "pkg:pypi/typing-extensions@4.15.0"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/mdurl@0.1.2",
+   "dependsOn": []
+  }
+ ]
+}

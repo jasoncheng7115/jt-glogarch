@@ -85,6 +85,29 @@ else
     echo "    python3 scripts/ui-smoke.py https://192.0.2.36:8990"
 fi
 
+# --- SBOM (every release, owner 2026-11-16) ---------------------------------
+# github/sbom.cdx.json = CycloneDX 1.5 of the versions this release was built and
+# tested with: read from the INSTALLED distributions, so pip must have installed
+# this very version first (--force-reinstall). A stale install would describe
+# the previous release, so a version mismatch stops the release here.
+SBOM_FILE="github/sbom.cdx.json"
+SBOM_RC=0
+# Run from /tmp WITHOUT the source tree on sys.path: the INSTALLED code describes
+# the installed packages (the checkout's stale *.egg-info must not answer).
+SBOM_OUT=$(cd /tmp && python3 -m glogarch.sbom -o "$OLDPWD/$SBOM_FILE.new" 2>&1) || SBOM_RC=$?
+if [ $SBOM_RC -ne 0 ]; then
+    echo "❌ SBOM GENERATION FAILED — refusing to release:"; echo "$SBOM_OUT"; rm -f "$SBOM_FILE.new"; exit 1
+fi
+SBOM_VER=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["metadata"]["component"]["version"])' "$SBOM_FILE.new")
+if [ "$SBOM_VER" != "$VERSION" ]; then
+    echo "❌ SBOM describes installed jt-glogarch $SBOM_VER, source is $VERSION — refusing to release."
+    echo "   Install this version first: pip install --no-build-isolation --no-cache-dir --force-reinstall --no-deps ."
+    rm -f "$SBOM_FILE.new"; exit 1
+fi
+mv "$SBOM_FILE.new" "$SBOM_FILE"
+SBOM_SUMMARY="✅ $(python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))["components"]))' "$SBOM_FILE") components (CycloneDX 1.5, ${SBOM_FILE#github/})"
+echo "SBOM: $SBOM_SUMMARY"
+
 # Run pytest and capture output (NO_COLOR disables ANSI escape codes).
 # IMPORTANT: pytest's exit code is captured BEFORE the ANSI strip pipe.
 # Previous "pytest | sed" form put $? on sed (always 0) so failures were
@@ -135,6 +158,7 @@ cat > "$RESULT_FILE" << EOF
 | **Results** | ${PASSED} ${FAILED:+/ $FAILED} ${SKIPPED:+/ $SKIPPED} ${DURATION} |
 | **Version Check** | $([ $VERSION_OK -eq 0 ] && echo "✅ OK" || echo "❌ FAIL") |
 | **Bandit (source security)** | $(echo "$BANDIT_OUT" | tail -1) |
+| **SBOM** | ${SBOM_SUMMARY} |
 
 ## Test Output
 

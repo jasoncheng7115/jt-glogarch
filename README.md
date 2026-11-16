@@ -1,4 +1,4 @@
-# jt-glogarch v1.19.0
+# jt-glogarch v1.19.1
 
 **Language**: **English** | [繁體中文](README-zh_TW.md) | [日本語](README-ja.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.19.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.19.1-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -109,6 +109,7 @@ and can restore them back into any Graylog instance via GELF (UDP / TCP).
 - Rescan archives from disk (detect orphan / missing files)
 - **DB backup** — `glogarch db-backup` online snapshot with auto-prune
 - **DB rebuild** — `glogarch db-rebuild` reconstruct metadata DB from archive files (disaster recovery)
+- **SBOM** — `glogarch sbom` CycloneDX 1.5 list of what this host runs (see *Software Bill of Materials*)
 
 
 ### Archive Tamper-Evidence (optional, since v1.12.0)
@@ -1785,3 +1786,15 @@ without OS-specific dependencies — a Dockerfile would be straightforward to ad
 - [APScheduler](https://apscheduler.readthedocs.io) — MIT License
 
 See [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) for details.
+
+### Software Bill of Materials (SBOM)
+
+jt-glogarch provides a CycloneDX 1.5 SBOM in three places (since v1.19.1):
+
+| Where | What it lists |
+|---|---|
+| [`sbom.cdx.json`](sbom.cdx.json) in this repository | The versions this release was built and tested with. Regenerated for every release. |
+| `sbom.cdx.json` in each offline bundle | Exactly the files that bundle ships: every wheel with its SHA-256 and licence, the Chromium build for PDF reports, the CJK font. |
+| `glogarch sbom -o sbom.cdx.json` on an installed host | What that host actually runs. Dependencies are installed by pip as version ranges, so two hosts can run different versions; this is the one to hand to an auditor. |
+
+Each lists jt-glogarch, every Python package it runs on (development tools excluded), the third-party files inside the package (Chart.js, Iconoir icons, the report world map) and the Chromium build that Playwright uses for PDF reports. `glogarch sbom` needs no configuration and no network, and can run as the service user: `sudo -u jt-glogarch glogarch sbom -o /tmp/sbom.cdx.json`.

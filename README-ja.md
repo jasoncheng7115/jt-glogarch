@@ -1,4 +1,4 @@
-# jt-glogarch v1.19.0
+# jt-glogarch v1.19.1
 
 **Language**: [English](README.md) | [繁體中文](README-zh_TW.md) | **日本語**  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open（6.x / 7.x）向けのログのアーカイブ・リストアツール
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.19.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.19.1-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 > **作者：** Jason Cheng（[Jason Tools](https://github.com/jasoncheng7115)）
@@ -789,6 +789,7 @@ Graylog の保持期間内のデータにアクセスしたい場合。
 | `glogarch integrity-init` / `integrity-seal` / `integrity-manifest` | HMAC による改ざん検知 |
 | `glogarch db-backup` | SQLite のオンラインスナップショット（`--keep N`） |
 | `glogarch db-rebuild` | ディスク上のアーカイブファイルから DB を再構築 |
+| `glogarch sbom` | このホストで動いている構成要素の SBOM（CycloneDX 1.5） |
 | `glogarch streams-cleanup` | Bulk インポートで作成したストリーム・インデックスセットの一覧・削除 |
 | `glogarch hash-password` | `localadmin` 用パスワードハッシュの生成 |
 | `glogarch status` | システム状態 |
@@ -953,3 +954,15 @@ API モードはストリーム単位、OpenSearch 直接モードはインデ�
 - [APScheduler](https://apscheduler.readthedocs.io) — MIT License
 
 詳細は [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) を参照してください。
+
+### ソフトウェア部品表（SBOM）
+
+jt-glogarch は v1.19.1 から、CycloneDX 1.5 形式の SBOM を 3 か所で提供しています。
+
+| 場所 | 内容 |
+|---|---|
+| このリポジトリの [`sbom.cdx.json`](sbom.cdx.json) | このリリースのビルドとテストに使ったバージョンです。リリースごとに作り直します。 |
+| 各オフラインバンドルの `sbom.cdx.json` | そのバンドルが実際に含むファイルです。各 wheel のバージョン、ライセンス、SHA-256、PDF レポート用の Chromium、CJK フォントを記載します。 |
+| インストール済みホストで `glogarch sbom -o sbom.cdx.json` | そのホストで実際に動いているバージョンです。依存パッケージは pip がバージョン範囲でインストールするため、ホストごとに異なることがあります。監査に提出するのはこちらです。 |
+
+いずれも jt-glogarch、実行時に使うすべての Python パッケージ（開発ツールを除く）、パッケージ内の第三者ファイル（Chart.js、Iconoir アイコン、レポートの世界地図）、Playwright が PDF レポートで使う Chromium を記載します。`glogarch sbom` は設定ファイルもネットワークも不要で、サービスユーザーで実行できます：`sudo -u jt-glogarch glogarch sbom -o /tmp/sbom.cdx.json`。

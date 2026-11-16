@@ -2,6 +2,21 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.19.1] - 2026-11-16
+
+### Added
+
+- **SBOM (CycloneDX 1.5) with every release.** `sbom.cdx.json` in the repository lists the versions the release was built and tested with, and `scripts/run-tests.sh` regenerates it from the installed packages and refuses to release when the installed version is not the one being released. Each offline bundle carries its own `sbom.cdx.json`, read from the wheels it ships (every wheel with SHA-256 and licence, the Chromium build and tarball hash, the CJK font); the bundle is not built without one. On an installed host, `glogarch sbom [-o FILE]` lists what that host runs: dependencies are version ranges that pip resolves at install time, so this is the one to give an auditor. All three list jt-glogarch, every Python package it runs on (the `dev` extra excluded), Chart.js, the Iconoir icons and the report world map inside the package, and the Chromium build that Playwright uses. Standard library only, no network.
+
+### Changed
+
+- THIRD-PARTY-LICENSES lists Chart.js (MIT) and Natural Earth (public domain), the source of the report world map.
+- The "running as root" warning of the CLI goes to stderr, so `glogarch sbom > file` (and any other command's output) stays clean.
+
+### Fixed
+
+- Archives: once an archive was ticked, the *Import Selected* / *Delete Selected* row sat directly against the Filter / Refresh / Columns row with no space between them. It now has the same 12 px gap as the column settings below it.
+
 ## [1.19.0] - 2026-11-15
 
 ### Added
