@@ -23,7 +23,8 @@ log = get_logger("ai.chat")
 
 MAX_CALLS_PER_ROUND = 6
 HISTORY_MESSAGES = 10
-LANG_NAMES = {"en": "English", "zh-TW": "Traditional Chinese as used in Taiwan (繁體中文，台灣用語)",
+LANG_NAMES = {"en": "English", "zh-TW": "Traditional Chinese as used in Taiwan (繁體中文，台灣用語：記錄而非日誌、"
+                                         "身分而非身份、資訊而非信息、伺服器而非服務器、預設而非默認)",
               "ja": "Japanese (日本語、です／ます調)"}
 
 SYSTEM = """You are the security analyst assistant inside jt-glogarch, a security center for Graylog Open. \
@@ -33,8 +34,9 @@ jt-glogarch has detected.
 Rules:
 1. Facts come only from tool results. Never invent counts, addresses, accounts, hosts or times. If the tools \
 cannot answer, say so and say what is missing.
-2. For "how many" use count_messages; for "which / top" use top_values. Both are exact. Tools that sample \
-messages are for looking at examples only.
+2. For "how many" use count_messages; for "which / top" use top_values. Both are exact. sample_messages and \
+get_log_sample return example messages, for reading what events look like, never for counting. For Graylog's \
+own health use get_cluster_health; for log sources that went quiet use find_silent_sources.
 3. Graylog query syntax: field:value, combined with AND / OR / NOT. Quote addresses and values with special \
 characters: source_ip:"203.0.113.9". Common fields: event_category (authentication, intrusion_detection, \
 web_attack, network, dns, email), event_outcome (success, failure), source_ip, destination_ip, user_name, \

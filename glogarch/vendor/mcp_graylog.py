@@ -26,9 +26,42 @@ Technical Capabilities:
 - Time snapshot for batch queries to prevent time drift
 
 Author: Jason Cheng (Jason Tools)
-Version: 1.9.44
+Version: 1.10.2
 License: MIT
 Repository: https://github.com/jasoncheng7115/jasontools-mcp
+
+Changes in 1.10.2:
+- Fixed: the file did not load on Python 3.10/3.11 (backslash inside an f-string
+  expression, allowed only from 3.12). Python 3.10+ works again as the README says.
+- Counts stop at the first non-zero result instead of trying every strategy, and an
+  endpoint that answers 404/405/415 (e.g. POST /views/search/messages on Graylog
+  7.2, 415) is skipped for that server from then on, so each count no longer sends
+  requests that always fail.
+
+Changes in 1.10.1:
+- Field and time distributions now use server-side pivot counts over the full range,
+  with sampling only on aggregation failure and one scoped-query field-limit retry.
+- Added Taipei hourly/five-minute series and explicit top-value coverage limits.
+
+Changes in 1.10.0:
+- Added read-only health/performance tools: get_cluster_health, get_node_metrics,
+  list_indexer_failures, list_system_notifications, and find_silent_sources.
+
+Changes in 1.9.45:
+- Fixed: free-text queries failing on large indices. Without a field, OpenSearch
+  expands each term to every field of the index; with more than 2048 fields that
+  fails ("field expansion for [*] matches too many fields") and a few OR'ed phrases
+  hit "too many nested clauses". Both are OpenSearch errors, not MCP limits. Such a
+  query is now retried once with its bare terms scoped to `message`
+  ('"a b" OR c' -> 'message:"a b" OR message:c'); field-scoped terms, field groups
+  and ranges are kept. The result carries `query_rewritten` with both versions.
+- Fixed: counts and get_log_statistics reporting "HTTP 405". The last count strategy
+  POSTed to /search/universal/relative, which Graylog only serves with GET; its 405
+  replaced the real error of the earlier strategies. Removed, and a field-limit error
+  is kept as the reported cause.
+- The export endpoint answers 200 with an OpenSearch error as the CSV body; that is
+  now raised as an error instead of being parsed as data.
+- Failure messages for these errors suggest the message:"..." rewrite.
 
 Changes in 1.9.44:
 - SSE mode now also serves Streamable HTTP at /mcp on the same port.
@@ -157,6 +190,7 @@ Jason Cheng (Jason Tools) - AI Collaboration
 """
 
 import asyncio
+import contextvars
 import json
 import logging
 import os
@@ -170,6 +204,7 @@ from collections import Counter, defaultdict
 import re
 import math
 import statistics
+from uuid import uuid4
 
 import httpx
 from mcp.server.models import InitializationOptions
@@ -178,7 +213,7 @@ from mcp.types import Resource, Tool, TextContent, ImageContent, EmbeddedResourc
 import mcp.types as types
 
 # Version information
-__version__ = "1.9.44"
+__version__ = "1.10.2"
 __author__ = "Jason Cheng (Jason Tools) - AI Collaboration"
 __license__ = "MIT"
 
@@ -458,6 +493,10 @@ class LogAnalyzer:
             "top_values": top_values
         }
 
+# (host, count strategy) pairs the server answered 404/405/415 for; skipped afterwards.
+_UNSUPPORTED_COUNT_STRATEGIES = set()
+
+
 class GraylogClient:
     """Graylog API Client - Complete version + Source analysis fix"""
     
@@ -520,6 +559,15 @@ class GraylogClient:
                 return await self._make_request(method, path, params, data, expect_csv)
             except Exception as e:
                 last_exception = e
+                if _is_field_limit_error(str(e)):
+                    scoped = self._with_scoped_query(params, data)
+                    if scoped:
+                        new_params, new_data, old_q, new_q = scoped
+                        logger.info(f"Retrying with message-scoped query: {old_q!r} -> {new_q!r}")
+                        rewrites = _query_rewrites.get()
+                        if rewrites is not None:
+                            rewrites[old_q] = new_q
+                        return await self._make_request(method, path, new_params, new_data, expect_csv)
                 if "timeout" in str(e).lower() or "timed out" in str(e).lower():
                     if attempt < max_retries - 1:
                         wait_time = (attempt + 1) * 3
@@ -529,6 +577,31 @@ class GraylogClient:
                 raise e
         
         raise last_exception
+
+    @staticmethod
+    def _with_scoped_query(params: Optional[Dict], data: Optional[Dict]):
+        """Copies of params/data with the query's bare terms scoped to `message`, or None
+        when there is no query or nothing to change."""
+        params = dict(params) if params else params
+        data = json.loads(json.dumps(data)) if data else data
+        if params and isinstance(params.get('query'), str):
+            old = params['query']; new = scope_unqualified_terms(old)
+            if new != old:
+                params['query'] = new
+                return params, data, old, new
+        if data:
+            qs = data.get('query_string')
+            if isinstance(qs, dict) and isinstance(qs.get('query_string'), str):
+                old = qs['query_string']; new = scope_unqualified_terms(old)
+                if new != old:
+                    qs['query_string'] = new
+                    return params, data, old, new
+            if isinstance(data.get('query'), str):
+                old = data['query']; new = scope_unqualified_terms(old)
+                if new != old:
+                    data['query'] = new
+                    return params, data, old, new
+        return None
 
     async def _make_request(self, method: str, path: str, params: Optional[Dict] = None, 
                           data: Optional[Dict] = None, expect_csv: bool = False) -> Union[Dict, str]:
@@ -595,6 +668,10 @@ class GraylogClient:
             
             if expect_csv or 'text/csv' in content_type:
                 csv_text = response.text
+                head = csv_text[:600]
+                if 'ElasticsearchException' in head or 'Unable to perform export query' in head:
+                    # The export endpoint answers 200 with the OpenSearch error as the body.
+                    raise GraylogError(f"Search failed: {head.strip()[:400]}")
                 logger.info(f"Received CSV response: {len(csv_text)} chars, ~{csv_text.count(chr(10))} lines")
                 return csv_text
             
@@ -772,6 +849,52 @@ class GraylogClient:
                 "range_seconds": range_seconds
             }
 
+    async def _aggregate_counts(self, query: str, timerange: Dict,
+                                row_groups: List[Dict], streams: List[str]) -> tuple:
+        """Return grouped counts and a separate full-query total, without sampling."""
+        query_id, grouped_id, total_id = (str(uuid4()) for _ in range(3))
+        search = {
+            "id": query_id,
+            "query": {"type": "elasticsearch", "query_string": query},
+            "timerange": self._build_api_timerange(timerange),
+            "search_types": [{
+                "id": search_id, "type": "pivot", "row_groups": groups,
+                "column_groups": [], "series": [{"type": "count", "id": "count()"}],
+                "rollup": True
+            } for search_id, groups in ((grouped_id, row_groups), (total_id, []))]
+        }
+        if streams:
+            search["filter"] = {"type": "or", "filters": [
+                {"type": "stream", "id": stream} for stream in streams
+            ]}
+        for attempt in range(2):
+            try:
+                response = await self.post("/views/search/sync", {"queries": [search]})
+                if response.get("errors"):
+                    raise GraylogError(str(response["errors"]))
+                result = response["results"][query_id]
+                if result.get("errors"):
+                    raise GraylogError(str(result["errors"]))
+                search_types = result["search_types"]
+                for search_id in (grouped_id, total_id):
+                    if search_types[search_id].get("errors"):
+                        raise GraylogError(str(search_types[search_id]["errors"]))
+                grouped = search_types[grouped_id]
+                total_rows = search_types[total_id]["rows"]
+                # A no-group pivot has one count row, regardless of its source label.
+                if len(total_rows) != 1:
+                    raise GraylogError("Total-count pivot did not return one count row")
+                return grouped, _pivot_count(total_rows[0])
+            except Exception as e:
+                scoped = scope_unqualified_terms(query)
+                if attempt or not _is_field_limit_error(str(e)) or scoped == query:
+                    raise
+                search["query"]["query_string"] = scoped
+                rewrites = _query_rewrites.get()
+                if rewrites is not None:
+                    rewrites[query] = scoped
+                logger.info("Retrying pivot with message-scoped query: %r -> %r", query, scoped)
+
     def _convert_to_absolute_time(self, time_str: str, reference_time: datetime = None) -> str:
         """Convert relative time to absolute time based on reference point"""
         if reference_time is None:
@@ -811,12 +934,13 @@ class GraylogClient:
         else:
             timerange = self._build_timerange(from_time, to_time)
         
-        # Try multiple counting methods
+        # Stops at the first non-zero count. On Graylog 7.2 GET /search/universal/relative
+        # answers and POST /views/search/messages gives 415; an endpoint that answers
+        # 404/405/415 is skipped for that server from then on.
         count_strategies = [
             ("universal_relative_count", self._count_universal_relative),
             ("universal_absolute_count", self._count_universal_absolute),
             ("views_search_count", self._count_views_search),
-            ("legacy_search_count", self._count_legacy_search)
         ]
         
         max_count = 0
@@ -825,6 +949,8 @@ class GraylogClient:
         last_count_error = None
 
         for strategy_name, strategy_func in count_strategies:
+            if (self.host, strategy_name) in _UNSUPPORTED_COUNT_STRATEGIES:
+                continue
             try:
                 logger.info(f"Trying count strategy: {strategy_name}")
                 count_result = await strategy_func(query_string, timerange, streams)
@@ -834,12 +960,18 @@ class GraylogClient:
                     max_count = max(max_count, count_result)
                     successful_strategies.append(f"{strategy_name}: {count_result}")
                     logger.info(f"SUCCESS: {strategy_name} returned: {count_result}")
+                    break
                 else:
                     logger.warning(f"{strategy_name} returned zero")
 
             except Exception as e:
                 logger.warning(f"{strategy_name} failed: {e}")
-                last_count_error = e
+                if re.match(r"HTTP (404|405|415)\b", str(e)):
+                    _UNSUPPORTED_COUNT_STRATEGIES.add((self.host, strategy_name))
+                    logger.info(f"{strategy_name} is not supported by this server; skipping it from now on")
+                    continue
+                if last_count_error is None or not _is_field_limit_error(str(last_count_error)):
+                    last_count_error = e
                 continue
 
         self._last_count_api_failed = all_failed_with_error
@@ -2077,7 +2209,7 @@ async def handle_list_tools() -> List[Tool]:
         ),
         Tool(
             name="analyze_time_patterns",
-            description="Analyze temporal distribution of logs: hourly/minute breakdown, peak times, traffic spikes. Returns: hourly_distribution, peak_hours, peak_minutes.",
+            description="Analyze exact log counts by Taipei hour/day, peak hours and hourly series (5-minute series for ranges up to 3 hours). Falls back to sampling if aggregation fails.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -2134,7 +2266,7 @@ async def handle_list_tools() -> List[Tool]:
         ),
         Tool(
             name="analyze_field_distribution",
-            description="Analyze value distribution for any log field. Returns top values ranked by frequency with count and percentage. Use for: action, src-ip, dst-ip, protocol, facility, application_name, etc.",
+            description="Analyze exact value counts for any log field. Returns top values and percentages of all matching messages; unique values and coverage are capped at top_n. Falls back to sampling if aggregation fails.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -2236,6 +2368,53 @@ async def handle_list_tools() -> List[Tool]:
             inputSchema={"type": "object", "properties": {}, "additionalProperties": False}
         ),
         Tool(
+            name="get_cluster_health",
+            description="Read-only cluster health verdict with per-node metrics and findings. Call first for 'is Graylog healthy / slow'.",
+            inputSchema={"type": "object", "properties": {}, "additionalProperties": False}
+        ),
+        Tool(
+            name="get_node_metrics",
+            description="Read-only detailed journal, JVM, buffer and throughput metrics. Use to investigate a node or compare all nodes.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "node": {"type": "string", "description": "Hostname or node ID prefix; omit for all nodes"}
+                },
+                "additionalProperties": False
+            }
+        ),
+        Tool(
+            name="list_indexer_failures",
+            description="Read-only recent indexer failures grouped by error type and field. Use to diagnose rejected messages and mapping errors.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hours": {"type": "integer", "default": 24, "minimum": 1},
+                    "limit": {"type": "integer", "default": 200, "minimum": 1, "maximum": 1000}
+                },
+                "additionalProperties": False
+            }
+        ),
+        Tool(
+            name="list_system_notifications",
+            description="Read-only system notifications grouped by type and title. Use to inspect current operational warnings across nodes.",
+            inputSchema={"type": "object", "properties": {}, "additionalProperties": False}
+        ),
+        Tool(
+            name="find_silent_sources",
+            description="Read-only search for sources that stopped sending logs within a lookback window. Use to investigate missing ingestion.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "lookback_hours": {"type": "integer", "default": 168, "minimum": 1},
+                    "silent_minutes": {"type": "integer", "default": 60, "minimum": 0},
+                    "streams": {"type": "array", "items": {"type": "string"}, "description": "Stream names or IDs"},
+                    "query": {"type": "string", "default": ""}
+                },
+                "additionalProperties": False
+            }
+        ),
+        Tool(
             name="list_fields",
             description="List available message field names for building queries. Optional 'prefix' substring filter (case-insensitive) and 'limit'. Returns names only; use analyze_field_distribution for value stats.",
             inputSchema={
@@ -2327,8 +2506,16 @@ async def handle_list_tools() -> List[Tool]:
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict) -> List[Union[types.TextContent, types.ImageContent]]:
     """Handle tool calls with comprehensive error handling"""
+    rewrites = {}
+    token = _query_rewrites.set(rewrites)
     try:
         result = await execute_tool(name, arguments)
+        if isinstance(result, dict) and rewrites:
+            result["query_rewritten"] = {
+                "note": ("The query searched every field and hit OpenSearch's 2048 limit; "
+                         "bare terms were scoped to the message field."),
+                "rewrites": [{"from": a, "to": b} for a, b in rewrites.items()],
+            }
         
         if isinstance(result, dict):
             json_output = json.dumps(result, ensure_ascii=False, separators=(',', ':'))
@@ -2345,6 +2532,8 @@ async def handle_call_tool(name: str, arguments: dict) -> List[Union[types.TextC
         error_msg = f"Unexpected error executing tool '{name}': {str(e)}"
         logger.error(error_msg)
         return [types.TextContent(type="text", text=error_msg)]
+    finally:
+        _query_rewrites.reset(token)
 
 # When True, bare numeric / IPv4 query tokens are wrapped in double quotes
 # before hitting Graylog. This sidesteps OpenSearch search_phase_execution /
@@ -2406,6 +2595,86 @@ def quote_bare_numeric_terms(query: str) -> str:
     return ''.join(out)
 
 
+# Free text without a field is expanded by OpenSearch to every field of the index. On
+# indices with more than 2048 fields that fails ("field expansion for [*] matches too
+# many fields") and a few OR'ed phrases multiply into "too many nested clauses". Such
+# queries are retried once with the bare terms scoped to the message field.
+_FIELD_LIMIT_MARKERS = ("too_many_nested_clauses", "too many nested clauses",
+                        "field expansion for [*]", "matches too many fields")
+_query_rewrites = contextvars.ContextVar("graylog_query_rewrites", default=None)
+
+
+def _is_field_limit_error(text: str) -> bool:
+    t = (text or "").lower()
+    return any(m in t for m in _FIELD_LIMIT_MARKERS)
+
+
+def scope_unqualified_terms(query: str, field: str = "message") -> str:
+    """Prefix bare terms and phrases with `field:`; field-scoped terms, groups after a
+    field (`source:(a OR b)`), ranges, boolean operators and a lone `*` are left alone.
+
+    '"Failed password" OR "invalid user"' -> 'message:"Failed password" OR message:"invalid user"'
+    'source:mail AND error'               -> 'source:mail AND message:error'
+    """
+    if not query or not query.strip() or query.strip() == "*":
+        return query
+    ops = {"AND", "OR", "NOT", "&&", "||", "TO"}
+    out, i, n = [], 0, len(query)
+    depth_scoped = []          # stack: True when the group belongs to a field (field:(...))
+    def scoped():
+        return any(depth_scoped)
+    while i < n:
+        c = query[i]
+        if c.isspace():
+            out.append(c); i += 1; continue
+        if c == "(":
+            depth_scoped.append(bool(out) and out[-1].endswith(":"))
+            out.append(c); i += 1; continue
+        if c == ")":
+            if depth_scoped:
+                depth_scoped.pop()
+            out.append(c); i += 1; continue
+        if c in "[{":                      # range: copy through the closing bracket
+            j = i + 1
+            while j < n and query[j] not in "]}":
+                j += 1
+            out.append(query[i:j + 1]); i = j + 1; continue
+        prefix = ""
+        if c in "+-!" and i + 1 < n and not query[i + 1].isspace():
+            prefix, i = c, i + 1
+            c = query[i]
+        if c == '"':
+            j = i + 1
+            while j < n and query[j] != '"':
+                j += 2 if query[j] == "\\" else 1
+            token = query[i:j + 1]; i = j + 1
+            follows_field = bool(out) and out[-1].endswith(":")
+            out.append(prefix + (token if scoped() or follows_field else f"{field}:{token}"))
+            continue
+        j = i
+        while j < n and not query[j].isspace() and query[j] not in '()"':
+            if query[j] == "\\":
+                j += 1
+            j += 1
+        token = query[i:j]
+        m = re.search(r'(?<!\\):([\[{])', token)
+        if m and ("]" not in token and "}" not in token):
+            # field:[a TO b] - the range spans whitespace; copy it whole
+            k = j
+            while k < n and query[k] not in "]}":
+                k += 1
+            j = min(k + 1, n)
+            token = query[i:j]
+        i = j
+        unescaped_colon = re.search(r'(?<!\\):', token)
+        if (token in ops or scoped() or unescaped_colon or token == "*"
+                or (out and out[-1].endswith(":"))):
+            out.append(prefix + token)
+        else:
+            out.append(prefix + f"{field}:{token}")
+    return "".join(out)
+
+
 def _api_failure_message(client) -> str:
     """Build the API-failure error string, surfacing the underlying exception
     instead of only the generic message (the wrapper used to swallow the real
@@ -2423,7 +2692,12 @@ def _api_failure_message(client) -> str:
         return base
     base += " Underlying error(s) -> " + " | ".join(details)
     joined = " ".join(details).lower()
-    if any(k in joined for k in ("number_format", "search_phase_execution",
+    if _is_field_limit_error(joined):
+        base += (". Hint: the query searched every field of the index and hit "
+                 "OpenSearch's 2048-clause / 2048-field limit. Scope the terms to a "
+                 'field, e.g. message:"Failed password" OR message:"invalid user", '
+                 "or narrow the time range / stream.")
+    elif any(k in joined for k in ("number_format", "search_phase_execution",
                                  "failed to parse", "illegal_argument",
                                  "mapper_parsing", "for input string")):
         base += (". Hint: likely an OpenSearch field-mapping conflict on a "
@@ -2496,7 +2770,8 @@ def normalize_query_string(query: str, auto_fix_escaping: bool = False) -> str:
     for field, value in matches:
         if '\\-' not in value and '"' not in value:
             logger.debug(f"Note: Unescaped hyphen in query: {field}:{value}")
-            logger.debug(f"This might need: {field}:{value.replace('-', '\\-')} or {field}:\"{value}\"")
+            escaped = value.replace('-', '\\-')
+            logger.debug(f"This might need: {field}:{escaped} or {field}:\"{value}\"")
 
     # Quote bare numeric / IPv4 terms to avoid OpenSearch field-mapping throws.
     if AUTO_QUOTE_NUMERIC_TERMS:
@@ -2506,6 +2781,135 @@ def normalize_query_string(query: str, auto_fix_escaping: bool = False) -> str:
             normalized = quoted
 
     return normalized
+
+def _pivot_count(row: Dict) -> int:
+    """Read a count series without treating malformed results as zero counts."""
+    for value in row["values"]:
+        if value["key"] == ["count()"]:
+            return int(value["value"])
+    raise GraylogError("Pivot row is missing count()")
+
+
+def _aggregate_time_patterns(rows: List[Dict], five_minute: bool) -> Dict:
+    """Combine UTC pivot buckets into compact Taipei distributions."""
+    hourly, daily, series = defaultdict(int), defaultdict(int), defaultdict(int)
+    taipei = timezone(timedelta(hours=8))
+    for row in rows:
+        if row.get("source") != "leaf":
+            continue
+        local = _health_timestamp(row["key"][0]).astimezone(taipei)
+        count = _pivot_count(row)
+        hourly[local.strftime("%H:00")] += count
+        daily[local.strftime("%Y-%m-%d")] += count
+        series[local.strftime("%Y-%m-%d %H:%M")] += count
+    peak_hours = sorted(sorted(hourly.items()), key=lambda item: item[1], reverse=True)[:5]
+    result = {
+        "hourly_distribution": dict(sorted(hourly.items())),
+        "daily_distribution": dict(sorted(daily.items())),
+        "peak_hours": peak_hours,
+        "peak_hour": peak_hours[0][0] if peak_hours else None
+    }
+    if five_minute:
+        result["five_minute_series"] = [
+            {"five_minute_start_taipei": start, "count": count}
+            for start, count in sorted(series.items())
+        ]
+    elif len(series) <= 336:
+        result["hourly_series"] = [
+            {"hour_start_taipei": start, "count": count}
+            for start, count in sorted(series.items())
+        ]
+    return result
+
+
+def _health_timestamp(value):
+    """Normalize API timestamps to aware UTC datetimes."""
+    result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if result.tzinfo is None:
+        result = result.replace(tzinfo=timezone.utc)
+    return result.astimezone(timezone.utc)
+
+
+def _journal_max_age_seconds(value):
+    """Read journal durations expressed as seconds, ISO durations or unit text."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    iso = re.fullmatch(
+        r"P(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?"
+        r"(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?", text, re.I
+    )
+    if iso and any(iso.groups()):
+        return sum(float(v or 0) * unit for v, unit in zip(iso.groups(), (86400, 3600, 60, 1)))
+    units = {"ms": .001, "millisecond": .001, "milliseconds": .001,
+             "s": 1, "second": 1, "seconds": 1,
+             "m": 60, "minute": 60, "minutes": 60,
+             "h": 3600, "hour": 3600, "hours": 3600,
+             "d": 86400, "day": 86400, "days": 86400}
+    parts = re.findall(r"(\d+(?:\.\d+)?)\s*([a-z]+)", text.lower())
+    remainder = re.sub(r"\d+(?:\.\d+)?\s*[a-z]+", "", text.lower()).strip()
+    if parts and not remainder and all(unit in units for _, unit in parts):
+        return sum(float(number) * units[unit] for number, unit in parts)
+    raise ValueError(f"Unsupported journal max_age: {value}")
+
+
+async def _get_node_health_metrics(client, node):
+    """Fetch the per-node endpoints. Through /cluster/{id} first; if the leader cannot
+    forward the call (seen as HTTP 502 ApiError for some accounts while the node itself
+    is fine), ask the node directly at its transport address with the same credentials,
+    so a forwarding problem is not reported as a dead node."""
+    try:
+        return await _fetch_node_health_metrics(client, node, f"/cluster/{node['node_id']}")
+    except Exception as forwarded_error:
+        addr = (node.get("transport_address") or "").rstrip("/")
+        if not addr:
+            raise
+        base = addr[:-4] if addr.endswith("/api") else addr
+        direct = GraylogClient(host=base, username=client.username, password=client.password,
+                               api_token=client.api_token, verify_ssl=client.verify_ssl,
+                               timeout=client.timeout)
+        try:
+            async with direct:
+                result = await _fetch_node_health_metrics(direct, node, "/system")
+        except Exception as direct_error:
+            hint = ""
+            if "auth" in str(direct_error).lower():
+                hint = (" | The node is up but rejects these credentials. The built-in admin (root)"
+                        " password is set per node in server.conf, so it can differ between nodes;"
+                        " an API token works on every node. Not a dead node.")
+            raise GraylogError(f"via leader: {forwarded_error}; direct {base}: {direct_error}{hint}")
+        result["fetched_via"] = "direct"
+        result["forwarding_error"] = str(forwarded_error)[:200]
+        return result
+
+
+async def _fetch_node_health_metrics(client, node, prefix):
+    journal = await client.get(f"{prefix}/journal")
+    jvm = await client.get(f"{prefix}/jvm")
+    gauges = {}
+    for namespace in ("buffers", "throughput", "journal"):
+        response = await client.get(f"{prefix}/metrics/namespace/org.graylog2.{namespace}")
+        # Only gauges carry a plain "value"; meters and timers in the same namespace do not.
+        gauges.update({metric["full_name"]: metric["metric"]["value"]
+                       for metric in response.get("metrics", [])
+                       if isinstance(metric.get("metric"), dict) and "value" in metric["metric"]})
+    return {
+        "node_id": node["node_id"], "hostname": node.get("hostname"),
+        "leader": node.get("is_leader"), "last_seen": node.get("last_seen"),
+        "journal": {key: journal.get(key) for key in (
+            "enabled", "append_events_per_second", "read_events_per_second",
+            "uncommitted_journal_entries", "journal_size", "journal_size_limit",
+            "number_of_segments", "oldest_segment", "journal_config")},
+        "journal_utilization_ratio": gauges["org.graylog2.journal.utilization-ratio"],
+        "jvm": {f"{key}_mb": jvm[f"{key}_memory"]["bytes"] / (1024 * 1024)
+                for key in ("used", "max", "free")},
+        "buffers": {buffer: {key: gauges[f"org.graylog2.buffers.{buffer}.{key}"]
+                             for key in ("usage", "size")}
+                    for buffer in ("input", "process", "output")},
+        "throughput": {key: gauges[f"org.graylog2.throughput.{key}.1-sec-rate"]
+                       for key in ("input", "output")}
+    }
+
 
 async def execute_tool(name: str, arguments: dict) -> Union[dict, str]:
     """Execute specific Graylog tool operations with FIXED source analysis and ALL original features"""
@@ -2536,6 +2940,8 @@ async def execute_tool(name: str, arguments: dict) -> Union[dict, str]:
                         # Already an ID
                         resolved_streams.append(stream)
                     else:
+                        if name in ("find_silent_sources", "analyze_field_distribution", "analyze_time_patterns"):
+                            raise GraylogError(f"Could not resolve stream name '{stream}' to ID")
                         logger.warning(f"Could not resolve stream name '{stream}' to ID")
                 
                 arguments["streams"] = resolved_streams
@@ -2597,11 +3003,29 @@ async def execute_tool(name: str, arguments: dict) -> Union[dict, str]:
                 raise GraylogError(f"Failed to get log statistics with fixed source analysis: {e}")
         
         elif name == "analyze_time_patterns":
-            query = arguments.get("query", "*")
+            query = normalize_query_string(arguments.get("query", "*"))
             range_from = arguments.get("range_from", "now-1h")
             range_to = arguments.get("range_to", "now")
             streams = arguments.get("streams", [])
-            
+
+            try:
+                timerange = client._build_timerange(range_from, range_to)
+                # Graylog's relative range=0 means all time, not a short window.
+                five_minute = 0 < timerange["range_seconds"] <= 3 * 3600
+                grouped, total = await client._aggregate_counts(query, timerange, [{
+                    "type": "time", "fields": ["timestamp"],
+                    # Graylog 6/7 expects {"type":"timeunit","timeunit":"1h"}; value/unit is rejected (HTTP 400)
+                    "interval": {"type": "timeunit", "timeunit": "5m" if five_minute else "1h"}
+                }], streams)
+                return {
+                    "time_patterns": _aggregate_time_patterns(grouped["rows"], five_minute),
+                    "total_count": total, "sample_size": total,
+                    "query": query, "time_range": {"from": range_from, "to": range_to},
+                    "method": "aggregation"
+                }
+            except Exception as e:
+                logger.warning("Time aggregation failed; falling back to sampling: %s", e)
+
             try:
                 # Apply stream filter to query as workaround for API stream parameter issues
                 filtered_query = LogAnalyzer._add_stream_filter_to_query(query, streams)
@@ -2621,6 +3045,7 @@ async def execute_tool(name: str, arguments: dict) -> Union[dict, str]:
                     return {
                         "error": "Query too complex. Use field-specific searches instead of free text.",
                         "time_patterns": {},
+                        "method": "sampling",
                         "total_count": 0,
                         "query": query,
                         "time_range": {"from": range_from, "to": range_to}
@@ -2631,6 +3056,7 @@ async def execute_tool(name: str, arguments: dict) -> Union[dict, str]:
                 
                 return {
                     "time_patterns": time_analysis,
+                    "method": "sampling",
                     "total_count": accurate_total_count,
                     "sample_size": len(messages),
                     "query": query,
@@ -2824,7 +3250,42 @@ async def execute_tool(name: str, arguments: dict) -> Union[dict, str]:
             logger.info(f"Analyzing field distribution for '{field_name}' with query '{query}'")
             if streams:
                 logger.info(f"Using streams filter: {streams}")
-            
+
+            try:
+                timerange = client._build_timerange(range_from, range_to)
+                grouped, total = await client._aggregate_counts(query, timerange, [{
+                    "type": "values", "fields": [field_name], "limit": top_n
+                }], streams)
+                top_values = [{"value": row["key"][0], "count": _pivot_count(row)}
+                              for row in grouped["rows"] if row.get("source") == "leaf"]
+                top_values.sort(key=lambda value: value["count"], reverse=True)
+                for value in top_values:
+                    value["pct"] = round(value["count"] / total * 100, 2) if total else 0
+                # Graylog returns messages without the field as "(Empty Value)": count it apart, not as coverage
+                missing = sum(v["count"] for v in top_values if v["value"] == "(Empty Value)")
+                shown_count = sum(value["count"] for value in top_values)
+                field_analysis = {
+                    "field_name": field_name,
+                    "total_unique_values": len([v for v in top_values if v["value"] != "(Empty Value)"]),
+                    "coverage_rate": round((shown_count - missing) / total * 100, 2) if total else 0,
+                    "missing_field_count": missing,
+                    "top_values": top_values,
+                    "note": f"Unique values are capped at top_n={top_n}; coverage_rate covers the shown values."
+                }
+                if grouped.get("other_count") is not None:
+                    field_analysis["other_count"] = grouped["other_count"]
+                elif grouped.get("sum_other_doc_count") is not None:
+                    field_analysis["other_count"] = grouped["sum_other_doc_count"]
+                else:
+                    field_analysis["values_shown_count"] = shown_count
+                return {
+                    "field_analysis": field_analysis, "total_count": total, "sample_size": total,
+                    "field_name": field_name, "query": query,
+                    "time_range": {"from": range_from, "to": range_to}, "method": "aggregation"
+                }
+            except Exception as e:
+                logger.warning("Field aggregation failed; falling back to sampling: %s", e)
+
             # Apply stream filter to query if needed
             query = LogAnalyzer._add_stream_filter_to_query(query, streams)
             if streams:
@@ -2855,6 +3316,7 @@ async def execute_tool(name: str, arguments: dict) -> Union[dict, str]:
                     return {
                         "error": _api_failure_message(client),
                         "field_analysis": {},
+                        "method": "sampling",
                         "total_count": 0,
                         "sample_size": 0,
                         "field_name": field_name,
@@ -2869,6 +3331,7 @@ async def execute_tool(name: str, arguments: dict) -> Union[dict, str]:
                 
                 return {
                     "field_analysis": field_analysis,
+                    "method": "sampling",
                     "total_count": accurate_total_count,
                     "sample_size": len(messages),
                     "field_name": field_name,
@@ -3335,6 +3798,251 @@ async def execute_tool(name: str, arguments: dict) -> Union[dict, str]:
                 }
             except Exception as e:
                 raise GraylogError(f"Failed to list indices: {e}")
+
+        elif name == "get_cluster_health":
+            try:
+                now = datetime.now(timezone.utc)
+                nodes = (await client.get("/system/cluster/nodes"))["nodes"]
+                findings = []
+                entries = []
+
+                def finding(severity, item, detail):
+                    findings.append({"severity": severity, "item": item, "detail": detail})
+
+                def threshold(value, warning, critical, item):
+                    if value >= critical:
+                        finding("critical", item, f"{value:.2f} >= {critical}")
+                    elif value >= warning:
+                        finding("warning", item, f"{value:.2f} >= {warning}")
+
+                for node in nodes:
+                    entry = {"node_id": node["node_id"], "hostname": node.get("hostname"),
+                             "leader": node.get("is_leader"), "last_seen": node.get("last_seen")}
+                    entries.append(entry)
+                    label = node.get("hostname") or node["node_id"]
+                    try:
+                        if (now - _health_timestamp(node["last_seen"])).total_seconds() > 120:
+                            finding("critical", f"{label}: last_seen", "Node last seen more than 2 minutes ago")
+                        metrics = await _get_node_health_metrics(client, node)
+                        journal = metrics["journal"]
+                        heap = metrics["jvm"]["used_mb"] / metrics["jvm"]["max_mb"] * 100
+                        utilization = metrics["journal_utilization_ratio"] * 100
+                        oldest_age = ((now - _health_timestamp(journal["oldest_segment"])).total_seconds() / 60
+                                      if journal["oldest_segment"] else None)
+                        entry.update({
+                            "heap_used_pct": round(heap, 2),
+                            "journal": {
+                                "uncommitted_entries": journal["uncommitted_journal_entries"],
+                                "utilization_pct": round(utilization, 2),
+                                "oldest_segment_age_minutes": round(oldest_age, 2) if oldest_age is not None else None,
+                                "append_rate": journal["append_events_per_second"],
+                                "read_rate": journal["read_events_per_second"]
+                            },
+                            "buffers_pct": {}, "throughput": metrics["throughput"]
+                        })
+                        threshold(heap, 80, 90, f"{label}: heap_pct")
+                        threshold(utilization, 10, 50, f"{label}: journal_utilization_pct")
+                        if journal["uncommitted_journal_entries"] >= 100000:
+                            finding("warning", f"{label}: journal_uncommitted", str(journal["uncommitted_journal_entries"]))
+                        if oldest_age is not None:
+                            max_age = _journal_max_age_seconds(journal["journal_config"]["max_age"])
+                            if oldest_age * 60 > max_age / 2:
+                                finding("warning", f"{label}: journal_oldest_segment", "Oldest segment exceeds half of journal max_age")
+                        for buffer, values in metrics["buffers"].items():
+                            usage = values["usage"] / values["size"] * 100
+                            entry["buffers_pct"][buffer] = round(usage, 2)
+                            threshold(usage, 50, 80, f"{label}: {buffer}_buffer_pct")
+                    except Exception as e:
+                        entry["error"] = str(e)
+                        finding("critical", f"{label}: node_metrics", str(e))
+
+                health = await client.get("/system/indexer/cluster/health")
+                processing = await client.get("/system/processing/status")
+                since = (now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+                failures = (await client.get("/system/indexer/failures/count", {"since": since}))["count"]
+                notifications = await client.get("/system/notifications")
+                notification_count = notifications.get("total", len(notifications.get("notifications", [])))
+                lag = (now - _health_timestamp(processing["receive_times"]["post_indexing"])).total_seconds()
+                unassigned = health["shards"]["unassigned"]
+                if health["status"] in ("red", "yellow"):
+                    finding("critical" if health["status"] == "red" else "warning", "opensearch", health["status"])
+                if unassigned > 0:
+                    finding("warning", "unassigned_shards", str(unassigned))
+                if lag > 60:
+                    finding("critical" if lag > 300 else "warning", "processing_lag", f"{lag:.2f} seconds (local node)")
+                if failures > 0:
+                    finding("critical" if failures > 1000 else "warning", "indexer_failures_24h", str(failures))
+                if notification_count > 0:
+                    finding("warning", "notifications", str(notification_count))
+                status = ("critical" if any(f["severity"] == "critical" for f in findings)
+                          else "warning" if findings else "ok")
+                return {
+                    "status": status, "nodes": entries,
+                    "opensearch": {"status": health["status"], "unassigned_shards": unassigned},
+                    "processing_lag_seconds": round(lag, 2), "processing_scope": "local_node",
+                    "indexer_failures_24h": failures, "notification_count": notification_count,
+                    "findings": findings
+                }
+            except Exception as e:
+                raise GraylogError(f"Failed to get cluster health: {e}")
+
+        elif name == "get_node_metrics":
+            try:
+                nodes = (await client.get("/system/cluster/nodes"))["nodes"]
+                selector = arguments.get("node")
+                if selector:
+                    nodes = [node for node in nodes if node.get("hostname", "").lower() == selector.lower()
+                             or node["node_id"].startswith(selector)]
+                    if not nodes:
+                        raise GraylogError(f"No node matches '{selector}'")
+                entries = []
+                for node in nodes:
+                    try:
+                        entries.append(await _get_node_health_metrics(client, node))
+                    except Exception as e:
+                        entries.append({"node_id": node["node_id"], "hostname": node.get("hostname"), "error": str(e)})
+                return {"nodes": entries}
+            except Exception as e:
+                raise GraylogError(f"Failed to get node metrics: {e}")
+
+        elif name == "list_indexer_failures":
+            try:
+                hours = int(arguments.get("hours", 24))
+                limit = min(int(arguments.get("limit", 200)), 1000)
+                if hours < 1 or limit < 1:
+                    raise ValueError("hours and limit must be positive")
+                now = datetime.now(timezone.utc)
+                since = (now - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+                start = _health_timestamp(since)
+                count = (await client.get("/system/indexer/failures/count", {"since": since}))["count"]
+                response = await client.get("/system/indexer/failures", {"limit": limit, "offset": 0})
+                groups = {}
+                filtered_count = 0
+                for failure in response.get("failures", []):
+                    timestamp = _health_timestamp(failure["timestamp"])
+                    if not start <= timestamp <= now:
+                        continue
+                    filtered_count += 1
+                    message = failure.get("message", "")
+                    error_match = re.search(r"type=([a-z_]+)", message)
+                    field_match = re.search(r"failed to parse field \[([^\]]+)\]", message)
+                    value_match = re.search(r"Preview of field's value: '([^']*)'", message)
+                    error_type = error_match.group(1) if error_match else "unknown"
+                    field = field_match.group(1) if field_match else None
+                    stamp = timestamp.isoformat().replace("+00:00", "Z")
+                    key = (error_type, field)
+                    if key not in groups:
+                        groups[key] = {
+                            "error_type": error_type, "field": field, "count": 0, "indices": set(),
+                            "first_timestamp": stamp, "last_timestamp": stamp,
+                            "sample_value": value_match.group(1) if value_match else None,
+                            "sample_message": message[:300]
+                        }
+                    group = groups[key]
+                    group["count"] += 1
+                    if failure.get("index"):
+                        group["indices"].add(failure["index"])
+                    if timestamp < _health_timestamp(group["first_timestamp"]):
+                        group["first_timestamp"] = stamp
+                    if timestamp > _health_timestamp(group["last_timestamp"]):
+                        group["last_timestamp"] = stamp
+                    if group["sample_value"] is None and value_match:
+                        group["sample_value"] = value_match.group(1)
+                    if error_type == "mapper_parsing_exception" and re.search(r"of type \[date\]", message):
+                        group["hint"] = ("The field arrives as non-ISO text; parse it in a pipeline with parse_date, "
+                                         "rename it, or use a custom index mapping.")
+                for group in groups.values():
+                    group["indices"] = sorted(group["indices"])
+                return {"since": since, "count": count, "fetched": len(response.get("failures", [])),
+                        "filtered_count": filtered_count,
+                        "groups": sorted(groups.values(), key=lambda group: group["count"], reverse=True)}
+            except Exception as e:
+                raise GraylogError(f"Failed to list indexer failures: {e}")
+
+        elif name == "list_system_notifications":
+            try:
+                response = await client.get("/system/notifications")
+                nodes = (await client.get("/system/cluster/nodes"))["nodes"]
+                hostnames = {node["node_id"]: node.get("hostname") or node["node_id"] for node in nodes}
+                groups = {}
+                severity_rank = {"normal": 0, "info": 0, "warning": 1, "urgent": 2, "critical": 3}
+                for notification in response.get("notifications", []):
+                    details = notification.get("details") or {}
+                    key = (notification.get("type"), details.get("title", ""))
+                    stamp = _health_timestamp(notification["timestamp"])
+                    severity = notification.get("severity")
+                    if key not in groups:
+                        groups[key] = {
+                            "type": key[0], "title": key[1], "count": 0, "severity": severity,
+                            "latest_timestamp": stamp.isoformat().replace("+00:00", "Z"),
+                            "nodes": set(), "description": str(details.get("description") or "")[:400]
+                        }
+                    group = groups[key]
+                    group["count"] += 1
+                    if severity_rank.get(str(severity).lower(), 0) > severity_rank.get(str(group["severity"]).lower(), 0):
+                        group["severity"] = severity
+                    if stamp > _health_timestamp(group["latest_timestamp"]):
+                        group["latest_timestamp"] = stamp.isoformat().replace("+00:00", "Z")
+                    node_id = notification.get("node_id")
+                    if node_id:
+                        group["nodes"].add(hostnames.get(node_id, node_id))
+                for group in groups.values():
+                    group["nodes"] = sorted(group["nodes"])
+                return {"total": response.get("total", len(response.get("notifications", []))),
+                        "groups": sorted(groups.values(), key=lambda group: group["count"], reverse=True)}
+            except Exception as e:
+                raise GraylogError(f"Failed to list system notifications: {e}")
+
+        elif name == "find_silent_sources":
+            try:
+                lookback = int(arguments.get("lookback_hours", 168))
+                silent_minutes = int(arguments.get("silent_minutes", 60))
+                if lookback < 1 or silent_minutes < 0:
+                    raise ValueError("lookback_hours must be positive and silent_minutes nonnegative")
+                query_id, search_type_id = str(uuid4()), str(uuid4())
+                query = {
+                    "id": query_id,
+                    "query": {"type": "elasticsearch", "query_string": arguments.get("query", "")},
+                    "timerange": {"type": "relative", "range": lookback * 3600},
+                    "search_types": [{
+                        "id": search_type_id, "type": "pivot",
+                        "row_groups": [{"type": "values", "fields": ["source"], "limit": 1000}],
+                        "column_groups": [],
+                        "series": [{"type": "count", "id": "count()"},
+                                   {"type": "max", "field": "timestamp", "id": "max(timestamp)"}],
+                        "rollup": True
+                    }]
+                }
+                if arguments.get("streams"):
+                    query["filter"] = {"type": "or", "filters": [
+                        {"type": "stream", "id": stream} for stream in arguments["streams"]
+                    ]}
+                response = await client.post("/views/search/sync", {"queries": [query]})
+                result = response["results"][query_id]
+                if result.get("errors"):
+                    raise GraylogError(str(result["errors"]))
+                rows = result["search_types"][search_type_id]["rows"]
+                now = datetime.now(timezone.utc)
+                silent = []
+                total = 0
+                for row in rows:
+                    if row.get("source") != "leaf":
+                        continue
+                    values = {tuple(value["key"]): value["value"] for value in row["values"]}
+                    last_seen = datetime.fromtimestamp(values[("max(timestamp)",)] / 1000, timezone.utc)
+                    minutes = (now - last_seen).total_seconds() / 60
+                    total += 1
+                    if minutes >= silent_minutes:
+                        silent.append({"source": row["key"][0],
+                                       "last_seen": last_seen.isoformat().replace("+00:00", "Z"),
+                                       "minutes_silent": minutes, "events_in_window": values[("count()",)]})
+                silent.sort(key=lambda source: source["minutes_silent"], reverse=True)
+                for source in silent:
+                    source["minutes_silent"] = round(source["minutes_silent"], 2)
+                return {"silent": silent, "active_count": total - len(silent), "total_sources": total,
+                        "note": "A source only appears if it sent anything inside the lookback window; pivot returns at most 1000 sources."}
+            except Exception as e:
+                raise GraylogError(f"Failed to find silent sources: {e}")
 
         elif name == "list_fields":
             prefix = str(arguments.get("prefix", "") or "").lower()

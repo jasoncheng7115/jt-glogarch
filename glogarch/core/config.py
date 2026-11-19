@@ -288,6 +288,11 @@ class SecurityConfig(BaseModel):
     exclude_query: str = ""          # Lucene, applied to every detector
     # Per detector: {"enabled": bool, "min_count": int, "exclude": str}
     detectors: dict[str, dict] = Field(default_factory=dict)
+    # AI analysis after a run (added 1.22; needs ai.analysis_enabled): new or
+    # escalated incidents at or above this severity, at most N per run.
+    ai_auto: bool = False
+    ai_auto_min_severity: str = "high"
+    ai_auto_max_per_run: int = 3
 
 
 class AiConfig(BaseModel):
@@ -310,6 +315,7 @@ class AiConfig(BaseModel):
     chat_retention_days: int = 90
     mcp_enabled: bool = False        # /mcp for external AI clients (Graylog token auth)
     mcp_graylog_tools: list[str] = Field(default_factory=list)  # empty = the default set
+    analysis_enabled: bool = False   # AI analysis of security incidents (added 1.22)
 
 
 class Settings(BaseModel):

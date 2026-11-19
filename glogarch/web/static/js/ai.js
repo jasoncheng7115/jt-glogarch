@@ -82,6 +82,12 @@ async function aiInit() {
     await aiLoadStatus();
     await aiLoadConvs();
     aiRenderThread();
+    // from the Security Incidents page: "Ask in AI chat" (?incident=<id>)
+    const inc = new URLSearchParams(window.location.search).get('incident');
+    if (inc && /^\d+$/.test(inc)) {
+        inp.value = t('ai_prefill_incident').replace('{id}', inc);
+        inp.focus();
+    }
 }
 
 async function aiLoadStatus() {
@@ -303,7 +309,8 @@ function aiRenderSettings() {
     const chk = (id, v, label) => `<label class="sec-chk"><input type="checkbox" id="${id}" ${v ? 'checked' : ''}> ${esc(label)}</label>`;
     const mg = d.mcp_graylog;
     const enabledTools = (s.mcp_graylog_tools && s.mcp_graylog_tools.length) ? s.mcp_graylog_tools : d.mcp_graylog_default;
-    const toolBoxes = d.mcp_graylog_default.map(n => `<label class="sec-chk ai-tool"><input type="checkbox" class="ai-mg-tool" value="${esc(n)}" ${enabledTools.includes(n) ? 'checked' : ''}> <code>${esc(n)}</code></label>`).join('');
+    const optional = d.mcp_graylog_optional || [];
+    const toolBoxes = d.mcp_graylog_default.concat(optional).map(n => `<label class="sec-chk ai-tool"${optional.includes(n) ? ` title="${esc(t('ai_mg_heavy_tip'))}"` : ''}><input type="checkbox" class="ai-mg-tool" value="${esc(n)}" ${enabledTools.includes(n) ? 'checked' : ''}> <code>${esc(n)}</code>${optional.includes(n) ? ` <span class="sec-tag">${esc(t('ai_mg_heavy'))}</span>` : ''}</label>`).join('');
     // the address the browser uses (behind a reverse proxy the server sees another)
     const mcpCfg = JSON.stringify({mcpServers: {'jt-glogarch': {type: 'http', url: window.location.origin + '/mcp',
         headers: {Authorization: 'Bearer <Graylog API token>'}}}}, null, 2);
@@ -311,6 +318,8 @@ function aiRenderSettings() {
         <h3>${esc(t('ai_set_title'))}</h3>
         <div class="sec-form">
             <div class="sec-wide">${chk('ai-s-enabled', s.enabled, t('ai_s_enabled'))}</div>
+            <div class="sec-wide">${chk('ai-s-analysis', s.analysis_enabled, t('ai_s_analysis'))}
+                <div class="text-muted fs-08">${esc(t('ai_s_analysis_note'))}</div></div>
             <div class="sec-wide"><label>${esc(t('ai_s_url'))}</label><input type="text" id="ai-s-url" value="${esc(s.url)}" placeholder="http://10.0.0.5:8080/v1"></div>
             <div><label>${esc(t('ai_model'))}</label><input type="text" id="ai-s-model" value="${esc(s.model)}"></div>
             <div><label>${esc(t('ai_s_key'))}</label>${_secretField('ai-s-key', s.api_key)}</div>
@@ -344,7 +353,7 @@ function _aiSettingsBody() {
     const v = id => document.getElementById(id).value;
     const c = id => document.getElementById(id).checked;
     return {
-        enabled: c('ai-s-enabled'), url: v('ai-s-url').trim(), model: v('ai-s-model').trim(), api_key: v('ai-s-key'),
+        enabled: c('ai-s-enabled'), analysis_enabled: c('ai-s-analysis'), url: v('ai-s-url').trim(), model: v('ai-s-model').trim(), api_key: v('ai-s-key'),
         timeout_seconds: Number(v('ai-s-timeout')), temperature: Number(v('ai-s-temp')),
         max_tool_rounds: Number(v('ai-s-rounds')), max_range_hours: Number(v('ai-s-range')),
         daily_tokens: Number(v('ai-s-daily')), monthly_tokens: Number(v('ai-s-monthly')),

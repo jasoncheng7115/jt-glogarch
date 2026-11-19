@@ -3,7 +3,7 @@
  * incidents (glogarch/security/). Everything shown here that came from logs (an
  * account name, an IDS signature) is attacker-influenced: always esc(). */
 
-const _sec = {data: null, offset: 0, limit: 100, total: 0, running: false};
+const _sec = {data: null, offset: 0, limit: 100, total: 0, running: false, rows: {}, aiId: null, aiTimer: null};
 
 function secMsg(text, level) {
     const el = document.getElementById('sec-message');
@@ -88,6 +88,8 @@ async function secLoad(page) {
     if (!d.incidents.length) {
         tb.innerHTML = `<tr><td colspan="8" class="text-muted">${esc(t(_sec.data && _sec.data.enabled ? 'sec_empty' : 'sec_empty_off'))}</td></tr>`;
     } else {
+        _sec.rows = {};
+        d.incidents.forEach(i => { _sec.rows[i.id] = i; });
         tb.innerHTML = d.incidents.map(secRow).join('');
     }
     secRenderPager();
@@ -100,6 +102,11 @@ function secRow(i) {
     const link = /^https?:\/\//.test(i.graylog_url || '')
         ? `<a class="btn-sm btn-secondary" href="${esc(i.graylog_url)}" target="_blank" rel="noopener noreferrer" title="${esc(t('sec_open_graylog'))}">${icon('search', 14)} ${esc(t('sec_btn_graylog'))}</a>` : '';
     const acts = [];
+    const ai = _sec.data && _sec.data.ai;
+    if (ai && ai.analysis_enabled) {
+        const v = i.ai ? ` ${secVerdictChip(i.ai.verdict)}` : '';
+        acts.push(`<button class="btn-sm btn-secondary" data-act="secOpenAi" data-args="${esc(JSON.stringify([i.id]))}" title="${esc(t('sec_ai_title'))}">${icon('chat', 14)} ${esc(t(i.ai_running ? 'sec_ai_running_short' : 'sec_btn_ai'))}${v}</button>`);
+    }
     if (i.status === 'open') acts.push(`<button class="btn-sm btn-secondary" data-act="secSetStatus" data-args="${esc(JSON.stringify([i.id, 'acknowledged']))}">${icon('check', 14)} ${esc(t('sec_btn_ack'))}</button>`);
     if (i.status !== 'closed') acts.push(`<button class="btn-sm btn-secondary" data-act="secSetStatus" data-args="${esc(JSON.stringify([i.id, 'closed']))}">${icon('close', 14)} ${esc(t('sec_btn_close'))}</button>`);
     else acts.push(`<button class="btn-sm btn-secondary" data-act="secSetStatus" data-args="${esc(JSON.stringify([i.id, 'open']))}">${icon('refresh', 14)} ${esc(t('sec_btn_reopen'))}</button>`);
@@ -194,6 +201,7 @@ function secRenderSettings() {
     const opt = (v, cur, label) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(label)}</option>`;
     const servers = [opt('', s.server, t('sec_default_server'))].concat((d.servers || []).map(n => opt(n, s.server, n))).join('');
     const sevs = ['high', 'medium', 'low', 'off'].map(v => opt(v, s.notify_min_severity, t('sec_notify_' + v))).join('');
+    const aiSevs = ['high', 'medium', 'low'].map(v => opt(v, s.ai_auto_min_severity, t('sec_s_ai_sev_' + v))).join('');
     const num = (id, v, min, max) => `<input type="number" id="${id}" value="${esc(v)}" min="${min}" max="${max}">`;
     const dets = d.detectors.map(x => `<tr data-det="${esc(x.id)}">
         <td><label class="sec-chk"><input type="checkbox" class="sec-det-en" ${x.enabled ? 'checked' : ''}> ${esc(secDetTitle(x.id))}</label>
@@ -215,6 +223,10 @@ function secRenderSettings() {
             <div><label>${esc(t('sec_s_new_days'))}</label>${num('sec-s-newdays', s.new_days, 1, 365)}</div>
             <div><label>${esc(t('sec_s_retention'))}</label>${num('sec-s-retention', s.retention_days, 7, 3650)}</div>
             <div class="sec-wide"><label>${esc(t('sec_s_exclude'))}</label><input type="text" id="sec-s-exclude" value="${esc(s.exclude_query)}" placeholder="${esc(t('sec_exclude_ph'))}"></div>
+            <label class="sec-chk sec-enable"><input type="checkbox" id="sec-s-ai-auto" ${s.ai_auto ? 'checked' : ''}> ${esc(t('sec_s_ai_auto'))}</label>
+            <div><label>${esc(t('sec_s_ai_min'))}</label><select id="sec-s-ai-min">${aiSevs}</select></div>
+            <div><label>${esc(t('sec_s_ai_max'))}</label>${num('sec-s-ai-max', s.ai_auto_max_per_run, 1, 10)}</div>
+            <div class="sec-wide text-muted fs-08">${esc(t(d.ai && d.ai.analysis_enabled ? 'sec_s_ai_note' : 'sec_s_ai_off'))}</div>
         </div>
         <div class="table-wrap"><table class="sec-det-table"><thead><tr><th>${esc(t('sec_th_detector'))}</th>
             <th>${esc(t('sec_s_min_count'))}</th><th>${esc(t('sec_s_det_exclude'))}</th></tr></thead><tbody>${dets}</tbody></table></div>
@@ -243,6 +255,9 @@ async function secSaveSettings() {
         new_days: Number(v('sec-s-newdays')),
         retention_days: Number(v('sec-s-retention')),
         exclude_query: v('sec-s-exclude'),
+        ai_auto: document.getElementById('sec-s-ai-auto').checked,
+        ai_auto_min_severity: v('sec-s-ai-min'),
+        ai_auto_max_per_run: Number(v('sec-s-ai-max')),
         detectors,
     };
     const d = await fetchJSON(`${API}/security/settings`, {method: 'POST',
@@ -250,6 +265,109 @@ async function secSaveSettings() {
     if (!d || d.error) { secMsg(d && d.error, 'err'); return; }
     secMsg(t(d.registered ? 'sec_saved_on' : 'sec_saved_off'), 'ok');
     await secLoadOverview();
+}
+
+// ---- AI analysis (added 1.22) --------------------------------------------------------
+// Everything the model wrote is shown through esc(): its input was log data.
+
+function secVerdictChip(v) {
+    if (!v) return '';
+    return `<span class="sec-verdict sec-verdict-${esc(v)}">${esc(t('sec_ai_v_' + v))}</span>`;
+}
+
+function secOpenAi(id) {
+    _sec.aiId = id;
+    document.getElementById('sec-ai-modal').style.display = 'flex';
+    document.getElementById('sec-ai-content').innerHTML = `<span class="spinner-text">${esc(t('loading'))}</span>`;
+    secLoadAi();
+}
+
+function secCloseAi() {
+    _sec.aiId = null;
+    if (_sec.aiTimer) { clearTimeout(_sec.aiTimer); _sec.aiTimer = null; }
+    document.getElementById('sec-ai-modal').style.display = 'none';
+    secLoad(Math.floor(_sec.offset / _sec.limit));
+}
+
+async function secLoadAi() {
+    const id = _sec.aiId;
+    if (id == null) return;
+    const d = await fetchJSON(`${API}/security/incidents/${encodeURIComponent(id)}/analyses`);
+    if (id !== _sec.aiId) return;
+    if (!d || d.error) { document.getElementById('sec-ai-content').innerHTML = `<p class="pk-err">${esc(d && d.error)}</p>`; return; }
+    secRenderAi(id, d);
+    if (_sec.aiTimer) clearTimeout(_sec.aiTimer);
+    _sec.aiTimer = d.running ? setTimeout(secLoadAi, 3000) : null;
+}
+
+function _secList(items) {
+    return items && items.length ? `<ul class="sec-ai-list">${items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
+}
+
+function _secEvidence(ev) {
+    if (!ev) return '';
+    const parts = [];
+    if (ev.events_in_window != null) parts.push(`<p>${esc(t('sec_ai_ev_events').replace('{n}', formatNumber(ev.events_in_window)))}</p>`);
+    const bd = ev.breakdown || {};
+    const tables = Object.keys(bd).map(f => `<div class="sec-ai-bd"><div class="text-muted fs-08"><code>${esc(f)}</code></div>`
+        + bd[f].map(r => `<div class="sec-ai-bd-row"><span>${esc(String(r.value))}</span><span>${formatNumber(r.count)}</span></div>`).join('') + '</div>').join('');
+    if (tables) parts.push(`<div class="sec-ai-bds">${tables}</div>`);
+    if (ev.successful_logins) parts.push(`<p>${esc(t('sec_ai_ev_success').replace('{n}', formatNumber(ev.successful_logins.count)))}</p>`);
+    if (ev.sample_messages_sent) parts.push(`<p class="text-muted fs-08">${esc(t('sec_ai_ev_samples').replace('{n}', ev.sample_messages_sent))}</p>`);
+    if (ev.errors && ev.errors.length) parts.push(`<p class="pk-err fs-08">${esc(t('sec_ai_ev_errors'))} ${esc(ev.errors.join('; '))}</p>`);
+    return `<details class="sec-ai-evidence"><summary>${esc(t('sec_ai_evidence'))} · ${esc(t('sec_ai_ev_queries').replace('{n}', ev.queries || 0))}</summary>${parts.join('')}</details>`;
+}
+
+function _secAnalysis(a) {
+    const meta = `${esc(secUtc(a.created_at))} · ${esc(t('sec_ai_trigger_' + a.trigger))}${a.username && a.trigger === 'manual' ? ' · ' + esc(a.username) : ''}`
+        + ` · <code>${esc(a.model || '')}</code> · ${esc(t('sec_ai_cost').replace('{n}', formatNumber(a.tokens)).replace('{s}', (a.elapsed_ms / 1000).toFixed(0)))}`;
+    if (a.error) return `<div class="sec-ai-item"><div class="text-muted fs-08">${meta}</div><p class="pk-err">${esc(t('sec_ai_failed'))} ${esc(jobNote(a.error))}</p>${_secEvidence(a.evidence)}</div>`;
+    const r = a.result || {};
+    const warn = a.unverified && a.unverified.length
+        ? `<p class="sec-ai-warn">${icon('warning', 14)} ${esc(t('sec_ai_unverified').replace('{a}', a.unverified.join(', ')))}</p>` : '';
+    return `<div class="sec-ai-item">
+        <div class="sec-ai-head">${secVerdictChip(a.verdict)} <span class="text-muted">${esc(t('sec_ai_confidence'))}${esc(t('sec_colon'))}${esc(t('sec_ai_c_' + a.confidence))}</span></div>
+        <div class="text-muted fs-08">${meta}</div>
+        ${warn}
+        <p class="sec-ai-summary">${esc(r.summary || '')}</p>
+        ${r.key_findings && r.key_findings.length ? `<h4>${esc(t('sec_ai_findings'))}</h4>${_secList(r.key_findings)}` : ''}
+        ${r.recommended_actions && r.recommended_actions.length ? `<h4>${esc(t('sec_ai_actions'))}</h4>${_secList(r.recommended_actions)}` : ''}
+        ${r.false_positive_notes ? `<h4>${esc(t('sec_ai_fp'))}</h4><p>${esc(r.false_positive_notes)}</p>` : ''}
+        ${_secEvidence(a.evidence)}
+    </div>`;
+}
+
+function secRenderAi(id, d) {
+    const i = _sec.rows[id] || {};
+    const head = `<div class="sec-ai-inc">${secSevBadge(i.severity || '')} <strong>${esc(secDetTitle(i.detector || ''))}</strong>
+        <code>${esc(i.entity || '')}</code> <span class="text-muted fs-08">#${esc(String(id))} · ${esc(secStats(i.metrics))}</span></div>`;
+    const list = d.analyses || [];
+    const latest = list[0];
+    const older = list.slice(1);
+    const running = d.running ? `<p class="spinner-text">${esc(t('sec_ai_running'))}</p>` : '';
+    const body = latest ? _secAnalysis(latest) : (d.running ? '' : `<p class="text-muted">${esc(t('sec_ai_none'))}</p>`);
+    const hist = older.length ? `<details class="sec-ai-older"><summary>${esc(t('sec_ai_older').replace('{n}', older.length))}</summary>${older.map(_secAnalysis).join('')}</details>` : '';
+    const unavailable = d.unavailable ? `<p class="pk-err fs-085">${esc(jobNote(d.unavailable))}</p>` : '';
+    const chat = _sec.data && _sec.data.ai && _sec.data.ai.chat_enabled
+        ? `<a class="btn-secondary" href="/ai-chat?incident=${encodeURIComponent(id)}">${icon('chat', 16)} ${esc(t('sec_ai_ask_chat'))}</a>` : '';
+    document.getElementById('sec-ai-content').innerHTML = `${head}
+        <p class="text-muted fs-08">${esc(t('sec_ai_advisory'))}</p>
+        ${unavailable}${running}${body}${hist}
+        <div class="sec-ai-btns"><button class="btn-secondary sec-ai-close" data-act="secCloseAi">${icon('close', 16)} ${esc(t('btn_close'))}</button>${chat}
+            <button class="btn-primary" data-act="secAnalyze" ${d.running || d.unavailable ? 'disabled' : ''}>${icon('refresh', 16)} ${esc(t(latest ? 'sec_ai_reanalyze' : 'sec_ai_analyze'))}</button>
+        </div>`;
+}
+
+async function secAnalyze() {
+    const id = _sec.aiId;
+    if (id == null) return;
+    const d = await fetchJSON(`${API}/security/incidents/${encodeURIComponent(id)}/analyze`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lang: getLang()})});
+    if (d && d.error) {
+        document.getElementById('sec-ai-content').insertAdjacentHTML('afterbegin', `<p class="pk-err">${esc(d.error)}</p>`);
+        return;
+    }
+    await secLoadAi();
 }
 
 document.addEventListener('DOMContentLoaded', secInit);

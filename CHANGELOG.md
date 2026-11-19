@@ -2,6 +2,20 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.22.0] - 2026-11-19
+
+### Added
+
+- **AI analysis of security incidents (off by default).** An AI button on each incident asks the model for a verdict (malicious, suspicious, benign or unclear), its confidence, the key findings, recommended actions and what would make it harmless. The evidence comes from fixed queries about that incident, not from queries the model writes: exact counts and top values in the incident's time window (at most its last 24 hours), successful logins by the same source or account, 8 example messages, and the entity's earlier incidents, about ten Graylog searches in all. With the owner's local model, a model that picked its own queries dropped conditions from them in the chat; here it cannot. The evidence goes to the model in a data block it cannot close from within. Example messages are sent to the model but not stored; the counts, the answer and the model name are kept with the incident and deleted with it. The answer must be the requested JSON (json_schema, then json_object when the server refuses that, then plain text; asked again once), and an address the answer names that is not in the evidence is flagged on the page. Optionally (`security.ai_auto`), the incidents a run opens or escalates are analysed after the notification is sent, at most 3 per run, stopping at the first failure. Advice only: it changes nothing. "Ask in AI chat" opens the chat with a question about the incident. Same LLM server, timeout and token budget as the chat; every analysis is audited (`security_ai_analysis`).
+- `sample_messages` tool for the chat and MCP: a few of the newest matching messages, chosen fields, long text cut (at most 20, within the time-range cap).
+
+### Changed
+
+- **mcp_graylog 1.10.2** (was 1.9.44). It loads on Python 3.10, so its tools now work on Ubuntu 22.04. It counts with one request, and its field distributions are aggregated by Graylog instead of sampled. Its new read-only tools are offered by default: `get_cluster_health`, `get_node_metrics`, `list_indexer_failures`, `list_system_notifications` and `find_silent_sources` (log sources that stopped sending; look-back capped at 31 days).
+- **Three mcp_graylog tools are no longer offered unless an administrator ticks them**: `get_log_statistics`, `analyze_error_patterns` and `get_log_level_analysis`. Measured on Graylog 7.2.2 with 1.10.2, each pulled messages for 120 to 140 seconds per call and returned partial results on its timeout, which is two minutes of paging through a production Graylog for one question; `count_messages` and `top_values` answer the same questions with one aggregation. The settings page marks them as heavy.
+- A query of only `*` or `*:*` is sent to mcp_graylog as an empty query ("everything"), and any other query starting with a wildcard is refused: Graylog 7.2 rejects a leading wildcard on the endpoint it pages with, and 1.10.2 then retried about 900 times in one call.
+- The Security Incidents page says that the detections read counts only, and that AI analysis, when turned on, also reads a few example messages of an incident.
+
 ## [1.21.0] - 2026-11-19
 
 ### Added

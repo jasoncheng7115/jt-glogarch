@@ -444,6 +444,9 @@ security:
   renotify_hours: 24          # an ongoing incident is mentioned again after N hours
   retention_days: 180
   exclude_query: ""           # Graylog query left out of every detection
+  ai_auto: false              # v1.22.0: AI analysis after each run (needs ai.analysis_enabled)
+  ai_auto_min_severity: high  # high | medium | low: new or escalated incidents from this severity
+  ai_auto_max_per_run: 3      # 1..10; each is one model call and about ten Graylog searches
   detectors:                  # per detection: enabled, min_count, exclude (all optional)
     account_multi_host:
       exclude: "user_name:/.*[$]/"   # the default: machine accounts (DC1$)
@@ -457,6 +460,10 @@ failed run, and three failed runs in a row send one "Security analysis is not ru
 notification. The first 24 hours after the first run are a learning period without NEW badges.
 Notifications use the `security_incident` switch (`notify.on_security_incident`, default on)
 and the usual channels. Settings are also editable on the Security Incidents page.
+
+With `ai_auto`, the incidents a run opened or escalated are analysed by the AI model after the
+notification is sent (never before: the model can take minutes). Analysis stops for that run at
+the first failure (LLM down, token budget used up).
 
 ---
 
@@ -478,6 +485,7 @@ ai:
   chat_retention_days: 90     # 0 = keep forever
   mcp_enabled: false          # POST /mcp for external AI clients
   mcp_graylog_tools: []       # empty = the default read-only set
+  analysis_enabled: false     # v1.22.0: the AI button on the Security Incidents page
 ```
 
 The chat reads Graylog as the signed-in user (sign in to Graylog on the page; the password becomes
@@ -486,7 +494,19 @@ a Graylog session and is not stored). `/mcp` takes `Authorization: Bearer <Grayl
 picks the server with the `X-Graylog-Server` header (default server otherwise); 120 requests a
 minute per token. Every tool call, from the chat or MCP, is in the audit log as `ai_tool_call`.
 Conversations keep the questions, the answers and the names of the tools used, not tool results.
-mcp_graylog is never offered its two debug tools, the bulk export or the content pack details.
+mcp_graylog is never offered its two debug tools, the bulk export or the content pack details;
+`find_silent_sources` may look back at most 31 days. `get_log_statistics`,
+`analyze_error_patterns` and `get_log_level_analysis` are offered only when listed in
+`mcp_graylog_tools` (each pulls messages for up to two minutes per call, measured on 7.2.2).
+A query of only `*` or `*:*` is sent to mcp_graylog as an empty query; another leading wildcard
+is refused.
+
+AI analysis of an incident (`analysis_enabled`) reads Graylog with the server connection the
+detections use, through fixed queries about that incident (at most its last 24 hours): exact
+counts and top values, successful logins by the same source or account, 8 example messages,
+and the entity's earlier incidents. The example messages are sent to the model and not stored;
+the counts, the model's answer and the model name are kept with the incident (and deleted with
+it). It uses the same LLM server, timeout and token budget as the chat.
 
 ---
 

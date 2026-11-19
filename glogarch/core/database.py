@@ -231,6 +231,28 @@ CREATE TABLE IF NOT EXISTS sec_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_sec_runs ON sec_runs (server, id);
 
+-- AI analysis of a security incident (added 1.22). Advisory text from the model
+-- plus the evidence it was given, WITHOUT the example messages (no second copy
+-- of log text). Deleted with its incident.
+CREATE TABLE IF NOT EXISTS sec_ai_analyses (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    incident_id INTEGER NOT NULL,
+    created_at  TEXT NOT NULL,
+    trigger     TEXT NOT NULL DEFAULT 'manual',
+    username    TEXT NOT NULL DEFAULT '',
+    lang        TEXT NOT NULL DEFAULT 'en',
+    model       TEXT,
+    verdict     TEXT,
+    confidence  TEXT,
+    result      TEXT,
+    evidence    TEXT,
+    unverified  TEXT NOT NULL DEFAULT '[]',
+    tokens      INTEGER NOT NULL DEFAULT 0,
+    elapsed_ms  INTEGER NOT NULL DEFAULT 0,
+    error       TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_sec_ai_inc ON sec_ai_analyses (incident_id, id);
+
 -- AI chat (added 1.21). One user's conversations are theirs only. A message
 -- keeps the question or the final answer and the NAMES of the tools used, not
 -- the tool results (log data does not get a second copy here).
@@ -1601,6 +1623,8 @@ class ArchiveDB:
             try:
                 n = self.conn.execute("DELETE FROM sec_incidents WHERE last_seen < ?",
                                       (_dt_to_str(now - timedelta(days=incident_days)),)).rowcount
+                self.conn.execute("DELETE FROM sec_ai_analyses WHERE incident_id NOT IN "
+                                  "(SELECT id FROM sec_incidents)")
                 self.conn.execute("DELETE FROM sec_runs WHERE started_at < ?",
                                   (_dt_to_str(now - timedelta(days=run_days)),))
                 self.conn.execute("DELETE FROM sec_seen WHERE last_seen < ?",
@@ -1610,6 +1634,72 @@ class ArchiveDB:
             except Exception:
                 self._rollback_safely()
                 raise
+
+    # --- AI analysis of incidents (1.22) --------------------------------------
+
+    def add_security_analysis(self, row: dict) -> int:
+        import json as _json
+        with self._lock:
+            try:
+                cur = self.conn.execute(
+                    """INSERT INTO sec_ai_analyses (incident_id, created_at, trigger, username, lang, model,
+                       verdict, confidence, result, evidence, unverified, tokens, elapsed_ms, error)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (int(row["incident_id"]), _dt_to_str(datetime.utcnow()), row.get("trigger") or "manual",
+                     row.get("username") or "", row.get("lang") or "en", row.get("model") or "",
+                     row.get("verdict"), row.get("confidence"),
+                     _json.dumps(row["result"], ensure_ascii=False) if row.get("result") is not None else None,
+                     _json.dumps(row["evidence"], ensure_ascii=False, default=str) if row.get("evidence") is not None else None,
+                     _json.dumps(row.get("unverified") or []), int(row.get("tokens") or 0),
+                     int(row.get("elapsed_ms") or 0), row.get("error") or ""))
+                self.conn.commit()
+                return cur.lastrowid  # type: ignore[return-value]
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    @staticmethod
+    def _analysis_row(r) -> dict:
+        import json as _json
+        d = dict(r)
+        for k, empty in (("result", None), ("evidence", None), ("unverified", [])):
+            d[k] = _json.loads(d[k]) if d.get(k) else empty
+        return d
+
+    def get_security_analysis(self, analysis_id: int) -> dict | None:
+        r = self.conn.execute("SELECT * FROM sec_ai_analyses WHERE id = ?", (analysis_id,)).fetchone()
+        return self._analysis_row(r) if r else None
+
+    def list_security_analyses(self, incident_id: int, limit: int = 10) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM sec_ai_analyses WHERE incident_id = ? ORDER BY id DESC LIMIT ?",
+            (incident_id, limit)).fetchall()
+        return [self._analysis_row(r) for r in rows]
+
+    def latest_security_verdicts(self, incident_ids: list[int]) -> dict[int, dict]:
+        """{incident_id: {verdict, confidence, created_at}} of the newest successful analysis."""
+        ids = [int(i) for i in incident_ids][:1000]
+        if not ids:
+            return {}
+        marks = ",".join("?" * len(ids))
+        rows = self.conn.execute(
+            f"""SELECT incident_id, verdict, confidence, created_at FROM sec_ai_analyses
+                WHERE id IN (SELECT MAX(id) FROM sec_ai_analyses
+                             WHERE incident_id IN ({marks}) AND verdict IS NOT NULL
+                             GROUP BY incident_id)""", ids).fetchall()  # nosec B608 - placeholders only, bound values
+        return {r["incident_id"]: {"verdict": r["verdict"], "confidence": r["confidence"],
+                                   "created_at": r["created_at"]} for r in rows}
+
+    def security_entity_history(self, server: str, detector: str, entity: str, exclude_id: int) -> dict:
+        rows = self.conn.execute(
+            """SELECT id, detector, severity, status, first_seen, last_seen FROM sec_incidents
+               WHERE entity = ? AND id != ? ORDER BY last_seen DESC LIMIT 10""",
+            (entity, exclude_id)).fetchall()
+        seen = self.conn.execute(
+            "SELECT first_seen FROM sec_seen WHERE server = ? AND detector = ? AND entity = ?",
+            (server, detector, entity)).fetchone()
+        return {"first_seen_by_this_detector": seen[0] if seen else None,
+                "other_incidents_for_this_entity": [dict(r) for r in rows]}
 
     # --- AI chat ------------------------------------------------------------
 

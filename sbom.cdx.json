@@ -1,25 +1,25 @@
 {
  "bomFormat": "CycloneDX",
  "specVersion": "1.5",
- "serialNumber": "urn:uuid:905413d0-4594-44c9-b3f6-77d694ee81c6",
+ "serialNumber": "urn:uuid:c07eb39a-50aa-4238-b181-a67661c308a0",
  "version": 1,
  "metadata": {
-  "timestamp": "2026-11-19T13:09:57+00:00",
+  "timestamp": "2026-11-19T16:39:31+00:00",
   "tools": {
    "components": [
     {
      "type": "application",
      "name": "glogarch.sbom",
-     "version": "1.21.0"
+     "version": "1.22.0"
     }
    ]
   },
   "component": {
    "type": "application",
-   "bom-ref": "pkg:pypi/jt-glogarch@1.21.0",
+   "bom-ref": "pkg:pypi/jt-glogarch@1.22.0",
    "name": "jt-glogarch",
-   "version": "1.21.0",
-   "purl": "pkg:pypi/jt-glogarch@1.21.0",
+   "version": "1.22.0",
+   "purl": "pkg:pypi/jt-glogarch@1.22.0",
    "licenses": [
     {
      "license": {
@@ -732,10 +732,10 @@
   },
   {
    "type": "library",
-   "bom-ref": "pkg:github/jasoncheng7115/jasontools-mcp@3176b1d83a67263d0306a411466989763ef47af0#mcp_graylog",
+   "bom-ref": "pkg:github/jasoncheng7115/jasontools-mcp@dd6d2cf5ddef6cc26f9d098b58c3d147d27ae7d7#mcp_graylog",
    "name": "mcp_graylog",
-   "version": "1.9.44",
-   "purl": "pkg:github/jasoncheng7115/jasontools-mcp@3176b1d83a67263d0306a411466989763ef47af0#mcp_graylog",
+   "version": "1.10.2",
+   "purl": "pkg:github/jasoncheng7115/jasontools-mcp@dd6d2cf5ddef6cc26f9d098b58c3d147d27ae7d7#mcp_graylog",
    "licenses": [
     {
      "license": {
@@ -746,7 +746,7 @@
    "hashes": [
     {
      "alg": "SHA-256",
-     "content": "f22b4e362dabc875ecd2f42f7def0c710b4fe986c449702031bcfa7b871b1b6f"
+     "content": "dced80c8de7291c0906f7fe1c701c66484a8f2395f17940c97d97303875f1e4d"
     }
    ],
    "externalReferences": [
@@ -812,7 +812,7 @@
  ],
  "dependencies": [
   {
-   "ref": "pkg:pypi/jt-glogarch@1.21.0",
+   "ref": "pkg:pypi/jt-glogarch@1.22.0",
    "dependsOn": [
     "pkg:pypi/click@8.3.1",
     "pkg:pypi/httpx@0.28.1",
@@ -838,7 +838,7 @@
     "pkg:npm/chart.js@4.4.1",
     "pkg:npm/iconoir",
     "file:glogarch/report/assets/worldmap.svg",
-    "pkg:github/jasoncheng7115/jasontools-mcp@3176b1d83a67263d0306a411466989763ef47af0#mcp_graylog",
+    "pkg:github/jasoncheng7115/jasontools-mcp@dd6d2cf5ddef6cc26f9d098b58c3d147d27ae7d7#mcp_graylog",
     "browser:chromium@147.0.7727.15",
     "browser:chromium-headless-shell@147.0.7727.15"
    ]

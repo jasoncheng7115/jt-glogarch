@@ -56,7 +56,7 @@ two digitising artefacts removed).
 - **License**: MIT
 - **Usage**: `glogarch/vendor/mcp_graylog.py`, kept byte-for-byte as published (version, commit and
   SHA-256 in `glogarch/vendor/mcp_graylog.json`). Its read-only Graylog tools are offered by the AI
-  chat and the MCP endpoint. Version 1.9.44 loads on Python 3.12 or later.
+  chat and the MCP endpoint. Version 1.10.2 loads on Python 3.10 or later.
 
 ## Python packages, Chromium, fonts
 

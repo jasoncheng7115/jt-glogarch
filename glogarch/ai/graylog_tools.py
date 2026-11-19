@@ -13,7 +13,8 @@ session for the chat, the caller's token for MCP), so Graylog's permissions
 apply. Read-only only.
 
 Embedding notes (gaps reported to the mcp_graylog developer 2026-11-19, worked
-around HERE, never by editing the vendored file):
+around HERE, never by editing the vendored file; 1.10.2 fixed loading on Python
+3.10, its single-request counting and server-side distributions, the rest stands):
   * it imports the `mcp` SDK at module level but jt-glogarch never runs its
     server -> a minimal stand-in for the names it uses (only when the real SDK
     is not installed), so jt-glogarch needs no new dependency;
@@ -22,9 +23,11 @@ around HERE, never by editing the vendored file):
     closed and the root logger restored;
   * one module-level `graylog_config` -> set per call under a lock, which also
     serialises its heavier sampling tools against a production Graylog;
-  * its field distributions are SAMPLED (up to 30,000 messages pulled) ->
-    exact `top_values` / `count_messages` here, and a time-range cap on every
-    tool that pulls messages.
+  * hardcoded limits -> a time-range cap here on every tool that pulls
+    messages, and on the look-back of its aggregations (`lookback_hours`).
+    The own `count_messages` / `top_values` stay: they were written when its
+    distributions were sampled (fixed upstream in 1.10.1) and the chat's prompt
+    and the incident analysis use them by name.
 """
 from __future__ import annotations
 
@@ -52,13 +55,22 @@ log = get_logger("ai.tools")
 # detail tools - a pack can carry notification addresses and credentials, which
 # the owner's rule keeps from leaving without a decision.
 MCPG_DEFAULT = (
-    "get_log_statistics", "analyze_time_patterns", "analyze_source_distribution",
-    "analyze_error_patterns", "get_log_level_analysis", "analyze_field_distribution",
+    "analyze_time_patterns", "analyze_source_distribution", "analyze_field_distribution",
     "get_log_sample", "search_logs_paginated", "get_streams", "get_system_info",
     "get_current_time", "list_inputs", "list_index_sets", "list_indices", "list_fields",
     "list_content_packs", "list_dashboards", "get_dashboard",
+    # 1.10: Graylog's own health, read-only
+    "get_cluster_health", "get_node_metrics", "list_indexer_failures",
+    "list_system_notifications", "find_silent_sources",
 )
-MCPG_NEVER = ("test_accurate_counting", "test_source_analysis_fix")
+# Offered only when an administrator ticks them: measured 2026-11-20 on Graylog 7.2.2
+# (1.10.2), each pulls messages for 120-140 s and returns partial results on a
+# timeout, after three export endpoints that fail on 7.2 - two minutes of paging
+# through a production Graylog for one question. count_messages / top_values
+# answer the same questions with one aggregation.
+MCPG_OPTIONAL = ("get_log_statistics", "analyze_error_patterns", "get_log_level_analysis")
+MCPG_NEVER = ("test_accurate_counting", "test_source_analysis_fix")   # its debug tools (gone in 1.10)
+MAX_LOOKBACK_HOURS = 24 * 31   # find_silent_sources' lookback_hours (an aggregation, no messages pulled)
 
 _UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
 _WORDS = {"second": 1, "minute": 60, "hour": 3600, "day": 86400, "week": 604800}
@@ -69,6 +81,8 @@ _WORDS = {"second": 1, "minute": 60, "hour": 3600, "day": 86400, "week": 604800}
 def _install_mcp_stand_in() -> None:
     """Names mcp_graylog uses at import time, when the real SDK is absent."""
     import importlib.util
+    if "mcp" in sys.modules:    # the real SDK, or the stand-in from an earlier import
+        return
     if importlib.util.find_spec("mcp") is not None:   # the real SDK is installed: use it
         return
 
@@ -110,8 +124,8 @@ _mod_lock = threading.Lock()
 def mcpg():
     """The vendored mcp_graylog module, imported once with its side effects
     contained. A failed import is remembered (and raised again) rather than
-    retried on every call: 1.9.44 does not even compile before Python 3.12
-    (an f-string with a backslash in its expression, line 2499)."""
+    retried on every call (1.9.44 did not compile before Python 3.12: an
+    f-string with a backslash in its expression; fixed upstream in 1.10.2)."""
     global _mod, _mod_error
     with _mod_lock:
         if _mod is not None:
@@ -236,8 +250,28 @@ def _loop_lock() -> asyncio.Lock:
     return lk
 
 
+_ALL_WILDCARD = re.compile(r"\s*(\*|\*:\*)?\s*")
+
+
+def mcpg_query(args: dict) -> dict:
+    """Graylog 7.2 refuses a query that starts with a wildcard on the endpoint
+    mcp_graylog pages with, and 1.10.2 then retried ~900 times in one call
+    (measured with `*:*`). "Everything" is sent as an empty query; any other
+    leading wildcard is refused before it reaches Graylog."""
+    if "query" not in args or not isinstance(args.get("query"), str):
+        return args
+    q = args["query"]
+    if _ALL_WILDCARD.fullmatch(q):
+        return {**args, "query": ""}
+    if q.lstrip()[:1] in ("*", "?"):
+        raise ValueError("query: Graylog does not allow a leading wildcard; search a field "
+                         "instead, e.g. source:web* or user_name:admin*")
+    return args
+
+
 def _mcpg_runner(name: str):
     async def run(args: dict, ctx: Ctx):
+        args = mcpg_query(args)
         mod = mcpg()
         user, secret = ctx.auth
         conf = {"host": _base_url(ctx.server), "verify_ssl": bool(ctx.server.verify_ssl),
@@ -313,6 +347,57 @@ async def _count(args: dict, ctx: Ctx):
     return {"query": body["query"], "timerange": body["timerange"], "count": total, "exact": True}
 
 
+SAMPLE_MAX = 20
+SAMPLE_TEXT_CHARS = 300
+_SAMPLE_BASE_FIELDS = ("timestamp", "source", "message")
+
+
+async def _graylog_get(ctx: Ctx, path: str, params: dict) -> dict:
+    import httpx
+    async with httpx.AsyncClient(verify=bool(ctx.server.verify_ssl), timeout=60,
+                                 auth=ctx.auth, headers={"X-Requested-By": "jt-glogarch",
+                                                         "Accept": "application/json"}) as c:
+        r = await c.get(_base_url(ctx.server) + path, params=params)
+        if r.status_code >= 400:
+            try:
+                msg = r.json().get("message") or r.text
+            except ValueError:
+                msg = r.text
+            raise RuntimeError(f"Graylog HTTP {r.status_code}: {str(msg)[:300]}")
+        return r.json()
+
+
+async def _sample(args: dict, ctx: Ctx):
+    """A few of the newest matching messages, chosen fields only, long text cut.
+    For looking at examples; never for counting (use count_messages)."""
+    limit = max(1, min(int(args.get("limit") or 10), SAMPLE_MAX))
+    extra = [f for f in (args.get("fields") or []) if isinstance(f, str)]
+    for f in extra:
+        if not re.fullmatch(r"[A-Za-z0-9_.@-]{1,100}", f):
+            raise ValueError("fields: Graylog field names, e.g. [\"source_ip\", \"user_name\"]")
+    fields = list(dict.fromkeys([*_SAMPLE_BASE_FIELDS, *extra[:15]]))
+    tr = _timerange(args)
+    res = await _graylog_get(ctx, "/api/search/universal/absolute", {
+        "query": str(args.get("query") or "*"), "from": tr["from"], "to": tr["to"],
+        "limit": limit, "fields": ",".join(fields), "sort": "timestamp:desc", "decorate": "false"})
+    out = []
+    for m in res.get("messages") or []:
+        msg = m.get("message") or {}
+        row = {}
+        for f in fields:
+            v = msg.get(f)
+            if v in (None, ""):
+                continue
+            v = v if isinstance(v, (int, float, bool)) else str(v)
+            if isinstance(v, str) and len(v) > SAMPLE_TEXT_CHARS:
+                v = v[:SAMPLE_TEXT_CHARS] + "..."
+            row[f] = v
+        out.append(row)
+    return {"query": str(args.get("query") or "*"), "timerange": tr,
+            "total_matching": res.get("total_results"), "messages": out,
+            "note": "Newest first. A SAMPLE for reading examples; use count_messages for numbers."}
+
+
 async def _incidents(args: dict, ctx: Ctx):
     rows, total = ctx.db.list_security_incidents(
         server=args.get("server") or None, status=args.get("status") or None,
@@ -346,12 +431,18 @@ def _own_tools() -> list[Tool]:
     return [
         Tool("count_messages", "EXACT number of messages matching a Graylog query in a time range (aggregation, nothing is sampled). Use this for any 'how many' question.",
              {"type": "object", "properties": {**q, **rng}}, _count),
-        Tool("top_values", "EXACT top values of one field for a query, with counts (and optionally the number of distinct values of another field per row, e.g. distinct user_name per source_ip). Prefer this over analyze_field_distribution, which samples.",
+        Tool("top_values", "EXACT top values of one field for a query, with counts (and optionally the number of distinct values of another field per row, e.g. distinct user_name per source_ip). Use this for top-N questions.",
              {"type": "object", "properties": {"field": {"type": "string", "description": "Field to group by, e.g. source_ip, user_name, source, alert_signature."},
                                                **q, **rng,
                                                "limit": {"type": "integer", "description": "Rows, 1-50. Default 10."},
                                                "distinct_field": {"type": "string", "description": "Optional: count distinct values of this field per row."}},
               "required": ["field"]}, _top_values),
+        Tool("sample_messages", "A few of the NEWEST messages matching a Graylog query (at most 20, chosen fields, long text cut), to read what the events look like. Never use it to count.",
+             {"type": "object", "properties": {**q, **rng,
+                                               "limit": {"type": "integer", "description": "Messages, 1-20. Default 10."},
+                                               "fields": {"type": "array", "items": {"type": "string"},
+                                                          "description": "Extra fields besides timestamp, source and message, e.g. [\"source_ip\", \"user_name\"]."}}},
+             _sample, range_capped=True),
         Tool("list_security_incidents", "Security incidents found by jt-glogarch's scheduled detections (brute force, password spraying, IDS alerts not blocked, web scanners...), newest first.",
              {"type": "object", "properties": {"status": {"type": "string", "enum": ["open", "acknowledged", "closed"]},
                                                "severity": {"type": "string", "enum": ["high", "medium", "low"]},
@@ -426,6 +517,13 @@ async def call_tool(name: str, args: dict, ctx: Ctx) -> dict:
             return {"ok": False, "error": f"time range {hrs:.0f} h is over the {limit:.0f} h limit for {name}"
                                           + (" (it pulls messages); use count_messages or top_values for longer ranges"
                                              if t.range_capped else "")}
+    if "lookback_hours" in allowed:
+        try:
+            lb = int(args.get("lookback_hours") or 0)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "lookback_hours: a whole number of hours"}
+        if lb > MAX_LOOKBACK_HOURS:
+            return {"ok": False, "error": f"lookback_hours {lb} is over the {MAX_LOOKBACK_HOURS} h limit"}
     try:
         result = await t.run(args, ctx)
     except Exception as e:

@@ -13,7 +13,7 @@ from glogarch import __version__
 from glogarch.ai import llm
 from glogarch.ai import mcp_server as M
 from glogarch.ai.chat import run_chat
-from glogarch.ai.graylog_tools import MCPG_DEFAULT, MCPG_NEVER, Ctx, available_tools, mcpg_status
+from glogarch.ai.graylog_tools import MCPG_DEFAULT, MCPG_NEVER, MCPG_OPTIONAL, Ctx, available_tools, mcpg_status
 from glogarch.core.config import AiConfig
 from glogarch.utils.logging import get_logger
 from glogarch.utils.sanitize import sanitize
@@ -66,6 +66,7 @@ async def ai_status(request: Request, server: str = ""):
         "tools": [{"name": t.name, "source": t.source} for t in tools],
         "mcp_graylog": mcpg_status(),
         "mcp_graylog_default": list(MCPG_DEFAULT),
+        "mcp_graylog_optional": list(MCPG_OPTIONAL),
         "usage": _db(request).ai_usage(),
         "mcp_url": str(request.base_url).rstrip("/") + "/mcp",
     }
@@ -95,7 +96,7 @@ async def ai_save_settings(request: Request):
         reason = llm.check_url(new.url, new.allow_external)
         if reason:
             return JSONResponse({"error": reason}, status_code=400)
-    elif new.enabled:
+    elif new.enabled or new.analysis_enabled:
         return JSONResponse({"error": "Set the LLM URL first"}, status_code=400)
 
     from glogarch.core.config_writer import update_config
@@ -106,7 +107,7 @@ async def ai_save_settings(request: Request):
     was_external = settings.ai.allow_external
     settings.ai = new
     _audit(request, "ai_settings_saved",
-           f"chat={new.enabled} mcp={new.mcp_enabled} url={new.url} model={new.model} "
+           f"chat={new.enabled} analysis={new.analysis_enabled} mcp={new.mcp_enabled} url={new.url} model={new.model} "
            f"allow_external={new.allow_external}")
     if new.allow_external and not was_external:
         _audit(request, "ai_external_llm_allowed", f"url={new.url}")

@@ -136,8 +136,33 @@ async def run_security_analysis(settings: Settings, db: ArchiveDB, *,
         log.warning("Security retention prune failed", error=str(e))
     log.info("Security analysis finished", server=server.name, source=source, status=status,
              queries=res.queries, findings=len(findings), notified=len(to_notify))
+    analysed = await _auto_ai_analysis(settings, db, changes)
     return {**summary, "status": status, "queries": res.queries, "findings": len(findings),
-            "notified": len(to_notify), "errors": res.errors}
+            "notified": len(to_notify), "errors": res.errors, "ai_analysed": analysed}
+
+
+async def _auto_ai_analysis(settings: Settings, db: ArchiveDB, changes: list[dict]) -> int:
+    """After the run is recorded and notified: the model looks at the new or
+    escalated incidents (security.ai_auto). Its time never delays a
+    notification, and its failure never fails the run."""
+    cfg, ai = settings.security, settings.ai
+    if not (cfg.ai_auto and ai.analysis_enabled and ai.url):
+        return 0
+    from glogarch.security.ai_analysis import analyze_incident, auto_candidates
+    done = 0
+    for inc_id in auto_candidates(changes, cfg.ai_auto_min_severity, cfg.ai_auto_max_per_run):
+        try:
+            row = await analyze_incident(settings, db, inc_id, lang=settings.notify.language,
+                                         trigger="auto", username="scheduler")
+        except Exception as e:
+            log.warning("Automatic incident AI analysis failed", incident=inc_id, error=str(e))
+            continue
+        db.audit("security_ai_analysis", f"incident={inc_id} trigger=auto verdict={row.get('verdict')} "
+                                         f"error={(row.get('error') or '')[:120]}", "scheduler", "")
+        if row.get("error"):
+            break   # the LLM is down or the budget is used up: do not try the rest now
+        done += 1
+    return done
 
 
 async def _maybe_alert_failing(db: ArchiveDB, server: str, error: str) -> None:

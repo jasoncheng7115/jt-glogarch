@@ -121,8 +121,13 @@ def _scrub(text: str, cfg) -> str:
     return text.replace(cfg.api_key, "***") if cfg.api_key else text
 
 
+class LLMRefused(LLMError):
+    """HTTP 400 from the server: the request itself was not accepted (e.g. a
+    response_format it does not support), so a caller may retry without it."""
+
+
 async def chat(cfg, messages: list[dict], tools: list[dict] | None = None,
-               max_tokens: int = 2048) -> Reply:
+               max_tokens: int = 2048, response_format: dict | None = None) -> Reply:
     reason = check_url(cfg.url, cfg.allow_external)
     if reason:
         raise LLMError(reason)
@@ -130,6 +135,8 @@ async def chat(cfg, messages: list[dict], tools: list[dict] | None = None,
             "max_tokens": int(max_tokens), "stream": False}
     if tools:
         body["tools"] = tools
+    if response_format:
+        body["response_format"] = response_format
     url = cfg.url.rstrip("/") + "/chat/completions"
     last = ""
     for attempt in range(2):
@@ -140,6 +147,8 @@ async def chat(cfg, messages: list[dict], tools: list[dict] | None = None,
                 last = f"HTTP {r.status_code}"
                 await asyncio.sleep(5)
                 continue
+            if r.status_code == 400:
+                raise LLMRefused(_scrub(f"LLM server answered HTTP 400: {r.text[:300]}", cfg))
             if r.status_code >= 400:
                 raise LLMError(_scrub(f"LLM server answered HTTP {r.status_code}: {r.text[:300]}", cfg))
             if len(r.content) > MAX_RESPONSE_BYTES:

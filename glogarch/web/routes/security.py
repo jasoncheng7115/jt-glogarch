@@ -22,6 +22,10 @@ router = APIRouter()
 
 _run_lock = threading.Lock()
 _STATUSES = ("open", "acknowledged", "closed")
+_LANGS = ("en", "zh-TW", "ja")
+# incident ids with an AI analysis in progress (one at a time per incident)
+_analysing: set[int] = set()
+_analysing_lock = threading.Lock()
 
 
 def _graylog_search_url(settings, server_name: str, query: str, first: str, last: str) -> str:
@@ -59,9 +63,14 @@ def list_incidents(request: Request, status: str = "", severity: str = "", detec
         return JSONResponse({"error": "Unknown status"}, status_code=400)
     if severity and severity not in SEVERITIES:
         return JSONResponse({"error": "Unknown severity"}, status_code=400)
-    rows, total = _db(request).list_security_incidents(
+    db = _db(request)
+    rows, total = db.list_security_incidents(
         status=status or None, severity=severity or None, detector=detector or None,
         limit=max(1, min(int(limit), 500)), offset=max(0, int(offset)))
+    verdicts = db.latest_security_verdicts([r["id"] for r in rows])
+    for r in rows:
+        r["ai"] = verdicts.get(r["id"])
+        r["ai_running"] = r["id"] in _analysing
     return {"incidents": [_with_link(request, r) for r in rows], "total": total}
 
 
@@ -84,6 +93,66 @@ async def set_incident_status(request: Request, incident_id: int):
         return JSONResponse({"error": "Incident not found"}, status_code=404)
     _audit(request, "security_incident_status", f"incident={incident_id} status={status}")
     return {"status": status}
+
+
+def _ai_ready(settings) -> str | None:
+    """Why AI analysis cannot run, or None."""
+    ai = settings.ai
+    if not ai.analysis_enabled:
+        return "AI analysis of incidents is turned off"
+    if not ai.url:
+        return "Set the LLM URL first"
+    return None
+
+
+@router.get("/security/incidents/{incident_id}/analyses")
+def get_analyses(request: Request, incident_id: int):
+    db = _db(request)
+    if not db.get_security_incident(incident_id):
+        return JSONResponse({"error": "Incident not found"}, status_code=404)
+    return {"analyses": db.list_security_analyses(incident_id),
+            "running": incident_id in _analysing,
+            "unavailable": _ai_ready(_settings(request))}
+
+
+@router.post("/security/incidents/{incident_id}/analyze")
+async def analyze(request: Request, incident_id: int):
+    settings = _settings(request)
+    why = _ai_ready(settings)
+    if why:
+        return JSONResponse({"error": why}, status_code=400)
+    db = _db(request)
+    if not db.get_security_incident(incident_id):
+        return JSONResponse({"error": "Incident not found"}, status_code=404)
+    from glogarch.ai import llm
+    why = llm.budget_left(settings.ai, db.ai_usage())
+    if why:
+        return JSONResponse({"error": why}, status_code=429)
+    body = {}
+    try:
+        body = await request.json() or {}
+    except ValueError:
+        body = {}
+    lang = body.get("lang") if body.get("lang") in _LANGS else "en"
+    with _analysing_lock:
+        if incident_id in _analysing:
+            return JSONResponse({"error": "An AI analysis of this incident is already running"}, status_code=409)
+        _analysing.add(incident_id)
+    user = request.session.get("username", "")
+    _audit(request, "security_ai_analysis", f"incident={incident_id} trigger=manual lang={lang}")
+
+    def _work():
+        from glogarch.security.ai_analysis import analyze_incident
+        try:
+            asyncio.run(analyze_incident(settings, db, incident_id, lang=lang, trigger="manual", username=user))
+        except Exception as e:
+            log.warning("Incident AI analysis crashed", incident=incident_id, error=str(e))
+        finally:
+            with _analysing_lock:
+                _analysing.discard(incident_id)
+
+    asyncio.get_running_loop().run_in_executor(None, _work)
+    return JSONResponse({"status": "running"}, status_code=202)
 
 
 def _detector_rows(cfg: SecurityConfig) -> list[dict]:
@@ -135,6 +204,8 @@ def overview(request: Request):
         "coverage_at": (last_done or {}).get("finished_at"),
         "next_run": next_run,
         "running": _run_lock.locked(),
+        "ai": {"analysis_enabled": settings.ai.analysis_enabled, "configured": bool(settings.ai.url),
+               "chat_enabled": settings.ai.enabled},
     }
 
 
@@ -186,8 +257,9 @@ async def save_settings(request: Request):
         return JSONResponse({"error": f"Invalid settings: {e}"}, status_code=400)
     if new.server and not settings.has_server(new.server):
         return JSONResponse({"error": "Unknown server"}, status_code=400)
-    if new.notify_min_severity not in (*SEVERITIES, "off"):
+    if new.notify_min_severity not in (*SEVERITIES, "off") or new.ai_auto_min_severity not in SEVERITIES:
         return JSONResponse({"error": "Unknown severity"}, status_code=400)
+    new.ai_auto_max_per_run = max(1, min(int(new.ai_auto_max_per_run), 10))
     new.interval_minutes = max(5, min(int(new.interval_minutes), 1440))
     new.window_minutes = max(5, min(int(new.window_minutes), 1440))
 
@@ -203,5 +275,6 @@ async def save_settings(request: Request):
         registered = sched.apply_security_schedule()
     _audit(request, "security_settings_saved",
            f"enabled={new.enabled} server={new.server or '(default)'} "
-           f"interval={new.interval_minutes}m window={new.window_minutes}m")
+           f"interval={new.interval_minutes}m window={new.window_minutes}m "
+           f"ai_auto={new.ai_auto}/{new.ai_auto_min_severity}/{new.ai_auto_max_per_run}")
     return {"status": "saved", "registered": registered}

@@ -12,8 +12,11 @@ Seeds 60 failed logins from one address over GELF, then checks:
   1. count_messages / top_values are exact (60; 8 distinct accounts),
   2. /mcp with a real Graylog API token issued by the stack (initialize,
      tools/list, tools/call), audited; a bogus token is refused,
-  3. on Python >= 3.12, an mcp_graylog tool through /mcp as well,
-  4. with AI_URL set, a real LLM answers the count question correctly.
+  3. an mcp_graylog tool through /mcp as well (1.10.2+ loads on Python 3.10),
+  4. with AI_URL set, a real LLM answers the count question correctly,
+  5. a real detector run opens a password-spraying incident for the seeded peer, its
+     AI-analysis evidence matches Graylog, and (with AI_URL) a real model returns a
+     valid verdict that names no address missing from the evidence.
 NEVER against production: it writes events and creates a token (deleted at the end).
 Prints RESULT: ALL PASS.
 """
@@ -150,18 +153,42 @@ async def run(tmp: Path, q: str, token: str, tag: str) -> int:
         "SELECT COUNT(*) FROM audit_log WHERE action = 'ai_tool_call' AND detail LIKE 'channel=mcp%'").fetchone()[0]
     check(audited >= 1, f"MCP tool calls audited ({audited})")
 
-    # 3. mcp_graylog through MCP (needs Python 3.12 for 1.9.44)
+    # 3. mcp_graylog through MCP (1.9.44 needed Python 3.12; 1.10.2 loads on 3.10)
     st = G.mcpg_status()
-    if sys.version_info >= (3, 12):
-        check(st["available"], f"mcp_graylog {st['version']} loads on Python {sys.version.split()[0]}")
-        r = c.post("/mcp", json={"jsonrpc": "2.0", "id": 5, "method": "tools/call",
-                                 "params": {"name": "get_log_sample", "arguments": {"query": q, "range_from": "now-30m", "limit": 5}}},
-                   headers=auth)
-        res = r.json()["result"]
-        body = json.loads(res["content"][0]["text"]) if not res["isError"] else {}
-        check(len(body.get("messages") or []) == 5, f"mcp_graylog get_log_sample via MCP: {len(body.get('messages') or [])} messages")
-    else:
-        print(f"SKIP mcp_graylog via MCP: Python {sys.version.split()[0]} ({st['error'][:90]})")
+    check(st["available"], f"mcp_graylog {st['version']} loads on Python {sys.version.split()[0]}")
+    r = c.post("/mcp", json={"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                             "params": {"name": "get_log_sample", "arguments": {"query": q, "range_from": "now-30m", "limit": 5}}},
+               headers=auth)
+    res = r.json()["result"]
+    body = json.loads(res["content"][0]["text"]) if not res["isError"] else {}
+    check(len(body.get("messages") or []) == 5, f"mcp_graylog get_log_sample via MCP: {len(body.get('messages') or [])} messages")
+    # 1.10.1: distributions are aggregated by Graylog, not sampled
+    r = c.post("/mcp", json={"jsonrpc": "2.0", "id": 6, "method": "tools/call",
+                             "params": {"name": "analyze_source_distribution", "arguments": {"query": q, "range_from": "now-30m"}}},
+               headers=auth)
+    res = r.json()["result"]
+    text = res["content"][0]["text"] if res.get("content") else ""
+    check(not res["isError"] and "e2e-host" in text, f"mcp_graylog analyze_source_distribution: {text[:160]!r}")
+    # a wildcard query is sent as "everything", not as `*` (which 1.10.2 retried ~900 times on 7.2)
+    t0 = time.monotonic()
+    r = c.post("/mcp", json={"jsonrpc": "2.0", "id": 9, "method": "tools/call",
+                             "params": {"name": "get_log_sample", "arguments": {"query": "*:*", "range_from": "now-30m", "limit": 3}}},
+               headers=auth)
+    res = r.json()["result"]
+    check(not res["isError"] and time.monotonic() - t0 < 30, f"get_log_sample with *:* answers quickly ({time.monotonic() - t0:.1f} s)")
+    names_now = [t["name"] for t in c.post("/mcp", json={"jsonrpc": "2.0", "id": 10, "method": "tools/list"}, headers=auth).json()["result"]["tools"]]
+    check(not {"get_log_statistics", "analyze_error_patterns", "get_log_level_analysis"} & set(names_now),
+          "the message-pulling mcp_graylog tools are not offered by default")
+    r = c.post("/mcp", json={"jsonrpc": "2.0", "id": 7, "method": "tools/call",
+                             "params": {"name": "find_silent_sources", "arguments": {"lookback_hours": 2, "silent_minutes": 0}}},
+               headers=auth)
+    res = r.json()["result"]
+    text = res["content"][0]["text"] if res.get("content") else ""
+    check(not res["isError"] and "e2e-host" in text, f"mcp_graylog find_silent_sources lists the seeded hosts: {text[:160]!r}")
+    r = c.post("/mcp", json={"jsonrpc": "2.0", "id": 8, "method": "tools/call",
+                             "params": {"name": "find_silent_sources", "arguments": {"lookback_hours": 100000}}},
+               headers=auth)
+    check(r.json()["result"]["isError"], "find_silent_sources look-back is capped")
 
     # 4. a real LLM, if configured
     if AI_URL:
@@ -180,7 +207,7 @@ async def run(tmp: Path, q: str, token: str, tag: str) -> int:
         # the RIGHT query is model quality: reported, not failed (measured 2026-11-19:
         # the iq3 model dropped the e2e:<tag> condition and counted both runs).
         calls = [e for e in events if e.get("phase") == "tool"]
-        check(not out["error"] and calls, f"real LLM used a tool ({out['elapsed_ms']} ms, tools {out['tools']})")
+        check(not out["error"] and calls, f"real LLM used a tool ({out['elapsed_ms']} ms, tools {out['tools']}) {out['error']}")
         truth = None
         if calls:
             last = calls[-1]
@@ -201,6 +228,40 @@ async def run(tmp: Path, q: str, token: str, tag: str) -> int:
             print("WARN model quality: right query, but the answer does not say 60")
     else:
         print("SKIP real LLM (AI_URL not set)")
+
+    # 5. incident -> evidence -> AI analysis (added 1.22)
+    from glogarch.core.config import AiConfig
+    from glogarch.security import ai_analysis as A
+    from glogarch.security.runner import run_security_analysis
+    run = await run_security_analysis(settings, db, source="manual")
+    check(run["status"] in ("ok", "partial"), f"detector run: {run.get('status')} {run.get('errors')}")
+    rows, _ = db.list_security_incidents(detector="auth_spray", limit=10)
+    inc = next((r for r in rows if r["entity"] == PEER), None)
+    check(inc is not None, f"auth_spray incident opened for {PEER}")
+    if inc:
+        sctx = A.server_ctx(settings, db, srv)
+        ev = await A.collect_evidence(inc, sctx, int(settings.security.window_minutes))
+        check(not ev["errors"], f"evidence queries all ran ({ev['queries']}): {ev['errors']}")
+        check((ev.get("events_in_window") or 0) >= 60, f"evidence counts the seeded failures: {ev.get('events_in_window')}")
+        users = {r["value"] for r in ev["breakdown"].get("user_name", [])}
+        check(users and all(u.startswith("e2e-user") for u in users), f"evidence top accounts: {sorted(users)}")
+        check(ev.get("successful_logins", {}).get("count") == 0, "no successful login from the peer")
+        sm = ev.get("sample_messages") or []
+        check(len(sm) == A.SAMPLE_N and all(m.get("source_ip") == PEER for m in sm),
+              f"example messages are the peer's ({len(sm)})")
+        if AI_URL:
+            settings.ai = AiConfig(analysis_enabled=True, url=AI_URL, model=os.environ.get("AI_MODEL", ""),
+                                   api_key=os.environ.get("AI_KEY", ""), timeout_seconds=600)
+            row = await A.analyze_incident(settings, db, inc["id"], lang="zh-TW", username="e2e")
+            check(not row["error"] and row["verdict"] in A.VERDICTS,
+                  f"real model analysis: {row['verdict']}/{row['confidence']} in {row['elapsed_ms']} ms, "
+                  f"{row['tokens']} tokens {row['error']}")
+            check(not row["unverified"], f"no invented addresses: {row['unverified']}")
+            print("     summary:", (row.get("result") or {}).get("summary", "")[:200])
+            if row["verdict"] not in ("malicious", "suspicious"):
+                print(f"WARN model quality: 60 failures over 8 accounts from a public address read as {row['verdict']}")
+        else:
+            print("SKIP real-model incident analysis (AI_URL not set)")
     return 0 if ok else 1
 
 

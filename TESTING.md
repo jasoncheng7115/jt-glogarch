@@ -1075,9 +1075,11 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
 
 **Automated**
 
-- [ ] `tests/test_ai.py` (29): the vendored mcp_graylog matches its manifest; on Python < 3.12 its
-      status says why it cannot load and the built-in tools still work; its import leaves the root
-      logger and `~/.mcp_graylog.log` alone (3.12); the SDK stand-in is used only without the real
+- [ ] `tests/test_ai.py` (33): the vendored mcp_graylog matches its manifest and loads on this
+      Python (1.10.2: 3.10 too); when it cannot load, its status says why and the built-in tools
+      still work; its import leaves the root logger and `~/.mcp_graylog.log` alone;
+      `find_silent_sources`' look-back is capped; a `*` / `*:*` query becomes empty and another leading
+      wildcard is refused; the three message-pulling tools are opt-in; the SDK stand-in is used only without the real
       SDK; time ranges parsed or refused, the pull cap and the 31-day cap; unknown tools/arguments
       refused; exact `top_values` through the aggregation API; results capped at 12,000 chars; LLM
       replies (native tool calls, `<tool_call>` text, `<think>` stripped); private-first URL check,
@@ -1096,9 +1098,13 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
       `glogarch/ai/` or `web/routes/ai.py`): `bash scripts/datanode-stack/up.sh`, then run it with
       the printed env (and `AI_URL` / `AI_MODEL` / `AI_KEY` for the real-LLM step). It seeds 60
       failed logins, then checks exact counts, `/mcp` with a token Graylog issued (and a bogus one
-      refused, audited), mcp_graylog through MCP on Python 3.12, and that a real LLM states what its
-      own query returned (whether the model picked the right query is printed as WARN). 2026-11-19:
-      ALL PASS on Graylog 7.2.2 with Python 3.10 and (in docker) 3.12.
+      refused, audited), mcp_graylog through MCP (`get_log_sample`, `analyze_source_distribution`,
+      `find_silent_sources` and its look-back cap, `*:*` answered quickly, the message-pulling tools
+      not offered by default), that a real LLM states what its own query
+      returned (whether the model picked the right query is printed as WARN), and (step 5) that a
+      real detector run opens the password-spraying incident, its AI-analysis evidence matches
+      Graylog, and a real model returns a valid verdict naming no address missing from the
+      evidence. 2026-11-19: ALL PASS on Graylog 7.2.2 with Python 3.10 and (in docker) 3.12.
 
 **By hand (each release that touches it)**
 
@@ -1106,6 +1112,34 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
       progress line (round, tool), read the answer with its query, model, time, tokens and tools;
       Stop works; conversations list, reopen and delete; Settings: test connection, save, MCP config
       snippet, mcp_graylog status. en / zh-TW / ja, both themes, ~1436 px.
+
+### AI analysis of security incidents (v1.22.0)
+
+**Automated**
+
+- [ ] `tests/test_security_ai.py` (17): the model's JSON is validated (fences, `<think>`, text
+      around it, unknown verdict or confidence refused, lists capped); addresses the answer names
+      but the evidence does not are flagged (IPv4 and compressed IPv6, version numbers ignored);
+      the window is capped to 24 h; automatic picks are new or escalated, highest first, capped;
+      evidence queries are all about the incident, empty fields dropped, successful logins
+      checked; response format falls back json_schema -> json_object on HTTP 400; a `</data>` in
+      an example message cannot close the data block; example messages are NOT stored; an
+      unusable answer is asked again, then recorded as failed without hiding the last verdict;
+      LLM down / budget used up = an error row and no Graylog queries once the budget is gone;
+      analyses are deleted with their incident; automatic analysis needs both switches and stops
+      at the first failure (audited); defaults are off; the API refuses when off, 404 for an
+      unknown incident, 202 then 409 while running, lists the verdict, audits; settings validate
+      the severity and cap the count; the page escapes what the model wrote (node); every page
+      key is in all three languages.
+- [ ] `scripts/e2e-ai-test.py` step 5 (above).
+
+**By hand (each release that touches it)**
+
+- [ ] Security Incidents page against a test Graylog with the AI on: AI button on a row, Analyse,
+      the running line, the verdict chip in the row afterwards, the evidence section, an earlier
+      analysis under "Earlier analyses", "Ask in AI chat" opens the chat with the question filled
+      in; settings: automatic analysis switch, severity, count. en / zh-TW / ja, both themes,
+      ~1436 px.
 
 ### Test Results
 

@@ -1,4 +1,4 @@
-# jt-glogarch v1.21.0
+# jt-glogarch v1.22.0
 
 **Language**: [English](README.md) | [繁體中文](README-zh_TW.md) | **日本語**  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open（6.x / 7.x）向けのログのアーカイブ・リストアツール
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.21.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.22.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 > **作者：** Jason Cheng（[Jason Tools](https://github.com/jasoncheng7115)）
@@ -218,8 +218,18 @@ IDS アラート、Web スキャン。読み取るのは件数だけ（Graylog �
 すべての参照は監査ログに記録されます。OpenAI 互換の LLM サーバー（llama.cpp、vLLM、LM Studio、Ollama の `/v1`）を
 使えます。ツールが返したレコードのデータが送られるため、プライベートネットワーク外のサーバーは許可しない限り拒否します。
 同じツールは `/mcp` で外部の AI クライアント（Claude Desktop、Open WebUI、opencode）にも提供され、各ユーザーの
-Graylog API トークンで認証します。mcp_graylog 1.9.44 には Python 3.12 以降が必要です。それより古い Python でも
-組み込みのツールは動作します。
+Graylog API トークンで認証します。mcp_graylog 1.10.2 では Graylog 自体の状態（クラスターとノードの指標、
+インデックス失敗、システム通知、レコードの送信が止まった送信元）も確認できます。
+
+### セキュリティインシデントの AI 分析（v1.22.0 以降、既定では無効）
+
+各インシデントの AI ボタンで、モデルに判定（悪意あり、不審、無害、判断できません）、確信度、主な所見、推奨する対応、
+無害である可能性を尋ねます。証拠はそのインシデントに対する固定クエリ（期間内の正確な件数と上位の値、同じ送信元または
+アカウントのログイン成功、数件のサンプルレコード、その対象の過去のインシデント）から取得するため、モデルはクエリを
+選びません。1 回の分析で Graylog への検索は約 10 回です。サンプルレコードはモデルに送りますが保存しません。回答は
+検証され、証拠にないアドレスが含まれているとページに表示されます。実行ごとに新規またはエスカレートしたインシデントを
+自動で分析することもできます（1 回あたり最大 3 件、通知の送信後）。助言のみで、何も変更しません。「AI チャットで質問」
+からチャットで調査を続けられます。
 
 ### オフライン（閉域）環境への導入
 

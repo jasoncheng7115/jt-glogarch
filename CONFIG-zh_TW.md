@@ -418,6 +418,9 @@ security:
   detectors:                  # 每項偵測可設 enabled、min_count、exclude（皆可省略）
     account_multi_host:
       exclude: "user_name:/.*[$]/"   # 預設值：排除電腦帳號（DC1$）
+  ai_auto: false              # v1.22.0：每次分析後由 AI 分析（需要 ai.analysis_enabled）
+  ai_auto_min_severity: high  # high、medium 或 low：從這個嚴重程度起的新增或升級事件
+  ai_auto_max_per_run: 3      # 1 到 10；每件呼叫一次模型，並對 Graylog 查詢約十次
 ```
 
 每次分析都使用 Graylog 的彙總 API（`POST /api/search/aggregate`，Graylog 6.x 與 7.x；
@@ -426,6 +429,9 @@ security:
 Graylog 連不上算一次失敗，連續三次失敗會送出一則「資安事件分析沒有在運作」的通知。第一次分析後的 24 小時為學習期，
 不標示「首次出現」。通知使用 `notify.on_security_incident` 開關（預設開啟）與原有的通知管道。
 這些設定也可以在「資安事件」頁面修改。
+
+開啟 `ai_auto` 後，該次分析新增或升級的事件會在通知送出之後交給 AI 模型分析（不會在通知之前，因為模型可能要
+好幾分鐘）。遇到第一個失敗（LLM 連不上、token 額度用完）就停止該次的其餘分析。
 
 ---
 
@@ -447,6 +453,7 @@ ai:
   chat_retention_days: 90     # 0 = 永久保留
   mcp_enabled: false          # 給外部 AI 用戶端的 POST /mcp
   mcp_graylog_tools: []       # 空白 = 預設的唯讀工具組
+  analysis_enabled: false     # v1.22.0：「資安事件」頁面的 AI 按鈕
 ```
 
 AI 對話以登入者的身分讀取 Graylog（在頁面上登入 Graylog；密碼會換成 Graylog 工作階段，不會儲存）。
@@ -454,7 +461,14 @@ AI 對話以登入者的身分讀取 Graylog（在頁面上登入 Graylog；密�
 `web.allowed_graylog_roles` 檢查 token 的角色，並以 `X-Graylog-Server` 標頭選擇伺服器（未指定則用預設伺服器）；
 每個 token 每分鐘 120 次請求。不論來自 AI 對話或 MCP，每次工具呼叫都以 `ai_tool_call` 記入稽核。
 對話只保存問題、答案和用到的工具名稱，不保存工具查回的資料。mcp_graylog 的兩個除錯工具、大量匯出工具和內容套件
-詳細資料一律不開放。
+詳細資料一律不開放；`find_silent_sources` 最多回溯 31 天。`get_log_statistics`、`analyze_error_patterns` 與
+`get_log_level_analysis` 只有列在 `mcp_graylog_tools` 裡才開放（每次呼叫會拉取記錄長達兩分鐘，在 7.2.2 實測）。
+查詢只有 `*` 或 `*:*` 時，送給 mcp_graylog 的是空白查詢；其他以萬用字元開頭的查詢一律拒絕。
+
+資安事件的 AI 分析（`analysis_enabled`）使用偵測所用的伺服器連線讀取 Graylog，以針對該事件的固定查詢（最多該事件
+最後 24 小時）取得：精確計數與前幾名、同一來源或帳號的成功登入、8 筆範例記錄，以及這個對象先前的事件。範例記錄
+會送給模型，但不會保存；計數、模型的回覆與模型名稱會和事件一起保存（事件刪除時一併刪除）。使用與 AI 對話相同的
+LLM 伺服器、逾時與 token 額度。
 
 ---
 
