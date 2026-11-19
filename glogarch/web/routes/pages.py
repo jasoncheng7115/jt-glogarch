@@ -340,6 +340,16 @@ def security_page(request: Request):
     return _render("index.html", request, {"page": "security"})
 
 
+@router.get("/ai-chat", response_class=HTMLResponse)
+def ai_chat_page(request: Request):
+    """AI chat over the logs and incidents (added 1.21)."""
+    if _is_unconfigured(request):
+        return RedirectResponse(url="/setup", status_code=303)
+    if not _is_logged_in(request):
+        return RedirectResponse(url="/login", status_code=303)
+    return _render("index.html", request, {"page": "ai-chat"})
+
+
 @router.get("/op-audit", response_class=HTMLResponse)
 def op_audit_page(request: Request):
     if not _is_logged_in(request):

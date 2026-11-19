@@ -290,6 +290,24 @@ def vendored_components(pkg_dir: Path = _PKG_DIR) -> list[dict]:
                     "externalReferences": [{"type": "website", "url": "https://www.naturalearthdata.com/"}],
                     "properties": [{"name": "jt-glogarch:location",
                                     "value": "glogarch/report/assets/worldmap.svg (PDF report map widget)"}]})
+    # Code kept byte-for-byte as published, with a manifest per file (glogarch/vendor/).
+    vend = pkg_dir / "vendor"
+    for man_path in sorted(vend.glob("*.json")) if vend.is_dir() else []:
+        src = man_path.with_suffix(".py")
+        if not src.is_file():
+            continue
+        man = json.loads(man_path.read_text(encoding="utf-8"))
+        name, ver = man.get("name", src.stem), man.get("version", "")
+        ref = f"pkg:github/jasoncheng7115/jasontools-mcp@{man.get('commit') or ver}#{name}"
+        comp = {"type": "library", "bom-ref": ref, "name": name, "version": ver, "purl": ref,
+                "licenses": [{"license": {"id": man.get("license", "")}}] if man.get("license") else [],
+                "hashes": [{"alg": "SHA-256", "content": _sha256_file(src)}],
+                "externalReferences": [{"type": "vcs", "url": man["upstream"]}] if man.get("upstream") else [],
+                "properties": [{"name": "jt-glogarch:location",
+                                "value": f"glogarch/vendor/{src.name} (unmodified; AI chat / MCP tools)"}]}
+        if man.get("author"):
+            comp["author"] = man["author"]
+        out.append(comp)
     return out
 
 

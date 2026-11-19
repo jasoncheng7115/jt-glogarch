@@ -2,6 +2,14 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.21.0] - 2026-11-19
+
+### Added
+
+- **AI Chat page and an MCP server (both off by default).** Ask about the logs and the security incidents in plain language: the model looks things up with read-only tools and answers with the query it used. The tools are exact counts and top values through Graylog's aggregation API, the security incidents, archive coverage, and the tools of the owner's [mcp_graylog](https://github.com/jasoncheng7115/jasontools-mcp/tree/main/mcp_graylog), which is vendored unmodified (version, commit and SHA-256 in `glogarch/vendor/mcp_graylog.json`; `run-tests.sh` fails the release when GitHub has a newer version, and `scripts/check-mcp-graylog.py --update` takes it in whole). The chat reads Graylog with the signed-in user's own Graylog session, so Graylog's permissions apply; every tool call is audited (`ai_tool_call`, with user and address). Tool results go back to the model inside a data block it cannot close from within, with instructions to treat them as untrusted. Any OpenAI-compatible LLM server works; one outside the private network is refused unless an administrator allows it (audited), because the log data the tools return is sent to it. Daily and monthly token limits, a time-range cap for tools that pull messages, at most 6 tool rounds per question. Conversations are private to their user and keep questions, answers and the names of the tools used. External AI clients (Claude Desktop, Open WebUI, opencode) reach the same tools at `/mcp` with their user's Graylog API token. Tested against Graylog 7.2.2 with a real local LLM (`scripts/e2e-ai-test.py`).
+- mcp_graylog 1.9.44 does not compile before Python 3.12 (an f-string with a backslash in its expression, line 2499). On Ubuntu 22.04's Python 3.10 its tools are unavailable and the settings page says why; the built-in tools still work. Reported to its developer.
+- The SBOM and THIRD-PARTY-LICENSES list the vendored mcp_graylog.
+
 ## [1.20.0] - 2026-11-19
 
 ### Added

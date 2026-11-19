@@ -27,6 +27,7 @@
             <li><a href="/reports" class="{% if page == 'reports' %}active{% endif %}" data-i18n="nav_reports" data-icon="report"><span>Reports</span></a></li>
             <li><a href="/alerting" class="{% if page == 'alerting' %}active{% endif %}" data-i18n="nav_alerting" data-icon="warning"><span>Alerting</span></a></li>
             <li><a href="/security" class="{% if page == 'security' %}active{% endif %}" data-i18n="nav_security" data-icon="shield"><span>Security Incidents</span></a></li>
+            <li><a href="/ai-chat" class="{% if page == 'ai-chat' %}active{% endif %}" data-i18n="nav_ai_chat" data-icon="chat"><span>AI Chat</span></a></li>
             <li><a href="/packs" class="{% if page == 'packs' %}active{% endif %}" data-i18n="nav_packs" data-icon="db"><span>Content Packs</span></a></li>
             <li><a href="/settings" class="{% if page == 'settings' %}active{% endif %}" data-i18n="nav_settings" data-icon="settings"><span>Settings</span></a></li>
         </ul>
@@ -1103,6 +1104,42 @@
             <div class="pagination" id="sec-pager"></div>
         </div>
 
+        {% elif page == 'ai-chat' %}
+        <h1 data-i18n="page_ai_chat" data-icon="chat">AI Chat</h1>
+        <div class="text-muted fs-085 mb15" data-i18n="ai_subtitle">Ask about the logs in Graylog and the security incidents. The AI reads them with your own Graylog account, read-only; every lookup is in the audit log.</div>
+
+        <div class="card mb15" id="ai-status-card">
+            <div class="al-bar">
+                <div class="al-bar-left" id="ai-status"><span class="spinner-text" data-i18n="loading">Loading</span></div>
+                <div class="al-bar-right">
+                    <button class="btn-secondary btn-sm" data-act="aiToggleSettings" data-i18n="sec_btn_settings" data-icon="settings">Settings</button>
+                </div>
+            </div>
+            <div class="pk-message hidden" id="ai-message"></div>
+            <div class="ai-signin hidden" id="ai-signin"></div>
+        </div>
+
+        <div class="card mb15 hidden" id="ai-settings"></div>
+
+        <div class="ai-layout" id="ai-layout">
+            <div class="card ai-side">
+                <button class="btn-primary btn-sm ai-new" data-act="aiNewChat" data-i18n="ai_new_chat" data-icon="plus">New chat</button>
+                <div id="ai-convs" class="ai-convs"></div>
+            </div>
+            <div class="card ai-main">
+                <div id="ai-thread" class="ai-thread"></div>
+                <div id="ai-progress" class="ai-progress hidden"></div>
+                <div class="ai-compose">
+                    <textarea id="ai-input" rows="3" maxlength="4000" data-i18n-placeholder="ai_input_ph" placeholder="e.g. Which external IPs failed to log in most in the last 24 hours?"></textarea>
+                    <div class="ai-compose-actions">
+                        <span class="text-muted fs-08" data-i18n="ai_enter_hint">Ctrl+Enter to send</span>
+                        <button class="btn-secondary btn-sm hidden" id="ai-stop" data-act="aiStop" data-i18n="ai_stop" data-icon="close">Stop</button>
+                        <button class="btn-primary" id="ai-send" data-act="aiSend" data-i18n="ai_send" data-icon="send">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         {% elif page == 'packs' %}
         <h1 data-i18n="page_packs" data-icon="db">Content Packs</h1>
         <div class="text-muted fs-085 mb15" data-i18n="pk_subtitle">View, install, uninstall, edit, download and upload Graylog content packs.</div>
@@ -1497,5 +1534,6 @@ sudo bash upgrade-offline.sh</pre>
     <script src="/static/js/alerting.js?v={{ version }}"></script>
     <script src="/static/js/packs.js?v={{ version }}"></script>
     <script src="/static/js/security.js?v={{ version }}"></script>
+    <script src="/static/js/ai.js?v={{ version }}"></script>
 </body>
 </html>

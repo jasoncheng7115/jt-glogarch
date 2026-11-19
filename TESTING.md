@@ -1071,6 +1071,42 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
       ~1436 px. Do not enable it on a site whose notification channels reach people
       unless they expect it.
 
+### AI chat and MCP endpoint (v1.21.0)
+
+**Automated**
+
+- [ ] `tests/test_ai.py` (29): the vendored mcp_graylog matches its manifest; on Python < 3.12 its
+      status says why it cannot load and the built-in tools still work; its import leaves the root
+      logger and `~/.mcp_graylog.log` alone (3.12); the SDK stand-in is used only without the real
+      SDK; time ranges parsed or refused, the pull cap and the 31-day cap; unknown tools/arguments
+      refused; exact `top_values` through the aggregation API; results capped at 12,000 chars; LLM
+      replies (native tool calls, `<tool_call>` text, `<think>` stripped); private-first URL check,
+      metadata addresses always refused; token budgets; the chat loop (tool round, forced answer
+      after the last round, empty answer asked again, a `</data>` inside a tool result cannot close
+      the data block, every tool call audited with user and IP); MCP methods, version negotiation,
+      notifications, batches, Bearer/Basic token, rate limit; `/mcp` off by default, 401 without a
+      token, 403 for a refused token, 202 for notifications only; settings keep a masked key, drop
+      the key when the URL changes, refuse an external URL unless allowed (audited); chat needs a
+      Graylog sign-in; another user's conversation is not found; the page's Markdown renderer
+      (run in node) escapes before formatting and allows https links only.
+- [ ] `scripts/check-mcp-graylog.py` (run by `run-tests.sh`): the vendored file matches its
+      manifest and is the published upstream version; a newer upstream fails the release check
+      (`--update` takes it in whole).
+- [ ] **`scripts/e2e-ai-test.py` against a REAL Graylog** (MANDATORY for any change to
+      `glogarch/ai/` or `web/routes/ai.py`): `bash scripts/datanode-stack/up.sh`, then run it with
+      the printed env (and `AI_URL` / `AI_MODEL` / `AI_KEY` for the real-LLM step). It seeds 60
+      failed logins, then checks exact counts, `/mcp` with a token Graylog issued (and a bogus one
+      refused, audited), mcp_graylog through MCP on Python 3.12, and that a real LLM states what its
+      own query returned (whether the model picked the right query is printed as WARN). 2026-11-19:
+      ALL PASS on Graylog 7.2.2 with Python 3.10 and (in docker) 3.12.
+
+**By hand (each release that touches it)**
+
+- [ ] AI Chat page against a test Graylog: sign in to Graylog on the page, ask a question, watch the
+      progress line (round, tool), read the answer with its query, model, time, tokens and tools;
+      Stop works; conversations list, reopen and delete; Settings: test connection, save, MCP config
+      snippet, mcp_graylog status. en / zh-TW / ja, both themes, ~1436 px.
+
 ### Test Results
 
 - [ ] `./scripts/run-tests.sh` passes — `TEST-RESULTS.md` generated

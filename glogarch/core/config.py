@@ -290,6 +290,28 @@ class SecurityConfig(BaseModel):
     detectors: dict[str, dict] = Field(default_factory=dict)
 
 
+class AiConfig(BaseModel):
+    """AI chat + MCP endpoint (added 1.21, glogarch/ai/). Everything OFF by default.
+
+    The LLM is any OpenAI-compatible server (llama.cpp, vLLM, LM Studio, Ollama's
+    /v1). Owner's rule: a private-network server by default; an external one only
+    after `allow_external` is set (audited, and the page keeps warning)."""
+    enabled: bool = False
+    url: str = ""                    # e.g. http://10.0.0.5:8080/v1
+    model: str = ""
+    api_key: str = ""                # secret: masked by the API, kept on a masked save
+    timeout_seconds: int = 300
+    allow_external: bool = False
+    temperature: float = 0.2
+    max_tool_rounds: int = 6
+    max_range_hours: float = 24.0    # cap for tools that pull messages
+    daily_tokens: int = 0            # 0 = no limit
+    monthly_tokens: int = 0
+    chat_retention_days: int = 90
+    mcp_enabled: bool = False        # /mcp for external AI clients (Graylog token auth)
+    mcp_graylog_tools: list[str] = Field(default_factory=list)  # empty = the default set
+
+
 class Settings(BaseModel):
     servers: list[GraylogServerConfig] = Field(default_factory=list)
     default_server: str = ""
@@ -304,6 +326,7 @@ class Settings(BaseModel):
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
     op_audit: ApiAuditConfig = Field(default_factory=ApiAuditConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    ai: AiConfig = Field(default_factory=AiConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     database_path: str = "glogarch.db"
     log_level: str = "INFO"

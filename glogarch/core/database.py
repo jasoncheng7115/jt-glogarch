@@ -230,6 +230,37 @@ CREATE TABLE IF NOT EXISTS sec_runs (
     note        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sec_runs ON sec_runs (server, id);
+
+-- AI chat (added 1.21). One user's conversations are theirs only. A message
+-- keeps the question or the final answer and the NAMES of the tools used, not
+-- the tool results (log data does not get a second copy here).
+CREATE TABLE IF NOT EXISTS ai_conversations (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    username   TEXT NOT NULL,
+    server     TEXT NOT NULL DEFAULT '',
+    title      TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_conv_user ON ai_conversations (username, updated_at);
+CREATE TABLE IF NOT EXISTS ai_messages (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL,
+    role            TEXT NOT NULL,
+    content         TEXT NOT NULL DEFAULT '',
+    model           TEXT,
+    tools           TEXT NOT NULL DEFAULT '[]',
+    tokens          INTEGER NOT NULL DEFAULT 0,
+    elapsed_ms      INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_msg_conv ON ai_messages (conversation_id, id);
+-- Tokens spent per UTC day, for the daily / monthly budget.
+CREATE TABLE IF NOT EXISTS ai_usage (
+    day    TEXT PRIMARY KEY,
+    tokens INTEGER NOT NULL DEFAULT 0,
+    calls  INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -1579,6 +1610,112 @@ class ArchiveDB:
             except Exception:
                 self._rollback_safely()
                 raise
+
+    # --- AI chat ------------------------------------------------------------
+
+    def ai_create_conversation(self, username: str, server: str, title: str) -> int:
+        now = _dt_to_str(datetime.utcnow())
+        with self._lock:
+            try:
+                cur = self.conn.execute(
+                    "INSERT INTO ai_conversations (username, server, title, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?)", (username, server, title[:200], now, now))
+                self.conn.commit()
+                return cur.lastrowid  # type: ignore[return-value]
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def ai_add_message(self, conversation_id: int, role: str, content: str, *, model: str = "",
+                       tools: list | None = None, tokens: int = 0, elapsed_ms: int = 0) -> int:
+        import json as _json
+        now = _dt_to_str(datetime.utcnow())
+        with self._lock:
+            try:
+                cur = self.conn.execute(
+                    "INSERT INTO ai_messages (conversation_id, role, content, model, tools, tokens, "
+                    "elapsed_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (conversation_id, role, content, model, _json.dumps(tools or []), int(tokens),
+                     int(elapsed_ms), now))
+                self.conn.execute("UPDATE ai_conversations SET updated_at = ? WHERE id = ?",
+                                  (now, conversation_id))
+                self.conn.commit()
+                return cur.lastrowid  # type: ignore[return-value]
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def ai_get_conversation(self, conversation_id: int, username: str) -> dict | None:
+        """Only the owner's: another user's id reads as not found."""
+        import json as _json
+        r = self.conn.execute("SELECT * FROM ai_conversations WHERE id = ? AND username = ?",
+                              (conversation_id, username)).fetchone()
+        if not r:
+            return None
+        d = dict(r)
+        msgs = self.conn.execute(
+            "SELECT id, role, content, model, tools, tokens, elapsed_ms, created_at FROM ai_messages "
+            "WHERE conversation_id = ? ORDER BY id", (conversation_id,)).fetchall()
+        d["messages"] = [{**dict(m), "tools": _json.loads(m["tools"] or "[]")} for m in msgs]
+        return d
+
+    def ai_list_conversations(self, username: str, limit: int = 50) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT id, server, title, created_at, updated_at FROM ai_conversations "
+            "WHERE username = ? ORDER BY updated_at DESC, id DESC LIMIT ?", (username, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def ai_delete_conversation(self, conversation_id: int, username: str) -> bool:
+        with self._lock:
+            try:
+                cur = self.conn.execute("DELETE FROM ai_conversations WHERE id = ? AND username = ?",
+                                        (conversation_id, username))
+                if cur.rowcount:
+                    self.conn.execute("DELETE FROM ai_messages WHERE conversation_id = ?",
+                                      (conversation_id,))
+                self.conn.commit()
+                return cur.rowcount > 0
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def ai_prune(self, days: int) -> int:
+        if days <= 0:
+            return 0
+        cutoff = _dt_to_str(datetime.utcnow() - timedelta(days=days))
+        with self._lock:
+            try:
+                ids = [r[0] for r in self.conn.execute(
+                    "SELECT id FROM ai_conversations WHERE updated_at < ?", (cutoff,)).fetchall()]
+                for i in ids:
+                    self.conn.execute("DELETE FROM ai_messages WHERE conversation_id = ?", (i,))
+                    self.conn.execute("DELETE FROM ai_conversations WHERE id = ?", (i,))
+                self.conn.commit()
+                return len(ids)
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def ai_add_usage(self, tokens: int, when: datetime | None = None) -> None:
+        day = (when or datetime.utcnow()).strftime("%Y-%m-%d")
+        with self._lock:
+            try:
+                self.conn.execute(
+                    "INSERT INTO ai_usage (day, tokens, calls) VALUES (?, ?, 1) ON CONFLICT (day) "
+                    "DO UPDATE SET tokens = tokens + excluded.tokens, calls = calls + 1", (day, int(tokens)))
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def ai_usage(self, when: datetime | None = None) -> dict:
+        now = when or datetime.utcnow()
+        day = now.strftime("%Y-%m-%d")
+        month = now.strftime("%Y-%m")
+        d = self.conn.execute("SELECT COALESCE(SUM(tokens), 0) FROM ai_usage WHERE day = ?", (day,)).fetchone()[0]
+        m = self.conn.execute("SELECT COALESCE(SUM(tokens), 0) FROM ai_usage WHERE day LIKE ?",
+                              (month + "-%",)).fetchone()[0]
+        return {"day": int(d), "month": int(m)}
 
     def list_report_history(self, limit: int = 50) -> list[dict]:
         rows = self.conn.execute(

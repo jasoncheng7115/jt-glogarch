@@ -1,4 +1,4 @@
-# jt-glogarch v1.20.0
+# jt-glogarch v1.21.0
 
 **Language**: [English](README.md) | [繁體中文](README-zh_TW.md) | **日本語**  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open（6.x / 7.x）向けのログのアーカイブ・リストアツール
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.20.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.21.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 > **作者：** Jason Cheng（[Jason Tools](https://github.com/jasoncheng7115)）
@@ -208,6 +208,18 @@ IDS アラート、Web スキャン。読み取るのは件数だけ（Graylog �
 機能しない検出は 0 件と表示されずにその旨が表示されます。フィールド名は GIM の慣例（`event_category`、`event_outcome`、
 `source_ip`、`user_name`）に従い、各検出は一般的な代替フィールド（`client_ip`）も試します。しきい値と除外条件は
 サイトごとに調整できます。
+
+### AI チャットと MCP サーバー（v1.21.0 以降、既定では無効）
+
+「AI チャット」ページで、レコードとインシデントについて自然な言葉で質問できます。モデルは読み取り専用のツール
+（Graylog の集計 API による正確な件数と上位の値、セキュリティインシデント、アーカイブの範囲、そして変更せずに
+組み込んだ [mcp_graylog](https://github.com/jasoncheng7115/jasontools-mcp/tree/main/mcp_graylog) のツール）で調べ、
+使ったクエリを添えて回答します。参照にはあなた自身の Graylog アカウントを使うため Graylog の権限が適用され、
+すべての参照は監査ログに記録されます。OpenAI 互換の LLM サーバー（llama.cpp、vLLM、LM Studio、Ollama の `/v1`）を
+使えます。ツールが返したレコードのデータが送られるため、プライベートネットワーク外のサーバーは許可しない限り拒否します。
+同じツールは `/mcp` で外部の AI クライアント（Claude Desktop、Open WebUI、opencode）にも提供され、各ユーザーの
+Graylog API トークンで認証します。mcp_graylog 1.9.44 には Python 3.12 以降が必要です。それより古い Python でも
+組み込みのツールは動作します。
 
 ### オフライン（閉域）環境への導入
 

@@ -90,6 +90,17 @@ fi
 # tested with: read from the INSTALLED distributions, so pip must have installed
 # this very version first (--force-reinstall). A stale install would describe
 # the previous release, so a version mismatch stops the release here.
+# Vendored mcp_graylog must be the published upstream version, unmodified
+# (owner, 2026-11-19: check for a newer version on every change). A network
+# failure only warns; a newer upstream or an edited copy refuses the release.
+MCPG_RC=0
+MCPG_OUT=$(python3 scripts/check-mcp-graylog.py 2>&1) || MCPG_RC=$?
+echo "$MCPG_OUT"
+if [ $MCPG_RC -ne 0 ]; then
+    echo "❌ VENDORED mcp_graylog CHECK FAILED — refusing to release."
+    exit 1
+fi
+
 SBOM_FILE="github/sbom.cdx.json"
 SBOM_RC=0
 # Run from /tmp WITHOUT the source tree on sys.path: the INSTALLED code describes
@@ -159,6 +170,7 @@ cat > "$RESULT_FILE" << EOF
 | **Version Check** | $([ $VERSION_OK -eq 0 ] && echo "✅ OK" || echo "❌ FAIL") |
 | **Bandit (source security)** | $(echo "$BANDIT_OUT" | tail -1) |
 | **SBOM** | ${SBOM_SUMMARY} |
+| **Vendored mcp_graylog** | ${MCPG_OUT} |
 
 ## Test Output
 

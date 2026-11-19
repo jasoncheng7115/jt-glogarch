@@ -429,6 +429,35 @@ Graylog 連不上算一次失敗，連續三次失敗會送出一則「資安事
 
 ---
 
+## ai — AI 對話與 MCP 端點（v1.21.0，預設關閉）
+
+```yaml
+ai:
+  enabled: false              # 「AI 對話」頁面
+  url: ""                     # OpenAI 相容伺服器，例如 http://10.0.0.5:8080/v1
+  model: ""
+  api_key: ""                 # API 回傳時遮罩；儲存時收到遮罩值會保留原本的金鑰
+  timeout_seconds: 300        # 10 到 900
+  allow_external: false       # 內網以外的伺服器預設拒絕，設為 true 才允許（記入稽核）
+  temperature: 0.2
+  max_tool_rounds: 6          # 用完後模型必須依現有資料作答
+  max_range_hours: 24         # 會拉取記錄的工具最長時間範圍；精確計數可到 31 天
+  daily_tokens: 0             # 0 = 不限；以 UTC 日計算
+  monthly_tokens: 0
+  chat_retention_days: 90     # 0 = 永久保留
+  mcp_enabled: false          # 給外部 AI 用戶端的 POST /mcp
+  mcp_graylog_tools: []       # 空白 = 預設的唯讀工具組
+```
+
+AI 對話以登入者的身分讀取 Graylog（在頁面上登入 Graylog；密碼會換成 Graylog 工作階段，不會儲存）。
+`/mcp` 接受 `Authorization: Bearer <Graylog API token>`（或 Basic `<token>:token`），依
+`web.allowed_graylog_roles` 檢查 token 的角色，並以 `X-Graylog-Server` 標頭選擇伺服器（未指定則用預設伺服器）；
+每個 token 每分鐘 120 次請求。不論來自 AI 對話或 MCP，每次工具呼叫都以 `ai_tool_call` 記入稽核。
+對話只保存問題、答案和用到的工具名稱，不保存工具查回的資料。mcp_graylog 的兩個除錯工具、大量匯出工具和內容套件
+詳細資料一律不開放。
+
+---
+
 ## web — Web UI
 
 ```yaml

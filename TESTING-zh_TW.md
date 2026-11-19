@@ -817,6 +817,35 @@ UI 測試用的 jt-glogarch 也必須指向那台測試 Graylog（在任何主�
       標紅、沒用到的替代欄位顯示灰色；儲存設定後出現下次執行時間。英文／繁中／日文、兩種主題、約 1436 px。
       通知管道會送到真人的站台，除非對方預期，否則不要開啟。
 
+### AI 對話與 MCP 端點（v1.21.0）
+
+**自動化**
+
+- [ ] `tests/test_ai.py`（29 項）：收進來的 mcp_graylog 和清單檔一致；Python 3.12 以下時，狀態會說明無法載入的原因，
+      內建工具照常可用；匯入時不會動到根記錄器，也不會產生 `~/.mcp_graylog.log`（3.12）；只有在沒有真正的 SDK 時
+      才用替代模組；時間範圍的解析與拒絕、拉取記錄的上限與 31 天上限；未知工具／參數會被拒絕；`top_values`
+      透過彙總 API 精確計算；結果最多 12,000 字元；LLM 回覆解析（原生工具呼叫、`<tool_call>` 文字、去除
+      `<think>`）；內網優先的網址檢查，雲端中繼資料位址一律拒絕；token 額度；對話迴圈（工具輪次、最後一輪後
+      強制作答、空白答案再問一次、工具結果裡的 `</data>` 無法提前結束資料區塊、每次工具呼叫都以使用者和 IP
+      記入稽核）；MCP 方法、協定版本協商、通知、批次、Bearer／Basic token、流量限制；`/mcp` 預設關閉、沒有 token
+      回 401、被拒的 token 回 403、只有通知時回 202；設定保留遮罩的金鑰、換網址時清除金鑰、外部網址除非允許否則
+      拒絕（記入稽核）；AI 對話需要先登入 Graylog；別人的對話一律找不到；頁面的 Markdown 轉換器（在 node 執行）
+      先跳脫再加格式，只允許 https 連結。
+- [ ] `scripts/check-mcp-graylog.py`（由 `run-tests.sh` 執行）：收進來的檔案和清單檔一致，也是上游最新的發佈版本；
+      上游有新版時發版檢查失敗（`--update` 會整份換成新版）。
+- [ ] **對真實 Graylog 執行 `scripts/e2e-ai-test.py`**（凡改動 `glogarch/ai/` 或 `web/routes/ai.py` 都必須執行）：
+      先 `bash scripts/datanode-stack/up.sh`，再用它印出的環境變數執行（真實 LLM 那一步另需 `AI_URL`／`AI_MODEL`／
+      `AI_KEY`）。它會送入 60 筆登入失敗，接著檢查精確計數、用 Graylog 簽發的 token 呼叫 `/mcp`（假 token 會被拒、
+      呼叫有記入稽核）、Python 3.12 上透過 MCP 呼叫 mcp_graylog，以及真實 LLM 的答案與它自己的查詢結果一致
+      （模型的查詢條件是否正確會以 WARN 列出）。2026-11-19：Graylog 7.2.2 上以 Python 3.10 與（docker 中的）3.12
+      皆 ALL PASS。
+
+**手動（每個動到此功能的版本）**
+
+- [ ] 對測試用 Graylog 開「AI 對話」頁面：在頁面上登入 Graylog、提問、看進度列（輪次、工具），答案附上查詢、
+      模型、耗時、token 與工具；「停止」有效；對話清單、重新開啟、刪除；設定：測試連線、儲存、MCP 設定範例、
+      mcp_graylog 狀態。英文／繁中／日文、兩種主題、約 1436 px。
+
 ### 測試結果
 
 - [ ] `./scripts/run-tests.sh` 通過 — `TEST-RESULTS.md` 已產生

@@ -1,4 +1,4 @@
-# jt-glogarch v1.20.0
+# jt-glogarch v1.21.0
 
 **語言**： [English](README.md) | **繁體中文** | [日本語](README-ja.md)  
 **網站**： <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.20.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.21.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -181,6 +181,7 @@ GELF 模式還有：
     - 另外下載：[CubeCOS / OpenStack Log Pipeline](https://github.com/jasoncheng7115/it-scripts/blob/master/graylog/cubecos_contentpack_graylog63.json)，CubeCOS、OpenStack、Ceph、Masakari 記錄用的 1 條管線與 147 條規則（套件標示適用 Graylog 6.3 以上）。請從該連結下載，再到內容套件頁面上傳。
 - **告警管理（v1.17.0 起）** — 批次管理 Graylog 的事件定義與通知方式：快速篩選、依標題標籤（`[廠商]`／`產品 - `）點選、多關鍵字搜尋（`checkpoint -notif:Zulip`）、Shift 點選範圍與全選符合的結果，再對數百個定義一次加入／移除／替換通知方式。每次變更都先預覽，每個定義維持原本的啟用／停用狀態；預覽之後被人在 Graylog 改過的定義會略過；以作業執行並記錄在作業歷程，可在「變更紀錄」復原。健檢會列出啟用中卻沒有人會收到通知的定義、已刪除或沒人使用的通知方式，以及從未或已久未觸發的定義。所有變更都以登入者自己的 Graylog 帳號執行（套用該帳號的權限）；登入時密碼會換成 Graylog 工作階段，不會儲存。
 - **資安事件（v1.20.0 起，預設關閉）** — 定時統計 Graylog 裡的資安相關記錄（登入失敗、未被阻擋的 IDS 告警、WAF 記錄），彙整成資安事件：同一來源的暴力破解、密碼噴灑（同一來源嘗試多個帳號）、同一來源或同一帳號在多台主機登入失敗、多次失敗後登入成功、IDS 告警未被阻擋、網站掃描。只讀取筆數（Graylog 的彙總 API，每次 6 到 7 次查詢），不讀取記錄內容；Graylog 記憶體吃緊時會略過該次分析。每件事件記錄首次與最後發現時間、「首次出現」標記（90 天內沒出現過），並可直接連到 Graylog 搜尋查看這些記錄；持續中的事件只通知一次，不會每次分析都通知。「涵蓋狀況」表會列出每項偵測在此站台的記錄裡有沒有需要的欄位，無法運作的偵測會直接標示出來，而不是顯示 0 件。欄位名稱依 GIM 慣例（`event_category`、`event_outcome`、`source_ip`、`user_name`），每項偵測也會嘗試常見的替代欄位（`client_ip`），並可依站台調整門檻或排除條件。
+- **AI 對話與 MCP 伺服器（v1.21.0 起，預設關閉）** — 在「AI 對話」頁面用自然語言詢問記錄和資安事件：模型以唯讀工具查詢（透過 Graylog 彙總 API 的精確計數與前幾名、資安事件、歸檔涵蓋範圍，以及原封不動收進來的 [mcp_graylog](https://github.com/jasoncheng7115/jasontools-mcp/tree/main/mcp_graylog) 工具），回答時附上它用的查詢。查詢使用你自己的 Graylog 帳號，套用 Graylog 權限，每一次查詢都會記入稽核。任何 OpenAI 相容的 LLM 伺服器都能用（llama.cpp、vLLM、LM Studio、Ollama 的 `/v1`）；內網以外的伺服器預設拒絕，除非你允許，因為工具查回的記錄資料會送到那台伺服器。同一組工具也透過 `/mcp` 提供給外部 AI 用戶端（Claude Desktop、Open WebUI、opencode），以各使用者的 Graylog API token 驗證。mcp_graylog 1.9.44 需要 Python 3.12 以上；較舊的 Python 上內建工具照常可用。
 - 深色/淺色主題、English／繁體中文／日本語 三種介面語言
 - 可收摺側邊欄、HTTPS、Session 認證
 

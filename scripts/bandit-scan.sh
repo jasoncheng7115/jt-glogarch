@@ -36,7 +36,11 @@ if ! python3 -m bandit --version >/dev/null 2>&1; then
 fi
 
 OUT=$(mktemp); trap 'rm -f "$OUT"' EXIT
-python3 -m bandit -r "$TARGET" -f json -o "$OUT" -q >/dev/null 2>&1
+# glogarch/vendor/ = third-party code kept byte-for-byte as published (checked by
+# tests/test_static_sweeps.py::test_vendored_files_match_their_manifest); its
+# findings go to its developer, not into our gate. Explicit so the result does
+# not depend on the Python version (mcp_graylog 1.9.44 only parses on 3.12+).
+python3 -m bandit -r "$TARGET" -x "$TARGET/vendor" -f json -o "$OUT" -q >/dev/null 2>&1
 
 python3 - "$OUT" "$LOW_BUDGET" "$SKIP_LOW" <<'PY'
 import json, sys, collections

@@ -49,6 +49,15 @@ Used to draw charts in PDF reports; the file keeps its own licence header.
 map, is drawn from this data (equirectangular, coordinates rounded to 0.01 degree,
 two digitising artefacts removed).
 
+## mcp_graylog
+
+- **Source**: https://github.com/jasoncheng7115/jasontools-mcp/tree/main/mcp_graylog
+- **Author**: Jason Cheng (Jason Tools)
+- **License**: MIT
+- **Usage**: `glogarch/vendor/mcp_graylog.py`, kept byte-for-byte as published (version, commit and
+  SHA-256 in `glogarch/vendor/mcp_graylog.json`). Its read-only Graylog tools are offered by the AI
+  chat and the MCP endpoint. Version 1.9.44 loads on Python 3.12 or later.
+
 ## Python packages, Chromium, fonts
 
 Every Python package jt-glogarch runs on, the Chromium build used by PDF

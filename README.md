@@ -1,4 +1,4 @@
-# jt-glogarch v1.20.0
+# jt-glogarch v1.21.0
 
 **Language**: **English** | [繁體中文](README-zh_TW.md) | [日本語](README-ja.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.20.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.21.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -186,6 +186,7 @@ GELF mode also has:
     - Separate download: [CubeCOS / OpenStack Log Pipeline](https://github.com/jasoncheng7115/it-scripts/blob/master/graylog/cubecos_contentpack_graylog63.json), 1 pipeline and 147 rules for CubeCOS, OpenStack, Ceph and Masakari logs (the pack states Graylog 6.3 or later). Download it there and upload it on the Content Packs page.
 - **Alerting (since v1.17.0)** — Graylog event definitions and notifications in bulk: quick filters, title-tag chips (`[Vendor]` / `Product - `), multi-keyword search (`checkpoint -notif:Zulip`), shift-click and select-all-matching, then add / remove / replace a notification on hundreds of definitions at once. Every change is previewed first, keeps each definition enabled or disabled, skips definitions someone edited in Graylog meanwhile, runs as a Task Log job and can be undone from Change history. A health check lists enabled definitions nobody is notified about, notifications that were deleted or are unused, and definitions that never or no longer match. Changes are made with the logged-in user's own Graylog account (its permissions apply); the password is exchanged for a Graylog session at login and never stored.
 - **Security Incidents (since v1.20.0, off by default)** — On a schedule, counts security events in Graylog (failed logins, IDS alerts that were not blocked, WAF events) and groups them into incidents: brute force from one source, password spraying (one source, many accounts), one source or one account failing on many hosts, a successful login after many failures, IDS alerts not blocked, web scanners. Only counts are read (Graylog's aggregation API, 6–7 searches per run), never the messages, and a run is skipped while Graylog is under memory pressure. Incidents carry first/last seen, a NEW badge (not seen for 90 days), and a link to the events in Graylog search; an ongoing incident is notified once, not every run. A coverage table shows, per detection, whether this site's events carry the field it needs, so a detection that cannot work says so instead of showing zero. Field names follow the GIM convention (`event_category`, `event_outcome`, `source_ip`, `user_name`); each detection also tries the usual alternate (`client_ip`) and can be tuned or excluded per site.
+- **AI Chat and MCP server (since v1.21.0, off by default)** — Ask about your logs and incidents in plain language on the AI Chat page: the model looks things up with read-only tools (exact counts and top values through Graylog's aggregation API, security incidents, archive coverage, and the tools of [mcp_graylog](https://github.com/jasoncheng7115/jasontools-mcp/tree/main/mcp_graylog), kept unmodified) and answers with the query it used. It reads with your own Graylog account, so Graylog's permissions apply; every lookup is in the audit log. Any OpenAI-compatible LLM server works (llama.cpp, vLLM, LM Studio, Ollama's `/v1`); a server outside the private network is refused unless you allow it, because the log data the tools return is sent to it. The same tools are available to external AI clients (Claude Desktop, Open WebUI, opencode) at `/mcp`, authenticated with each user's Graylog API token. mcp_graylog 1.9.44 needs Python 3.12 or later; on older Python the built-in tools still work.
 - Dark/Light theme, English/Traditional Chinese/Japanese
 - Collapsible sidebar, HTTPS, session authentication
 

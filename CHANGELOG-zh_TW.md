@@ -2,6 +2,14 @@
 
 jt-glogarch 所有重要變更皆記錄於此檔案。
 
+## [1.21.0] - 2026-11-19
+
+### 新增
+
+- **「AI 對話」頁面與 MCP 伺服器（皆預設關閉）。** 用自然語言詢問記錄和資安事件：模型以唯讀工具查詢，回答時附上它用的查詢。工具包括透過 Graylog 彙總 API 的精確計數與前幾名、資安事件、歸檔涵蓋範圍，以及原封不動收進來的 [mcp_graylog](https://github.com/jasoncheng7115/jasontools-mcp/tree/main/mcp_graylog) 工具（版本、commit 與 SHA-256 記在 `glogarch/vendor/mcp_graylog.json`；GitHub 有新版時 `run-tests.sh` 會讓發版失敗，`scripts/check-mcp-graylog.py --update` 會整份換成新版）。AI 對話以登入者自己的 Graylog 工作階段讀取，套用 Graylog 權限；每次工具呼叫都記入稽核（`ai_tool_call`，含使用者與來源位址）。工具結果放在模型無法從內部提前結束的資料區塊裡交給模型，並要求它當作不可信的資料。任何 OpenAI 相容的 LLM 伺服器都能用；內網以外的伺服器預設拒絕，需管理者允許（記入稽核），因為工具查回的記錄資料會送到那台伺服器。有每日與每月 token 上限、拉取記錄的工具有時間範圍上限、每個問題最多 6 輪工具呼叫。對話只有本人看得到，只保存問題、答案和用到的工具名稱。外部 AI 用戶端（Claude Desktop、Open WebUI、opencode）可透過 `/mcp`，以各使用者的 Graylog API token 使用同一組工具。已對 Graylog 7.2.2 與真實的本地 LLM 測試（`scripts/e2e-ai-test.py`）。
+- mcp_graylog 1.9.44 在 Python 3.12 以前無法編譯（第 2499 行的 f-string 運算式裡有反斜線）。在 Ubuntu 22.04 的 Python 3.10 上，它的工具無法使用，設定頁會說明原因；內建工具照常可用。已回報給它的開發者。
+- SBOM 與 THIRD-PARTY-LICENSES 列出收進來的 mcp_graylog。
+
 ## [1.20.0] - 2026-11-19
 
 ### 新增

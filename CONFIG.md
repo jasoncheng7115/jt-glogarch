@@ -460,6 +460,36 @@ and the usual channels. Settings are also editable on the Security Incidents pag
 
 ---
 
+## ai — AI Chat and MCP endpoint (v1.21.0, default OFF)
+
+```yaml
+ai:
+  enabled: false              # the AI Chat page
+  url: ""                     # OpenAI-compatible server, e.g. http://10.0.0.5:8080/v1
+  model: ""
+  api_key: ""                 # masked by the API; a masked value on save keeps the stored key
+  timeout_seconds: 300        # 10..900
+  allow_external: false       # a server outside the private network is refused unless true (audited)
+  temperature: 0.2
+  max_tool_rounds: 6          # then the model must answer from what it has
+  max_range_hours: 24         # longest range for tools that pull messages; exact counts allow 31 days
+  daily_tokens: 0             # 0 = no limit; counted per UTC day
+  monthly_tokens: 0
+  chat_retention_days: 90     # 0 = keep forever
+  mcp_enabled: false          # POST /mcp for external AI clients
+  mcp_graylog_tools: []       # empty = the default read-only set
+```
+
+The chat reads Graylog as the signed-in user (sign in to Graylog on the page; the password becomes
+a Graylog session and is not stored). `/mcp` takes `Authorization: Bearer <Graylog API token>`
+(or Basic `<token>:token`), checks the token's roles against `web.allowed_graylog_roles`, and
+picks the server with the `X-Graylog-Server` header (default server otherwise); 120 requests a
+minute per token. Every tool call, from the chat or MCP, is in the audit log as `ai_tool_call`.
+Conversations keep the questions, the answers and the names of the tools used, not tool results.
+mcp_graylog is never offered its two debug tools, the bulk export or the content pack details.
+
+---
+
 ## web — Web UI
 
 ```yaml
