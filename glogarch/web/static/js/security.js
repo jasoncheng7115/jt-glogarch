@@ -13,7 +13,8 @@ function secMsg(text, level) {
     el.classList.toggle('hidden', !text);
 }
 
-function secDetTitle(id) {
+function secDetTitle(id, title) {
+    if (title) return title;            // a Sigma rule's own title (detector_title from the API)
     const k = 'sec_det_' + id;
     const s = t(k);
     return s === k ? id : s;
@@ -25,11 +26,12 @@ function secSevBadge(sev) {
 
 function secStats(m) {
     const order = ['count', 'success', 'card:user_name', 'card:source', 'card:source_ip',
-        'card:uri', 'card:vhost', 'min:alert_severity'];
+        'card:uri', 'card:vhost', 'min:alert_severity', 'baseline', 'new_sources'];
     const parts = [];
     for (const k of order) {
         if (m == null || m[k] == null) continue;
         const label = t('sec_m_' + k.replace(':', '_'));
+        if (Array.isArray(m[k])) { parts.push(`${esc(label)} ${esc(m[k].slice(0, 5).map(String).join(', '))}`); continue; }
         parts.push(k === 'min:alert_severity' ? `${label} ${esc(m[k])}` : `${formatNumber(m[k])} ${label}`);
     }
     return parts.join(' · ');
@@ -100,21 +102,22 @@ function secRow(i) {
         : (i.external === 0 ? ` <span class="sec-tag sec-tag-int">${esc(t('sec_internal'))}</span>` : '');
     const isNew = i.is_new ? ` <span class="sec-tag sec-tag-new">${esc(t('sec_new'))}</span>` : '';
     const link = /^https?:\/\//.test(i.graylog_url || '')
-        ? `<a class="btn-sm btn-secondary" href="${esc(i.graylog_url)}" target="_blank" rel="noopener noreferrer" title="${esc(t('sec_open_graylog'))}">${icon('search', 14)} ${esc(t('sec_btn_graylog'))}</a>` : '';
+        ? `<a class="btn-sm btn-secondary" href="${esc(i.graylog_url)}" target="_blank" rel="noopener noreferrer" title="${esc(t('sec_open_graylog'))}" aria-label="${esc(t('sec_open_graylog'))}">${icon('search', 14)}</a>` : '';
     const acts = [];
     const ai = _sec.data && _sec.data.ai;
     if (ai && ai.analysis_enabled) {
         const v = i.ai ? ` ${secVerdictChip(i.ai.verdict)}` : '';
         acts.push(`<button class="btn-sm btn-secondary" data-act="secOpenAi" data-args="${esc(JSON.stringify([i.id]))}" title="${esc(t('sec_ai_title'))}">${icon('chat', 14)} ${esc(t(i.ai_running ? 'sec_ai_running_short' : 'sec_btn_ai'))}${v}</button>`);
     }
+    acts.push(`<button class="btn-sm btn-secondary" data-act="casePick" data-args="${esc(JSON.stringify([i.id]))}" title="${esc(t('case_pick_title'))}" aria-label="${esc(t('case_pick_title'))}">${icon('log', 14)}</button>`);
     if (i.status === 'open') acts.push(`<button class="btn-sm btn-secondary" data-act="secSetStatus" data-args="${esc(JSON.stringify([i.id, 'acknowledged']))}">${icon('check', 14)} ${esc(t('sec_btn_ack'))}</button>`);
     if (i.status !== 'closed') acts.push(`<button class="btn-sm btn-secondary" data-act="secSetStatus" data-args="${esc(JSON.stringify([i.id, 'closed']))}">${icon('close', 14)} ${esc(t('sec_btn_close'))}</button>`);
     else acts.push(`<button class="btn-sm btn-secondary" data-act="secSetStatus" data-args="${esc(JSON.stringify([i.id, 'open']))}">${icon('refresh', 14)} ${esc(t('sec_btn_reopen'))}</button>`);
     const by = i.status_by ? `<div class="text-muted fs-08">${esc(i.status_by)}</div>` : '';
     return `<tr>
         <td>${secSevBadge(i.severity)}</td>
-        <td>${esc(secDetTitle(i.detector))}</td>
-        <td class="sec-entity"><code>${esc(i.entity)}</code>${ext}${isNew}<div class="text-muted fs-08">${esc(i.entity_field)}</div></td>
+        <td>${esc(secDetTitle(i.detector, i.detector_title))}${secAttackChips(i.attack)}</td>
+        <td class="sec-entity"><code>${esc(i.entity)}</code>${ext}${isNew}${assetTag(i.asset)}${tiTags(i.threat_intel)}<div class="text-muted fs-08">${esc(i.entity_field)}</div>${(i.cases || []).map(c => `<button type="button" class="case-badge" data-act="caseOpen" data-args="${esc(JSON.stringify([c.id]))}" title="${esc(c.title)}">${icon('log', 12)} #${esc(String(c.id))} ${esc(t('case_st_' + c.status))}</button>`).join('')}</td>
         <td>${secStats(i.metrics)}<div class="text-muted fs-08">${esc(t('sec_peak').replace('{n}', formatNumber(i.peak_count)))} · ${esc(t('sec_runs').replace('{n}', formatNumber(i.runs)))}</div></td>
         <td>${esc(secUtc(i.first_seen))}</td>
         <td>${esc(secUtc(i.last_seen))}</td>
@@ -131,6 +134,13 @@ function secRenderPager() {
     el.innerHTML = `<button ${cur === 0 ? 'disabled' : ''} data-act="secLoad" data-args="[${cur - 1}]">&laquo;</button>`
         + `<span class="u028">${cur + 1} / ${pages}</span>`
         + `<button ${cur >= pages - 1 ? 'disabled' : ''} data-act="secLoad" data-args="[${cur + 1}]">&raquo;</button>`;
+}
+
+function secExportCsv() {
+    // a plain navigation: the session cookie goes along and the browser saves the attachment
+    const q = new URLSearchParams({status: document.getElementById('sec-f-status').value,
+                                   severity: document.getElementById('sec-f-severity').value});
+    window.location.href = `${API}/security/incidents.csv?${q}`;
 }
 
 async function secSetStatus(id, status) {
@@ -188,6 +198,36 @@ function secRenderCoverage() {
         <th>${esc(t('sec_cov_events'))}</th><th>${esc(t('sec_cov_filled'))}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+// ---- MITRE ATT&CK (added 1.23) ---------------------------------------------------------
+
+function secAttackChips(list) {
+    if (!list || !list.length) return '';
+    return '<div class="sec-attack-chips">' + list.map(x => /^https:\/\/attack\.mitre\.org\//.test(x.url)
+        ? `<a class="sec-attack" href="${esc(x.url)}" target="_blank" rel="noopener noreferrer" title="${esc(x.name)}">${esc(x.id)}</a>`
+        : `<span class="sec-attack" title="${esc(x.name)}">${esc(x.id)}</span>`).join('') + '</div>';
+}
+
+async function secToggleAttack() {
+    const el = document.getElementById('sec-attack');
+    el.classList.toggle('hidden');
+    if (el.classList.contains('hidden')) return;
+    el.innerHTML = `<span class="spinner-text">${esc(t('loading'))}</span>`;
+    const d = await fetchJSON(`${API}/security/attack`);
+    if (!d || d.error) { el.innerHTML = `<p class="pk-err">${esc(d && d.error)}</p>`; return; }
+    const rows = [];
+    d.tactics.forEach(ta => ta.techniques.forEach((te, n) => {
+        const dets = te.detectors.map(x => `<div>${esc(secDetTitle(x.detector))}${x.by_signature ? ` <span class="text-muted fs-08">${esc(t('sec_attack_by_sig'))}</span>` : ''} <span class="sec-attack-st sec-attack-st-${esc(x.state)}">${esc(t('sec_attack_st_' + x.state))}</span></div>`).join('');
+        rows.push(`<tr>${n === 0 ? `<td rowspan="${ta.techniques.length}" class="sec-attack-tactic"><strong>${esc(ta.name)}</strong><div class="text-muted fs-08">${esc(ta.id)}</div></td>` : ''}
+            <td><a href="${esc(te.url)}" target="_blank" rel="noopener noreferrer"><code>${esc(te.id)}</code></a> ${esc(te.name)}</td>
+            <td><span class="sec-attack-st sec-attack-st-${esc(te.state)}">${esc(t('sec_attack_st_' + te.state))}</span></td>
+            <td class="fs-085">${dets}</td></tr>`);
+    }));
+    el.innerHTML = `<h3>${esc(t('sec_attack_title'))}</h3>
+        <p class="text-muted fs-085">${esc(t('sec_attack_help').replace('{v}', d.version))} ${d.coverage_at ? esc(t('sec_cov_at').replace('{t}', secUtc(d.coverage_at))) : ''}</p>
+        <div class="table-wrap"><table class="sec-attack-table"><thead><tr><th>${esc(t('sec_attack_tactic'))}</th><th>${esc(t('sec_attack_technique'))}</th>
+        <th>${esc(t('sec_attack_state'))}</th><th>${esc(t('sec_th_detector'))}</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+}
+
 function secToggleSettings() {
     const el = document.getElementById('sec-settings');
     el.classList.toggle('hidden');
@@ -226,6 +266,7 @@ function secRenderSettings() {
             <label class="sec-chk sec-enable"><input type="checkbox" id="sec-s-ai-auto" ${s.ai_auto ? 'checked' : ''}> ${esc(t('sec_s_ai_auto'))}</label>
             <div><label>${esc(t('sec_s_ai_min'))}</label><select id="sec-s-ai-min">${aiSevs}</select></div>
             <div><label>${esc(t('sec_s_ai_max'))}</label>${num('sec-s-ai-max', s.ai_auto_max_per_run, 1, 10)}</div>
+            <div class="sec-wide"><label>${esc(t('sec_s_ai_notify'))}</label>${['malicious', 'suspicious'].map(v => `<label class="sec-chk sec-ai-nv"><input type="checkbox" class="sec-ai-notify" value="${v}" ${(s.ai_notify_verdicts || []).includes(v) ? 'checked' : ''}> ${esc(t('sec_ai_v_' + v))}</label>`).join('')}</div>
             <div class="sec-wide text-muted fs-08">${esc(t(d.ai && d.ai.analysis_enabled ? 'sec_s_ai_note' : 'sec_s_ai_off'))}</div>
         </div>
         <div class="table-wrap"><table class="sec-det-table"><thead><tr><th>${esc(t('sec_th_detector'))}</th>
@@ -258,6 +299,7 @@ async function secSaveSettings() {
         ai_auto: document.getElementById('sec-s-ai-auto').checked,
         ai_auto_min_severity: v('sec-s-ai-min'),
         ai_auto_max_per_run: Number(v('sec-s-ai-max')),
+        ai_notify_verdicts: [...document.querySelectorAll('#sec-settings .sec-ai-notify:checked')].map(x => x.value),
         detectors,
     };
     const d = await fetchJSON(`${API}/security/settings`, {method: 'POST',
@@ -339,7 +381,7 @@ function _secAnalysis(a) {
 
 function secRenderAi(id, d) {
     const i = _sec.rows[id] || {};
-    const head = `<div class="sec-ai-inc">${secSevBadge(i.severity || '')} <strong>${esc(secDetTitle(i.detector || ''))}</strong>
+    const head = `<div class="sec-ai-inc">${secSevBadge(i.severity || '')} <strong>${esc(secDetTitle(i.detector || '', i.detector_title))}</strong>${secAttackChips(i.attack)}
         <code>${esc(i.entity || '')}</code> <span class="text-muted fs-08">#${esc(String(id))} · ${esc(secStats(i.metrics))}</span></div>`;
     const list = d.analyses || [];
     const latest = list[0];

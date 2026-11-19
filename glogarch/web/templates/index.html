@@ -1061,6 +1061,7 @@
                 <div class="al-bar-right">
                     <button class="btn-secondary btn-sm" data-act="secToggleSettings" data-i18n="sec_btn_settings" data-icon="settings">Settings</button>
                     <button class="btn-secondary btn-sm" data-act="secToggleCoverage" data-i18n="sec_btn_coverage" data-icon="eye">Coverage</button>
+                    <button class="btn-secondary btn-sm" data-act="secToggleAttack" data-i18n="sec_btn_attack" data-icon="shield">ATT&amp;CK</button>
                     <button class="btn-primary btn-sm" id="sec-run-btn" data-act="secRunNow" data-i18n="sec_btn_run" data-icon="refresh">Run now</button>
                 </div>
             </div>
@@ -1069,6 +1070,7 @@
 
         <div class="card mb15 hidden" id="sec-settings"></div>
         <div class="card mb15 hidden" id="sec-coverage"></div>
+        <div class="card mb15 hidden" id="sec-attack"></div>
 
         <div id="sec-ai-modal" class="modal-overlay u066">
             <div class="modal-card sec-ai-card">
@@ -1078,7 +1080,17 @@
             </div>
         </div>
 
-        <div class="card">
+        <div class="arch-tabs mb15" id="sec-tabs">
+          <button class="arch-tab active" data-act="secTab" data-arg="overview" data-i18n="sec_tab_overview" data-icon="dashboard">Overview</button>
+          <button class="arch-tab" data-act="secTab" data-arg="incidents" data-i18n="sec_tab_incidents" data-icon="shield">Incidents</button>
+          <button class="arch-tab" data-act="secTab" data-arg="cases" data-i18n="sec_tab_cases" data-icon="log">Investigations</button>
+          <button class="arch-tab" data-act="secTab" data-arg="risk" data-i18n="sec_tab_risk" data-icon="report">Assets &amp; risk</button>
+          <button class="arch-tab" data-act="secTab" data-arg="sigma" data-i18n="sec_tab_sigma" data-icon="filter">Sigma rules</button>
+        </div>
+
+        <div id="sec-overview-panel"></div>
+
+        <div class="card hidden" id="sec-incidents-panel">
             <div class="filters sec-filters">
                 <select id="sec-f-status" data-act-change="secLoad">
                     <option value="" data-i18n-opt="sec_f_status_all">All statuses</option>
@@ -1093,6 +1105,7 @@
                     <option value="low" data-i18n-opt="sec_sev_low">Low</option>
                 </select>
                 <span class="u028" id="sec-total"></span>
+                <button class="btn-secondary btn-sm sec-c-new" data-act="secExportCsv" data-i18n="sec_btn_csv" data-icon="download">Export CSV</button>
             </div>
             <div class="table-wrap">
             <table class="sec-table">
@@ -1110,6 +1123,129 @@
             </table>
             </div>
             <div class="pagination" id="sec-pager"></div>
+        </div>
+
+        <div class="card hidden" id="sec-cases-panel">
+            <div class="filters sec-filters">
+                <select id="sec-c-status" data-act-change="caseLoadList">
+                    <option value="" data-i18n-opt="case_f_active" selected>Open and in progress</option>
+                    <option value="open" data-i18n-opt="case_st_open">Open</option>
+                    <option value="in_progress" data-i18n-opt="case_st_in_progress">In progress</option>
+                    <option value="closed" data-i18n-opt="case_st_closed">Closed</option>
+                    <option value="all" data-i18n-opt="case_f_all">All</option>
+                </select>
+                <span class="u028" id="sec-c-total"></span>
+                <button class="btn-primary btn-sm sec-c-new" data-act="caseNew" data-i18n="case_btn_new" data-icon="plus">New case</button>
+            </div>
+            <div class="table-wrap">
+            <table class="sec-table">
+                <thead><tr>
+                    <th>#</th>
+                    <th data-i18n="case_th_title">Case</th>
+                    <th data-i18n="sec_th_severity">Severity</th>
+                    <th data-i18n="sec_th_status">Status</th>
+                    <th data-i18n="case_th_assignee">Assignee</th>
+                    <th data-i18n="case_th_incidents">Incidents</th>
+                    <th data-i18n="case_th_updated">Updated</th>
+                    <th></th>
+                </tr></thead>
+                <tbody id="sec-c-tbody"></tbody>
+            </table>
+            </div>
+        </div>
+
+        <div class="hidden" id="sec-risk-panel">
+            <div class="card mb15">
+                <div class="filters sec-filters">
+                    <h3 class="risk-h" data-i18n="risk_title">Risk ranking</h3>
+                    <select id="sec-r-days" data-act-change="riskLoad">
+                        <option value="1" data-i18n-opt="risk_d1">Last 24 hours</option>
+                        <option value="7" data-i18n-opt="risk_d7" selected>Last 7 days</option>
+                        <option value="30" data-i18n-opt="risk_d30">Last 30 days</option>
+                    </select>
+                    <span class="u028" id="sec-r-total"></span>
+                </div>
+                <p class="text-muted fs-085" data-i18n="risk_help">Entities behind the open incidents, ranked. Each incident adds its severity weight (low 1, medium 3, high 8), times 1.5 for an external source, times the asset's criticality (medium 1.5, high 2, critical 3) and times the AI verdict (malicious 1.5, benign 0.3). Click a score to see how it was counted.</p>
+                <div class="table-wrap">
+                <table class="sec-table">
+                    <thead><tr>
+                        <th>#</th>
+                        <th data-i18n="sec_th_entity">Source / subject</th>
+                        <th data-i18n="risk_th_score">Risk</th>
+                        <th data-i18n="case_th_incidents">Incidents</th>
+                        <th data-i18n="sec_th_severity">Severity</th>
+                        <th data-i18n="sec_th_last">Last seen</th>
+                    </tr></thead>
+                    <tbody id="sec-r-tbody"></tbody>
+                </table>
+                </div>
+            </div>
+            <div class="card">
+                <div class="filters sec-filters">
+                    <h3 class="risk-h" data-i18n="asset_title">Assets</h3>
+                    <span class="u028" id="sec-a-total"></span>
+                    <button class="btn-secondary btn-sm sec-c-new" data-act="assetImportForm" data-i18n="asset_btn_import" data-icon="upload">Import</button>
+                    <button class="btn-primary btn-sm" data-act="assetForm" data-i18n="asset_btn_new" data-icon="plus">New asset</button>
+                </div>
+                <p class="text-muted fs-085" data-i18n="asset_help">What matters at this site. An incident whose source or subject is an asset (an address, a network it belongs to, a host or an account) is marked with it, scores higher by its criticality, and the AI analysis is told about it.</p>
+                <div id="sec-a-form" class="hidden"></div>
+                <div class="table-wrap">
+                <table class="sec-table">
+                    <thead><tr>
+                        <th data-i18n="asset_th_kind">Kind</th>
+                        <th data-i18n="asset_th_value">Value</th>
+                        <th data-i18n="asset_th_name">Name</th>
+                        <th data-i18n="asset_th_crit">Criticality</th>
+                        <th data-i18n="asset_th_owner">Owner</th>
+                        <th></th>
+                    </tr></thead>
+                    <tbody id="sec-a-tbody"></tbody>
+                </table>
+                </div>
+            </div>
+            <div class="card u108" id="sec-ti-card"></div>
+        </div>
+
+        <div class="hidden" id="sec-sigma-panel">
+            <div class="card mb15">
+                <div class="filters sec-filters">
+                    <h3 class="risk-h" data-i18n="sigma_title">Sigma rules</h3>
+                    <span class="u028" id="sec-s-total"></span>
+                    <button class="btn-secondary btn-sm sec-c-new" data-act="sigmaFieldMapForm" data-i18n="sigma_btn_fieldmap" data-icon="settings">Field map</button>
+                    <button class="btn-primary btn-sm" data-act="sigmaAddForm" data-i18n="sigma_btn_add" data-icon="plus">Add rule</button>
+                </div>
+                <p class="text-muted fs-085" data-i18n="sigma_help">Sigma is a shared format for detection rules. Paste a rule: it is converted to a Graylog query, shown before you save it, and once enabled runs with every security analysis, counted per host (or another field). What jt-glogarch cannot convert exactly is refused with the reason, never approximated. Matching on keyword fields is case-sensitive.</p>
+                <div id="sec-s-form" class="hidden"></div>
+                <div class="table-wrap">
+                <table class="sec-table">
+                    <thead><tr>
+                        <th data-i18n="case_th_title">Title</th>
+                        <th data-i18n="sec_th_severity">Severity</th>
+                        <th data-i18n="sigma_th_query">Graylog query</th>
+                        <th data-i18n="sigma_th_last">Last run</th>
+                        <th data-i18n="sigma_th_enabled">Enabled</th>
+                        <th></th>
+                    </tr></thead>
+                    <tbody id="sec-s-tbody"></tbody>
+                </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="sec-case-modal" class="modal-overlay u066">
+            <div class="modal-card sec-ai-card">
+                <button class="u134" data-act="caseClose" title="Close">&times;</button>
+                <h3 data-i18n="case_title" data-icon="log">Investigation</h3>
+                <div id="sec-case-content"></div>
+            </div>
+        </div>
+
+        <div id="sec-case-pick-modal" class="modal-overlay u066">
+            <div class="modal-card sec-case-pick">
+                <button class="u134" data-act="casePickClose" title="Close">&times;</button>
+                <h3 data-i18n="case_pick_title" data-icon="log">Add to an investigation</h3>
+                <div id="sec-case-pick-content"></div>
+            </div>
         </div>
 
         {% elif page == 'ai-chat' %}
@@ -1542,6 +1678,10 @@ sudo bash upgrade-offline.sh</pre>
     <script src="/static/js/alerting.js?v={{ version }}"></script>
     <script src="/static/js/packs.js?v={{ version }}"></script>
     <script src="/static/js/security.js?v={{ version }}"></script>
+    <script src="/static/js/cases.js?v={{ version }}"></script>
+    <script src="/static/js/risk.js?v={{ version }}"></script>
+    <script src="/static/js/sigma.js?v={{ version }}"></script>
+    <script src="/static/js/overview.js?v={{ version }}"></script>
     <script src="/static/js/ai.js?v={{ version }}"></script>
 </body>
 </html>

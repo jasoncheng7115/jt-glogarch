@@ -293,6 +293,15 @@ class SecurityConfig(BaseModel):
     ai_auto: bool = False
     ai_auto_min_severity: str = "high"
     ai_auto_max_per_run: int = 3
+    ai_notify_verdicts: list[str] = Field(default_factory=list)   # e.g. ["malicious"] (added 1.29)
+    # Sigma rules (added 1.27): Sigma field -> Graylog field, and a cap on how
+    # many enabled rules run (each is one aggregation per run).
+    sigma_field_map: dict[str, str] = Field(default_factory=dict)
+    sigma_max_rules: int = 50
+    # Threat-intel lists (added 1.28): downloaded from fixed public feeds, OFF by default.
+    ti_enabled: bool = False
+    ti_feeds: list[str] = Field(default_factory=lambda: ["spamhaus_drop", "tor_exit", "feodo"])
+    ti_refresh_hours: int = 24
 
 
 class AiConfig(BaseModel):

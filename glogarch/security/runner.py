@@ -7,6 +7,7 @@ Called by the scheduler's internal job `internal-security-analysis` (only while
 """
 from __future__ import annotations
 
+import threading
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
@@ -15,12 +16,16 @@ from glogarch.core.database import ArchiveDB
 from glogarch.graylog.client import GraylogClient
 from glogarch.graylog.system import SystemMonitor
 from glogarch.ratelimit.limiter import RateLimiter
-from glogarch.security.detectors import sev_rank
+from glogarch.security.detectors import AUTH_OK, NEW_SOURCE_LEARN_DAYS, NEW_SOURCE_MEMORY_DAYS, sev_rank
 from glogarch.security.engine import run_detectors
-from glogarch.security.graylog_fetch import make_fetch
+from glogarch.security.graylog_fetch import make_fetch, make_pair_fetch
 from glogarch.utils.logging import get_logger
 
 log = get_logger("security")
+
+# One run at a time, scheduled or Run now: two overlapping runs could both see a new
+# incident as un-notified and notify (and analyse) it twice (review 2026-11-20).
+RUN_LOCK = threading.Lock()
 
 LEARNING_HOURS = 24        # no NEW badge during the first day of runs
 FAILING_RUNS_ALERT = 3     # consecutive failed runs before "analysis is not running"
@@ -66,7 +71,7 @@ def notify_decision(change: dict, min_sev: str, now: datetime, renotify_hours: f
 
 
 async def run_security_analysis(settings: Settings, db: ArchiveDB, *,
-                                source: str = "scheduled") -> dict:
+                                source: str = "scheduled", ai_inline: bool = True) -> dict:
     cfg = settings.security
     try:
         server = settings.get_server(cfg.server or None)
@@ -89,19 +94,29 @@ async def run_security_analysis(settings: Settings, db: ArchiveDB, *,
                 db.finish_security_run(run_id, status="skipped", note=reason)
                 log.warning("Security analysis skipped", server=server.name, reason=reason)
                 return {**summary, "status": "skipped", "note": reason}
+            rules = db.list_sigma_rules(enabled_only=True)[:max(0, int(cfg.sigma_max_rules))]
             res = await run_detectors(
                 make_fetch(client),
                 t_from.replace(tzinfo=timezone.utc), now.replace(tzinfo=timezone.utc),
-                settings=cfg.detectors, global_exclude=cfg.exclude_query)
+                settings=cfg.detectors, global_exclude=cfg.exclude_query, sigma_rules=rules,
+                fetch_pairs=make_pair_fetch(client))
     except Exception as e:
         db.finish_security_run(run_id, status="error", errors=[str(e)])
         log.warning("Security analysis failed", server=server.name, error=str(e))
         await _maybe_alert_failing(db, server.name, str(e))
         return {**summary, "error": str(e)}
 
+    for rid, out in res.sigma.items():
+        try:
+            db.record_sigma_result(rid, out["count"], out["error"])
+        except Exception as e:
+            log.warning("Sigma rule result not recorded", rule=rid, error=str(e))
     first = parse_db_ts(db.first_security_run_at())
     learning = first is not None and first > now - timedelta(hours=LEARNING_HOURS)
     findings = [asdict(f) for f in res.findings]
+    if res.pairs:
+        findings += new_source_findings(db, server.name, res.pairs, now, cfg.exclude_query)
+        db.record_pairs(server.name, [(a, b) for a, b, _ in res.pairs], now)
     changes = db.apply_security_findings(
         server.name, findings, now, reopen_hours=cfg.reopen_hours,
         new_days=cfg.new_days, learning=learning)
@@ -136,9 +151,45 @@ async def run_security_analysis(settings: Settings, db: ArchiveDB, *,
         log.warning("Security retention prune failed", error=str(e))
     log.info("Security analysis finished", server=server.name, source=source, status=status,
              queries=res.queries, findings=len(findings), notified=len(to_notify))
-    analysed = await _auto_ai_analysis(settings, db, changes)
+    extra = {}
+    if ai_inline:
+        extra["ai_analysed"] = await _auto_ai_analysis(settings, db, changes)
+    else:
+        extra["_changes"] = changes          # the caller runs the AI after answering
     return {**summary, "status": status, "queries": res.queries, "findings": len(findings),
-            "notified": len(to_notify), "errors": res.errors, "ai_analysed": analysed}
+            "notified": len(to_notify), "errors": res.errors, **extra}
+
+
+def new_source_findings(db: ArchiveDB, server: str, pairs: list[tuple[str, str, int]], now: datetime,
+                        global_exclude: str = "") -> list[dict]:
+    """One finding per account that logged in from a source it has not used for
+    NEW_SOURCE_MEMORY_DAYS, once its history is at least NEW_SOURCE_LEARN_DAYS old.
+    Called BEFORE the pairs of this run are recorded."""
+    from glogarch.security.engine import build_query, is_external, lucene_quote
+    accounts = sorted({a for a, _, _ in pairs})
+    known, first = db.pair_history(server, accounts)
+    memory = now - timedelta(days=NEW_SOURCE_MEMORY_DAYS)
+    learned = now - timedelta(days=NEW_SOURCE_LEARN_DAYS)
+    by_acct: dict[str, list[tuple[str, int]]] = {}
+    for a, b, n in pairs:
+        f = parse_db_ts(first.get(a))
+        if f is None or f > learned:
+            continue                      # still learning this account
+        last = parse_db_ts(known.get((a, b)))
+        if last is not None and last >= memory:
+            continue                      # a source it uses
+        by_acct.setdefault(a, []).append((b, n))
+    out = []
+    for a, srcs in by_acct.items():
+        srcs.sort(key=lambda x: -x[1])
+        ext = any(is_external(b) for b, _ in srcs)
+        ors = " OR ".join(lucene_quote(b) for b, _ in srcs[:20])
+        out.append({"detector": "account_new_source", "entity": a, "entity_field": "user_name",
+                    "severity": "medium" if ext else "low",
+                    "metrics": {"count": sum(n for _, n in srcs), "new_sources": [b for b, _ in srcs[:5]]},
+                    "external": True if ext else (False if all(is_external(b) is False for b, _ in srcs) else None),
+                    "query": build_query(f"{AUTH_OK} AND user_name:{lucene_quote(a)} AND source_ip:({ors})", global_exclude)})
+    return out
 
 
 async def _auto_ai_analysis(settings: Settings, db: ArchiveDB, changes: list[dict]) -> int:
@@ -150,6 +201,7 @@ async def _auto_ai_analysis(settings: Settings, db: ArchiveDB, changes: list[dic
         return 0
     from glogarch.security.ai_analysis import analyze_incident, auto_candidates
     done = 0
+    notify = []
     for inc_id in auto_candidates(changes, cfg.ai_auto_min_severity, cfg.ai_auto_max_per_run):
         try:
             row = await analyze_incident(settings, db, inc_id, lang=settings.notify.language,
@@ -162,6 +214,16 @@ async def _auto_ai_analysis(settings: Settings, db: ArchiveDB, changes: list[dic
         if row.get("error"):
             break   # the LLM is down or the budget is used up: do not try the rest now
         done += 1
+        if row.get("verdict") in (cfg.ai_notify_verdicts or []):
+            notify.append({"incident": db.get_security_incident(inc_id) or {"id": inc_id, "detector": "", "entity": ""},
+                           "row": row})
+    if notify:
+        try:
+            from glogarch.notify.sender import notify_security_ai
+            server = settings.get_server(cfg.server or None).name
+            await notify_security_ai(notify, server)
+        except Exception as e:  # the analyses are stored either way
+            log.warning("AI verdict notification failed", error=str(e))
     return done
 
 

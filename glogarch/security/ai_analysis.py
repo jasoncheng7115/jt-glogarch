@@ -31,6 +31,9 @@ from glogarch.ai import llm
 from glogarch.ai.chat import LANG_NAMES, data_block
 from glogarch.ai.graylog_tools import Ctx, _count, _sample, _top_values
 from glogarch.security.detectors import AUTH_OK, PEER_FIELDS
+from glogarch.security.attack import techniques_for
+from glogarch.security.risk import match_asset
+from glogarch.security.threat_intel import describe, matcher_for
 from glogarch.security.engine import EMPTY, lucene_quote
 from glogarch.security.runner import parse_db_ts
 from glogarch.utils.logging import get_logger
@@ -55,6 +58,7 @@ _BREAKDOWN = {
     "account_multi_host": ("source", "source_ip", "client_ip"),
     "ids_alert_passed": ("source_ip", "destination_ip", "destination_port", "alert_severity", "source"),
     "waf_scanner": ("uri", "vhost", "http_response_code", "user_agent", "alert_signature"),
+    "source_silent": (),   # the point is that there are no events; history and the sample say when it stopped
 }
 _DEFAULT_BREAKDOWN = ("source", "source_ip", "user_name")
 
@@ -134,6 +138,18 @@ async def collect_evidence(inc: dict, ctx: Ctx, window_minutes: int) -> dict:
         "breakdown": {}, "errors": [], "queries": 0,
     }
     ev["incident"]["external"] = {1: True, 0: False}.get(inc.get("external"), inc.get("external"))
+    ti = matcher_for(ctx.settings, ctx.db)
+    listed = ti.match(str(inc.get("entity") or "")) if ti else []
+    if listed:
+        ev["incident"]["threat_intel"] = [f"{d['name']}: {d['about']}" for d in describe(listed)]
+    a = match_asset(str(inc.get("entity") or ""), ctx.db.list_security_assets())
+    if a:
+        ev["incident"]["asset"] = {k: a[k] for k in ("kind", "value", "name", "criticality", "owner")}
+    ev["incident"]["mitre_attack"] = [{"id": t["id"], "name": t["name"]}
+                                      for t in techniques_for(inc.get("detector", ""), str(inc.get("entity") or ""),
+                                                             (inc.get("metrics") or {}).get("sigma_tags"))]
+    if str(inc.get("detector", "")).startswith("sigma:"):
+        ev["incident"]["sigma_rule"] = (inc.get("metrics") or {}).get("sigma_title")
 
     async def run(name, fn, args):
         ev["queries"] += 1
@@ -218,35 +234,65 @@ def parse_analysis(text: str) -> dict | None:
 _ADDR = re.compile(r"(?<![\w.:])[0-9A-Fa-f:.]{3,}(?![\w])")
 
 
-def unverified_addresses(result: dict, evidence: dict) -> list[str]:
-    """Addresses in the answer that the evidence never mentions: the page warns
-    about them (a model inventing an attacker's address is the worst failure)."""
-    seen_text = json.dumps(evidence, ensure_ascii=False, default=str)
-    text = " ".join([result.get("summary", ""), result.get("false_positive_notes", ""),
-                     *result.get("key_findings", []), *result.get("recommended_actions", [])])
-    out = []
+def _addresses(text: str) -> set[str]:
+    """Every IP address in a text, canonical, with a trailing :port removed."""
+    out = set()
     for m in _ADDR.findall(text):
         m = m.rstrip(".:")
-        if "." not in m and ":" not in m:
-            continue
-        try:
-            ipaddress.ip_address(m)
-        except ValueError:
-            log.debug("Not an address", token=m[:60])   # a version number, a MAC, a time
-            continue
-        if m not in seen_text and m not in out:
-            out.append(m)
+        cand = [m]
+        if m.count(":") == 1 and "." in m:          # 1.2.3.4:22
+            cand.append(m.split(":")[0])
+        for c in cand:
+            if "." not in c and ":" not in c:
+                continue
+            try:
+                out.add(str(ipaddress.ip_address(c)))
+                break
+            except ValueError:
+                log.debug("Not an address", token=c[:60])   # a version number, a MAC, a time
     return out
+
+
+def unverified_addresses(result: dict, evidence: dict) -> list[str]:
+    """Addresses in the answer that the evidence never mentions: the page warns
+    about them (a model inventing an attacker's address is the worst failure).
+    Whole addresses are compared (10.0.0.1 is not verified by 10.0.0.10)."""
+    seen = _addresses(json.dumps(evidence, ensure_ascii=False, default=str))
+    text = " ".join([result.get("summary", ""), result.get("false_positive_notes", ""),
+                     *result.get("key_findings", []), *result.get("recommended_actions", [])])
+    found = []
+    for a in sorted(_addresses(text), key=text.find):
+        if a not in seen:
+            found.append(a)
+    return found
+
+
+MAX_TOKENS = 4096        # a reasoning model spends tokens thinking before the JSON
+MAX_TOKENS_RETRY = 8192  # once more when the answer was cut off at the limit
+
+
+def _cut_off(e: Exception) -> bool:
+    """The server stopped at max_tokens (llama.cpp: 'structured output was incomplete
+    (finish_reason=length)'; measured 2026-11-20 with 2048 on the owner's model)."""
+    msg = str(e).lower()
+    return "finish_reason=length" in msg or "increase the output" in msg
 
 
 async def _ask(cfg, messages: list[dict]) -> llm.Reply:
     """json_schema -> json_object -> plain, each only when the server refuses
-    the previous form with HTTP 400."""
+    the previous form with HTTP 400; an answer cut off at the token limit is
+    asked again once with a larger limit."""
     for rf in ({"type": "json_schema", "json_schema": {"name": "incident_analysis", "strict": True,
                                                        "schema": SCHEMA}},
                {"type": "json_object"}, None):
         try:
-            return await llm.chat(cfg, messages, max_tokens=2048, response_format=rf)
+            try:
+                return await llm.chat(cfg, messages, max_tokens=MAX_TOKENS, response_format=rf)
+            except llm.LLMError as e:
+                if isinstance(e, llm.LLMRefused) or not _cut_off(e):
+                    raise
+                log.info("LLM answer cut off at the token limit; asking again with a larger one")
+                return await llm.chat(cfg, messages, max_tokens=MAX_TOKENS_RETRY, response_format=rf)
         except llm.LLMRefused as e:
             if rf is None:
                 raise
@@ -293,8 +339,8 @@ async def analyze_incident(settings, db, incident_id: int, *, lang: str = "en",
             raise llm.LLMError("The model did not return a usable analysis")
         row.update(verdict=result["verdict"], confidence=result["confidence"], result=result,
                    unverified=unverified_addresses(result, ev))
-    except (llm.LLMError, ValueError, RuntimeError) as e:
-        row["error"] = str(e)[:500]
+    except Exception as e:   # any failure leaves a row saying why (httpx.ReadError included)
+        row["error"] = str(e)[:500] or type(e).__name__
         log.warning("Incident AI analysis failed", incident=incident_id, error=row["error"])
     row["elapsed_ms"] = int((time.monotonic() - t0) * 1000)
     row["id"] = db.add_security_analysis(row)

@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Any
 
 import html as _html
+from glogarch.security.attack import techniques_for
 import httpx
 
 from glogarch.core.config import NotifyConfig, get_settings
@@ -393,6 +394,12 @@ _MSG = {
         "sec_line": "[{sev}] {det} — {entity}{ext}{flag}\n    {stats}",
         "sec_external": " (external)",
         "sec_footer": "Window: last {minutes} min · Server: {server}\nOpen Security Incidents in jt-glogarch for details.",
+        "sec_ai_title": "🤖 AI analysis: {n} incident(s)",
+        "sec_ai_line": "#{id} {det} — {entity}\n    AI: {verdict} ({confidence}) · {summary}",
+        "sec_ai_footer": "Server: {server} · Advice from the AI model; verify before acting.",
+        "sec_ai_v_malicious": "malicious", "sec_ai_v_suspicious": "suspicious", "sec_ai_v_benign": "benign",
+        "sec_ai_v_unclear": "unclear", "sec_ai_c_low": "low confidence", "sec_ai_c_medium": "medium confidence",
+        "sec_ai_c_high": "high confidence",
         "sec_failing_title": "❌ Security analysis is not running",
         "sec_failing_body": ("The last {n} runs on server {server} failed, so no incidents are being detected.\n"
                              "Last error: {error}"),
@@ -407,6 +414,10 @@ _MSG = {
         "sec_det_auth_success_after_fail": "Successful login after many failures",
         "sec_det_ids_alert_passed": "IDS alert not blocked",
         "sec_det_waf_scanner": "Web scanner (many paths through the WAF)",
+        "sec_det_source_silent": "Log source went silent",
+        "sec_det_account_new_source": "Account logged in from a new source",
+        "sec_m_new_sources": "new source(s)",
+        "sec_m_baseline": "messages in the 24 h before it stopped",
         "datanode_fallback_title": "⚠️ Data Node certificate unusable — archived via Graylog API",
         "datanode_fallback_body": ("Schedule: {schedule}\nServer: {server}\n"
                                    "The Graylog Data Node client certificate could not be used: {problem}\n"
@@ -472,6 +483,12 @@ _MSG = {
         "sec_line": "[{sev}] {det} — {entity}{ext}{flag}\n    {stats}",
         "sec_external": "（外部）",
         "sec_footer": "時間範圍：最近 {minutes} 分鐘 · 伺服器：{server}\n詳情請到 jt-glogarch 的「資安事件」頁面查看。",
+        "sec_ai_title": "🤖 AI 分析：{n} 件事件",
+        "sec_ai_line": "#{id} {det} — {entity}\n    AI：{verdict}（{confidence}）· {summary}",
+        "sec_ai_footer": "伺服器：{server} · AI 模型的建議，採取行動前請先查證。",
+        "sec_ai_v_malicious": "惡意", "sec_ai_v_suspicious": "可疑", "sec_ai_v_benign": "無害",
+        "sec_ai_v_unclear": "無法判斷", "sec_ai_c_low": "把握程度低", "sec_ai_c_medium": "把握程度中",
+        "sec_ai_c_high": "把握程度高",
         "sec_failing_title": "❌ 資安事件分析沒有在運作",
         "sec_failing_body": ("伺服器 {server} 最近 {n} 次分析都失敗，目前沒有在偵測資安事件。\n"
                              "最後的錯誤：{error}"),
@@ -486,6 +503,10 @@ _MSG = {
         "sec_det_auth_success_after_fail": "多次失敗後登入成功",
         "sec_det_ids_alert_passed": "IDS 告警未被阻擋",
         "sec_det_waf_scanner": "網站掃描（經 WAF 嘗試大量路徑）",
+        "sec_det_source_silent": "記錄來源停止傳送",
+        "sec_det_account_new_source": "帳號從新的來源登入",
+        "sec_m_new_sources": "新來源",
+        "sec_m_baseline": "筆（停止前 24 小時）",
         "datanode_fallback_title": "⚠️ Data Node 憑證無法使用，已改用 Graylog API 歸檔",
         "datanode_fallback_body": ("排程：{schedule}\n伺服器：{server}\n"
                                    "無法使用 Graylog Data Node 用戶端憑證：{problem}\n"
@@ -553,6 +574,12 @@ _MSG = {
         "sec_line": "[{sev}] {det} — {entity}{ext}{flag}\n    {stats}",
         "sec_external": "（外部）",
         "sec_footer": "対象期間：直近 {minutes} 分 · サーバー：{server}\n詳細は jt-glogarch の「セキュリティインシデント」ページを確認してください。",
+        "sec_ai_title": "🤖 AI 分析：{n} 件のインシデント",
+        "sec_ai_line": "#{id} {det} — {entity}\n    AI：{verdict}（{confidence}）· {summary}",
+        "sec_ai_footer": "サーバー：{server} · AI モデルの助言です。対応する前に確認してください。",
+        "sec_ai_v_malicious": "悪意あり", "sec_ai_v_suspicious": "不審", "sec_ai_v_benign": "無害",
+        "sec_ai_v_unclear": "判断できません", "sec_ai_c_low": "確信度 低", "sec_ai_c_medium": "確信度 中",
+        "sec_ai_c_high": "確信度 高",
         "sec_failing_title": "❌ セキュリティ分析が動作していません",
         "sec_failing_body": ("サーバー {server} の直近 {n} 回の分析がすべて失敗したため、インシデントを検出できていません。\n"
                              "最後のエラー：{error}"),
@@ -567,6 +594,10 @@ _MSG = {
         "sec_det_auth_success_after_fail": "多数の失敗の後のログイン成功",
         "sec_det_ids_alert_passed": "ブロックされなかった IDS アラート",
         "sec_det_waf_scanner": "Web スキャン（WAF 経由で多数のパスを試行）",
+        "sec_det_source_silent": "ログ送信元の送信停止",
+        "sec_det_account_new_source": "アカウントが新しい送信元からログイン",
+        "sec_m_new_sources": "新しい送信元",
+        "sec_m_baseline": "件（停止前の 24 時間）",
         "datanode_fallback_title": "⚠️ Data Node 証明書が使用できないため、Graylog API でアーカイブしました",
         "datanode_fallback_body": ("スケジュール：{schedule}\nサーバー：{server}\n"
                                    "Graylog Data Node のクライアント証明書を使用できません：{problem}\n"
@@ -810,6 +841,9 @@ def _sec_stats(metrics: dict) -> str:
         label = _t(key)
         if label == key:
             continue
+        if isinstance(v, list):
+            parts.append(f"{label} {', '.join(_plain(str(x), 60) for x in v[:5])}")
+            continue
         if isinstance(v, float) and v.is_integer():
             v = int(v)
         parts.append(f"{v:,} {label}" if isinstance(v, int) and k != "min:alert_severity"
@@ -827,12 +861,37 @@ async def notify_security_incidents(items: list[dict], server: str, window_minut
                 "ongoing": f" · {_t('sec_ongoing')}"}.get(it.get("change"), "")
         if it.get("is_new"):
             flag = f" · {_t('sec_new')}" + flag
+        m = it.get("metrics") or {}
+        tids = [t["id"] for t in techniques_for(it["detector"], it.get("entity", ""), m.get("sigma_tags"))]
+        if tids:
+            flag += " · ATT&CK " + ", ".join(tids)
         lines.append(_t("sec_line", sev=_t("sec_sev_" + it["severity"]),
-                        det=_t("sec_det_" + it["detector"]), entity=_plain(it["entity"]),
+                        det=("Sigma: " + _plain(str(m.get("sigma_title") or it["detector"])))
+                        if it["detector"].startswith("sigma:") else _t("sec_det_" + it["detector"]),
+                        entity=_plain(it["entity"]),
                         ext=_t("sec_external") if it.get("external") else "",
                         flag=flag, stats=_sec_stats(it.get("metrics") or {})))
     body = "\n".join(lines) + "\n\n" + _t("sec_footer", minutes=window_minutes, server=server)
     return await send_notification(NotifyEvent.SECURITY_INCIDENT, _t("sec_title", n=len(items)), body)
+
+
+async def notify_security_ai(items: list[dict], server: str):
+    """Follow-up after automatic AI analysis (security.ai_notify_verdicts):
+    items: {incident: dict, row: analysis row}. Log-derived text goes through _plain()."""
+    if not items:
+        return []
+    lines = []
+    for it in items:
+        inc, row = it["incident"], it["row"]
+        m = inc.get("metrics") or {}
+        det = ("Sigma: " + _plain(str(m.get("sigma_title") or inc["detector"]))) if str(inc["detector"]).startswith("sigma:") \
+            else _t("sec_det_" + inc["detector"])
+        summary = " ".join(str((row.get("result") or {}).get("summary") or "").split())[:300]
+        lines.append(_t("sec_ai_line", id=inc["id"], det=det, entity=_plain(inc["entity"]),
+                        verdict=_t("sec_ai_v_" + row["verdict"]), confidence=_t("sec_ai_c_" + row["confidence"]),
+                        summary=summary))
+    body = "\n".join(lines) + "\n\n" + _t("sec_ai_footer", server=server)
+    return await send_notification(NotifyEvent.SECURITY_INCIDENT, _t("sec_ai_title", n=len(items)), body)
 
 
 async def notify_security_failing(server: str, runs: int, error: str):

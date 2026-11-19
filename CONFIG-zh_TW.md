@@ -418,9 +418,20 @@ security:
   detectors:                  # 每項偵測可設 enabled、min_count、exclude（皆可省略）
     account_multi_host:
       exclude: "user_name:/.*[$]/"   # 預設值：排除電腦帳號（DC1$）
+    account_new_source:              # v1.29.0，預設關閉（記下每組帳號與來源；7 天學習期）
+      enabled: false
+    source_silent:                   # v1.26.0，預設關閉（每次分析要彙總一整天的所有記錄）
+      enabled: false
+      min_count: 50                  # 最近 2 小時之前的 24 小時內的筆數
   ai_auto: false              # v1.22.0：每次分析後由 AI 分析（需要 ai.analysis_enabled）
   ai_auto_min_severity: high  # high、medium 或 low：從這個嚴重程度起的新增或升級事件
   ai_auto_max_per_run: 3      # 1 到 10；每件呼叫一次模型，並對 Graylog 查詢約十次
+  ai_notify_verdicts: []      # v1.29.0：例如 [malicious, suspicious]，自動分析後送出一則後續通知
+  sigma_field_map: {}         # v1.27.0：Sigma 欄位 -> Graylog 欄位（在 Sigma 分頁編輯）
+  sigma_max_rules: 50         # 可啟用的 Sigma 規則數，每條每次分析做一次彙總查詢
+  ti_enabled: false           # v1.28.0：下載威脅情資清單（不會送出這個站台的任何資料）
+  ti_feeds: [spamhaus_drop, tor_exit, feodo]
+  ti_refresh_hours: 24        # 1 到 168
 ```
 
 每次分析都使用 Graylog 的彙總 API（`POST /api/search/aggregate`，Graylog 6.x 與 7.x；

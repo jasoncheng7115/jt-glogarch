@@ -2,6 +2,68 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.29.0] - 2026-11-20
+
+### Added
+
+- **Security overview.** The Security Incidents page now opens on an Overview tab: open incidents by severity, active investigations, how many ATT&CK techniques are really watched, the last analysis, a chart of incidents opened per day over 14 days (by severity, local time, with a table view and the numbers on hover), the most frequent detections and techniques, and the highest-risk entities of the week. One read of jt-glogarch's own data; nothing extra is asked of Graylog.
+- **Optional notification of AI verdicts.** Choose verdicts (malicious, suspicious) under the security settings: after the automatic AI analysis, incidents it judged that way are sent as one follow-up notification with the verdict, confidence and summary, marked as advice. Off by default (`security.ai_notify_verdicts: []`).
+- **New detection: account logged in from a new source (off by default).** A successful login from a source address the account has not used in the last 30 days becomes an incident (medium when the source is external, else low; ATT&CK T1078, Valid Accounts: possibly stolen credentials). jt-glogarch keeps every (account, source) pair it sees, from one aggregation per run with two groupings, and raises nothing for an account whose history is younger than 7 days, so a new install or a new account does not flood. Machine accounts (`DC1$`) are left out by default. Tested against a real Graylog 7.2.2.
+- **Incident CSV export** on the Incidents tab (follows the status and severity filters): detection, entity, times, status, ATT&CK techniques, AI verdict, cases and the Graylog query. A value that a spreadsheet would run as a formula (`=`, `+`, `-`, `@`) is written with a leading apostrophe, since entities come from logs. Audited.
+
+### Fixed
+
+- **The security settings are checked on the server.** An emptied number box arrived as 0 and was saved as is: a retention of 0 days would have deleted every incident at the next run, and 0 hours for reopen or renotify would open and notify an incident at every run. An empty box now keeps the stored value, and every number is clamped (retention 7–3650 days). Present since 1.20.0.
+- A scheduled analysis and Run now could overlap and notify (and AI-analyse) the same new incident twice; they now share one lock and the scheduled run skips while Run now is going.
+- Run now waited for the automatic AI analyses (minutes, with a slow model) before answering, holding the request open; the AI now runs after the answer.
+- An AI analysis that failed on an unexpected connection error left no record; it now stores the error like any other failure. The "address not in the evidence" warning compared text instead of whole addresses (`10.0.0.1` passed when the evidence held `10.0.0.10`) and skipped `address:port`.
+- mcp_graylog: a query term starting with a wildcard anywhere (`source:*abc`), not only at the start, is refused before it reaches Graylog.
+
+### Changed
+
+- The AI analysis of an incident may now use 4,096 output tokens (was 2,048) and asks once more with 8,192 when the answer is cut off at the limit: with the owner's reasoning model a real analysis took 5,700 tokens and the server returned "structured output was incomplete (finish_reason=length)". Such a 502 is no longer retried as if the server were down.
+- Whether an ATT&CK technique is "watched" now looks at the analyses of the last 24 hours, not only the last one: a single quiet hour (no web traffic at 3 a.m.) turned the web-scanner detection into "no data" on a test site.
+
+## [1.28.0] - 2026-11-20
+
+### Added
+
+- **Threat-intelligence lists (off by default).** On the Assets & risk tab, turn on public lists of known-bad addresses: Spamhaus DROP (hijacked networks), the Tor exit relays and the abuse.ch Feodo Tracker (botnet command-and-control servers). They are downloaded about once a day (nothing about this site is sent), from a fixed list of https sources without following redirects, so the download cannot be pointed elsewhere; a list that fails to download keeps its previous copy. An incident whose source is listed is marked with the list, scores x2 in the risk ranking, and the AI analysis is told what the list means; being listed is a reason to look, not proof. Measured from a test host: 1,747, 1,299 and 5 entries. Each feed's own terms of use apply. Settings and manual downloads are audited.
+
+## [1.27.0] - 2026-11-20
+
+### Added
+
+- **Sigma rules.** Paste a Sigma detection rule on the new Sigma tab of the Security Incidents page: it is converted to a Graylog query and shown before you save it, saved disabled, can be tested against the last 24 hours, and once enabled runs with every security analysis, counted per host (or another field) with a threshold. Matches become incidents titled with the rule, at the rule's level, with the ATT&CK techniques from its `attack.tNNNN` tags; notifications, the AI analysis, cases and the risk ranking use them like any other incident. The converter supports selections (maps, lists, keywords), `contains`, `startswith`, `endswith`, `all`, `re`, `exists`, `cased` and numeric comparisons, and conditions with and / or / not / parentheses / `1 of` / `all of` / `them`; anything else (aggregations, `near`, base64, cidr, windash, regex flags...) is refused with the reason rather than approximated, because a rule that silently matches nothing looks like a quiet network. Graylog refuses a leading wildcard, so `contains` and `endswith` become regular expressions on keyword fields; `message` is analyzed text, so values there are searched as phrases (GELF `short_message` is stored as `message`: measured on 7.2.2, a rule on `short_message` matched nothing before this mapping). Keyword matching is case-sensitive, unlike Sigma's default; the page says so. Every NOT is written as `(*:* AND NOT ...)` so it keeps its meaning inside an OR: Lucene reads `a OR NOT b` as `a AND NOT b` (measured on 7.2.2: 18 matches instead of 69). `|re` keeps Sigma's unanchored meaning (`.*(...).*`, `^`/`$` honoured), and PCRE-only syntax Lucene lacks (`\d`, `(?i)`, lookarounds) is refused; so are an empty value, a field name starting with `-`, and `startswith`/`endswith`/equality on the analyzed `message`. A per-site field map (Sigma field = Graylog field) converts every rule again when saved and disables a rule that no longer converts. At most 50 enabled rules (`security.sigma_max_rules`), one aggregation each per run. Rule changes are audited. Tested against a real Graylog 7.2.2: phrases, regex, wildcards and NOT all count exactly. No rules are shipped (the public Sigma rules are under their own licence).
+
+## [1.26.0] - 2026-11-20
+
+### Added
+
+- **New detection: log source went silent (off by default).** A host that sent at least 50 messages in the 24 hours before the last 2 hours, and nothing since, becomes a medium incident: logging that stops is how an attacker hides (MITRE ATT&CK T1562, Impair Defenses) and how a broken forwarder looks. Two aggregations per run (messages per sending host in each window, 1000 hosts at most); when 1000 or more hosts are still sending, the run says silence cannot be judged instead of guessing. It aggregates a day of all messages, heavier than the other detections, which is why it is off until turned on under Settings on the Security Incidents page; the minimum message count and an exclusion are set there like for any detection. Tested against a real Graylog 7.2.2: a host whose last message is 3 hours old is reported, one still sending is not.
+
+## [1.25.0] - 2026-11-20
+
+### Added
+
+- **Assets and risk ranking on the Security Incidents page.** List what matters at this site: addresses, networks, hosts and accounts, each with a criticality (low, medium, high, critical), owner and notes, added one at a time or imported as lines of `kind,value,name,criticality,owner`. An incident whose source or subject is an asset is marked with it (an exact address, host or account first, else the narrowest network containing the address), and the AI analysis is told about it. The **risk ranking** orders the entities behind the open incidents of the last 24 hours, 7 or 30 days: each incident adds its severity weight (low 1, medium 3, high 8), times 1.5 for an external source, times the asset's criticality (medium 1.5, high 2, critical 3) and times the AI verdict (malicious 1.5, benign 0.3); closed incidents do not count. Every score opens into the incidents and factors behind it. Asset changes are audited; the chat and MCP can read the ranking (`security_risk_ranking`).
+
+### Fixed
+
+- Three bits of layout in the Settings and Reports pages (the spacing of a connection-test result line and of a server test note, the width of the report logo-size field) were written as inline `style` attributes, which the app's own Content Security Policy blocks, so they never applied. They are classes now, and a new static check fails the build on an inline `style` attribute in HTML the scripts build.
+
+## [1.24.0] - 2026-11-20
+
+### Added
+
+- **Investigations (cases) on the Security Incidents page.** Group incidents into a case with a title, severity, status (open, in progress, closed), assignee, description and conclusion. Each case keeps an append-only timeline of notes and of every change (who, when, old and new value) and can be downloaded as a Markdown handoff report with its incidents, their ATT&CK techniques and AI verdicts, the Graylog queries and the timeline. Start one from an incident's Case button (new case or an existing one), or with New case on the Investigations tab; an incident shows the cases it belongs to. Cases are never deleted, only closed, and incidents in a case are kept past the incident retention period because they are that investigation's evidence. Every change is audited (`security_case_created`, `security_case_updated`, `security_case_note`, `security_case_incidents`). The chat and MCP can read cases (`list_security_cases`, `get_security_case`).
+
+## [1.23.0] - 2026-11-20
+
+### Added
+
+- **MITRE ATT&CK mapping of the security detections.** Each incident shows the ATT&CK techniques it is evidence of, linked to MITRE's pages: brute force T1110.001, password spraying T1110.003, failures on many hosts T1110 + T1021, a success after many failures T1110 + T1078, web scanners T1595.002; IDS alerts by keywords in their signature (scan T1595, exploit / web attack / CVE T1190, malware or C2 T1071, denial of service T1498; a signature that matches none gets no technique rather than a guess). An **ATT&CK** view on the Security Incidents page lists, per tactic, the techniques the detections cover and whether each is really watched at this site: the detection is on AND the last run found this site's logs carrying the field it needs, a technique seen only through IDS signature keywords is "IDS signatures only" (it is seen only if the IDS has a signature for it); otherwise "no data", "query error", "turned off" or "not run yet". On a test site the view showed at once that every login detection had no data, because failed SSH logins there carry no source address. The mapping is computed when an incident is read, so incidents recorded before this version get their techniques too. Notifications append the technique ids to each incident line, and the AI analysis and the chat's incident tool receive them.
+
 ## [1.22.0] - 2026-11-19
 
 ### Added

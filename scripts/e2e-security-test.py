@@ -13,7 +13,9 @@ production: it writes test events into the target.
     bash scripts/datanode-stack/down.sh
 
 Run it from /tmp with PYTHONPATH=<repo> to use this checkout's code. Creates a
-GELF TCP input (container port 32202) when there is none. Prints RESULT: ALL PASS.
+GELF TCP input (container port 32202) when there is none. Then the silent-source
+detection (1.26): a host whose 60 messages are 3 h old is silent, one still sending is not.
+Prints RESULT: ALL PASS.
 """
 from __future__ import annotations
 
@@ -82,6 +84,117 @@ def seed(tag: str) -> None:
     s.close()
 
 
+def seed_silent(tag: str) -> tuple[str, str]:
+    """60 messages from a host that stopped 3 h ago, and 60 old + 5 fresh from one that still sends."""
+    quiet, alive = f"e2e-quiet-{tag}", f"e2e-alive-{tag}"
+    old_ts = time.time() - 3 * 3600
+    s = socket.create_connection(("127.0.0.1", GELF_PORT), timeout=10)
+    for i in range(60):
+        for host in (quiet, alive):
+            s.sendall(json.dumps({"version": "1.1", "host": host, "short_message": "heartbeat",
+                                  "timestamp": old_ts + i, "_e2e": tag}).encode() + b"\0")
+    for _ in range(5):
+        s.sendall(json.dumps({"version": "1.1", "host": alive, "short_message": "heartbeat",
+                              "_e2e": tag}).encode() + b"\0")
+    s.close()
+    return quiet, alive
+
+
+async def silent_step(srv, tag: str) -> None:
+    """source_silent (added 1.26) against the real aggregation API: two windows."""
+    from glogarch.security.detectors import DETECTORS
+    quiet, alive = seed_silent(tag)
+    only = {d.id: {"enabled": d.id == "source_silent"} for d in DETECTORS}
+    res = None
+    async with GraylogClient(srv, RateLimiter(RateLimitConfig())) as c:
+        for _ in range(30):
+            now = datetime.now(timezone.utc)
+            res = await run_detectors(make_fetch(c), now - timedelta(minutes=30), now + timedelta(minutes=1),
+                                      settings=only, global_exclude=f"_exists_:e2e AND NOT e2e:{tag}")
+            if any(f.entity == quiet for f in res.findings):
+                break
+            await asyncio.sleep(2)
+    hit = {f.entity: f for f in res.findings}
+    check(not res.errors, f"silent-source aggregations answered ({res.queries} searches) {res.errors or ''}")
+    check(quiet in hit and hit[quiet].metrics.get("baseline") == 60,
+          f"a host that stopped 3 h ago is silent with 60 messages before ({hit.get(quiet) and hit[quiet].metrics})")
+    check(alive not in hit, "a host that still sends is not")
+
+
+SIGMA_RULE = """
+title: e2e failed logins (Sigma)
+level: high
+tags: [attack.t1110]
+detection:
+  sel:
+    event_category: authentication
+    event_outcome: failure
+    user_name|contains: '2e-user'
+    source_ip|startswith: '45.33.'
+  host1:
+    source|endswith: '-host1'
+  kw:
+    - 'auth fail'
+  condition: sel and kw and not host1
+"""
+
+
+async def sigma_step(srv, tag: str) -> None:
+    """Sigma (added 1.27): the converted query (phrase, regex for contains/endswith,
+    wildcard for startswith, NOT) must run on a real Graylog and count exactly."""
+    from glogarch.security.detectors import DETECTORS
+    from glogarch.security.sigma import convert, parse_rule
+    r = parse_rule(SIGMA_RULE)
+    query = convert(r)
+    print("     sigma query:", query)
+    none = {d.id: {"enabled": False} for d in DETECTORS}
+    rule = {"id": 1, "title": r["title"], "level": r["level"], "query": query, "group_by": "source",
+            "threshold": 10, "tags": r["tags"]}
+    async with GraylogClient(srv, RateLimiter(RateLimitConfig())) as c:
+        now = datetime.now(timezone.utc)
+        res = await run_detectors(make_fetch(c), now - timedelta(minutes=30), now + timedelta(minutes=1),
+                                  settings=none, global_exclude=f"_exists_:e2e AND NOT e2e:{tag}", sigma_rules=[rule])
+    got = {f.entity: f.metrics["count"] for f in res.findings}
+    check(not res.errors, f"Graylog accepted the converted Sigma query {res.errors or ''}")
+    check(got == {"e2e-host0": 15, "e2e-host2": 15, "e2e-host3": 15},
+          f"Sigma rule: 15 per host, host1 excluded by endswith, the no-ip event dropped by startswith ({got})")
+    check(res.sigma.get(1, {}).get("count") == 45, f"rule total 45 ({res.sigma.get(1)})")
+    # GELF short_message is stored as `message` (analyzed): contains must become a phrase, not a regex
+    r2 = parse_rule("title: msg\ndetection:\n  s: {short_message|contains: 'auth fail'}\n  condition: s")
+    rule2 = {"id": 2, "title": "msg", "level": "low", "query": convert(r2), "group_by": "source",
+             "threshold": 1, "tags": []}
+    async with GraylogClient(srv, RateLimiter(RateLimitConfig())) as c:
+        now = datetime.now(timezone.utc)
+        res2 = await run_detectors(make_fetch(c), now - timedelta(minutes=30), now + timedelta(minutes=1),
+                                   settings=none, global_exclude=f"_exists_:e2e AND NOT e2e:{tag}", sigma_rules=[rule2])
+    check(res2.sigma.get(2, {}).get("count") == 61, f"short_message|contains matches the 61 'auth fail' messages ({res2.sigma.get(2)})")
+
+
+async def new_source_step(srv, tag: str) -> None:
+    """account_new_source (added 1.29): two groupings in one real aggregation, then the
+    runner's history logic: e2e-user1 had another source 8 days ago, now logs in from PEER."""
+    import tempfile
+    from glogarch.core.database import ArchiveDB
+    from glogarch.security.detectors import DETECTORS
+    from glogarch.security.graylog_fetch import make_pair_fetch
+    from glogarch.security.runner import new_source_findings
+    only = {d.id: {"enabled": d.id == "account_new_source"} for d in DETECTORS}
+    async with GraylogClient(srv, RateLimiter(RateLimitConfig())) as c:
+        now = datetime.now(timezone.utc)
+        res = await run_detectors(make_fetch(c), now - timedelta(minutes=30), now + timedelta(minutes=1),
+                                  settings=only, global_exclude=f"_exists_:e2e AND NOT e2e:{tag}",
+                                  fetch_pairs=make_pair_fetch(c))
+    check(not res.errors, f"pair aggregation answered {res.errors or ''}")
+    check(("e2e-user1", PEER, 3) in res.pairs, f"(account, source) pairs from Graylog: {res.pairs}")
+    db = ArchiveDB(tempfile.mktemp(suffix=".db"))
+    db.connect()
+    naive = now.replace(tzinfo=None)
+    db.record_pairs("e2e", [("e2e-user1", "10.9.9.9")], naive - timedelta(days=8))
+    f = new_source_findings(db, "e2e", res.pairs, naive)
+    check([x["entity"] for x in f] == ["e2e-user1"] and f[0]["metrics"]["new_sources"] == [PEER]
+          and f[0]["severity"] == "medium", f"new login source found for the account with history: {f}")
+
+
 async def main() -> int:
     if not GL_PASS:
         print("GL_PASS is required (from scripts/datanode-stack/up.sh)")
@@ -117,6 +230,9 @@ async def main() -> int:
     check(bool(cov) and cov.events == FAILS + 1 and cov.missing == 1,
           f"the event without a peer field is coverage, not an incident ({cov and (cov.events, cov.missing)})")
     check(not [f for f in res.findings if f.entity == "(Empty Value)"], "no incident for '(Empty Value)'")
+    await silent_step(srv, tag)
+    await sigma_step(srv, tag)
+    await new_source_step(srv, tag)
     print("RESULT: ALL PASS" if ok else "RESULT: FAILED")
     return 0 if ok else 1
 

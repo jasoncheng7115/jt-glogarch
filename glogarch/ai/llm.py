@@ -143,7 +143,7 @@ async def chat(cfg, messages: list[dict], tools: list[dict] | None = None,
         try:
             async with httpx.AsyncClient(timeout=float(cfg.timeout_seconds), follow_redirects=False) as c:
                 r = await c.post(url, headers=_headers(cfg), json=body)
-            if r.status_code in (502, 503, 504) and attempt == 0:
+            if r.status_code in (502, 503, 504) and attempt == 0 and "structured_output_failed" not in r.text:
                 last = f"HTTP {r.status_code}"
                 await asyncio.sleep(5)
                 continue

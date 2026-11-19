@@ -17,13 +17,18 @@ echo "Canonical version: $VER"
 #   - glogarch/__init__.py          → source of truth
 #   - github/CHANGELOG*.md          → historic version entries
 #   - github/glogarch/__init__.py → mirror of source of truth
-BAD=$(grep -rnE "v?${VER//./\\.}" \
+#   - contrib/                    → the parsing assets (never shipped; their sample
+#                                   logs carry other products' versions, e.g. nginx/1.24.0)
+# Anchored: a version inside a longer number is not one (an SVG path in app.js
+# holds "-1.25.077", which an unanchored 1.25.0 matched).
+BAD=$(grep -rnE "(^|[^0-9.])v?${VER//./\\.}([^0-9]|$)" \
     --include='*.py' \
     --include='*.html' \
     --include='*.js' \
     --include='*.css' \
     --include='*.toml' \
     --exclude-dir=zap --exclude-dir=.playwright --exclude-dir=.git \
+    --exclude-dir=contrib \
     . 2>/dev/null \
     | grep -v 'glogarch/__init__.py' \
     | grep -v 'github/glogarch/__init__.py' \

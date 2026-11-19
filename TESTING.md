@@ -1113,11 +1113,168 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
       Stop works; conversations list, reopen and delete; Settings: test connection, save, MCP config
       snippet, mcp_graylog status. en / zh-TW / ja, both themes, ~1436 px.
 
+### Account logged in from a new source (v1.29.0)
+
+**Automated**
+
+- [ ] `tests/test_security_new_source.py` (4): off by default; pairs collected from two groupings
+      (empty values are coverage, machine accounts excluded); learning (account history < 7 days),
+      memory (a source unused for 30 days is new again), one finding per account with its new sources,
+      severity by external source, a pair seen now is known next run; prune forgets old pairs; T1078
+      and labels in all languages.
+- [ ] `scripts/e2e-security-test.py` (real Graylog): the two-grouping aggregation returns the seeded
+      (account, source, 3) and the history logic flags the account. 2026-11-20: ALL PASS on 7.2.2.
+
+### Security overview (v1.29.0)
+
+**Automated**
+
+- [ ] `tests/test_security_overview.py` (5; plus the CSV export: filters, formula cells neutralized,
+      techniques column, audit): the summary (14 local days, per-severity counts, open by
+      severity, cases, top detections and techniques, risk top, days clamped to 90); the chart is SVG
+      with no inline style (the CSP), one segment per non-zero severity, a title per day, a legend;
+      ATT&CK "watched" merges the last 24 hours of runs (a quiet run does not turn a detection into
+      no data); i18n keys.
+
+**By hand (each release that touches it)**
+
+- [ ] Security Incidents opens on Overview: tiles (incidents and investigations open their tabs), the
+      chart's hover numbers and table view, the three lists. en / zh-TW / ja, both themes, ~1436 px.
+
+### Threat intelligence (v1.28.0)
+
+**Automated**
+
+- [ ] `tests/test_threat_intel.py` (10): feed parsing (comments, junk, CIDR normalized); matching
+      (address and network, several feeds, non-addresses); refresh replaces a feed, a failed one
+      keeps the previous entries and records the error; an empty or oversized feed is refused and
+      only fixed https URLs are fetched; off by default and only selected feeds are used; the risk
+      factor x2; the API (settings clamp and filter feeds, refresh refused while off, incidents and
+      ranking marked, audits); the AI evidence explains the listing; the scheduler job follows the
+      switch and interval; i18n keys.
+- [ ] `scripts/upgrade-compat-test.sh`: `sec_ti_entries` and `sec_ti_feeds` are created.
+
+**By hand (each release that touches it)**
+
+- [ ] Assets & risk tab: turn the lists on, Download now (three counts and times), an incident from a
+      listed address shows the list tag and a x2 factor. en / zh-TW / ja, both themes, ~1436 px.
+
+### Review fixes (v1.29.0)
+
+**Automated**
+
+- [ ] `tests/test_security_review_fixes.py` (9): an empty settings box keeps the stored value and
+      numbers are clamped (retention never 0); scheduled and manual runs share one lock; Run now
+      answers before the AI finishes; an unparsable network asset does not break risk; whole-address
+      comparison and `:port` in the unverified check; mid-query leading wildcards refused for
+      mcp_graylog; an unexpected LLM error leaves a row; confirm dialogs escape user text; the case
+      report cannot carry links or HTML (node).
+
+### Sigma rules (v1.27.0)
+
+**Automated**
+
+- [ ] `tests/test_security_sigma.py` (66): conversion of every supported shape (NOT kept as NOT inside an OR,
+      `|re` anchoring, literal `\*` and `<>=` escaped) (equality as a
+      phrase, lists, `all`, startswith wildcard, contains/endswith/leading-wildcard as regex,
+      Lucene escaping, literal `\*`, null/exists, numeric comparisons, `re`, keywords, list of maps,
+      and/not, `1 of`, `all of them`, parentheses, condition lists); `message` searched as a
+      phrase and `short_message` mapped to it, regex refused there; the field map; 16 refusals each
+      with its reason (base64, cidr, regex flags, aggregation, near, unknown selection, no match,
+      unclosed parenthesis, inner keyword wildcard, non-numeric gt, empty selection, no condition,
+      no title, no detection, two documents, bad YAML) and the size cap; level, id and ATT&CK tags;
+      the engine (per group, threshold, empty group, a failing rule recorded, the global exclusion);
+      DB rules and results; the notification uses the rule title and techniques; the API (preview,
+      add, enable, the cap, a field map that reconverts, test, delete, audits); a rule's incident
+      shows its title and techniques; the page escapes rules (node); i18n keys.
+- [ ] `scripts/e2e-security-test.py` (real Graylog): a converted rule with a phrase, a contains
+      regex, a startswith wildcard and NOT endswith counts exactly 15 per host on 3 hosts (45);
+      `short_message|contains` matches the 61 messages. 2026-11-20: ALL PASS on 7.2.2 and 6.3.15.
+- [ ] `scripts/upgrade-compat-test.sh`: `sec_sigma_rules` is created on an upgraded DB.
+
+**By hand (each release that touches it)**
+
+- [ ] Sigma tab: paste a refused rule (reason shown, translated), paste a good rule (Convert shows
+      the query and ATT&CK chips), save (disabled), enable, Test 24 h, field map save reconverts;
+      an incident from a rule shows its title. en / zh-TW / ja, both themes, ~1436 px.
+
+### Log source went silent (v1.26.0)
+
+**Automated**
+
+- [ ] `tests/test_security_silent.py` (6): off by default; two windows (baseline ends where the
+      recent one starts), the global exclusion applies; still sending / under min_count / empty
+      are not silent; min_count configurable; a truncated recent list reports nothing and says
+      why; a failed query is recorded; ATT&CK T1562 and labels in all languages.
+- [ ] `scripts/e2e-security-test.py` (real Graylog): a host whose 60 messages are 3 h old is silent
+      with baseline 60, a host still sending is not. 2026-11-20: ALL PASS on 7.2.2 and 6.3.15.
+
+### Assets and risk ranking (v1.25.0)
+
+**Automated**
+
+- [ ] `tests/test_security_risk.py` (24): asset values validated and normalized (addresses,
+      networks, case-insensitive hosts/accounts, markup refused); matching (exact address over
+      networks, narrowest network, v6 never in a v4 network, accounts case-insensitive); the score
+      and its explanation (severity, external, asset criticality, AI verdict; closed incidents do
+      not count; order); assets in the DB (upsert by kind+value, unknown id, delete); the API
+      validates, refuses editing into another asset (409), marks incidents, ranks, imports lines
+      with per-line errors, audits; AI evidence and the chat's ranking tool know the asset; the page
+      escapes asset names and criticality (node); i18n keys.
+- [ ] `scripts/upgrade-compat-test.sh`: `sec_assets` is created on an upgraded DB.
+
+**By hand (each release that touches it)**
+
+- [ ] Assets & risk tab: add, edit, delete and import assets; an incident on an asset shows the
+      tag; the ranking's window select; a score opens into its incidents and factors. en / zh-TW /
+      ja, both themes, ~1436 px.
+
+### Investigations / cases (v1.24.0)
+
+**Automated**
+
+- [ ] `tests/test_security_cases.py` (8): case lifecycle and the append-only timeline (created,
+      incident added/removed, status/assignee/conclusion changes, notes; duplicates and unknown
+      incidents ignored; reopening clears closed_at; unknown case = None); fields outside the
+      whitelist are ignored; retention keeps incidents that are in a case; the chat tools read
+      cases; the API validates (title, severity, status, empty note, no incidents), 404s, lists
+      the case on its incidents, and audits every change with the signed-in user; the case dialog
+      escapes titles, notes, entities and refuses a non-http Graylog link (node); the Markdown
+      report escapes free text, code-spans log values and survives a backtick; i18n keys.
+- [ ] `scripts/upgrade-compat-test.sh`: the three new tables are created on an upgraded DB.
+
+**By hand (each release that touches it)**
+
+- [ ] Security Incidents page: Case button on an incident → new case → the dialog: edit title,
+      status, severity, assignee, description, conclusion, Save; add a note; remove an incident;
+      Download report; the incident row shows the case badge; the Investigations tab lists and
+      filters cases. en / zh-TW / ja, both themes, ~1436 px.
+
+### MITRE ATT&CK mapping (v1.23.0)
+
+**Automated**
+
+- [ ] `tests/test_security_attack.py` (19): every detection maps to known techniques and tactics;
+      MITRE URL paths; IDS signatures by keyword (scan, exploit, web attack, malware/C2, DoS,
+      brute force; INFO/POLICY map to nothing); coverage states (watched, no data, query error,
+      turned off, not run yet, IDS signatures only; a technique takes the best of its own detections,
+      signature-only when only the IDS sees it; tactic order kept);
+      the notification line carries the ids; AI evidence and the chat's incident tool carry them;
+      the incidents API and `/api/security/attack`; the page's chips are escaped and link only to
+      attack.mitre.org (node); i18n keys in all three languages.
+
+**By hand (each release that touches it)**
+
+- [ ] Security Incidents page: technique chips under the detection name open MITRE's page; the
+      ATT&CK button shows the tactic table with states matching the Coverage table. en / zh-TW /
+      ja, both themes, ~1436 px.
+
 ### AI analysis of security incidents (v1.22.0)
 
 **Automated**
 
-- [ ] `tests/test_security_ai.py` (17): the model's JSON is validated (fences, `<think>`, text
+- [ ] `tests/test_security_ai.py` (20; an answer cut off at the token limit is asked again with more; the verdict notification is opt-in, lists only the chosen
+      verdicts and carries the summary in all three languages): the model's JSON is validated (fences, `<think>`, text
       around it, unknown verdict or confidence refused, lists capped); addresses the answer names
       but the evidence does not are flagged (IPv4 and compressed IPv6, version numbers ignored);
       the window is capped to 24 h; automatic picks are new or escalated, highest first, capped;

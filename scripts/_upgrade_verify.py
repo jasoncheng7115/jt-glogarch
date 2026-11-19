@@ -41,6 +41,13 @@ chk(not [a for a in db.list_archives() if not os.path.exists(a.file_path)],
     "archive FILES all present")
 cols = {r[1] for r in db.conn.execute("PRAGMA table_info(archives)")}
 chk({"hmac_sha256", "field_schema"} <= cols, "migration added the new columns")
+tables = {r[0] for r in db.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+new_tables = {"sec_incidents", "sec_runs", "sec_ai_analyses", "ai_conversations",
+              "sec_cases", "sec_case_incidents", "sec_case_notes", "sec_assets", "sec_sigma_rules", "sec_ti_entries", "sec_ti_feeds", "sec_pairs"}
+chk(new_tables <= tables, "security/AI tables created on the upgraded DB",
+    ", ".join(sorted(new_tables - tables)) or "all present")
+cid = db.create_security_case("upgrade check", "low", "", "verify")
+chk(db.get_security_case(cid)["timeline"][0]["kind"] == "created", "a case can be written after the upgrade")
 
 # --- principle 3: scheduled archiving must survive ---
 kept = {x.name for x in db.list_schedules()}

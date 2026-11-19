@@ -447,9 +447,20 @@ security:
   ai_auto: false              # v1.22.0: AI analysis after each run (needs ai.analysis_enabled)
   ai_auto_min_severity: high  # high | medium | low: new or escalated incidents from this severity
   ai_auto_max_per_run: 3      # 1..10; each is one model call and about ten Graylog searches
+  ai_notify_verdicts: []      # v1.29.0: e.g. [malicious, suspicious]: one follow-up notification after automatic analysis
+  sigma_field_map: {}         # v1.27.0: Sigma field -> Graylog field (edited on the Sigma tab)
+  sigma_max_rules: 50         # enabled Sigma rules, one aggregation each per run
+  ti_enabled: false           # v1.28.0: download threat-intel lists (nothing about this site is sent)
+  ti_feeds: [spamhaus_drop, tor_exit, feodo]
+  ti_refresh_hours: 24        # 1..168
   detectors:                  # per detection: enabled, min_count, exclude (all optional)
     account_multi_host:
       exclude: "user_name:/.*[$]/"   # the default: machine accounts (DC1$)
+    account_new_source:              # v1.29.0, off by default (keeps every account/source pair; 7-day learning)
+      enabled: false
+    source_silent:                   # v1.26.0, off by default (aggregates a day of all messages per run)
+      enabled: false
+      min_count: 50                  # messages in the 24 h before the last 2 h
 ```
 
 Every run reads Graylog's aggregation API (`POST /api/search/aggregate`, Graylog 6.x and 7.x;

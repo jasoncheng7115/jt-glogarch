@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import ipaddress
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Awaitable, Callable
 
 from glogarch.security.detectors import (
-    AUTH_OK, DETECTORS, PROBES, Detector, Probe,
+    AUTH_OK, BASELINE_HOURS, DETECTORS, PROBES, SILENT_HOURS, Detector, Probe,
 )
 
 EMPTY = "(Empty Value)"
@@ -52,6 +52,8 @@ class RunResult:
     coverage: list[Coverage] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     queries: int = 0
+    sigma: dict = field(default_factory=dict)   # rule id -> {"count": int|None, "error": str}
+    pairs: list = field(default_factory=list)   # (account, source, count) of successful logins
 
 
 def metric_key(fn: str, fld: str | None) -> str:
@@ -110,7 +112,9 @@ def qualifies(det: Detector, row: dict) -> bool:
 
 async def run_detectors(fetch: Fetch, time_from: datetime, time_to: datetime, *,
                         settings: dict | None = None,
-                        global_exclude: str = "") -> RunResult:
+                        global_exclude: str = "",
+                        sigma_rules: list[dict] | None = None,
+                        fetch_pairs=None) -> RunResult:
     """`settings` maps detector id -> {"enabled": bool, "min_count": int,
     "exclude": str}; missing keys fall back to the detector's defaults."""
     settings = settings or {}
@@ -153,6 +157,13 @@ async def run_detectors(fetch: Fetch, time_from: datetime, time_to: datetime, *,
         return rows
 
     for det, min_count, exclude in active:
+        if det.id == "account_new_source":
+            await _pairs(fetch_pairs, res, det, build_query(PROBES[det.probe].query, exclude, global_exclude),
+                         time_from, time_to)
+            continue
+        if det.id == "source_silent":
+            await _silent(fetch, res, det, min_count, build_query("*", exclude, global_exclude), time_to)
+            continue
         probe = PROBES[det.probe]
         eff = replace(det, min_count=min_count)
         for fld in probe.fields:
@@ -176,7 +187,106 @@ async def run_detectors(fetch: Fetch, time_from: datetime, time_to: datetime, *,
                     query=build_query(f"{probe.query} AND {fld}:{lucene_quote(ent)}",
                                       exclude, global_exclude),
                 ))
+    for rule in sigma_rules or []:
+        await _sigma(fetch, res, rule, time_from, time_to, global_exclude)
     return res
+
+
+SIGMA_LEVELS = {"informational": "low", "low": "low", "medium": "medium", "high": "high", "critical": "high"}
+
+
+async def _sigma(fetch, res: RunResult, rule: dict, time_from, time_to, global_exclude: str) -> None:
+    """One enabled Sigma rule: its converted query, counted per `group_by` (a host
+    by default); every group at or above the rule's threshold is a finding."""
+    fld = rule.get("group_by") or "source"
+    q = build_query(rule["query"], global_exclude)
+    try:
+        res.queries += 1
+        rows = await fetch(q, fld, (("count", None),), time_from, time_to, 100)
+    except Exception as e:
+        err = str(e)[:300]
+        res.errors.append(f"sigma {rule['id']}: {err}")
+        res.sigma[rule["id"]] = {"count": None, "error": err}
+        return
+    res.sigma[rule["id"]] = {"count": sum(int(r.get("count") or 0) for r in rows), "error": ""}
+    for r in rows:
+        ent = str(r.get("entity") or "")
+        n = int(r.get("count") or 0)
+        if not ent or ent == EMPTY or n < max(1, int(rule.get("threshold") or 1)):
+            continue
+        res.findings.append(Finding(
+            detector=f"sigma:{rule['id']}", entity=ent, entity_field=fld,
+            severity=SIGMA_LEVELS.get(rule.get("level"), "medium"),
+            metrics={"count": n, "sigma_title": rule["title"], "sigma_tags": list(rule.get("tags") or [])},
+            external=is_external(ent),
+            query=build_query(f"({rule['query']}) AND {fld}:{lucene_quote(ent)}", global_exclude)))
+
+
+async def _pairs(fetch_pairs, res: RunResult, det: Detector, query: str, time_from, time_to) -> None:
+    """Collects (account, source) pairs; the runner decides which are new (it has the history)."""
+    probe = PROBES[det.probe]
+    cov = Coverage(probe.id, "user_name+source_ip")
+    if fetch_pairs is None:
+        cov.error = "no pair aggregation available"
+        res.coverage.append(cov)
+        return
+    try:
+        res.queries += 1
+        rows = await fetch_pairs(query, probe.fields, time_from, time_to, probe.limit)
+    except Exception as e:
+        cov.error = str(e)[:300]
+        res.errors.append(f"{probe.id}: {cov.error}")
+        res.coverage.append(cov)
+        return
+    for r in rows:
+        n = int(r.get("count") or 0)
+        cov.events += n
+        a, b = str(r.get("a") or ""), str(r.get("b") or "")
+        if a in ("", EMPTY) or b in ("", EMPTY):
+            cov.missing += n
+            continue
+        res.pairs.append((a, b, n))
+    cov.truncated = len(rows) >= probe.limit
+    res.coverage.append(cov)
+
+
+async def _silent(fetch, res: RunResult, det: Detector, min_count: int, query: str, time_to: datetime) -> None:
+    """Sources with >= min_count messages in the baseline window and none in the
+    last SILENT_HOURS. Two aggregations; if the recent list is truncated (1000+
+    sources still sending) nothing can be concluded, so nothing is reported."""
+    recent_from = time_to - timedelta(hours=SILENT_HOURS)
+    base_from = recent_from - timedelta(hours=BASELINE_HOURS)
+    probe = PROBES[det.probe]
+    cov = Coverage(probe.id, "source")
+    try:
+        res.queries += 2
+        base = await fetch(query, "source", probe.metrics, base_from, recent_from, probe.limit)
+        recent = await fetch(query, "source", probe.metrics, recent_from, time_to, probe.limit)
+    except Exception as e:
+        cov.error = str(e)[:300]
+        res.errors.append(f"{probe.id}/source: {cov.error}")
+        res.coverage.append(cov)
+        return
+    for r in base:
+        cov.events += int(r.get("count") or 0)
+        if r.get("entity") == EMPTY:
+            cov.missing += int(r.get("count") or 0)
+    cov.truncated = len(base) >= probe.limit
+    res.coverage.append(cov)
+    if len(recent) >= probe.limit:
+        res.errors.append(f"{probe.id}/source: {probe.limit}+ sources in the last {SILENT_HOURS} h; "
+                          "silence cannot be judged")
+        return
+    still = {str(r.get("entity")) for r in recent}
+    for r in base:
+        ent = str(r.get("entity") or "")
+        n = int(r.get("count") or 0)
+        if not ent or ent == EMPTY or ent in still or n < min_count:
+            continue
+        res.findings.append(Finding(
+            detector=det.id, entity=ent, entity_field="source", severity="medium",
+            metrics={"baseline": n, "silent_hours": SILENT_HOURS},
+            external=None, query=f"source:{lucene_quote(ent)}"))
 
 
 async def _with_success(fetch, res, hits, fld, time_from, time_to, ok_query):

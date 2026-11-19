@@ -209,9 +209,9 @@ async def run(tmp: Path, q: str, token: str, tag: str) -> int:
         calls = [e for e in events if e.get("phase") == "tool"]
         check(not out["error"] and calls, f"real LLM used a tool ({out['elapsed_ms']} ms, tools {out['tools']}) {out['error']}")
         truth = None
-        if calls:
-            last = calls[-1]
-            r = await G.call_tool(last["name"], last["args"], ctx)
+        # the newest call that produced a number (the model may look at incidents afterwards)
+        for c in reversed([x for x in calls if x["name"] in ("count_messages", "top_values")]):
+            r = await G.call_tool(c["name"], c["args"], ctx)
             try:
                 body = json.loads(r["result"]) if r.get("ok") else {}
             except ValueError:
@@ -219,6 +219,8 @@ async def run(tmp: Path, q: str, token: str, tag: str) -> int:
             truth = body.get("count")
             if truth is None and body.get("rows"):
                 truth = body["rows"][0].get("count")
+            if truth is not None:
+                break
         check(truth is not None and str(truth) in out["answer"].replace(",", ""),
               f"the answer states what its own query returned ({truth}): {out['answer'][:100]!r}")
         used_q = json.dumps([c["args"] for c in calls], ensure_ascii=False)
@@ -245,7 +247,11 @@ async def run(tmp: Path, q: str, token: str, tag: str) -> int:
         check((ev.get("events_in_window") or 0) >= 60, f"evidence counts the seeded failures: {ev.get('events_in_window')}")
         users = {r["value"] for r in ev["breakdown"].get("user_name", [])}
         check(users and all(u.startswith("e2e-user") for u in users), f"evidence top accounts: {sorted(users)}")
-        check(ev.get("successful_logins", {}).get("count") == 0, "no successful login from the peer")
+        # the security e2e may have seeded successes for the same peer on this stack: compare with Graylog
+        truth_ok = (await G._count({"query": ev.get("successful_logins", {}).get("query", ""),
+                                    "range_from": ev["window"]["from"], "range_to": ev["window"]["to"]}, sctx))["count"]
+        check(ev.get("successful_logins", {}).get("count") == truth_ok,
+              f"successful logins of the peer match Graylog ({truth_ok})")
         sm = ev.get("sample_messages") or []
         check(len(sm) == A.SAMPLE_N and all(m.get("source_ip") == PEER for m in sm),
               f"example messages are the peer's ({len(sm)})")

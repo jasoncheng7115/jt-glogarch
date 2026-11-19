@@ -47,6 +47,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
 
 from glogarch.utils.logging import get_logger
+from glogarch.security.attack import techniques_for
+from glogarch.security.risk import score_entities
 
 log = get_logger("ai.tools")
 
@@ -263,7 +265,7 @@ def mcpg_query(args: dict) -> dict:
     q = args["query"]
     if _ALL_WILDCARD.fullmatch(q):
         return {**args, "query": ""}
-    if q.lstrip()[:1] in ("*", "?"):
+    if re.search(r"(^|[\s(:])[*?](?![\s)]|$)", q):
         raise ValueError("query: Graylog does not allow a leading wildcard; search a field "
                          "instead, e.g. source:web* or user_name:admin*")
     return args
@@ -411,7 +413,40 @@ async def _incident(args: dict, ctx: Ctx):
     inc = ctx.db.get_security_incident(int(args.get("id")))
     if not inc:
         raise ValueError("no incident with that id")
+    inc["mitre_attack"] = [{"id": t["id"], "name": t["name"]}
+                           for t in techniques_for(inc["detector"], inc["entity"], (inc.get("metrics") or {}).get("sigma_tags"))]
     return inc
+
+
+async def _cases(args: dict, ctx: Ctx):
+    st = args.get("status") or None
+    if st not in (None, "open", "in_progress", "closed"):
+        raise ValueError("status: open, in_progress or closed")
+    keep = ("id", "title", "status", "severity", "assignee", "created_at", "updated_at", "incidents", "notes")
+    return {"cases": [{k: c.get(k) for k in keep} for c in ctx.db.list_security_cases(st, limit=50)]}
+
+
+async def _case(args: dict, ctx: Ctx):
+    c = ctx.db.get_security_case(int(args.get("id")))
+    if not c:
+        raise ValueError("no case with that id")
+    keep = ("id", "detector", "entity", "entity_field", "severity", "status", "first_seen", "last_seen", "metrics")
+    c["incidents"] = [{**{k: i.get(k) for k in keep},
+                       "mitre_attack": [t["id"] for t in techniques_for(i["detector"], i["entity"],
+                                                                        (i.get("metrics") or {}).get("sigma_tags"))]}
+                      for i in c["incidents"]]
+    return c
+
+
+async def _risk(args: dict, ctx: Ctx):
+    days = max(1, min(int(args.get("days") or 7), 90))
+    incs = ctx.db.security_incidents_since(datetime.utcnow() - timedelta(days=days))
+    from glogarch.security.threat_intel import matcher_for
+    ranked = score_entities(incs, ctx.db.list_security_assets(),
+                            ctx.db.latest_security_verdicts([i["id"] for i in incs]), limit=20,
+                            ti=matcher_for(ctx.settings, ctx.db))
+    return {"days": days, "entities": ranked,
+            "note": "score = sum over open incidents of severity weight x external 1.5 x asset criticality x AI verdict"}
 
 
 async def _coverage(args: dict, ctx: Ctx):
@@ -449,6 +484,12 @@ def _own_tools() -> list[Tool]:
                                                "limit": {"type": "integer", "description": "1-100, default 20"}}}, _incidents),
         Tool("get_security_incident", "One security incident by id, with its metrics and the Graylog query that shows its events.",
              {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]}, _incident),
+        Tool("list_security_cases", "Investigations (cases) in jt-glogarch: groups of security incidents being worked on, with status, assignee and counts.",
+             {"type": "object", "properties": {"status": {"type": "string", "enum": ["open", "in_progress", "closed"]}}}, _cases),
+        Tool("get_security_case", "One investigation (case) by id: its incidents (with MITRE ATT&CK technique ids) and its timeline of notes and changes.",
+             {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]}, _case),
+        Tool("security_risk_ranking", "Entities (addresses, accounts, signatures) ranked by risk score from the open security incidents of the last N days, with the asset each one is and how every point was counted.",
+             {"type": "object", "properties": {"days": {"type": "integer", "description": "1-90, default 7"}}}, _risk),
         Tool("archive_coverage", "What jt-glogarch has archived per server: number of archives, earliest and latest time, records, bytes. Archives keep logs Graylog may already have deleted.",
              {"type": "object", "properties": {}}, _coverage),
     ]

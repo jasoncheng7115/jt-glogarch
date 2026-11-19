@@ -253,6 +253,101 @@ CREATE TABLE IF NOT EXISTS sec_ai_analyses (
 );
 CREATE INDEX IF NOT EXISTS idx_sec_ai_inc ON sec_ai_analyses (incident_id, id);
 
+-- Investigations (added 1.24). A case groups incidents for one investigation.
+-- Never deleted (closed instead): it is the record of what was looked at and
+-- decided. Its timeline keeps notes and every change, append-only.
+CREATE TABLE IF NOT EXISTS sec_cases (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'open',
+    severity    TEXT NOT NULL DEFAULT 'medium',
+    assignee    TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    resolution  TEXT NOT NULL DEFAULT '',
+    created_by  TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    closed_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sec_cases_status ON sec_cases (status, updated_at);
+CREATE TABLE IF NOT EXISTS sec_case_incidents (
+    case_id     INTEGER NOT NULL,
+    incident_id INTEGER NOT NULL,
+    added_by    TEXT NOT NULL DEFAULT '',
+    added_at    TEXT NOT NULL,
+    PRIMARY KEY (case_id, incident_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sec_case_inc ON sec_case_incidents (incident_id);
+CREATE TABLE IF NOT EXISTS sec_case_notes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_id    INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    username   TEXT NOT NULL DEFAULT '',
+    kind       TEXT NOT NULL DEFAULT 'note',
+    body       TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_sec_case_notes ON sec_case_notes (case_id, id);
+
+-- Assets (added 1.25): what matters at this site, for risk scores and context.
+CREATE TABLE IF NOT EXISTS sec_assets (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind        TEXT NOT NULL,
+    value       TEXT NOT NULL,
+    name        TEXT NOT NULL DEFAULT '',
+    criticality TEXT NOT NULL DEFAULT 'medium',
+    owner       TEXT NOT NULL DEFAULT '',
+    notes       TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    UNIQUE (kind, value)
+);
+
+-- Sigma rules (added 1.27). The YAML as given, its conversion, run results.
+CREATE TABLE IF NOT EXISTS sec_sigma_rules (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    sigma_id    TEXT NOT NULL DEFAULT '',
+    title       TEXT NOT NULL,
+    level       TEXT NOT NULL DEFAULT 'medium',
+    tags        TEXT NOT NULL DEFAULT '[]',
+    yaml        TEXT NOT NULL,
+    query       TEXT NOT NULL DEFAULT '',
+    error       TEXT NOT NULL DEFAULT '',
+    group_by    TEXT NOT NULL DEFAULT 'source',
+    threshold   INTEGER NOT NULL DEFAULT 1,
+    enabled     INTEGER NOT NULL DEFAULT 0,
+    created_by  TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    last_run_at TEXT,
+    last_count  INTEGER,
+    last_error  TEXT NOT NULL DEFAULT ''
+);
+
+-- Threat-intel lists (added 1.28): the entries of each downloaded feed.
+CREATE TABLE IF NOT EXISTS sec_ti_entries (
+    feed  TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (feed, value)
+);
+CREATE TABLE IF NOT EXISTS sec_ti_feeds (
+    feed         TEXT PRIMARY KEY,
+    refreshed_at TEXT,
+    count        INTEGER NOT NULL DEFAULT 0,
+    error        TEXT NOT NULL DEFAULT '',
+    tried_at     TEXT
+);
+
+-- (account, source) pairs of successful logins (added 1.29, new login sources).
+CREATE TABLE IF NOT EXISTS sec_pairs (
+    server     TEXT NOT NULL,
+    account    TEXT NOT NULL,
+    source     TEXT NOT NULL,
+    first_seen TEXT NOT NULL,
+    last_seen  TEXT NOT NULL,
+    PRIMARY KEY (server, account, source)
+);
+CREATE INDEX IF NOT EXISTS idx_sec_pairs_acct ON sec_pairs (server, account);
+
 -- AI chat (added 1.21). One user's conversations are theirs only. A message
 -- keeps the question or the final answer and the NAMES of the tools used, not
 -- the tool results (log data does not get a second copy here).
@@ -1621,7 +1716,9 @@ class ArchiveDB:
         now = datetime.utcnow()
         with self._lock:
             try:
-                n = self.conn.execute("DELETE FROM sec_incidents WHERE last_seen < ?",
+                # an incident in a case is evidence of that investigation: kept (added 1.24)
+                n = self.conn.execute("DELETE FROM sec_incidents WHERE last_seen < ? AND id NOT IN "
+                                      "(SELECT incident_id FROM sec_case_incidents)",
                                       (_dt_to_str(now - timedelta(days=incident_days)),)).rowcount
                 self.conn.execute("DELETE FROM sec_ai_analyses WHERE incident_id NOT IN "
                                   "(SELECT id FROM sec_incidents)")
@@ -1629,11 +1726,368 @@ class ArchiveDB:
                                   (_dt_to_str(now - timedelta(days=run_days)),))
                 self.conn.execute("DELETE FROM sec_seen WHERE last_seen < ?",
                                   (_dt_to_str(now - timedelta(days=seen_days)),))
+                self.conn.execute("DELETE FROM sec_pairs WHERE last_seen < ?",
+                                  (_dt_to_str(now - timedelta(days=seen_days)),))
                 self.conn.commit()
                 return n
             except Exception:
                 self._rollback_safely()
                 raise
+
+    # --- login pairs (1.29) -------------------------------------------------------
+
+    def pair_history(self, server: str, accounts: list[str]) -> tuple[dict, dict]:
+        """({(account, source): last_seen}, {account: first_seen}) for the given accounts."""
+        known, first = {}, {}
+        for i in range(0, len(accounts), 500):
+            chunk = accounts[i:i + 500]
+            marks = ",".join("?" * len(chunk))
+            for r in self.conn.execute(f"SELECT account, source, first_seen, last_seen FROM sec_pairs "  # nosec B608 - placeholders only
+                                       f"WHERE server = ? AND account IN ({marks})", (server, *chunk)):
+                known[(r[0], r[1])] = r[3]
+                if r[0] not in first or r[2] < first[r[0]]:
+                    first[r[0]] = r[2]
+        return known, first
+
+    def record_pairs(self, server: str, pairs: list[tuple[str, str]], when: datetime) -> None:
+        now = _dt_to_str(when)
+        with self._lock:
+            try:
+                self.conn.executemany(
+                    "INSERT INTO sec_pairs (server, account, source, first_seen, last_seen) VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT (server, account, source) DO UPDATE SET last_seen = excluded.last_seen",
+                    [(server, a, b, now, now) for a, b in pairs])
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    # --- threat-intel lists (1.28) ------------------------------------------------
+
+    def replace_ti_feed(self, feed: str, entries: list[str]) -> None:
+        now = _dt_to_str(datetime.utcnow())
+        with self._lock:
+            try:
+                self.conn.execute("DELETE FROM sec_ti_entries WHERE feed = ?", (feed,))
+                self.conn.executemany("INSERT OR IGNORE INTO sec_ti_entries (feed, value) VALUES (?, ?)",
+                                      [(feed, v) for v in entries])
+                self.conn.execute(
+                    "INSERT INTO sec_ti_feeds (feed, refreshed_at, count, error, tried_at) VALUES (?, ?, ?, '', ?) "
+                    "ON CONFLICT (feed) DO UPDATE SET refreshed_at = excluded.refreshed_at, count = excluded.count, "
+                    "error = '', tried_at = excluded.tried_at", (feed, now, len(entries), now))
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def record_ti_error(self, feed: str, error: str) -> None:
+        now = _dt_to_str(datetime.utcnow())
+        with self._lock:
+            try:
+                self.conn.execute(
+                    "INSERT INTO sec_ti_feeds (feed, error, tried_at) VALUES (?, ?, ?) "
+                    "ON CONFLICT (feed) DO UPDATE SET error = excluded.error, tried_at = excluded.tried_at",
+                    (feed, error[:500], now))
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def ti_status(self) -> dict[str, dict]:
+        return {r["feed"]: dict(r) for r in self.conn.execute("SELECT * FROM sec_ti_feeds").fetchall()}
+
+    def ti_entries(self, feeds: list[str]) -> dict[str, list[str]]:
+        out: dict[str, list[str]] = {f: [] for f in feeds}
+        if not feeds:
+            return out
+        marks = ",".join("?" * len(feeds))
+        for r in self.conn.execute(f"SELECT feed, value FROM sec_ti_entries WHERE feed IN ({marks})", feeds):  # nosec B608 - placeholders only
+            out[r[0]].append(r[1])
+        return out
+
+    # --- Sigma rules (1.27) -------------------------------------------------------
+
+    SIGMA_FIELDS = ("title", "level", "tags", "yaml", "query", "error", "group_by", "threshold", "enabled", "sigma_id")
+
+    @staticmethod
+    def _sigma_row(r) -> dict:
+        import json as _json
+        d = dict(r)
+        d["tags"] = _json.loads(d.get("tags") or "[]")
+        d["enabled"] = bool(d["enabled"])
+        return d
+
+    def add_sigma_rule(self, data: dict, username: str) -> int:
+        import json as _json
+        now = _dt_to_str(datetime.utcnow())
+        with self._lock:
+            try:
+                cur = self.conn.execute(
+                    "INSERT INTO sec_sigma_rules (sigma_id, title, level, tags, yaml, query, error, group_by, threshold, "
+                    "enabled, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+                    (data.get("sigma_id", ""), data["title"], data["level"], _json.dumps(data.get("tags") or []),
+                     data["yaml"], data.get("query", ""), data.get("error", ""), data.get("group_by") or "source",
+                     int(data.get("threshold") or 1), username, now, now))
+                self.conn.commit()
+                return cur.lastrowid  # type: ignore[return-value]
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def update_sigma_rule(self, rule_id: int, changes: dict) -> bool:
+        import json as _json
+        sets, args = [], []
+        for k in self.SIGMA_FIELDS:
+            if k in changes:
+                v = changes[k]
+                if k == "tags":
+                    v = _json.dumps(v or [])
+                elif k == "enabled":
+                    v = 1 if v else 0
+                sets.append(f"{k} = ?")
+                args.append(v)
+        if not sets:
+            return bool(self.get_sigma_rule(rule_id))
+        sets.append("updated_at = ?")
+        args.append(_dt_to_str(datetime.utcnow()))
+        with self._lock:
+            try:
+                cur = self.conn.execute(f"UPDATE sec_sigma_rules SET {', '.join(sets)} WHERE id = ?",  # nosec B608 - names from SIGMA_FIELDS
+                                        (*args, rule_id))
+                self.conn.commit()
+                return cur.rowcount > 0
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def record_sigma_result(self, rule_id: int, count: int | None, error: str) -> None:
+        with self._lock:
+            try:
+                self.conn.execute("UPDATE sec_sigma_rules SET last_run_at = ?, last_count = ?, last_error = ? WHERE id = ?",
+                                  (_dt_to_str(datetime.utcnow()), count, error[:500], rule_id))
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def get_sigma_rule(self, rule_id: int) -> dict | None:
+        r = self.conn.execute("SELECT * FROM sec_sigma_rules WHERE id = ?", (rule_id,)).fetchone()
+        return self._sigma_row(r) if r else None
+
+    def list_sigma_rules(self, enabled_only: bool = False) -> list[dict]:
+        w = " WHERE enabled = 1 AND query != ''" if enabled_only else ""
+        return [self._sigma_row(r) for r in self.conn.execute(
+            f"SELECT * FROM sec_sigma_rules{w} ORDER BY enabled DESC, id").fetchall()]  # nosec B608 - fixed fragment
+
+    def delete_sigma_rule(self, rule_id: int) -> dict | None:
+        with self._lock:
+            try:
+                r = self.conn.execute("SELECT * FROM sec_sigma_rules WHERE id = ?", (rule_id,)).fetchone()
+                if not r:
+                    return None
+                self.conn.execute("DELETE FROM sec_sigma_rules WHERE id = ?", (rule_id,))
+                self.conn.commit()
+                return self._sigma_row(r)
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    # --- assets (1.25) ----------------------------------------------------------
+
+    def list_security_assets(self) -> list[dict]:
+        return [dict(r) for r in self.conn.execute(
+            "SELECT * FROM sec_assets ORDER BY CASE criticality WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
+            "WHEN 'medium' THEN 2 ELSE 3 END, kind, value").fetchall()]
+
+    def upsert_security_asset(self, kind: str, value: str, name: str, criticality: str, owner: str,
+                              notes: str, asset_id: int | None = None) -> int | None:
+        """Insert, or update by id / by (kind, value). None = id not found."""
+        now = _dt_to_str(datetime.utcnow())
+        with self._lock:
+            try:
+                if asset_id:
+                    cur = self.conn.execute(
+                        "UPDATE sec_assets SET kind = ?, value = ?, name = ?, criticality = ?, owner = ?, notes = ?, "
+                        "updated_at = ? WHERE id = ?", (kind, value, name, criticality, owner, notes, now, asset_id))
+                    self.conn.commit()
+                    return asset_id if cur.rowcount else None
+                self.conn.execute(
+                    "INSERT INTO sec_assets (kind, value, name, criticality, owner, notes, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (kind, value) DO UPDATE SET name = excluded.name, "
+                    "criticality = excluded.criticality, owner = excluded.owner, notes = excluded.notes, "
+                    "updated_at = excluded.updated_at", (kind, value, name, criticality, owner, notes, now, now))
+                rid = self.conn.execute("SELECT id FROM sec_assets WHERE kind = ? AND value = ?",
+                                        (kind, value)).fetchone()[0]
+                self.conn.commit()
+                return rid
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def delete_security_asset(self, asset_id: int) -> dict | None:
+        with self._lock:
+            try:
+                row = self.conn.execute("SELECT * FROM sec_assets WHERE id = ?", (asset_id,)).fetchone()
+                if not row:
+                    return None
+                self.conn.execute("DELETE FROM sec_assets WHERE id = ?", (asset_id,))
+                self.conn.commit()
+                return dict(row)
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def open_security_counts(self) -> dict[str, int]:
+        rows = self.conn.execute("SELECT severity, COUNT(*) FROM sec_incidents WHERE status = 'open' GROUP BY severity")
+        return {r[0]: r[1] for r in rows}
+
+    def security_incidents_since(self, since: datetime, limit: int = 5000) -> list[dict]:
+        import json as _json
+        rows = self.conn.execute("SELECT * FROM sec_incidents WHERE last_seen >= ? ORDER BY last_seen DESC LIMIT ?",
+                                 (_dt_to_str(since), limit)).fetchall()
+        return [{**dict(r), "metrics": _json.loads(r["metrics"] or "{}")} for r in rows]
+
+    # --- investigations / cases (1.24) ----------------------------------------
+
+    CASE_STATUSES = ("open", "in_progress", "closed")
+    CASE_FIELDS = ("title", "status", "severity", "assignee", "description", "resolution")
+
+    def _case_event(self, case_id: int, username: str, kind: str, body: str, now: str) -> None:
+        """Caller holds the lock and commits."""
+        self.conn.execute("INSERT INTO sec_case_notes (case_id, created_at, username, kind, body) "
+                          "VALUES (?, ?, ?, ?, ?)", (case_id, now, username, kind, body[:4000]))
+
+    def create_security_case(self, title: str, severity: str, description: str, username: str,
+                             incident_ids: list[int] | None = None) -> int:
+        now = _dt_to_str(datetime.utcnow())
+        with self._lock:
+            try:
+                cur = self.conn.execute(
+                    "INSERT INTO sec_cases (title, severity, description, created_by, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)", (title[:200], severity, description[:8000], username, now, now))
+                cid = cur.lastrowid
+                self._case_event(cid, username, "created", title[:200], now)
+                for iid in dict.fromkeys(int(i) for i in (incident_ids or [])):
+                    if self.conn.execute("SELECT 1 FROM sec_incidents WHERE id = ?", (iid,)).fetchone():
+                        self.conn.execute("INSERT OR IGNORE INTO sec_case_incidents (case_id, incident_id, added_by, "
+                                          "added_at) VALUES (?, ?, ?, ?)", (cid, iid, username, now))
+                        self._case_event(cid, username, "incident_added", str(iid), now)
+                self.conn.commit()
+                return cid  # type: ignore[return-value]
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def update_security_case(self, case_id: int, changes: dict, username: str) -> list[str] | None:
+        """Applies whitelisted fields; returns the names that changed (None = no such case)."""
+        now = _dt_to_str(datetime.utcnow())
+        with self._lock:
+            try:
+                row = self.conn.execute("SELECT * FROM sec_cases WHERE id = ?", (case_id,)).fetchone()
+                if not row:
+                    return None
+                changed = []
+                for k in self.CASE_FIELDS:
+                    if k in changes and str(changes[k]) != str(row[k]):
+                        self.conn.execute(f"UPDATE sec_cases SET {k} = ? WHERE id = ?",  # nosec B608 - k from CASE_FIELDS
+                                          (changes[k], case_id))
+                        changed.append(k)
+                        long = k in ("description", "resolution")
+                        self._case_event(case_id, username, f"{k}_changed",
+                                         "" if long else f"{row[k]} -> {changes[k]}", now)
+                if "status" in changed:
+                    self.conn.execute("UPDATE sec_cases SET closed_at = ? WHERE id = ?",
+                                      (now if changes["status"] == "closed" else None, case_id))
+                if changed:
+                    self.conn.execute("UPDATE sec_cases SET updated_at = ? WHERE id = ?", (now, case_id))
+                self.conn.commit()
+                return changed
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def add_security_case_note(self, case_id: int, body: str, username: str) -> int | None:
+        now = _dt_to_str(datetime.utcnow())
+        with self._lock:
+            try:
+                if not self.conn.execute("SELECT 1 FROM sec_cases WHERE id = ?", (case_id,)).fetchone():
+                    return None
+                cur = self.conn.execute("INSERT INTO sec_case_notes (case_id, created_at, username, kind, body) "
+                                        "VALUES (?, ?, ?, 'note', ?)", (case_id, now, username, body[:8000]))
+                self.conn.execute("UPDATE sec_cases SET updated_at = ? WHERE id = ?", (now, case_id))
+                self.conn.commit()
+                return cur.lastrowid
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def link_security_case_incidents(self, case_id: int, incident_ids: list[int], username: str,
+                                     remove: bool = False) -> list[int] | None:
+        """Adds (or removes) incidents; returns the ids actually changed."""
+        now = _dt_to_str(datetime.utcnow())
+        with self._lock:
+            try:
+                if not self.conn.execute("SELECT 1 FROM sec_cases WHERE id = ?", (case_id,)).fetchone():
+                    return None
+                done = []
+                for iid in dict.fromkeys(int(i) for i in incident_ids):
+                    if remove:
+                        cur = self.conn.execute("DELETE FROM sec_case_incidents WHERE case_id = ? AND incident_id = ?",
+                                                (case_id, iid))
+                    elif self.conn.execute("SELECT 1 FROM sec_incidents WHERE id = ?", (iid,)).fetchone():
+                        cur = self.conn.execute("INSERT OR IGNORE INTO sec_case_incidents (case_id, incident_id, "
+                                                "added_by, added_at) VALUES (?, ?, ?, ?)", (case_id, iid, username, now))
+                    else:
+                        continue
+                    if cur.rowcount:
+                        done.append(iid)
+                        self._case_event(case_id, username, "incident_removed" if remove else "incident_added",
+                                         str(iid), now)
+                if done:
+                    self.conn.execute("UPDATE sec_cases SET updated_at = ? WHERE id = ?", (now, case_id))
+                self.conn.commit()
+                return done
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def list_security_cases(self, status: str | None = None, limit: int = 200) -> list[dict]:
+        w, args = ("WHERE c.status = ?", [status]) if status else ("", [])
+        rows = self.conn.execute(
+            f"""SELECT c.*, (SELECT COUNT(*) FROM sec_case_incidents ci WHERE ci.case_id = c.id) AS incidents,
+                       (SELECT COUNT(*) FROM sec_case_notes n WHERE n.case_id = c.id AND n.kind = 'note') AS notes
+                FROM sec_cases c {w} ORDER BY (c.status = 'closed'), c.updated_at DESC, c.id DESC LIMIT ?""",  # nosec B608 - fixed fragment, bound values
+            [*args, limit]).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_security_case(self, case_id: int) -> dict | None:
+        import json as _json
+        r = self.conn.execute("SELECT * FROM sec_cases WHERE id = ?", (case_id,)).fetchone()
+        if not r:
+            return None
+        d = dict(r)
+        incs = self.conn.execute(
+            """SELECT i.*, ci.added_by, ci.added_at FROM sec_case_incidents ci
+               JOIN sec_incidents i ON i.id = ci.incident_id WHERE ci.case_id = ? ORDER BY i.last_seen DESC""",
+            (case_id,)).fetchall()
+        d["incidents"] = [{**dict(x), "metrics": _json.loads(x["metrics"] or "{}")} for x in incs]
+        d["timeline"] = [dict(x) for x in self.conn.execute(
+            "SELECT id, created_at, username, kind, body FROM sec_case_notes WHERE case_id = ? ORDER BY id",
+            (case_id,)).fetchall()]
+        return d
+
+    def cases_for_incidents(self, incident_ids: list[int]) -> dict[int, list[dict]]:
+        ids = [int(i) for i in incident_ids][:1000]
+        if not ids:
+            return {}
+        marks = ",".join("?" * len(ids))
+        rows = self.conn.execute(
+            f"""SELECT ci.incident_id, c.id, c.title, c.status FROM sec_case_incidents ci
+                JOIN sec_cases c ON c.id = ci.case_id WHERE ci.incident_id IN ({marks})""", ids).fetchall()  # nosec B608 - placeholders only
+        out: dict[int, list[dict]] = {}
+        for r in rows:
+            out.setdefault(r["incident_id"], []).append({"id": r["id"], "title": r["title"], "status": r["status"]})
+        return out
 
     # --- AI analysis of incidents (1.22) --------------------------------------
 

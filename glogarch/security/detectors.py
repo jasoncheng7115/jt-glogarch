@@ -74,7 +74,23 @@ PROBES: dict[str, Probe] = {p.id: p for p in (
           (("count", None), ("card", "source_ip"), ("min", "alert_severity"))),
     Probe("waf_peer", "event_category:web_attack", ("client_ip", "source_ip"),
           (("count", None), ("card", "uri"), ("card", "vhost"))),
+    # Two windows, see engine._silent: who sent logs before, and who still does.
+    Probe("silent_sources", "*", ("source",), (("count", None),), limit=1000),
+    # (account, source) pairs of successful logins, see runner.new_source_findings
+    Probe("auth_ok_pairs", AUTH_OK, ("user_name", "source_ip"), (("count", None),), limit=1000),
 )}
+
+# account_new_source (added 1.29): a successful login from a source the account has
+# not used for NEW_SOURCE_MEMORY_DAYS. No alert while the account's history is
+# younger than NEW_SOURCE_LEARN_DAYS (a new install, a new account).
+NEW_SOURCE_LEARN_DAYS = 7
+NEW_SOURCE_MEMORY_DAYS = 30
+
+# source_silent (added 1.26): a host that sent at least min_count messages in the
+# BASELINE_HOURS before the last SILENT_HOURS and nothing since. Logging that stops
+# is how an attacker hides (ATT&CK T1562) and how a broken forwarder looks.
+SILENT_HOURS = 2
+BASELINE_HOURS = 24
 
 
 DETECTORS: tuple[Detector, ...] = (
@@ -106,6 +122,15 @@ DETECTORS: tuple[Detector, ...] = (
     Detector("waf_scanner", "waf_peer", min_count=20, min_card=("uri", 20),
              severity=({"external": True, "card": 100, "sev": "high"},
                        {"sev": "medium"})),
+    # Off by default: it aggregates a day of ALL messages per run (one terms
+    # aggregation by source, 1000 buckets), heavier than the other probes.
+    Detector("source_silent", "silent_sources", min_count=50,
+             severity=({"sev": "medium"},), default_enabled=False),
+    # Off by default: it keeps state (every account/source pair) and needs a week
+    # of learning; machine accounts are left out like for account_multi_host.
+    Detector("account_new_source", "auth_ok_pairs", min_count=1,
+             severity=({"external": True, "sev": "medium"}, {"sev": "low"}),
+             exclude='user_name:/.*[$]/', default_enabled=False),
 )
 
 DETECTOR_IDS = tuple(d.id for d in DETECTORS)

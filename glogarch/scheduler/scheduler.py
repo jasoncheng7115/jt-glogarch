@@ -1023,11 +1023,16 @@ class ArchiveScheduler:
 
     def _run_security_analysis(self) -> None:
         """Internal job (only while security.enabled): one detector run."""
-        from glogarch.security.runner import run_security_analysis
+        from glogarch.security.runner import RUN_LOCK, run_security_analysis
+        if not RUN_LOCK.acquire(blocking=False):
+            log.info("Security analysis skipped: a run (Run now) is still going")
+            return
         try:
             asyncio.run(run_security_analysis(get_settings(), self.db, source="scheduled"))
         except Exception as e:
             log.warning("Security analysis run failed", error=str(e))
+        finally:
+            RUN_LOCK.release()
 
     def apply_security_schedule(self) -> bool:
         """(Re)register or remove the security job from the CURRENT settings.
@@ -1038,6 +1043,7 @@ class ArchiveScheduler:
             self.scheduler.remove_job(self.SECURITY_JOB_ID)
         except Exception as e:  # JobLookupError: nothing registered yet
             log.debug("No security job to remove", error=str(e))
+        self._apply_ti_schedule(cfg)
         if not cfg.enabled:
             return False
         minutes = max(5, min(int(cfg.interval_minutes or 15), 1440))
@@ -1046,6 +1052,35 @@ class ArchiveScheduler:
             id=self.SECURITY_JOB_ID, replace_existing=True, max_instances=1,
             coalesce=True, misfire_grace_time=600)
         return True
+
+    TI_JOB_ID = "internal-threat-intel-refresh"
+
+    def _run_ti_refresh(self) -> None:
+        """Internal job (only while security.ti_enabled): download the feeds."""
+        from glogarch.security.threat_intel import refresh
+        cfg = get_settings().security
+        try:
+            res = asyncio.run(refresh(self.db, cfg.ti_feeds))
+            log.info("Threat-intel feeds refreshed", result=res)
+        except Exception as e:
+            log.warning("Threat-intel refresh failed", error=str(e))
+
+    def _apply_ti_schedule(self, cfg) -> None:
+        try:
+            self.scheduler.remove_job(self.TI_JOB_ID)
+        except Exception as e:  # JobLookupError: nothing registered yet
+            log.debug("No threat-intel job to remove", error=str(e))
+        if not getattr(cfg, "ti_enabled", False):
+            return
+        from datetime import timedelta as _td
+        hours = max(1, min(int(cfg.ti_refresh_hours or 24), 168))
+        status = self.db.ti_status()
+        stale = not any((status.get(f) or {}).get("refreshed_at") for f in cfg.ti_feeds)
+        self.scheduler.add_job(
+            self._run_ti_refresh, trigger=IntervalTrigger(hours=hours), id=self.TI_JOB_ID,
+            replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=3600,
+            # never downloaded yet: the first refresh in a minute, not a day from now
+            **({"next_run_time": datetime.now().astimezone() + _td(minutes=1)} if stale else {}))
 
     def start(self) -> None:
         """Start the scheduler."""

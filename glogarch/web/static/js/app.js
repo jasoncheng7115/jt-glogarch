@@ -5045,7 +5045,7 @@ function _heapAdviceHtml(heap) {
     if (heap.level === 'low') { verdict = t('heap_low').replace('{n}', heap.recommended_min_gb); cls = 'status-failed'; }
     else if (heap.level === 'ok') { verdict = t('heap_ok').replace('{n}', heap.recommended_min_gb); cls = 'u022'; }
     else { verdict = t('heap_good'); cls = 'status-completed'; }
-    return `<div class="test-result-line" style="margin-top:4px">`
+    return `<div class="test-result-line mt4">`
         + `${t('heap_label')}: <b>${heap.heap_max_gb} GB</b>${used} — <span class="${cls}">${esc(verdict)}</span>`
         + (heap.level !== 'good' ? `<br><span class="u022">${t('heap_hint')}</span>` : '')
         + `</div>`;
@@ -5121,7 +5121,7 @@ function _flushResultHtml(r) {
         return ` <span class="u030">(${before} → ${after}${d ? (d < 0 ? ' ▼' : ' ▲') : ''})</span>`;
     };
     const snap = (Object.keys(b).length || Object.keys(af).length)
-        ? `<div class="u030" style="margin-top:6px">
+        ? `<div class="u030 u112">
              ${t('flush_journal')}:${delta(b.journal_uncommitted, af.journal_uncommitted)}<br>
              ${t('flush_buffers')}:${delta(b.buffer_process, af.buffer_process)} /${delta(b.buffer_output, af.buffer_output)}
            </div>` : '';
@@ -5663,7 +5663,7 @@ async function openReportModal(name) {
         ${_rpLangSelect}</div>
       <div class="form-group"><label>${t('reports_f_header')}</label><input type="text" id="rp-header" value="${esc(cfg.header_text||'')}" placeholder="${esc(t('reports_wm_text_ph'))}"></div>
       ${_reportLogoField('rp-logo', cfg.logo_data_uri, 'logo-preview-cover', 'reports_f_logo', 'reports_logo_hint')}
-      <div class="form-group"><label>${t('reports_f_logo_size')}</label><input type="number" id="rp-logo-size" min="20" max="200" step="2" value="${esc(String(cfg.logo_height_px||72))}" style="max-width:120px"> <span class="text-muted fs-08">px</span></div>
+      <div class="form-group"><label>${t('reports_f_logo_size')}</label><input type="number" id="rp-logo-size" min="20" max="200" step="2" value="${esc(String(cfg.logo_height_px||72))}" class="mw120"> <span class="text-muted fs-08">px</span></div>
       ${_reportLogoField('rp-hlogo', cfg.header_logo_data_uri, 'logo-preview-dark', 'reports_f_hlogo_dark', 'reports_hlogo_dark_hint')}
       ${_reportLogoField('rp-hlogo2', cfg.header_logo_light_data_uri, '', 'reports_f_hlogo_light', 'reports_hlogo_light_hint')}
       <div class="form-group"><label class="inline-check"><input type="checkbox" id="rp-archive" ${cfg.include_archive_summary===true?'checked':''}> ${t('reports_f_archive')}</label></div>
