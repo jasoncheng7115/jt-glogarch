@@ -10,6 +10,7 @@ from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from glogarch.cleanup.cleaner import Cleaner
 from glogarch.core.config import Settings, get_settings
@@ -1018,9 +1019,41 @@ class ArchiveScheduler:
         except Exception as e:
             log.warning("Data Node certificate renewal check failed", error=str(e))
 
+    SECURITY_JOB_ID = "internal-security-analysis"
+
+    def _run_security_analysis(self) -> None:
+        """Internal job (only while security.enabled): one detector run."""
+        from glogarch.security.runner import run_security_analysis
+        try:
+            asyncio.run(run_security_analysis(get_settings(), self.db, source="scheduled"))
+        except Exception as e:
+            log.warning("Security analysis run failed", error=str(e))
+
+    def apply_security_schedule(self) -> bool:
+        """(Re)register or remove the security job from the CURRENT settings.
+        Called at start and after the settings are saved; a settings write alone
+        registers nothing with APScheduler. Returns whether a job is registered."""
+        cfg = get_settings().security
+        try:
+            self.scheduler.remove_job(self.SECURITY_JOB_ID)
+        except Exception as e:  # JobLookupError: nothing registered yet
+            log.debug("No security job to remove", error=str(e))
+        if not cfg.enabled:
+            return False
+        minutes = max(5, min(int(cfg.interval_minutes or 15), 1440))
+        self.scheduler.add_job(
+            self._run_security_analysis, trigger=IntervalTrigger(minutes=minutes),
+            id=self.SECURITY_JOB_ID, replace_existing=True, max_instances=1,
+            coalesce=True, misfire_grace_time=600)
+        return True
+
     def start(self) -> None:
         """Start the scheduler."""
         self.setup()
+        try:
+            self.apply_security_schedule()
+        except Exception as e:
+            log.warning("Failed to register security analysis", error=str(e))
         try:
             self.scheduler.add_job(
                 self._run_datanode_cert_renewal,

@@ -430,6 +430,36 @@ See the Web UI "Operation Audit" page → "nginx Prerequisites" for the ready-to
 
 ---
 
+## security — Security Incidents (v1.20.0, default OFF)
+
+```yaml
+security:
+  enabled: false              # ON makes this host search the Graylog below every interval
+  server: ""                  # blank = default_server
+  interval_minutes: 15        # 5..1440
+  window_minutes: 60          # each run counts the last N minutes
+  reopen_hours: 24            # quiet this long ends an incident; a later sighting opens a new one
+  new_days: 90                # NEW badge when the detector has not seen the entity for N days
+  notify_min_severity: high   # high | medium | low | off
+  renotify_hours: 24          # an ongoing incident is mentioned again after N hours
+  retention_days: 180
+  exclude_query: ""           # Graylog query left out of every detection
+  detectors:                  # per detection: enabled, min_count, exclude (all optional)
+    account_multi_host:
+      exclude: "user_name:/.*[$]/"   # the default: machine accounts (DC1$)
+```
+
+Every run reads Graylog's aggregation API (`POST /api/search/aggregate`, Graylog 6.x and 7.x;
+measured on 6.3.15 and 7.2.2): 6 searches, plus one when a source with many failed logins
+needs the successful-login check. Counts only, never messages. A run is skipped (and says so)
+while Graylog's heap is at or above `export.jvm_memory_hard_pct`; an unreachable Graylog is a
+failed run, and three failed runs in a row send one "Security analysis is not running"
+notification. The first 24 hours after the first run are a learning period without NEW badges.
+Notifications use the `security_incident` switch (`notify.on_security_incident`, default on)
+and the usual channels. Settings are also editable on the Security Incidents page.
+
+---
+
 ## web — Web UI
 
 ```yaml

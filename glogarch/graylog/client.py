@@ -89,6 +89,17 @@ class GraylogClient:
         resp = await self._request("GET", path, **kwargs)
         return resp.json()
 
+    async def post_once(self, path: str, **kwargs) -> dict:
+        """POST without the retry decorator: for callers whose 4xx means a bad
+        query (retrying it 3 times only adds ~14 s) and who handle errors
+        themselves, e.g. the security detectors."""
+        await self.rate_limiter.acquire()
+        resp = await self._client.request("POST", path, **kwargs)
+        if resp.is_error:
+            raise httpx.HTTPStatusError(self._error_detail(resp),
+                                        request=resp.request, response=resp)
+        return resp.json()
+
     async def post(self, path: str, **kwargs) -> dict:
         resp = await self._request("POST", path, **kwargs)
         return resp.json()

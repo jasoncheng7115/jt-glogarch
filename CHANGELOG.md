@@ -2,6 +2,16 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.20.0] - 2026-11-19
+
+### Added
+
+- **Security Incidents page (off by default).** On a schedule, jt-glogarch counts security events in the selected Graylog and groups them into incidents: brute force from one source, password spraying (one source, many accounts), one source or one account failing logins on many hosts, a successful login after many failures, IDS alerts that were not blocked, and web scanners seen by the WAF. It reads counts only, through Graylog's aggregation API (6 or 7 searches per run, never the messages), and skips a run while Graylog's heap is at or above the export guard's hard limit. An incident keeps its first and last sighting, peak count and a NEW badge (not seen by that detection for 90 days; none during the first 24 hours), links to the matching Graylog search, and can be acknowledged, closed or reopened (audited). A high-severity incident is notified once when it opens or escalates, and again only after 24 hours if it continues; three failed runs in a row send one "Security analysis is not running" notification, so a broken connection does not look like a quiet network. A coverage table shows whether this site's events carry the field each detection needs: on a test site, 9,585 failed SSH logins a week had no source address extracted, and the page says so instead of showing zero incidents. Field names follow the GIM convention, each detection also tries the usual alternate (`client_ip` for a WAF), and thresholds and exclusions can be set per site; machine accounts (`DC1$`) are left out of the per-account detection by default. Thresholds were calibrated against a week of real data so that internet background noise (one IDS scan signature from 396 sources a day) does not open incidents. Tested against real Graylog 6.3.15 and 7.2.2 (`scripts/e2e-security-test.py`).
+
+### Fixed
+
+- E-mail notifications put the message into the HTML body without escaping, so text from a log (an account name, an IDS signature) could add markup, and the `<url>` placeholder for shortened links disappeared. The body is now escaped; Slack messages escape `&`, `<` and `>` as Slack requires.
+
 ## [1.19.1] - 2026-11-16
 
 ### Added

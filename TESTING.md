@@ -1035,6 +1035,42 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
 - [ ] Export page: the Data Node server is not locked to Graylog API once
       connected, and the hint says beta; the import dialog allows Bulk.
 
+### Security incidents (v1.20.0)
+
+**Automated**
+
+- [ ] `tests/test_security_incidents.py` (30): thresholds and severity per detection
+      (external sources rank higher; Suricata severity 1 is high, 2 only in volume, 3
+      never); the "(Empty Value)" bucket is coverage, never an incident; every peer
+      field is tried (`client_ip` for the WAF); detections sharing a search share one
+      aggregation; one failing search is recorded and the rest still run; per-site
+      thresholds and exclusions, the machine-account regex; an entity is quoted in the
+      Graylog query; incident lifecycle (new, ongoing, escalated, never lowered, new
+      after `reopen_hours`, closed then new, NEW badge and learning period); notify
+      decision (held while ongoing, again after `renotify_hours`); notification text
+      neutralised (control characters, markdown, backticks) and e-mail/Slack bodies
+      escaped; OFF by default, saving the settings registers / removes the scheduler
+      job; API validation, status changes audited, Graylog link; an unreachable
+      Graylog is a failed run and alerts once at three; two real runner passes notify
+      once (DB timestamps end in `Z`).
+- [ ] **`scripts/e2e-security-test.py` against a REAL Graylog** (MANDATORY for any
+      change to `glogarch/security/`): `bash scripts/datanode-stack/up.sh`, then run
+      it with the printed `GL_URL` / `GL_PASS` / `GELF_PORT`; seeds authentication
+      events over GELF and must print `RESULT: ALL PASS` (four login detections,
+      distinct accounts/hosts counted by Graylog, the second search, an event without
+      a peer field counted as coverage). Never against production: it writes events.
+      2026-11-19: ALL PASS on 6.3.15 and 7.2.2.
+
+**By hand (each release that touches it)**
+
+- [ ] Security Incidents page on a test instance pointed at real data: Run now
+      finishes with a count of searches; incidents list with severity, NEW, the
+      Graylog link opens the matching search; Acknowledge / Close / Reopen; Coverage
+      marks a field empty in every event in red and an unused alternate in grey;
+      Settings save and the next-run time appears. en / zh-TW / ja, both themes,
+      ~1436 px. Do not enable it on a site whose notification channels reach people
+      unless they expect it.
+
 ### Test Results
 
 - [ ] `./scripts/run-tests.sh` passes — `TEST-RESULTS.md` generated

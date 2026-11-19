@@ -8,6 +8,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+import html as _html
 import httpx
 
 from glogarch.core.config import NotifyConfig, get_settings
@@ -26,6 +27,7 @@ class NotifyEvent(str, Enum):
     ERROR = "error"
     SENSITIVE_API_OPERATION = "sensitive_api_operation"
     AUDIT_ALERT = "audit_alert"
+    SECURITY_INCIDENT = "security_incident"
 
 
 def _should_send(config: NotifyConfig, event: NotifyEvent) -> bool:
@@ -37,6 +39,7 @@ def _should_send(config: NotifyConfig, event: NotifyEvent) -> bool:
         NotifyEvent.ERROR: config.on_error,
         NotifyEvent.SENSITIVE_API_OPERATION: config.on_sensitive_operation,
         NotifyEvent.AUDIT_ALERT: config.on_audit_alert,
+        NotifyEvent.SECURITY_INCIDENT: config.on_security_incident,
     }
     return mapping.get(event, False)
 
@@ -136,7 +139,6 @@ def _telegram_text(message: str) -> str:
     - MONOSPACE. The stat labels are padded to a common width so the values
       line up; that only shows in a fixed-width block, so wrap it in <pre>.
     """
-    import html as _html
     return f"<pre>{_html.escape(message)}</pre>"
 
 
@@ -173,12 +175,17 @@ async def _send_discord(client: httpx.AsyncClient, cfg, title: str, message: str
 
 # --- Slack ---
 
+def _slack_escape(text: str) -> str:
+    """Slack's documented escaping for mrkdwn text: & < > only."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 async def _send_slack(client: httpx.AsyncClient, cfg, title: str, message: str, ts: str) -> dict:
     try:
         resp = await client.post(cfg.webhook_url, json={
             "blocks": [
                 {"type": "header", "text": {"type": "plain_text", "text": f"jt-glogarch: {title}"}},
-                {"type": "section", "text": {"type": "mrkdwn", "text": message}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": _slack_escape(message)}},
                 {"type": "context", "elements": [{"type": "mrkdwn", "text": ts}]},
             ]
         })
@@ -288,9 +295,12 @@ async def _send_email(cfg, title: str, message: str, ts: str) -> dict:
         msg["To"] = ", ".join(cfg.to_addrs)
 
         text_body = f"{title}\n\n{message}\n\n{ts}"
+        # Escaped: messages carry text from logs (an account name tried in a
+        # brute force, an IDS signature), and `<url>` placeholders vanished as
+        # unknown tags before this.
         html_body = f"""<div style="font-family:sans-serif;max-width:600px">
-<h2 style="color:#6c63ff">{cfg.subject_prefix} {title}</h2>
-<pre style="background:#f5f5f5;padding:12px;border-radius:6px;white-space:pre-wrap">{message}</pre>
+<h2 style="color:#6c63ff">{_html.escape(cfg.subject_prefix)} {_html.escape(title)}</h2>
+<pre style="background:#f5f5f5;padding:12px;border-radius:6px;white-space:pre-wrap">{_html.escape(message)}</pre>
 <p style="color:#888;font-size:12px">{ts}</p>
 </div>"""
 
@@ -376,6 +386,27 @@ _MSG = {
         "disk_low_body": ("Only ~{months} month(s) of archive capacity left at the current rate.\n"
                           "Free space: {avail} · growing ~{rate}/month.\n"
                           "Expand the archive disk or lower retention before it fills up."),
+        "sec_title": "⚠️ Security incidents: {n}",
+        "sec_new": "NEW",
+        "sec_escalated": "escalated",
+        "sec_ongoing": "still ongoing",
+        "sec_line": "[{sev}] {det} — {entity}{ext}{flag}\n    {stats}",
+        "sec_external": " (external)",
+        "sec_footer": "Window: last {minutes} min · Server: {server}\nOpen Security Incidents in jt-glogarch for details.",
+        "sec_failing_title": "❌ Security analysis is not running",
+        "sec_failing_body": ("The last {n} runs on server {server} failed, so no incidents are being detected.\n"
+                             "Last error: {error}"),
+        "sec_sev_high": "HIGH", "sec_sev_medium": "MEDIUM", "sec_sev_low": "LOW",
+        "sec_m_count": "events", "sec_m_card_user_name": "accounts", "sec_m_card_source": "hosts",
+        "sec_m_card_source_ip": "sources", "sec_m_card_uri": "paths", "sec_m_card_vhost": "sites",
+        "sec_m_success": "successful logins", "sec_m_min_alert_severity": "IDS severity",
+        "sec_det_auth_bruteforce": "Brute force (many failed logins from one source)",
+        "sec_det_auth_spray": "Password spraying (one source, many accounts)",
+        "sec_det_auth_multi_host": "One source failing logins on many hosts",
+        "sec_det_account_multi_host": "One account failing logins on many hosts",
+        "sec_det_auth_success_after_fail": "Successful login after many failures",
+        "sec_det_ids_alert_passed": "IDS alert not blocked",
+        "sec_det_waf_scanner": "Web scanner (many paths through the WAF)",
         "datanode_fallback_title": "⚠️ Data Node certificate unusable — archived via Graylog API",
         "datanode_fallback_body": ("Schedule: {schedule}\nServer: {server}\n"
                                    "The Graylog Data Node client certificate could not be used: {problem}\n"
@@ -434,6 +465,27 @@ _MSG = {
         "disk_low_body": ("依目前增長速度，歸檔空間大約只剩 ~{months} 個月。\n"
                           "可用空間：{avail} · 每月約增加 {rate}。\n"
                           "請在空間用盡前擴充歸檔磁碟或調低保留設定。"),
+        "sec_title": "⚠️ 資安事件：{n} 件",
+        "sec_new": "首次出現",
+        "sec_escalated": "等級升高",
+        "sec_ongoing": "仍在持續",
+        "sec_line": "[{sev}] {det} — {entity}{ext}{flag}\n    {stats}",
+        "sec_external": "（外部）",
+        "sec_footer": "時間範圍：最近 {minutes} 分鐘 · 伺服器：{server}\n詳情請到 jt-glogarch 的「資安事件」頁面查看。",
+        "sec_failing_title": "❌ 資安事件分析沒有在運作",
+        "sec_failing_body": ("伺服器 {server} 最近 {n} 次分析都失敗，目前沒有在偵測資安事件。\n"
+                             "最後的錯誤：{error}"),
+        "sec_sev_high": "高", "sec_sev_medium": "中", "sec_sev_low": "低",
+        "sec_m_count": "筆", "sec_m_card_user_name": "個帳號", "sec_m_card_source": "台主機",
+        "sec_m_card_source_ip": "個來源", "sec_m_card_uri": "個路徑", "sec_m_card_vhost": "個網站",
+        "sec_m_success": "次登入成功", "sec_m_min_alert_severity": "IDS 嚴重度",
+        "sec_det_auth_bruteforce": "暴力破解（同一來源大量登入失敗）",
+        "sec_det_auth_spray": "密碼噴灑（同一來源嘗試多個帳號）",
+        "sec_det_auth_multi_host": "同一來源在多台主機登入失敗",
+        "sec_det_account_multi_host": "同一帳號在多台主機登入失敗",
+        "sec_det_auth_success_after_fail": "多次失敗後登入成功",
+        "sec_det_ids_alert_passed": "IDS 告警未被阻擋",
+        "sec_det_waf_scanner": "網站掃描（經 WAF 嘗試大量路徑）",
         "datanode_fallback_title": "⚠️ Data Node 憑證無法使用，已改用 Graylog API 歸檔",
         "datanode_fallback_body": ("排程：{schedule}\n伺服器：{server}\n"
                                    "無法使用 Graylog Data Node 用戶端憑證：{problem}\n"
@@ -494,6 +546,27 @@ _MSG = {
         "disk_low_body": ("現在のペースでは、アーカイブ容量は残り約 {months} か月分です。\n"
                           "空き容量：{avail} · 毎月約 {rate} 増加。\n"
                           "容量が尽きる前に、アーカイブディスクを拡張するか保持期間を短くしてください。"),
+        "sec_title": "⚠️ セキュリティインシデント：{n} 件",
+        "sec_new": "初検出",
+        "sec_escalated": "重大度上昇",
+        "sec_ongoing": "継続中",
+        "sec_line": "[{sev}] {det} — {entity}{ext}{flag}\n    {stats}",
+        "sec_external": "（外部）",
+        "sec_footer": "対象期間：直近 {minutes} 分 · サーバー：{server}\n詳細は jt-glogarch の「セキュリティインシデント」ページを確認してください。",
+        "sec_failing_title": "❌ セキュリティ分析が動作していません",
+        "sec_failing_body": ("サーバー {server} の直近 {n} 回の分析がすべて失敗したため、インシデントを検出できていません。\n"
+                             "最後のエラー：{error}"),
+        "sec_sev_high": "高", "sec_sev_medium": "中", "sec_sev_low": "低",
+        "sec_m_count": "件", "sec_m_card_user_name": "アカウント", "sec_m_card_source": "ホスト",
+        "sec_m_card_source_ip": "送信元", "sec_m_card_uri": "パス", "sec_m_card_vhost": "サイト",
+        "sec_m_success": "回ログイン成功", "sec_m_min_alert_severity": "IDS 重大度",
+        "sec_det_auth_bruteforce": "ブルートフォース（同一送信元からの大量のログイン失敗）",
+        "sec_det_auth_spray": "パスワードスプレー（同一送信元が多数のアカウントを試行）",
+        "sec_det_auth_multi_host": "同一送信元が多数のホストでログイン失敗",
+        "sec_det_account_multi_host": "同一アカウントが多数のホストでログイン失敗",
+        "sec_det_auth_success_after_fail": "多数の失敗の後のログイン成功",
+        "sec_det_ids_alert_passed": "ブロックされなかった IDS アラート",
+        "sec_det_waf_scanner": "Web スキャン（WAF 経由で多数のパスを試行）",
         "datanode_fallback_title": "⚠️ Data Node 証明書が使用できないため、Graylog API でアーカイブしました",
         "datanode_fallback_body": ("スケジュール：{schedule}\nサーバー：{server}\n"
                                    "Graylog Data Node のクライアント証明書を使用できません：{problem}\n"
@@ -713,3 +786,57 @@ async def notify_disk_low(remaining_months: float, available_bytes: int,
         _t("disk_low_body", months=remaining_months,
            avail=_fmt(available_bytes), rate=_fmt(bytes_per_month)),
     )
+
+
+# --- Security incidents ----------------------------------------------------
+
+def _plain(value: str, limit: int = 120) -> str:
+    """Log-derived text for a notification: no control characters or line
+    breaks, clipped, backticks neutralised, then put in a code span so Discord/
+    Slack/Teams/Zulip markdown cannot turn it into a link or heading."""
+    s = "".join(" " if (ord(c) < 32 or ord(c) == 127) else c for c in str(value))
+    s = " ".join(s.split()).replace("`", "'")
+    if len(s) > limit:
+        s = s[:limit - 1] + "…"
+    return f"`{s}`"
+
+
+def _sec_stats(metrics: dict) -> str:
+    parts = []
+    for k, v in metrics.items():
+        if v is None:
+            continue
+        key = "sec_m_" + k.replace(":", "_")
+        label = _t(key)
+        if label == key:
+            continue
+        if isinstance(v, float) and v.is_integer():
+            v = int(v)
+        parts.append(f"{v:,} {label}" if isinstance(v, int) and k != "min:alert_severity"
+                     else f"{label} {v}")
+    return " · ".join(parts)
+
+
+async def notify_security_incidents(items: list[dict], server: str, window_minutes: int):
+    """items: {detector, entity, severity, external, change, metrics}."""
+    if not items:
+        return []
+    lines = []
+    for it in items:
+        flag = {"new": "", "escalated": f" · {_t('sec_escalated')}",
+                "ongoing": f" · {_t('sec_ongoing')}"}.get(it.get("change"), "")
+        if it.get("is_new"):
+            flag = f" · {_t('sec_new')}" + flag
+        lines.append(_t("sec_line", sev=_t("sec_sev_" + it["severity"]),
+                        det=_t("sec_det_" + it["detector"]), entity=_plain(it["entity"]),
+                        ext=_t("sec_external") if it.get("external") else "",
+                        flag=flag, stats=_sec_stats(it.get("metrics") or {})))
+    body = "\n".join(lines) + "\n\n" + _t("sec_footer", minutes=window_minutes, server=server)
+    return await send_notification(NotifyEvent.SECURITY_INCIDENT, _t("sec_title", n=len(items)), body)
+
+
+async def notify_security_failing(server: str, runs: int, error: str):
+    from glogarch.utils.sanitize import sanitize
+    return await send_notification(
+        NotifyEvent.ERROR, _t("sec_failing_title"),
+        _t("sec_failing_body", server=server, n=runs, error=sanitize(error)[:300]))

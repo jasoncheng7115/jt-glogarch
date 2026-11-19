@@ -330,6 +330,16 @@ def alerting_page(request: Request):
     return _render("index.html", request, {"page": "alerting"})
 
 
+@router.get("/security", response_class=HTMLResponse)
+def security_page(request: Request):
+    """Security incidents found by the scheduled detectors (added 1.20)."""
+    if _is_unconfigured(request):
+        return RedirectResponse(url="/setup", status_code=303)
+    if not _is_logged_in(request):
+        return RedirectResponse(url="/login", status_code=303)
+    return _render("index.html", request, {"page": "security"})
+
+
 @router.get("/op-audit", response_class=HTMLResponse)
 def op_audit_page(request: Request):
     if not _is_logged_in(request):

@@ -26,6 +26,7 @@
             <li><a href="/op-audit" class="{% if page == 'op-audit' %}active{% endif %}" data-i18n="nav_op_audit" data-icon="shield"><span>Operation Audit</span></a></li>
             <li><a href="/reports" class="{% if page == 'reports' %}active{% endif %}" data-i18n="nav_reports" data-icon="report"><span>Reports</span></a></li>
             <li><a href="/alerting" class="{% if page == 'alerting' %}active{% endif %}" data-i18n="nav_alerting" data-icon="warning"><span>Alerting</span></a></li>
+            <li><a href="/security" class="{% if page == 'security' %}active{% endif %}" data-i18n="nav_security" data-icon="shield"><span>Security Incidents</span></a></li>
             <li><a href="/packs" class="{% if page == 'packs' %}active{% endif %}" data-i18n="nav_packs" data-icon="db"><span>Content Packs</span></a></li>
             <li><a href="/settings" class="{% if page == 'settings' %}active{% endif %}" data-i18n="nav_settings" data-icon="settings"><span>Settings</span></a></li>
         </ul>
@@ -1049,6 +1050,59 @@
             </div>
         </div>
 
+        {% elif page == 'security' %}
+        <h1 data-i18n="page_security" data-icon="shield">Security Incidents</h1>
+        <div class="text-muted fs-085 mb15" data-i18n="sec_subtitle">Counts security events in Graylog on a schedule and groups them into incidents. Only counts are read, never the log messages themselves.</div>
+
+        <div class="card mb15" id="sec-status-card">
+            <div class="al-bar">
+                <div class="al-bar-left" id="sec-status"><span class="spinner-text" data-i18n="loading">Loading</span></div>
+                <div class="al-bar-right">
+                    <button class="btn-secondary btn-sm" data-act="secToggleSettings" data-i18n="sec_btn_settings" data-icon="settings">Settings</button>
+                    <button class="btn-secondary btn-sm" data-act="secToggleCoverage" data-i18n="sec_btn_coverage" data-icon="eye">Coverage</button>
+                    <button class="btn-primary btn-sm" id="sec-run-btn" data-act="secRunNow" data-i18n="sec_btn_run" data-icon="refresh">Run now</button>
+                </div>
+            </div>
+            <div class="pk-message hidden" id="sec-message"></div>
+        </div>
+
+        <div class="card mb15 hidden" id="sec-settings"></div>
+        <div class="card mb15 hidden" id="sec-coverage"></div>
+
+        <div class="card">
+            <div class="filters sec-filters">
+                <select id="sec-f-status" data-act-change="secLoad">
+                    <option value="" data-i18n-opt="sec_f_status_all">All statuses</option>
+                    <option value="open" data-i18n-opt="sec_st_open" selected>Open</option>
+                    <option value="acknowledged" data-i18n-opt="sec_st_acknowledged">Acknowledged</option>
+                    <option value="closed" data-i18n-opt="sec_st_closed">Closed</option>
+                </select>
+                <select id="sec-f-severity" data-act-change="secLoad">
+                    <option value="" data-i18n-opt="sec_f_sev_all">All severities</option>
+                    <option value="high" data-i18n-opt="sec_sev_high">High</option>
+                    <option value="medium" data-i18n-opt="sec_sev_medium">Medium</option>
+                    <option value="low" data-i18n-opt="sec_sev_low">Low</option>
+                </select>
+                <span class="u028" id="sec-total"></span>
+            </div>
+            <div class="table-wrap">
+            <table class="sec-table">
+                <thead><tr>
+                    <th data-i18n="sec_th_severity">Severity</th>
+                    <th data-i18n="sec_th_detector">Detection</th>
+                    <th data-i18n="sec_th_entity">Source / subject</th>
+                    <th data-i18n="sec_th_stats">In the window</th>
+                    <th data-i18n="sec_th_first">First seen</th>
+                    <th data-i18n="sec_th_last">Last seen</th>
+                    <th data-i18n="sec_th_status">Status</th>
+                    <th></th>
+                </tr></thead>
+                <tbody id="sec-tbody"></tbody>
+            </table>
+            </div>
+            <div class="pagination" id="sec-pager"></div>
+        </div>
+
         {% elif page == 'packs' %}
         <h1 data-i18n="page_packs" data-icon="db">Content Packs</h1>
         <div class="text-muted fs-085 mb15" data-i18n="pk_subtitle">View, install, uninstall, edit, download and upload Graylog content packs.</div>
@@ -1442,5 +1496,6 @@ sudo bash upgrade-offline.sh</pre>
     <script src="/static/js/app.js?v={{ version }}"></script>
     <script src="/static/js/alerting.js?v={{ version }}"></script>
     <script src="/static/js/packs.js?v={{ version }}"></script>
+    <script src="/static/js/security.js?v={{ version }}"></script>
 </body>
 </html>

@@ -2186,3 +2186,33 @@ td.al-loading { text-align: center; padding: 34px 12px; color: var(--text-muted)
 .dn-meta { display: grid; gap: 4px; margin: 6px 0; font-size: 0.92em; }
 .dn-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .dn-managed { font-size: 0.9em; }
+
+/* Security incidents (added 1.20). Colours from the theme tokens only. */
+.sec-sev { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.8em; font-weight: 600; border: 1px solid currentColor; white-space: nowrap; }
+.sec-sev-high { color: var(--danger); }
+.sec-sev-medium { color: var(--warning); }
+.sec-sev-low { color: var(--text-muted); }
+.sec-tag { display: inline-block; margin-left: 4px; padding: 0 6px; border-radius: 4px; font-size: 0.75em; border: 1px solid var(--border); color: var(--text-muted); white-space: nowrap; }
+.sec-tag-new { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.sec-tag-int { opacity: 0.8; }
+.sec-entity code { word-break: normal; overflow-wrap: anywhere; }
+.sec-filters .custom-select { width: auto; min-width: 160px; max-width: 220px; flex: 0 0 auto; }
+.sec-table td.sec-status { white-space: nowrap; }
+.sec-actions a.btn-sm { text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+.sec-actions { white-space: nowrap; }
+.sec-actions .btn-sm { margin-left: 4px; }
+.sec-cov-bad { color: var(--danger); font-weight: 500; }
+#sec-status .sep { color: var(--text-muted); margin: 0 2px; }
+.sec-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px 16px; margin: 10px 0 16px; align-items: end; }
+.sec-form label { display: block; margin-bottom: 4px; color: var(--text-label); font-size: 0.9em; }
+.sec-form input, .sec-form select, .sec-det-table input[type="number"], .sec-det-table input[type="text"] {
+    width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--input-bg); color: var(--text); font-size: 0.9em; box-sizing: border-box; height: 36px;
+}
+.sec-form .sec-wide { grid-column: 1 / -1; }
+.sec-form .sec-enable { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; color: var(--text); }
+.sec-chk { display: inline-flex; align-items: center; gap: 6px; }
+.sec-chk input, .sec-form .sec-enable input { width: auto; height: auto; }
+.sec-det-table td:nth-child(2) { width: 110px; }
+.sec-det-table td:nth-child(3) { width: 38%; }
+.sec-save-row { margin-top: 14px; display: flex; justify-content: flex-end; }

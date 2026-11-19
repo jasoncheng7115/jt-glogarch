@@ -1,4 +1,4 @@
-# jt-glogarch v1.19.1
+# jt-glogarch v1.20.0
 
 **Language**: **English** | [繁體中文](README-zh_TW.md) | [日本語](README-ja.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.19.1-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.20.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -185,6 +185,7 @@ GELF mode also has:
     - Built into the Jason Tools library (since v1.18.1): **Windows Active Directory**, **Linux 登入與 SSH** (Linux SSH and sudo logins), **Apache HTTP Server**, **QNAP NAS**. Install them from the Content Packs page; each download comes with an SOP (.md) for a new install, an upgrade from an earlier version and an uninstall.
     - Separate download: [CubeCOS / OpenStack Log Pipeline](https://github.com/jasoncheng7115/it-scripts/blob/master/graylog/cubecos_contentpack_graylog63.json), 1 pipeline and 147 rules for CubeCOS, OpenStack, Ceph and Masakari logs (the pack states Graylog 6.3 or later). Download it there and upload it on the Content Packs page.
 - **Alerting (since v1.17.0)** — Graylog event definitions and notifications in bulk: quick filters, title-tag chips (`[Vendor]` / `Product - `), multi-keyword search (`checkpoint -notif:Zulip`), shift-click and select-all-matching, then add / remove / replace a notification on hundreds of definitions at once. Every change is previewed first, keeps each definition enabled or disabled, skips definitions someone edited in Graylog meanwhile, runs as a Task Log job and can be undone from Change history. A health check lists enabled definitions nobody is notified about, notifications that were deleted or are unused, and definitions that never or no longer match. Changes are made with the logged-in user's own Graylog account (its permissions apply); the password is exchanged for a Graylog session at login and never stored.
+- **Security Incidents (since v1.20.0, off by default)** — On a schedule, counts security events in Graylog (failed logins, IDS alerts that were not blocked, WAF events) and groups them into incidents: brute force from one source, password spraying (one source, many accounts), one source or one account failing on many hosts, a successful login after many failures, IDS alerts not blocked, web scanners. Only counts are read (Graylog's aggregation API, 6–7 searches per run), never the messages, and a run is skipped while Graylog is under memory pressure. Incidents carry first/last seen, a NEW badge (not seen for 90 days), and a link to the events in Graylog search; an ongoing incident is notified once, not every run. A coverage table shows, per detection, whether this site's events carry the field it needs, so a detection that cannot work says so instead of showing zero. Field names follow the GIM convention (`event_category`, `event_outcome`, `source_ip`, `user_name`); each detection also tries the usual alternate (`client_ip`) and can be tuned or excluded per site.
 - Dark/Light theme, English/Traditional Chinese/Japanese
 - Collapsible sidebar, HTTPS, session authentication
 

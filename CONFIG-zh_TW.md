@@ -401,6 +401,34 @@ Token 認證會自動解析為實際 Graylog 帳號（透過 Users API 快取，
 
 ---
 
+## security — 資安事件（v1.20.0，預設關閉）
+
+```yaml
+security:
+  enabled: false              # 開啟後，本機會依間隔查詢下方的 Graylog
+  server: ""                  # 空白 = default_server
+  interval_minutes: 15        # 5 到 1440
+  window_minutes: 60          # 每次統計最近 N 分鐘
+  reopen_hours: 24            # 沉寂這麼久就視為事件結束；之後再出現會開新事件
+  new_days: 90                # 偵測項目 N 天內沒看過這個來源，就標示「首次出現」
+  notify_min_severity: high   # high｜medium｜low｜off
+  renotify_hours: 24          # 持續中的事件，隔 N 小時再提醒一次
+  retention_days: 180
+  exclude_query: ""           # 所有偵測都排除的 Graylog 查詢
+  detectors:                  # 每項偵測可設 enabled、min_count、exclude（皆可省略）
+    account_multi_host:
+      exclude: "user_name:/.*[$]/"   # 預設值：排除電腦帳號（DC1$）
+```
+
+每次分析都使用 Graylog 的彙總 API（`POST /api/search/aggregate`，Graylog 6.x 與 7.x；
+已在 6.3.15 與 7.2.2 實測）：6 次查詢；若有來源大量登入失敗，需要再查一次登入成功，則是 7 次。
+只讀取筆數，不讀取記錄內容。Graylog 的 heap 達到 `export.jvm_memory_hard_pct` 以上時會略過該次分析（並註明原因）；
+Graylog 連不上算一次失敗，連續三次失敗會送出一則「資安事件分析沒有在運作」的通知。第一次分析後的 24 小時為學習期，
+不標示「首次出現」。通知使用 `notify.on_security_incident` 開關（預設開啟）與原有的通知管道。
+這些設定也可以在「資安事件」頁面修改。
+
+---
+
 ## web — Web UI
 
 ```yaml

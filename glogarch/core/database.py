@@ -176,6 +176,60 @@ CREATE TABLE IF NOT EXISTS alerting_changes (
 );
 CREATE INDEX IF NOT EXISTS idx_alerting_batch ON alerting_changes (batch_id);
 CREATE INDEX IF NOT EXISTS idx_alerting_server ON alerting_changes (server, created_at);
+
+-- Security incidents (added 1.20, glogarch/security/). One row per
+-- (server, detector, entity) episode: a later run that sees the same entity
+-- while the incident is open updates it instead of opening another; a closed
+-- one, or one quiet for longer than security.reopen_hours, starts a new row.
+CREATE TABLE IF NOT EXISTS sec_incidents (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    server            TEXT NOT NULL DEFAULT '',
+    detector          TEXT NOT NULL,
+    entity            TEXT NOT NULL,
+    entity_field      TEXT NOT NULL DEFAULT '',
+    severity          TEXT NOT NULL,
+    status            TEXT NOT NULL DEFAULT 'open',
+    is_new            INTEGER NOT NULL DEFAULT 0,
+    external          INTEGER,
+    first_seen        TEXT NOT NULL,
+    last_seen         TEXT NOT NULL,
+    runs              INTEGER NOT NULL DEFAULT 1,
+    peak_count        INTEGER NOT NULL DEFAULT 0,
+    last_count        INTEGER NOT NULL DEFAULT 0,
+    metrics           TEXT NOT NULL DEFAULT '{}',
+    query             TEXT NOT NULL DEFAULT '',
+    notified_at       TEXT,
+    notified_severity TEXT,
+    status_by         TEXT,
+    status_at         TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sec_inc_key ON sec_incidents (server, detector, entity, status);
+CREATE INDEX IF NOT EXISTS idx_sec_inc_seen ON sec_incidents (last_seen);
+-- When an entity was last seen by a detector: drives the NEW badge.
+CREATE TABLE IF NOT EXISTS sec_seen (
+    server     TEXT NOT NULL,
+    detector   TEXT NOT NULL,
+    entity     TEXT NOT NULL,
+    first_seen TEXT NOT NULL,
+    last_seen  TEXT NOT NULL,
+    PRIMARY KEY (server, detector, entity)
+);
+CREATE TABLE IF NOT EXISTS sec_runs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    server      TEXT NOT NULL DEFAULT '',
+    started_at  TEXT NOT NULL,
+    finished_at TEXT,
+    window_from TEXT,
+    window_to   TEXT,
+    status      TEXT NOT NULL DEFAULT 'running',
+    queries     INTEGER NOT NULL DEFAULT 0,
+    findings    INTEGER NOT NULL DEFAULT 0,
+    opened      INTEGER NOT NULL DEFAULT 0,
+    coverage    TEXT NOT NULL DEFAULT '[]',
+    errors      TEXT NOT NULL DEFAULT '[]',
+    note        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sec_runs ON sec_runs (server, id);
 """
 
 
@@ -1324,6 +1378,207 @@ class ArchiveDB:
                FROM alerting_changes WHERE server = ?
                GROUP BY batch_id ORDER BY MIN(id) DESC LIMIT ?""", (server, limit)).fetchall()
         return [dict(r) for r in rows]
+
+    # --- Security incidents -------------------------------------------------
+
+    def apply_security_findings(self, server: str, findings: list[dict], now: datetime, *,
+                                reopen_hours: float, new_days: int,
+                                learning: bool) -> list[dict]:
+        """Merge one run's findings into sec_incidents, in ONE transaction.
+
+        Returns one dict per finding: {id, change: new|escalated|ongoing,
+        severity, notified_at, notified_severity}. `learning` suppresses the NEW
+        badge (the first day after the feature is enabled, when everything is
+        "new")."""
+        import json as _json
+        now_s = _dt_to_str(now)
+        reopen_s = _dt_to_str(now - timedelta(hours=reopen_hours))
+        new_s = _dt_to_str(now - timedelta(days=new_days))
+        rank = {"low": 0, "medium": 1, "high": 2}
+        out: list[dict] = []
+        with self._lock:
+            try:
+                for f in findings:
+                    cnt = int((f.get("metrics") or {}).get("count") or 0)
+                    ext = None if f.get("external") is None else int(bool(f["external"]))
+                    row = self.conn.execute(
+                        """SELECT * FROM sec_incidents WHERE server = ? AND detector = ? AND entity = ?
+                           AND status IN ('open', 'acknowledged') AND last_seen >= ?
+                           ORDER BY id DESC LIMIT 1""",
+                        (server, f["detector"], f["entity"], reopen_s)).fetchone()
+                    if row:
+                        sev = f["severity"] if rank.get(f["severity"], 0) > rank.get(row["severity"], 0) \
+                            else row["severity"]
+                        change = "escalated" if sev != row["severity"] else "ongoing"
+                        self.conn.execute(
+                            """UPDATE sec_incidents SET severity = ?, last_seen = ?, runs = runs + 1,
+                               peak_count = MAX(peak_count, ?), last_count = ?, metrics = ?, query = ?,
+                               entity_field = ? WHERE id = ?""",
+                            (sev, now_s, cnt, cnt, _json.dumps(f.get("metrics") or {}),
+                             f.get("query") or "", f.get("entity_field") or "", row["id"]))
+                        out.append({"id": row["id"], "change": change, "severity": sev,
+                                    "notified_at": row["notified_at"],
+                                    "notified_severity": row["notified_severity"]})
+                    else:
+                        seen = self.conn.execute(
+                            "SELECT last_seen FROM sec_seen WHERE server = ? AND detector = ? AND entity = ?",
+                            (server, f["detector"], f["entity"])).fetchone()
+                        is_new = int(not learning and (seen is None or seen["last_seen"] < new_s))
+                        cur = self.conn.execute(
+                            """INSERT INTO sec_incidents (server, detector, entity, entity_field, severity,
+                               status, is_new, external, first_seen, last_seen, runs, peak_count,
+                               last_count, metrics, query)
+                               VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, 1, ?, ?, ?, ?)""",
+                            (server, f["detector"], f["entity"], f.get("entity_field") or "",
+                             f["severity"], is_new, ext, now_s, now_s, cnt, cnt,
+                             _json.dumps(f.get("metrics") or {}), f.get("query") or ""))
+                        out.append({"id": cur.lastrowid, "change": "new", "severity": f["severity"],
+                                    "notified_at": None, "notified_severity": None})
+                    self.conn.execute(
+                        """INSERT INTO sec_seen (server, detector, entity, first_seen, last_seen)
+                           VALUES (?, ?, ?, ?, ?) ON CONFLICT (server, detector, entity)
+                           DO UPDATE SET last_seen = excluded.last_seen""",
+                        (server, f["detector"], f["entity"], now_s, now_s))
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+        return out
+
+    def mark_security_notified(self, ids: list[int], severities: dict[int, str], now: datetime) -> None:
+        if not ids:
+            return
+        with self._lock:
+            try:
+                for i in ids:
+                    self.conn.execute(
+                        "UPDATE sec_incidents SET notified_at = ?, notified_severity = ? WHERE id = ?",
+                        (_dt_to_str(now), severities.get(i), i))
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def set_security_status(self, incident_id: int, status: str, username: str) -> bool:
+        if status not in ("open", "acknowledged", "closed"):
+            raise ValueError(f"unknown status {status!r}")
+        with self._lock:
+            try:
+                cur = self.conn.execute(
+                    "UPDATE sec_incidents SET status = ?, status_by = ?, status_at = ? WHERE id = ?",
+                    (status, username, _dt_to_str(datetime.utcnow()), incident_id))
+                self.conn.commit()
+                return cur.rowcount > 0
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def list_security_incidents(self, *, server: str | None = None, status: str | None = None,
+                                severity: str | None = None, detector: str | None = None,
+                                limit: int = 100, offset: int = 0) -> tuple[list[dict], int]:
+        import json as _json
+        where, args = [], []
+        for col, val in (("server", server), ("status", status), ("severity", severity),
+                         ("detector", detector)):
+            if val:
+                where.append(f"{col} = ?")
+                args.append(val)
+        w = (" WHERE " + " AND ".join(where)) if where else ""
+        total = self.conn.execute(f"SELECT COUNT(*) FROM sec_incidents{w}", args).fetchone()[0]  # nosec B608 - fixed column names, bound values
+        rows = self.conn.execute(
+            f"SELECT * FROM sec_incidents{w} ORDER BY last_seen DESC, id DESC LIMIT ? OFFSET ?",  # nosec B608 - fixed column names, bound values
+            (*args, int(limit), int(offset))).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["metrics"] = _json.loads(d.get("metrics") or "{}")
+            out.append(d)
+        return out, total
+
+    def get_security_incident(self, incident_id: int) -> dict | None:
+        import json as _json
+        r = self.conn.execute("SELECT * FROM sec_incidents WHERE id = ?", (incident_id,)).fetchone()
+        if not r:
+            return None
+        d = dict(r)
+        d["metrics"] = _json.loads(d.get("metrics") or "{}")
+        return d
+
+    def security_counts(self, since: datetime) -> dict:
+        rows = self.conn.execute(
+            """SELECT severity, status, COUNT(*) AS n FROM sec_incidents
+               WHERE last_seen >= ? GROUP BY severity, status""", (_dt_to_str(since),)).fetchall()
+        return {f"{r['severity']}:{r['status']}": r["n"] for r in rows}
+
+    def start_security_run(self, server: str, window_from: datetime, window_to: datetime) -> int:
+        with self._lock:
+            try:
+                cur = self.conn.execute(
+                    """INSERT INTO sec_runs (server, started_at, window_from, window_to, status)
+                       VALUES (?, ?, ?, ?, 'running')""",
+                    (server, _dt_to_str(datetime.utcnow()), _dt_to_str(window_from),
+                     _dt_to_str(window_to)))
+                self.conn.commit()
+                return cur.lastrowid  # type: ignore[return-value]
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def finish_security_run(self, run_id: int, *, status: str, queries: int = 0, findings: int = 0,
+                            opened: int = 0, coverage: list | None = None,
+                            errors: list | None = None, note: str | None = None) -> None:
+        import json as _json
+        from glogarch.utils.sanitize import sanitize
+        with self._lock:
+            try:
+                self.conn.execute(
+                    """UPDATE sec_runs SET finished_at = ?, status = ?, queries = ?, findings = ?,
+                       opened = ?, coverage = ?, errors = ?, note = ? WHERE id = ?""",
+                    (_dt_to_str(datetime.utcnow()), status, queries, findings, opened,
+                     _json.dumps(coverage or []),
+                     _json.dumps([sanitize(str(e)) for e in (errors or [])]),
+                     sanitize(note) if note else None, run_id))
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def list_security_runs(self, server: str | None = None, limit: int = 20) -> list[dict]:
+        import json as _json
+        if server:
+            rows = self.conn.execute(
+                "SELECT * FROM sec_runs WHERE server = ? ORDER BY id DESC LIMIT ?",
+                (server, limit)).fetchall()
+        else:
+            rows = self.conn.execute("SELECT * FROM sec_runs ORDER BY id DESC LIMIT ?",
+                                     (limit,)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["coverage"] = _json.loads(d.get("coverage") or "[]")
+            d["errors"] = _json.loads(d.get("errors") or "[]")
+            out.append(d)
+        return out
+
+    def first_security_run_at(self) -> str | None:
+        r = self.conn.execute("SELECT MIN(started_at) FROM sec_runs").fetchone()
+        return r[0] if r else None
+
+    def prune_security(self, incident_days: int, run_days: int = 30, seen_days: int = 400) -> int:
+        now = datetime.utcnow()
+        with self._lock:
+            try:
+                n = self.conn.execute("DELETE FROM sec_incidents WHERE last_seen < ?",
+                                      (_dt_to_str(now - timedelta(days=incident_days)),)).rowcount
+                self.conn.execute("DELETE FROM sec_runs WHERE started_at < ?",
+                                  (_dt_to_str(now - timedelta(days=run_days)),))
+                self.conn.execute("DELETE FROM sec_seen WHERE last_seen < ?",
+                                  (_dt_to_str(now - timedelta(days=seen_days)),))
+                self.conn.commit()
+                return n
+            except Exception:
+                self._rollback_safely()
+                raise
 
     def list_report_history(self, limit: int = 50) -> list[dict]:
         rows = self.conn.execute(

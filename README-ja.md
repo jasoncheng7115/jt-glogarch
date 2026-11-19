@@ -1,4 +1,4 @@
-# jt-glogarch v1.19.1
+# jt-glogarch v1.20.0
 
 **Language**: [English](README.md) | [繁體中文](README-zh_TW.md) | **日本語**  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open（6.x / 7.x）向けのログのアーカイブ・リストアツール
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.19.1-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.20.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 > **作者：** Jason Cheng（[Jason Tools](https://github.com/jasoncheng7115)）
@@ -195,6 +195,19 @@ Graylog のイベント定義と通知を一括で管理します。クイック
 「変更履歴」から元に戻せます。ヘルスチェックでは、有効なのに誰にも通知されない定義、削除済み・未使用の通知、
 一度も（または長期間）一致していない定義を一覧にします。変更はログインしたユーザー自身の Graylog アカウントで
 行われ（その権限が適用されます）、パスワードはログイン時に Graylog セッションに交換され、保存されません。
+
+### セキュリティインシデント（v1.20.0 以降、既定では無効）
+
+Graylog のセキュリティ関連レコード（ログイン失敗、ブロックされなかった IDS アラート、WAF のレコード）を定期的に集計し、
+インシデントにまとめます：同一送信元からのブルートフォース、パスワードスプレー（同一送信元が多数のアカウントを試行）、
+同一送信元または同一アカウントによる多数のホストでのログイン失敗、多数の失敗の後のログイン成功、ブロックされなかった
+IDS アラート、Web スキャン。読み取るのは件数だけ（Graylog の集計 API、1 回あたり 6〜7 回の検索）で、レコードの内容は
+読み取りません。Graylog のメモリが逼迫している間はその回をスキップします。各インシデントには初回・最終検出日時、
+「初検出」マーク（90 日間検出されていない場合）、Graylog 検索でレコードを表示するリンクがあり、継続中のインシデントは
+毎回ではなく一度だけ通知します。「カバレッジ」表では、各検出に必要なフィールドがこのサイトのレコードにあるかを示すため、
+機能しない検出は 0 件と表示されずにその旨が表示されます。フィールド名は GIM の慣例（`event_category`、`event_outcome`、
+`source_ip`、`user_name`）に従い、各検出は一般的な代替フィールド（`client_ip`）も試します。しきい値と除外条件は
+サイトごとに調整できます。
 
 ### オフライン（閉域）環境への導入
 

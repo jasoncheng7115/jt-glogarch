@@ -233,6 +233,7 @@ class NotifyConfig(BaseModel):
     on_verify_failed: bool = True
     on_sensitive_operation: bool = True
     on_audit_alert: bool = True
+    on_security_incident: bool = True
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     discord: DiscordConfig = Field(default_factory=DiscordConfig)
     slack: SlackConfig = Field(default_factory=SlackConfig)
@@ -270,6 +271,25 @@ class WebConfig(BaseModel):
     allowed_graylog_roles: list[str] = Field(default_factory=lambda: ["Admin"])
 
 
+class SecurityConfig(BaseModel):
+    """Security incident analysis (added 1.20, glogarch/security/).
+
+    OFF by default: turning it on makes this host query the configured Graylog
+    every `interval_minutes`, which an upgrade must not start on its own."""
+    enabled: bool = False
+    server: str = ""                 # blank = default server
+    interval_minutes: int = 15
+    window_minutes: int = 60         # each run looks at the last N minutes
+    reopen_hours: float = 24.0       # quiet this long -> a later sighting is a new incident
+    new_days: int = 90               # NEW badge: entity not seen by the detector for N days
+    notify_min_severity: str = "high"  # low | medium | high | off
+    renotify_hours: float = 24.0     # an ongoing incident is mentioned again after N hours
+    retention_days: int = 180
+    exclude_query: str = ""          # Lucene, applied to every detector
+    # Per detector: {"enabled": bool, "min_count": int, "exclude": str}
+    detectors: dict[str, dict] = Field(default_factory=dict)
+
+
 class Settings(BaseModel):
     servers: list[GraylogServerConfig] = Field(default_factory=list)
     default_server: str = ""
@@ -283,6 +303,7 @@ class Settings(BaseModel):
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
     op_audit: ApiAuditConfig = Field(default_factory=ApiAuditConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     database_path: str = "glogarch.db"
     log_level: str = "INFO"
