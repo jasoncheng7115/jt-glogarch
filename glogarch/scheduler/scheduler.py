@@ -1044,6 +1044,7 @@ class ArchiveScheduler:
         except Exception as e:  # JobLookupError: nothing registered yet
             log.debug("No security job to remove", error=str(e))
         self._apply_ti_schedule(cfg)
+        self._apply_digest_schedule(cfg)
         if not cfg.enabled:
             return False
         minutes = max(5, min(int(cfg.interval_minutes or 15), 1440))
@@ -1052,6 +1053,32 @@ class ArchiveScheduler:
             id=self.SECURITY_JOB_ID, replace_existing=True, max_instances=1,
             coalesce=True, misfire_grace_time=600)
         return True
+
+    DIGEST_JOB_ID = "internal-security-digest"
+
+    def _run_security_digest(self) -> None:
+        """Internal job (only while security.digest_enabled): the weekly summary."""
+        try:
+            from glogarch.security.digest import send_digest
+            asyncio.run(send_digest(get_settings(), self.db))
+        except Exception as e:
+            log.warning("Weekly security summary failed", error=str(e))
+
+    def _apply_digest_schedule(self, cfg) -> None:
+        try:
+            self.scheduler.remove_job(self.DIGEST_JOB_ID)
+        except Exception as e:  # JobLookupError: nothing registered yet
+            log.debug("No security digest job to remove", error=str(e))
+        if not getattr(cfg, "digest_enabled", False):
+            return
+        cron = (cfg.digest_cron or "0 8 * * 1").strip()
+        try:
+            trigger = CronTrigger.from_crontab(posix_cron_to_apscheduler(cron))
+        except ValueError as e:   # never saved through the API; the default keeps it working
+            log.warning("Invalid security digest cron, using Monday 08:00", cron=cron, error=str(e))
+            trigger = CronTrigger.from_crontab(posix_cron_to_apscheduler("0 8 * * 1"))
+        self.scheduler.add_job(self._run_security_digest, trigger=trigger, id=self.DIGEST_JOB_ID,
+                               replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=3600)
 
     TI_JOB_ID = "internal-threat-intel-refresh"
 
@@ -1115,3 +1142,4 @@ class ArchiveScheduler:
         self.scheduler.shutdown(wait=False)
         self.db.close()
         log.info("Scheduler stopped")
+

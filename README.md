@@ -1,4 +1,4 @@
-# jt-glogarch v1.29.0
+# jt-glogarch v1.32.1
 
 **Language**: **English** | [繁體中文](README-zh_TW.md) | [日本語](README-ja.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.29.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.32.1-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -189,6 +189,9 @@ GELF mode also has:
 - **Security overview (since v1.29.0)** — The Security Incidents page opens on an overview: open incidents, active investigations, ATT&CK techniques watched, a 14-day chart of new incidents by severity, the top detections and techniques, and the riskiest entities.
 - **Threat intelligence (since v1.28.0, off by default)** — Public lists of known-bad addresses (Spamhaus DROP, Tor exits, abuse.ch Feodo Tracker), downloaded daily; listed incident sources are marked, score higher and are explained to the AI analysis.
 - **Sigma rules (since v1.27.0)** — Paste a Sigma detection rule: it is converted to a Graylog query (shown first, tested against the last 24 hours, saved disabled) and runs with every security analysis; matches become incidents with the rule's title, level and ATT&CK tags. What cannot be converted exactly is refused with the reason. A per-site field map maps Sigma's field names to yours.
+- **Weekly security summary (since v1.32.0, off by default)** — A scheduled summary of the week through the notification channels: new and open incidents, investigations, top detections and entities, AI verdicts, suppressions, and above all whether the analysis actually ran.
+- **Suppressions (since v1.31.0)** — Mark a detection on an entity (or a network) as known and accepted, with a reason and an expiry: the detection keeps running and counts its matches on the suppression, but opens no incident and sends no notification.
+- **Unusual message volume (since v1.30.0, off by default)** — A host or event category sending far more than it usually does at this time of day (at least 5x the median of the same hour over the last 14 days, and outside its usual spread) becomes an incident, after 7 days of history.
 - **Account logged in from a new source (since v1.29.0, off by default)** — A successful login from a source the account has not used for 30 days becomes an incident (ATT&CK T1078), after a 7-day learning period per account.
 - **Log source went silent (since v1.26.0, off by default)** — A host that sent logs during the previous day and nothing in the last 2 hours becomes an incident (ATT&CK T1562): logging that stops is how an attacker hides and how a broken forwarder looks.
 - **Assets and risk ranking (since v1.25.0)** — Mark the addresses, networks, hosts and accounts that matter, with a criticality; incidents on them are marked, the AI analysis is told, and a risk ranking orders the entities behind the open incidents with every point explained (severity, external source, asset criticality, AI verdict).

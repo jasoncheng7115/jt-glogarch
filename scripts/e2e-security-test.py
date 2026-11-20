@@ -14,7 +14,8 @@ production: it writes test events into the target.
 
 Run it from /tmp with PYTHONPATH=<repo> to use this checkout's code. Creates a
 GELF TCP input (container port 32202) when there is none. Then the silent-source
-detection (1.26): a host whose 60 messages are 3 h old is silent, one still sending is not.
+detection (1.26): a host whose 60 messages are 3 h old is silent, one still sending is not;
+the volume anomaly (1.30): a 600-message burst against a usual of 20 an hour.
 Prints RESULT: ALL PASS.
 """
 from __future__ import annotations
@@ -195,6 +196,53 @@ async def new_source_step(srv, tag: str) -> None:
           and f[0]["severity"] == "medium", f"new login source found for the account with history: {f}")
 
 
+async def volume_step(srv, tag: str) -> None:
+    """volume_anomaly (added 1.30): the real two aggregations, then the runner's
+    history logic against 10 days of a quiet usual (20 messages an hour)."""
+    import tempfile
+    from glogarch.core.database import ArchiveDB
+    from glogarch.security.detectors import DETECTORS
+    from glogarch.security.runner import volume_findings
+    host, cat, n = f"e2e-burst-{tag}", f"e2e_burst_{tag}", 600
+    s = socket.create_connection(("127.0.0.1", GELF_PORT), timeout=10)
+    for i in range(n):
+        s.sendall(json.dumps({"version": "1.1", "host": host, "short_message": f"burst {i}",
+                              "_event_category": cat, "_e2e": tag}).encode() + b"\0")
+    s.close()
+    only = {d.id: {"enabled": d.id == "volume_anomaly"} for d in DETECTORS}
+    res = None
+    async with GraylogClient(srv, RateLimiter(RateLimitConfig())) as c:
+        for _ in range(30):
+            now = datetime.now(timezone.utc)
+            res = await run_detectors(make_fetch(c), now - timedelta(minutes=60), now,
+                                      settings=only, global_exclude=f"_exists_:e2e AND NOT e2e:{tag}")
+            if ("source", host, n) in res.volumes:
+                break
+            await asyncio.sleep(2)
+    check(not res.errors and res.queries == 2, f"volume aggregations answered ({res.queries} searches) {res.errors or ''}")
+    check(("source", host, n) in res.volumes and ("event_category", cat, n) in res.volumes,
+          f"messages per host and per category from Graylog: {[v for v in res.volumes if tag in v[1]]}")
+    db = ArchiveDB(tempfile.mktemp(suffix=".db"))
+    db.connect()
+    naive = now.replace(tzinfo=None, microsecond=0)
+    base = naive.replace(minute=0, second=0)
+    for k in range(1, 11):
+        for d in (-1, 0, 1):
+            db.record_volumes("e2e", [("source", host, 20.0), ("event_category", cat, 20.0)],
+                              base - timedelta(days=k) + timedelta(hours=d))
+    f = {(x["entity_field"], x["entity"]): x for x in
+         volume_findings(db, "e2e", res.volumes, naive, 60, min_count=500)}
+    check(set(f) == {("source", host), ("event_category", cat)},
+          f"a host and a category far above their usual are found, nothing else: {sorted(f)}")
+    fh = f.get(("source", host))
+    check(bool(fh) and fh["metrics"]["usual"] == 20 and fh["metrics"]["ratio"] == 30.0 and fh["severity"] == "medium",
+          f"usual 20/h, 30x, medium: {fh and (fh['metrics'], fh['severity'])}")
+    async with GraylogClient(srv, RateLimiter(RateLimitConfig())) as c:
+        now = datetime.now(timezone.utc)
+        rows = await make_fetch(c)(fh["query"], "source", (("count", None),), now - timedelta(minutes=60), now, 10)
+    check([(r["entity"], r["count"]) for r in rows] == [(host, n)], f"the incident's query finds the burst: {rows}")
+
+
 async def main() -> int:
     if not GL_PASS:
         print("GL_PASS is required (from scripts/datanode-stack/up.sh)")
@@ -233,6 +281,7 @@ async def main() -> int:
     await silent_step(srv, tag)
     await sigma_step(srv, tag)
     await new_source_step(srv, tag)
+    await volume_step(srv, tag)
     print("RESULT: ALL PASS" if ok else "RESULT: FAILED")
     return 0 if ok else 1
 

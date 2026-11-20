@@ -2,6 +2,38 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.32.1] - 2026-11-20
+
+### Changed
+
+- **Security notifications are easier to read.** Telegram showed the whole security notification as one fixed-width code block: long Chinese sentences wrapped badly, the backticks around log values were shown literally, and the second line of each incident started with spaces. Security incident, AI verdict and weekly summary notifications are now formatted text: in Telegram a bold title, log values (an IDS signature, an address) in inline code, the time in italics; in e-mail plain paragraphs instead of a grey fixed-width box. Each incident is its own block (severity and detection / the entity with its marks / the numbers) with a blank line between incidents, and the AI verdict reads "AI verdict: suspicious (medium confidence)" with the summary on its own line. Export, import and other job notifications keep the fixed-width block their aligned statistics need. Log text is still escaped and kept to one line.
+
+## [1.32.0] - 2026-11-20
+
+### Added
+
+- **Weekly security summary (off by default).** Under the security settings, turn on a summary sent through the notification channels on a schedule (cron, local time; Monday 08:00 by default): new incidents of the last 7 days by severity, what is open now, investigations, the most frequent detections, the riskiest entities, AI verdicts, suppressions that matched, how many ATT&CK techniques are watched, and how the analysis runs went. Its first concern is whether the analysis ran at all: a week without a successful run, or with more failed or skipped runs than good ones, is titled as a warning, and turned-off analysis is stated, because a calm summary from an analysis that did not run would be the most misleading message it could send. Built from jt-glogarch's own data; nothing is asked of Graylog. Preview shows exactly the text that would be sent, in the notification language; Send now is audited.
+
+### Changed
+
+- The detection list and the "last 24 hours" coverage used by the Security page, the ATT&CK view and the summary now live in one module (`glogarch/security/coverage.py`), so they cannot drift apart.
+
+## [1.31.0] - 2026-11-20
+
+### Added
+
+- **Suppressions.** A new button on each incident marks a detection on an entity as known and accepted (an internal vulnerability scanner, a monitoring host, a service account) with a required reason and an expiry (1, 7, 30, 90 or 365 days, or never; 30 by default), for this detection or every detection, and can close the incident at the same time. Unlike a detection's exclusion query, a suppression does not change what Graylog counts: the detection still runs, a matching finding is dropped just before it would open or update an incident (so nothing is notified or AI-analysed), and every drop is counted on the suppression with the time of the last one, so a suppressed source that keeps going stays visible in the Suppressions list under the incident table. An address can be widened to a network (at most /16 for IPv4, /32 for IPv6: one entry must not silence half the internet). Adding the same entry again replaces its reason and expiry. An expired suppression stays listed for 90 days. Adding and removing are audited.
+
+### Changed
+
+- Unused import removed from the security routes.
+
+## [1.30.0] - 2026-11-20
+
+### Added
+
+- **New detection: unusual message volume (off by default).** A host or an event category that sends far more than it usually does at this time of day becomes an incident. The usual is the median of the same hour (one hour either side) on each of the last 14 days, from an hourly history jt-glogarch keeps of every host and category (one aggregation each per run). An incident needs at least 500 messages an hour (editable), at least 5 times the usual, and to stand out from the usual spread (robust z-score of 4 from the median absolute deviation, floored so a flat history does not alert on noise); 20 times the usual or more is medium, otherwise low, never high: a volume change is a reason to look (a flood of errors, a misbehaving application, a log storm meant to bury an attack), not an attack in itself, so it maps to no ATT&CK technique. Nothing is reported for a host or category until it has 7 days of history, and an hour in which the analysis did not run is left out rather than counted as zero. The AI analysis is told what the numbers mean and breaks the extra messages down by category, application, host and action. Tested against a real Graylog 7.2.2.
+
 ## [1.29.0] - 2026-11-20
 
 ### Added

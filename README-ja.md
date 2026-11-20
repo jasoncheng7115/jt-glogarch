@@ -1,4 +1,4 @@
-# jt-glogarch v1.29.0
+# jt-glogarch v1.32.1
 
 **Language**: [English](README.md) | [繁體中文](README-zh_TW.md) | **日本語**  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open（6.x / 7.x）向けのログのアーカイブ・リストアツール
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.29.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.32.1-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 > **作者：** Jason Cheng（[Jason Tools](https://github.com/jasoncheng7115)）
@@ -237,6 +237,21 @@ Sigma の検出ルールを貼り付けると Graylog のクエリに変換し�
 有効にすると毎回のセキュリティ分析で実行します。一致した結果はルールのタイトル、レベル、ATT&CK タグを持つインシデントに
 なります。正確に変換できない部分は理由を示して拒否します。サイトごとのフィールド対応で Sigma のフィールド名を自分の
 フィールドに対応付けられます。
+
+### 週次セキュリティサマリー（v1.32.0 以降、既定では無効）
+
+スケジュールに従って 1 週間のまとめを通知チャネルで送信します。新規・未対応のインシデント、調査ケース、多い検出と対象、
+AI の判定、抑制ルール、そして何より分析が実際に実行されたかどうかを伝えます。
+
+### 抑制ルール（v1.31.0 以降）
+
+ある検出を特定の対象（またはネットワーク）について既知で許容済みとして登録します。理由と有効期限が必要です。検出は
+実行を続け、一致回数を抑制ルールに記録しますが、インシデントの作成や通知は行いません。
+
+### レコード量の異常（v1.30.0 以降、既定では無効）
+
+ホストまたはイベントカテゴリのレコード量が、この時間帯の通常より大幅に多いとき（過去 14 日間の同じ時間帯の中央値の
+5 倍以上で、通常のばらつきの範囲外）にインシデントにします。判定を始めるには 7 日分の履歴が必要です。
 
 ### 新しい送信元からのログイン（v1.29.0 以降、既定では無効）
 

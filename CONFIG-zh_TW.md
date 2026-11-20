@@ -420,6 +420,9 @@ security:
       exclude: "user_name:/.*[$]/"   # 預設值：排除電腦帳號（DC1$）
     account_new_source:              # v1.29.0，預設關閉（記下每組帳號與來源；7 天學習期）
       enabled: false
+    volume_anomaly:                  # v1.30.0，預設關閉（每次分析多兩次所有記錄的彙總；
+      enabled: false                 #   為每台主機與類別保存每小時紀錄，7 天學習期）
+      min_count: 500                 # 每「小時」的筆數（另需達平常的 5 倍、穩健 z 分數 >= 4）
     source_silent:                   # v1.26.0，預設關閉（每次分析要彙總一整天的所有記錄）
       enabled: false
       min_count: 50                  # 最近 2 小時之前的 24 小時內的筆數
@@ -432,6 +435,8 @@ security:
   ti_enabled: false           # v1.28.0：下載威脅情資清單（不會送出這個站台的任何資料）
   ti_feeds: [spamhaus_drop, tor_exit, feodo]
   ti_refresh_hours: 24        # 1 到 168
+  digest_enabled: false       # v1.32.0：透過通知管道寄送每週摘要
+  digest_cron: "0 8 * * 1"    # POSIX cron，本地時間（每週一 08:00）；儲存時會檢查格式
 ```
 
 每次分析都使用 Graylog 的彙總 API（`POST /api/search/aggregate`，Graylog 6.x 與 7.x；

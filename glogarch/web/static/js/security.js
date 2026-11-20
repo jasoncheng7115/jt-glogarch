@@ -26,10 +26,10 @@ function secSevBadge(sev) {
 
 function secStats(m) {
     const order = ['count', 'success', 'card:user_name', 'card:source', 'card:source_ip',
-        'card:uri', 'card:vhost', 'min:alert_severity', 'baseline', 'new_sources'];
+        'card:uri', 'card:vhost', 'min:alert_severity', 'baseline', 'new_sources', 'rate', 'usual', 'ratio'];
     const parts = [];
     for (const k of order) {
-        if (m == null || m[k] == null) continue;
+        if (m == null || m[k] == null || (k === 'count' && m.rate != null)) continue;   // volume: the rate says it
         const label = t('sec_m_' + k.replace(':', '_'));
         if (Array.isArray(m[k])) { parts.push(`${esc(label)} ${esc(m[k].slice(0, 5).map(String).join(', '))}`); continue; }
         parts.push(k === 'min:alert_severity' ? `${label} ${esc(m[k])}` : `${formatNumber(m[k])} ${label}`);
@@ -109,6 +109,7 @@ function secRow(i) {
         const v = i.ai ? ` ${secVerdictChip(i.ai.verdict)}` : '';
         acts.push(`<button class="btn-sm btn-secondary" data-act="secOpenAi" data-args="${esc(JSON.stringify([i.id]))}" title="${esc(t('sec_ai_title'))}">${icon('chat', 14)} ${esc(t(i.ai_running ? 'sec_ai_running_short' : 'sec_btn_ai'))}${v}</button>`);
     }
+    acts.push(`<button class="btn-sm btn-secondary" data-act="secSuppress" data-args="${esc(JSON.stringify([i.id]))}" title="${esc(t('sup_btn_title'))}" aria-label="${esc(t('sup_btn_title'))}">${icon('eye_closed', 14)}</button>`);
     acts.push(`<button class="btn-sm btn-secondary" data-act="casePick" data-args="${esc(JSON.stringify([i.id]))}" title="${esc(t('case_pick_title'))}" aria-label="${esc(t('case_pick_title'))}">${icon('log', 14)}</button>`);
     if (i.status === 'open') acts.push(`<button class="btn-sm btn-secondary" data-act="secSetStatus" data-args="${esc(JSON.stringify([i.id, 'acknowledged']))}">${icon('check', 14)} ${esc(t('sec_btn_ack'))}</button>`);
     if (i.status !== 'closed') acts.push(`<button class="btn-sm btn-secondary" data-act="secSetStatus" data-args="${esc(JSON.stringify([i.id, 'closed']))}">${icon('close', 14)} ${esc(t('sec_btn_close'))}</button>`);
@@ -245,7 +246,8 @@ function secRenderSettings() {
     const num = (id, v, min, max) => `<input type="number" id="${id}" value="${esc(v)}" min="${min}" max="${max}">`;
     const dets = d.detectors.map(x => `<tr data-det="${esc(x.id)}">
         <td><label class="sec-chk"><input type="checkbox" class="sec-det-en" ${x.enabled ? 'checked' : ''}> ${esc(secDetTitle(x.id))}</label>
-            <div class="text-muted fs-08"><code>${esc(x.query)}</code> · ${esc(x.fields.join(' / '))}</div></td>
+            <div class="text-muted fs-08"><code>${esc(x.query)}</code> · ${esc(x.fields.join(' / '))}</div>
+            ${x.id === 'volume_anomaly' ? `<div class="text-muted fs-08">${esc(t('sec_volume_hint'))}</div>` : ''}</td>
         <td><input type="number" class="sec-det-min" min="1" value="${esc(x.min_count)}" title="${esc(t('sec_default_is').replace('{v}', x.default_min_count))}"></td>
         <td><input type="text" class="sec-det-ex" value="${esc(x.exclude)}" placeholder="${esc(t('sec_exclude_ph'))}"></td>
     </tr>`).join('');
@@ -268,6 +270,13 @@ function secRenderSettings() {
             <div><label>${esc(t('sec_s_ai_max'))}</label>${num('sec-s-ai-max', s.ai_auto_max_per_run, 1, 10)}</div>
             <div class="sec-wide"><label>${esc(t('sec_s_ai_notify'))}</label>${['malicious', 'suspicious'].map(v => `<label class="sec-chk sec-ai-nv"><input type="checkbox" class="sec-ai-notify" value="${v}" ${(s.ai_notify_verdicts || []).includes(v) ? 'checked' : ''}> ${esc(t('sec_ai_v_' + v))}</label>`).join('')}</div>
             <div class="sec-wide text-muted fs-08">${esc(t(d.ai && d.ai.analysis_enabled ? 'sec_s_ai_note' : 'sec_s_ai_off'))}</div>
+            <label class="sec-chk sec-enable"><input type="checkbox" id="sec-s-dg" ${s.digest_enabled ? 'checked' : ''}> ${esc(t('dg_enable'))}</label>
+            <div><label>${esc(t('dg_cron'))}</label><input type="text" id="sec-s-dg-cron" maxlength="100" value="${esc(s.digest_cron || '0 8 * * 1')}">
+                <div class="text-muted fs-08">${esc(typeof cronHuman === 'function' ? cronHuman(s.digest_cron || '0 8 * * 1') : '')}</div></div>
+            <div class="sec-wide"><button type="button" class="btn-sm btn-secondary" data-act="secDigestPreview">${icon('eye', 14)} ${esc(t('dg_preview'))}</button>
+                <button type="button" class="btn-sm btn-secondary" data-act="secDigestSend">${icon('bell', 14)} ${esc(t('dg_send'))}</button>
+                <div class="text-muted fs-08">${esc(t('dg_help'))}</div>
+                <pre class="sec-dg-preview hidden" id="sec-dg-preview"></pre></div>
         </div>
         <div class="table-wrap"><table class="sec-det-table"><thead><tr><th>${esc(t('sec_th_detector'))}</th>
             <th>${esc(t('sec_s_min_count'))}</th><th>${esc(t('sec_s_det_exclude'))}</th></tr></thead><tbody>${dets}</tbody></table></div>
@@ -300,6 +309,8 @@ async function secSaveSettings() {
         ai_auto_min_severity: v('sec-s-ai-min'),
         ai_auto_max_per_run: Number(v('sec-s-ai-max')),
         ai_notify_verdicts: [...document.querySelectorAll('#sec-settings .sec-ai-notify:checked')].map(x => x.value),
+        digest_enabled: document.getElementById('sec-s-dg').checked,
+        digest_cron: v('sec-s-dg-cron'),
         detectors,
     };
     const d = await fetchJSON(`${API}/security/settings`, {method: 'POST',
@@ -307,6 +318,22 @@ async function secSaveSettings() {
     if (!d || d.error) { secMsg(d && d.error, 'err'); return; }
     secMsg(t(d.registered ? 'sec_saved_on' : 'sec_saved_off'), 'ok');
     await secLoadOverview();
+}
+
+async function secDigestPreview() {
+    const d = await fetchJSON(`${API}/security/digest`);
+    if (!d || d.error) { secMsg(d && d.error, 'err'); return; }
+    const el = document.getElementById('sec-dg-preview');
+    el.textContent = `${d.title}\n\n${d.body}`;
+    el.classList.remove('hidden');
+}
+
+function secDigestSend() {
+    showConfirm(t('dg_send'), esc(t('dg_send_confirm')), async () => {
+        const d = await fetchJSON(`${API}/security/digest/send`, {method: 'POST'});
+        if (!d || d.error) { secMsg(d && d.error, 'err'); return; }
+        secMsg(t('dg_sent'), 'ok');
+    });
 }
 
 // ---- AI analysis (added 1.22) --------------------------------------------------------

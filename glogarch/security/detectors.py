@@ -78,6 +78,9 @@ PROBES: dict[str, Probe] = {p.id: p for p in (
     Probe("silent_sources", "*", ("source",), (("count", None),), limit=1000),
     # (account, source) pairs of successful logins, see runner.new_source_findings
     Probe("auth_ok_pairs", AUTH_OK, ("user_name", "source_ip"), (("count", None),), limit=1000),
+    # Message volume of the run window per host and per event category, see
+    # engine._volume and runner.volume_findings.
+    Probe("volume", "*", ("source", "event_category"), (("count", None),), limit=1000),
 )}
 
 # account_new_source (added 1.29): a successful login from a source the account has
@@ -91,6 +94,19 @@ NEW_SOURCE_MEMORY_DAYS = 30
 # is how an attacker hides (ATT&CK T1562) and how a broken forwarder looks.
 SILENT_HOURS = 2
 BASELINE_HOURS = 24
+
+# volume_anomaly (added 1.30): a host or an event category sending far more than it
+# usually does at this time of day. The usual = the median of the same hour (+-1 h)
+# on each of the last ANOMALY_HISTORY_DAYS days; needs ANOMALY_MIN_DAYS such days and
+# a history at least ANOMALY_LEARN_DAYS old. A spike = at least min_count messages per
+# hour, at least ANOMALY_FACTOR times the usual, and ANOMALY_Z robust deviations above
+# it (median absolute deviation, floored so a flat history does not alert on noise).
+ANOMALY_HISTORY_DAYS = 14
+ANOMALY_LEARN_DAYS = 7
+ANOMALY_MIN_DAYS = 5
+ANOMALY_FACTOR = 5.0
+ANOMALY_Z = 4.0
+ANOMALY_MEDIUM_FACTOR = 20.0
 
 
 DETECTORS: tuple[Detector, ...] = (
@@ -131,6 +147,11 @@ DETECTORS: tuple[Detector, ...] = (
     Detector("account_new_source", "auth_ok_pairs", min_count=1,
              severity=({"external": True, "sev": "medium"}, {"sev": "low"}),
              exclude='user_name:/.*[$]/', default_enabled=False),
+    # Off by default: two more aggregations of ALL messages of the window per run,
+    # and it keeps an hourly history per host and category (sec_volumes). Never
+    # high: an unusual volume is a reason to look, not an attack by itself.
+    Detector("volume_anomaly", "volume", min_count=500,
+             severity=({"sev": "low"},), default_enabled=False),
 )
 
 DETECTOR_IDS = tuple(d.id for d in DETECTORS)

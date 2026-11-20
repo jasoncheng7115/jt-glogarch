@@ -1,25 +1,25 @@
 {
  "bomFormat": "CycloneDX",
  "specVersion": "1.5",
- "serialNumber": "urn:uuid:f199304f-10eb-46f2-a719-bab803ddefed",
+ "serialNumber": "urn:uuid:3506b0e9-ff3f-4439-bb29-e44e1d9f6421",
  "version": 1,
  "metadata": {
-  "timestamp": "2026-11-19T20:20:07+00:00",
+  "timestamp": "2026-11-20T01:54:43+00:00",
   "tools": {
    "components": [
     {
      "type": "application",
      "name": "glogarch.sbom",
-     "version": "1.29.0"
+     "version": "1.32.1"
     }
    ]
   },
   "component": {
    "type": "application",
-   "bom-ref": "pkg:pypi/jt-glogarch@1.29.0",
+   "bom-ref": "pkg:pypi/jt-glogarch@1.32.1",
    "name": "jt-glogarch",
-   "version": "1.29.0",
-   "purl": "pkg:pypi/jt-glogarch@1.29.0",
+   "version": "1.32.1",
+   "purl": "pkg:pypi/jt-glogarch@1.32.1",
    "licenses": [
     {
      "license": {
@@ -812,7 +812,7 @@
  ],
  "dependencies": [
   {
-   "ref": "pkg:pypi/jt-glogarch@1.29.0",
+   "ref": "pkg:pypi/jt-glogarch@1.32.1",
    "dependsOn": [
     "pkg:pypi/click@8.3.1",
     "pkg:pypi/httpx@0.28.1",

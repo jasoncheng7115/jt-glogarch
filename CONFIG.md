@@ -453,11 +453,16 @@ security:
   ti_enabled: false           # v1.28.0: download threat-intel lists (nothing about this site is sent)
   ti_feeds: [spamhaus_drop, tor_exit, feodo]
   ti_refresh_hours: 24        # 1..168
+  digest_enabled: false       # v1.32.0: weekly summary through the notification channels
+  digest_cron: "0 8 * * 1"    # POSIX cron, local time (Monday 08:00); validated on save
   detectors:                  # per detection: enabled, min_count, exclude (all optional)
     account_multi_host:
       exclude: "user_name:/.*[$]/"   # the default: machine accounts (DC1$)
     account_new_source:              # v1.29.0, off by default (keeps every account/source pair; 7-day learning)
       enabled: false
+    volume_anomaly:                  # v1.30.0, off by default (two aggregations of all messages per run;
+      enabled: false                 #   keeps an hourly history per host and category, 7-day learning)
+      min_count: 500                 # messages per HOUR (also needs >= 5x the usual and robust z >= 4)
     source_silent:                   # v1.26.0, off by default (aggregates a day of all messages per run)
       enabled: false
       min_count: 50                  # messages in the 24 h before the last 2 h

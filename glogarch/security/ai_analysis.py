@@ -59,6 +59,19 @@ _BREAKDOWN = {
     "ids_alert_passed": ("source_ip", "destination_ip", "destination_port", "alert_severity", "source"),
     "waf_scanner": ("uri", "vhost", "http_response_code", "user_agent", "alert_signature"),
     "source_silent": (),   # the point is that there are no events; history and the sample say when it stopped
+    "volume_anomaly": ("event_category", "application_name", "source", "event_action"),
+}
+
+# What a detection measured, for detections whose metrics do not explain themselves.
+_EXPLAIN = {
+    "volume_anomaly": ("The entity sent far more messages than it usually does at this time of day. metrics.rate = "
+                       "messages per hour now, metrics.usual = the median per hour at the same time on previous days "
+                       "(metrics.days days), metrics.ratio = rate / usual. A volume change alone is not an attack: "
+                       "the breakdown shows what the extra messages are."),
+    "source_silent": ("The host sent metrics.baseline messages in the 24 hours before and none in the last "
+                      "metrics.silent_hours hours."),
+    "account_new_source": ("The account logged in successfully from metrics.new_sources, sources it had not used "
+                           "in the previous 30 days."),
 }
 _DEFAULT_BREAKDOWN = ("source", "source_ip", "user_name")
 
@@ -148,6 +161,8 @@ async def collect_evidence(inc: dict, ctx: Ctx, window_minutes: int) -> dict:
     ev["incident"]["mitre_attack"] = [{"id": t["id"], "name": t["name"]}
                                       for t in techniques_for(inc.get("detector", ""), str(inc.get("entity") or ""),
                                                              (inc.get("metrics") or {}).get("sigma_tags"))]
+    if inc.get("detector") in _EXPLAIN:
+        ev["incident"]["detection"] = _EXPLAIN[inc["detector"]]
     if str(inc.get("detector", "")).startswith("sigma:"):
         ev["incident"]["sigma_rule"] = (inc.get("metrics") or {}).get("sigma_title")
 

@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Any
 
 import html as _html
+import re
 from glogarch.security.attack import techniques_for
 import httpx
 
@@ -62,8 +63,13 @@ async def send_notification(
     title: str,
     message: str,
     config: NotifyConfig | None = None,
+    rich: bool = False,
 ) -> list[dict]:
     """Send notification to all enabled channels.
+
+    `rich` (security notifications, 1.32): prose with `code spans` for log
+    values, shown as formatted text (Telegram HTML, e-mail paragraphs) instead
+    of the fixed-width block the aligned job statistics need.
 
     Returns list of {channel, success, error} dicts.
     """
@@ -77,7 +83,7 @@ async def send_notification(
         return []
 
     timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
-    results = await deliver_to_channels(config, title, message, timestamp)
+    results = await deliver_to_channels(config, title, message, timestamp, rich=rich)
 
     for r in results:
         if r["success"]:
@@ -89,7 +95,7 @@ async def send_notification(
 
 
 async def deliver_to_channels(config: NotifyConfig, title: str, message: str,
-                              timestamp: str) -> list[dict]:
+                              timestamp: str, rich: bool = False) -> list[dict]:
     """Send one message to every enabled channel; one result dict per channel.
 
     The ONLY place the channel list is walked. The test endpoint used to repeat
@@ -104,7 +110,8 @@ async def deliver_to_channels(config: NotifyConfig, title: str, message: str,
 
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         if config.telegram.enabled:
-            results.append(await _send_telegram(client, config.telegram, full_msg))
+            results.append(await _send_telegram(client, config.telegram, full_msg,
+                                                text=_telegram_rich(title, message, timestamp) if rich else None))
 
         if config.discord.enabled:
             results.append(await _send_discord(client, config.discord, title, message, timestamp))
@@ -122,7 +129,7 @@ async def deliver_to_channels(config: NotifyConfig, title: str, message: str,
             results.append(await _send_zulip(client, config.zulip, title, message, timestamp))
 
     if config.email.enabled:
-        results.append(await _send_email(config.email, title, message, timestamp))
+        results.append(await _send_email(config.email, title, message, timestamp, rich=rich))
     return results
 
 
@@ -143,11 +150,24 @@ def _telegram_text(message: str) -> str:
     return f"<pre>{_html.escape(message)}</pre>"
 
 
-async def _send_telegram(client: httpx.AsyncClient, cfg, message: str) -> dict:
+_CODE_SPAN = re.compile(r"`([^`\n]*)`")
+
+
+def _rich_html(message: str, code_open: str = "<code>") -> str:
+    """Escaped HTML of a rich message: `code spans` (log values, already
+    backtick-free from _plain) become <code>; everything else is text."""
+    return _CODE_SPAN.sub(lambda m: f"{code_open}{m.group(1)}</code>", _html.escape(message))
+
+
+def _telegram_rich(title: str, message: str, ts: str) -> str:
+    return f"<b>[jt-glogarch] {_html.escape(title)}</b>\n\n{_rich_html(message)}\n\n<i>{_html.escape(ts)}</i>"
+
+
+async def _send_telegram(client: httpx.AsyncClient, cfg, message: str, text: str | None = None) -> dict:
     try:
         resp = await client.post(
             f"https://api.telegram.org/bot{cfg.bot_token}/sendMessage",
-            json={"chat_id": cfg.chat_id, "text": _telegram_text(message),
+            json={"chat_id": cfg.chat_id, "text": text if text is not None else _telegram_text(message),
                   "parse_mode": "HTML"},
         )
         resp.raise_for_status()
@@ -283,7 +303,7 @@ async def _send_zulip(client: httpx.AsyncClient, cfg, title: str, message: str, 
 
 # --- Email (SMTP) ---
 
-async def _send_email(cfg, title: str, message: str, ts: str) -> dict:
+async def _send_email(cfg, title: str, message: str, ts: str, rich: bool = False) -> dict:
     import asyncio
     import smtplib
     from email.mime.text import MIMEText
@@ -299,10 +319,17 @@ async def _send_email(cfg, title: str, message: str, ts: str) -> dict:
         # Escaped: messages carry text from logs (an account name tried in a
         # brute force, an IDS signature), and `<url>` placeholders vanished as
         # unknown tags before this.
-        html_body = f"""<div style="font-family:sans-serif;max-width:600px">
+        if rich:
+            code = '<code style="background:#f0f0f5;padding:1px 5px;border-radius:4px;font-size:13px">'
+            body_html = (f'<div style="font-size:14px;line-height:1.6">'
+                         f'{_rich_html(message, code).replace(chr(10), "<br>")}</div>')
+        else:
+            body_html = (f'<pre style="background:#f5f5f5;padding:12px;border-radius:6px;white-space:pre-wrap">'
+                         f'{_html.escape(message)}</pre>')
+        html_body = f"""<div style="font-family:sans-serif;max-width:640px">
 <h2 style="color:#6c63ff">{_html.escape(cfg.subject_prefix)} {_html.escape(title)}</h2>
-<pre style="background:#f5f5f5;padding:12px;border-radius:6px;white-space:pre-wrap">{_html.escape(message)}</pre>
-<p style="color:#888;font-size:12px">{ts}</p>
+{body_html}
+<p style="color:#888;font-size:12px">{_html.escape(ts)}</p>
 </div>"""
 
         msg.attach(MIMEText(text_body, "plain"))
@@ -391,15 +418,29 @@ _MSG = {
         "sec_new": "NEW",
         "sec_escalated": "escalated",
         "sec_ongoing": "still ongoing",
-        "sec_line": "[{sev}] {det} — {entity}{ext}{flag}\n    {stats}",
+        "sec_line": "[{sev}] {det}\n{entity}{ext}{flag}\n{stats}",
         "sec_external": " (external)",
         "sec_footer": "Window: last {minutes} min · Server: {server}\nOpen Security Incidents in jt-glogarch for details.",
         "sec_ai_title": "🤖 AI analysis: {n} incident(s)",
-        "sec_ai_line": "#{id} {det} — {entity}\n    AI: {verdict} ({confidence}) · {summary}",
+        "sec_ai_line": "#{id} {det}\n{entity}\nAI verdict: {verdict} ({confidence})\n{summary}",
         "sec_ai_footer": "Server: {server} · Advice from the AI model; verify before acting.",
         "sec_ai_v_malicious": "malicious", "sec_ai_v_suspicious": "suspicious", "sec_ai_v_benign": "benign",
         "sec_ai_v_unclear": "unclear", "sec_ai_c_low": "low confidence", "sec_ai_c_medium": "medium confidence",
         "sec_ai_c_high": "high confidence",
+        "sec_dg_title_ok": "✅ Weekly security summary — {server}",
+        "sec_dg_title_warn": "⚠️ Weekly security summary — {server}: the analysis did not run properly",
+        "sec_dg_period": "Last {days} days, until {until}",
+        "sec_dg_off": "Security analysis is turned off: no incidents are being detected.",
+        "sec_dg_new": "New incidents: {total} (high {high}, medium {medium}, low {low})",
+        "sec_dg_open": "Open now: {total} (high {high})",
+        "sec_dg_cases": "Investigations: {open} open, {prog} in progress, {closed} closed this week",
+        "sec_dg_top": "Most frequent: {items}",
+        "sec_dg_risk": "Highest risk: {items}",
+        "sec_dg_ai": "AI verdicts: malicious {malicious}, suspicious {suspicious}, benign {benign}, unclear {unclear}",
+        "sec_dg_sup": "Suppressions: {active} active, {hit} matched this week",
+        "sec_dg_runs": "Analysis runs: {ok} ok, {partial} partial, {error} failed, {skipped} skipped",
+        "sec_dg_attack": "ATT&CK techniques watched: {w} of {t}",
+        "sec_dg_sep": ", ", "sec_dg_item": "{name} ({n})",
         "sec_failing_title": "❌ Security analysis is not running",
         "sec_failing_body": ("The last {n} runs on server {server} failed, so no incidents are being detected.\n"
                              "Last error: {error}"),
@@ -418,6 +459,9 @@ _MSG = {
         "sec_det_account_new_source": "Account logged in from a new source",
         "sec_m_new_sources": "new source(s)",
         "sec_m_baseline": "messages in the 24 h before it stopped",
+        "sec_det_volume_anomaly": "Unusual message volume",
+        "sec_m_rate": "per hour now", "sec_m_usual": "usual per hour at this time",
+        "sec_m_ratio": "× the usual",
         "datanode_fallback_title": "⚠️ Data Node certificate unusable — archived via Graylog API",
         "datanode_fallback_body": ("Schedule: {schedule}\nServer: {server}\n"
                                    "The Graylog Data Node client certificate could not be used: {problem}\n"
@@ -480,15 +524,29 @@ _MSG = {
         "sec_new": "首次出現",
         "sec_escalated": "等級升高",
         "sec_ongoing": "仍在持續",
-        "sec_line": "[{sev}] {det} — {entity}{ext}{flag}\n    {stats}",
+        "sec_line": "【{sev}】{det}\n{entity}{ext}{flag}\n{stats}",
         "sec_external": "（外部）",
         "sec_footer": "時間範圍：最近 {minutes} 分鐘 · 伺服器：{server}\n詳情請到 jt-glogarch 的「資安事件」頁面查看。",
         "sec_ai_title": "🤖 AI 分析：{n} 件事件",
-        "sec_ai_line": "#{id} {det} — {entity}\n    AI：{verdict}（{confidence}）· {summary}",
+        "sec_ai_line": "#{id} {det}\n{entity}\nAI 判定：{verdict}（{confidence}）\n{summary}",
         "sec_ai_footer": "伺服器：{server} · AI 模型的建議，採取行動前請先查證。",
         "sec_ai_v_malicious": "惡意", "sec_ai_v_suspicious": "可疑", "sec_ai_v_benign": "無害",
         "sec_ai_v_unclear": "無法判斷", "sec_ai_c_low": "把握程度低", "sec_ai_c_medium": "把握程度中",
         "sec_ai_c_high": "把握程度高",
+        "sec_dg_title_ok": "✅ 每週資安摘要：{server}",
+        "sec_dg_title_warn": "⚠️ 每週資安摘要：{server}（分析沒有正常執行）",
+        "sec_dg_period": "最近 {days} 天，截至 {until}",
+        "sec_dg_off": "資安事件分析已關閉：目前沒有在偵測任何事件。",
+        "sec_dg_new": "新增事件：{total} 件（高 {high}、中 {medium}、低 {low}）",
+        "sec_dg_open": "目前未處理：{total} 件（高 {high}）",
+        "sec_dg_cases": "調查案件：{open} 件未開始、{prog} 件進行中、本週結案 {closed} 件",
+        "sec_dg_top": "最常見：{items}",
+        "sec_dg_risk": "風險最高：{items}",
+        "sec_dg_ai": "AI 判定：惡意 {malicious}、可疑 {suspicious}、無害 {benign}、無法判斷 {unclear}",
+        "sec_dg_sup": "抑制規則：{active} 條生效、本週有符合的 {hit} 條",
+        "sec_dg_runs": "分析執行：成功 {ok}、部分成功 {partial}、失敗 {error}、略過 {skipped}",
+        "sec_dg_attack": "監看中的 ATT&CK 技術：{t} 項中 {w} 項",
+        "sec_dg_sep": "、", "sec_dg_item": "{name}（{n}）",
         "sec_failing_title": "❌ 資安事件分析沒有在運作",
         "sec_failing_body": ("伺服器 {server} 最近 {n} 次分析都失敗，目前沒有在偵測資安事件。\n"
                              "最後的錯誤：{error}"),
@@ -507,6 +565,9 @@ _MSG = {
         "sec_det_account_new_source": "帳號從新的來源登入",
         "sec_m_new_sources": "新來源",
         "sec_m_baseline": "筆（停止前 24 小時）",
+        "sec_det_volume_anomaly": "記錄量異常",
+        "sec_m_rate": "筆／小時（目前）", "sec_m_usual": "筆／小時（這個時段平常）",
+        "sec_m_ratio": "倍",
         "datanode_fallback_title": "⚠️ Data Node 憑證無法使用，已改用 Graylog API 歸檔",
         "datanode_fallback_body": ("排程：{schedule}\n伺服器：{server}\n"
                                    "無法使用 Graylog Data Node 用戶端憑證：{problem}\n"
@@ -571,15 +632,29 @@ _MSG = {
         "sec_new": "初検出",
         "sec_escalated": "重大度上昇",
         "sec_ongoing": "継続中",
-        "sec_line": "[{sev}] {det} — {entity}{ext}{flag}\n    {stats}",
+        "sec_line": "【{sev}】{det}\n{entity}{ext}{flag}\n{stats}",
         "sec_external": "（外部）",
         "sec_footer": "対象期間：直近 {minutes} 分 · サーバー：{server}\n詳細は jt-glogarch の「セキュリティインシデント」ページを確認してください。",
         "sec_ai_title": "🤖 AI 分析：{n} 件のインシデント",
-        "sec_ai_line": "#{id} {det} — {entity}\n    AI：{verdict}（{confidence}）· {summary}",
+        "sec_ai_line": "#{id} {det}\n{entity}\nAI の判定：{verdict}（{confidence}）\n{summary}",
         "sec_ai_footer": "サーバー：{server} · AI モデルの助言です。対応する前に確認してください。",
         "sec_ai_v_malicious": "悪意あり", "sec_ai_v_suspicious": "不審", "sec_ai_v_benign": "無害",
         "sec_ai_v_unclear": "判断できません", "sec_ai_c_low": "確信度 低", "sec_ai_c_medium": "確信度 中",
         "sec_ai_c_high": "確信度 高",
+        "sec_dg_title_ok": "✅ 週次セキュリティサマリー：{server}",
+        "sec_dg_title_warn": "⚠️ 週次セキュリティサマリー：{server}（分析が正常に実行されていません）",
+        "sec_dg_period": "直近 {days} 日間（{until} まで）",
+        "sec_dg_off": "セキュリティ分析は無効です。インシデントは検出されていません。",
+        "sec_dg_new": "新規インシデント：{total} 件（高 {high}、中 {medium}、低 {low}）",
+        "sec_dg_open": "現在未対応：{total} 件（高 {high}）",
+        "sec_dg_cases": "調査ケース：未着手 {open} 件、対応中 {prog} 件、今週クローズ {closed} 件",
+        "sec_dg_top": "多い検出：{items}",
+        "sec_dg_risk": "リスクが高い対象：{items}",
+        "sec_dg_ai": "AI の判定：悪意あり {malicious}、疑わしい {suspicious}、無害 {benign}、判断不能 {unclear}",
+        "sec_dg_sup": "抑制ルール：有効 {active} 件、今週一致 {hit} 件",
+        "sec_dg_runs": "分析の実行：成功 {ok}、一部成功 {partial}、失敗 {error}、スキップ {skipped}",
+        "sec_dg_attack": "監視中の ATT&CK 手法：{t} 件中 {w} 件",
+        "sec_dg_sep": "、", "sec_dg_item": "{name}（{n}）",
         "sec_failing_title": "❌ セキュリティ分析が動作していません",
         "sec_failing_body": ("サーバー {server} の直近 {n} 回の分析がすべて失敗したため、インシデントを検出できていません。\n"
                              "最後のエラー：{error}"),
@@ -598,6 +673,9 @@ _MSG = {
         "sec_det_account_new_source": "アカウントが新しい送信元からログイン",
         "sec_m_new_sources": "新しい送信元",
         "sec_m_baseline": "件（停止前の 24 時間）",
+        "sec_det_volume_anomaly": "レコード量の異常",
+        "sec_m_rate": "件／時（現在）", "sec_m_usual": "件／時（この時間帯の通常）",
+        "sec_m_ratio": "倍（通常比）",
         "datanode_fallback_title": "⚠️ Data Node 証明書が使用できないため、Graylog API でアーカイブしました",
         "datanode_fallback_body": ("スケジュール：{schedule}\nサーバー：{server}\n"
                                    "Graylog Data Node のクライアント証明書を使用できません：{problem}\n"
@@ -835,7 +913,7 @@ def _plain(value: str, limit: int = 120) -> str:
 def _sec_stats(metrics: dict) -> str:
     parts = []
     for k, v in metrics.items():
-        if v is None:
+        if v is None or (k == "count" and "rate" in metrics):   # volume: the rate says it
             continue
         key = "sec_m_" + k.replace(":", "_")
         label = _t(key)
@@ -846,8 +924,8 @@ def _sec_stats(metrics: dict) -> str:
             continue
         if isinstance(v, float) and v.is_integer():
             v = int(v)
-        parts.append(f"{v:,} {label}" if isinstance(v, int) and k != "min:alert_severity"
-                     else f"{label} {v}")
+        parts.append(f"{v:,} {label}" if isinstance(v, (int, float)) and not isinstance(v, bool)
+                     and k != "min:alert_severity" else f"{label} {v}")
     return " · ".join(parts)
 
 
@@ -871,8 +949,8 @@ async def notify_security_incidents(items: list[dict], server: str, window_minut
                         entity=_plain(it["entity"]),
                         ext=_t("sec_external") if it.get("external") else "",
                         flag=flag, stats=_sec_stats(it.get("metrics") or {})))
-    body = "\n".join(lines) + "\n\n" + _t("sec_footer", minutes=window_minutes, server=server)
-    return await send_notification(NotifyEvent.SECURITY_INCIDENT, _t("sec_title", n=len(items)), body)
+    body = "\n\n".join(lines) + "\n\n" + _t("sec_footer", minutes=window_minutes, server=server)
+    return await send_notification(NotifyEvent.SECURITY_INCIDENT, _t("sec_title", n=len(items)), body, rich=True)
 
 
 async def notify_security_ai(items: list[dict], server: str):
@@ -890,8 +968,47 @@ async def notify_security_ai(items: list[dict], server: str):
         lines.append(_t("sec_ai_line", id=inc["id"], det=det, entity=_plain(inc["entity"]),
                         verdict=_t("sec_ai_v_" + row["verdict"]), confidence=_t("sec_ai_c_" + row["confidence"]),
                         summary=summary))
-    body = "\n".join(lines) + "\n\n" + _t("sec_ai_footer", server=server)
-    return await send_notification(NotifyEvent.SECURITY_INCIDENT, _t("sec_ai_title", n=len(items)), body)
+    body = "\n\n".join(lines) + "\n\n" + _t("sec_ai_footer", server=server)
+    return await send_notification(NotifyEvent.SECURITY_INCIDENT, _t("sec_ai_title", n=len(items)), body, rich=True)
+
+
+def format_security_digest(d: dict, server: str) -> tuple[str, str]:
+    """(title, body) of the weekly summary in the notification language."""
+    def names(rows):
+        # a Sigma title is user text (code span); our own detection names are not
+        return _t("sec_dg_sep").join(
+            _t("sec_dg_item", name=_plain(str(r["title"]), 80) if r["title"] else _t("sec_det_" + r["detector"]),
+               n=r["count"]) for r in rows)
+    lines = [_t("sec_dg_period", days=d["days"],
+                until=datetime.now().astimezone().strftime("%Y-%m-%d %H:%M"))]
+    if not d.get("enabled"):
+        lines.append(_t("sec_dg_off"))
+    r = d["runs"]
+    lines.append(_t("sec_dg_runs", ok=r["ok"], partial=r["partial"], error=r["error"], skipped=r["skipped"]))
+    lines.append(_t("sec_dg_new", total=d["new_total"], **d["new"]))
+    lines.append(_t("sec_dg_open", total=sum(d["open"].values()), high=d["open"]["high"]))
+    c = d["cases"]
+    lines.append(_t("sec_dg_cases", open=c["open"], prog=c["in_progress"], closed=c["closed_in_week"]))
+    if d["top_detectors"]:
+        lines.append(_t("sec_dg_top", items=names(d["top_detectors"])))
+    if d["risk_top"]:
+        lines.append(_t("sec_dg_risk", items=_t("sec_dg_sep").join(
+            _t("sec_dg_item", name=_plain(str(x["entity"]), 60), n=f"{x['score']:g}") for x in d["risk_top"])))
+    if any(d["verdicts"].values()):
+        lines.append(_t("sec_dg_ai", **d["verdicts"]))
+    s_ = d["suppressions"]
+    if s_["active"] or s_["hit_in_week"]:
+        lines.append(_t("sec_dg_sup", active=s_["active"], hit=s_["hit_in_week"]))
+    lines.append(_t("sec_dg_attack", w=d["attack"]["watched"], t=d["attack"]["total"]))
+    from glogarch.security.digest import healthy
+    title = _t("sec_dg_title_ok" if healthy(d) else "sec_dg_title_warn", server=server)
+    return title, "\n".join(lines)
+
+
+async def notify_security_digest(d: dict, server: str):
+    """The weekly summary (security/digest.py). Routed like incidents."""
+    title, body = format_security_digest(d, server)
+    return await send_notification(NotifyEvent.SECURITY_INCIDENT, title, body, rich=True)
 
 
 async def notify_security_failing(server: str, runs: int, error: str):

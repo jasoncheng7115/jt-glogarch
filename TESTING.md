@@ -1113,6 +1113,74 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
       Stop works; conversations list, reopen and delete; Settings: test connection, save, MCP config
       snippet, mcp_graylog status. en / zh-TW / ja, both themes, ~1436 px.
 
+### Rich security notifications (v1.32.1)
+
+**Automated**
+
+- [ ] `tests/test_notify_rich.py` (4): Telegram rich HTML escapes title and body, turns code spans into
+      `<code>`, uses only b / i / code, no `<pre>` and no backticks; job notifications keep `<pre>`; incident
+      and AI notifications are sent rich, have no indented lines, one block per incident with the entity on
+      its own line; the e-mail HTML is paragraphs with escaped code.
+
+**Manual**
+
+- [ ] A real incident notification in Telegram (phone) and e-mail reads as formatted text, not a code block.
+
+### Weekly security summary (v1.32.0)
+
+**Automated**
+
+- [ ] `tests/test_security_digest.py` (6): contents over 7 days (new by severity vs older incidents, top
+      detections, open, cases, runs, suppressions matched, risk); health (no run = warning whatever the
+      incidents, more failures than good runs = warning); the text (warning title for a week without runs,
+      "turned off" stated, counts, our detection names plain, log text cannot start a line); API (cron
+      validated, empty box keeps the stored schedule, preview gives the exact text, send, a send failure is a
+      502 with the reason, audit); schedule off by default, POSIX day of week, a bad stored cron falls back;
+      labels and placeholders in all languages.
+
+**Manual**
+
+- [ ] Security → Settings: Preview shows the text in the notification language; Send now asks first and
+      arrives in a real channel; after saving with the switch on, the job `internal-security-digest` exists.
+
+### Suppressions (v1.31.0)
+
+**Automated**
+
+- [ ] `tests/test_security_suppress.py` (7): entity normalization (networks canonical, too-wide networks,
+      bad values refused); matching (exact, every detection, every server vs one server, IPv4/IPv6 networks,
+      a name never inside a network, expired ignored, log values not trimmed); hits counted; the API
+      (validation messages, network canonicalized, close the incident, same entry replaces reason and expiry,
+      Sigma detections, delete, audit); the runner drops a suppressed finding before it becomes an incident
+      and records the hit; prune keeps live and recently expired entries; UI wiring, escaped confirm, labels
+      in all languages.
+
+**Manual**
+
+- [ ] Incidents: the suppress button opens the dialog (detection or every detection, entity editable,
+      reason required, expiry, close the incident); after saving the incident is closed and the entry is in
+      Suppressions under the table; Run now with the entity still active increases its matches; removing it
+      asks first. en / zh-TW / ja, both themes, ~1436 px.
+
+### Unusual message volume (v1.30.0)
+
+**Automated**
+
+- [ ] `tests/test_security_anomaly.py` (10): off by default (no aggregation of all messages unless enabled);
+      both fields collected, one failing field does not stop the other; the usual rate counts quiet hours as 0
+      and leaves out days the analysis did not run, needs 5 days; a spike against a learned history (metrics,
+      query with exclusions, medium at >= 20x); thresholds (5x, min per hour, a 30-minute window scaled to per
+      hour, a noisy history inside its spread is not a spike); learning (history < 7 days, a never-seen host);
+      one row per hour, last run wins, prune; the runner decides BEFORE recording this run's volume; not mapped
+      to ATT&CK; labels in all languages; the AI evidence explains the metrics.
+- [ ] `scripts/e2e-security-test.py` (real Graylog): a 600-message burst is counted per host and per category
+      by the two real aggregations, the history logic against 10 days of 20/h finds both (30x, medium), and the
+      incident's query finds the burst. 2026-11-20: ALL PASS on 7.2.2.
+
+**Manual**
+
+- [ ] Security → Settings: the detection row says the minimum is per hour and that it needs 7 days of history.
+
 ### Account logged in from a new source (v1.29.0)
 
 **Automated**

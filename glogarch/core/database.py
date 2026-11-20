@@ -348,6 +348,34 @@ CREATE TABLE IF NOT EXISTS sec_pairs (
 );
 CREATE INDEX IF NOT EXISTS idx_sec_pairs_acct ON sec_pairs (server, account);
 
+-- Messages per hour per host / event category, one row per UTC hour (added 1.30,
+-- volume anomaly). The last run of an hour wins. Kept ~16 days.
+CREATE TABLE IF NOT EXISTS sec_volumes (
+    server TEXT NOT NULL,
+    field  TEXT NOT NULL,
+    key    TEXT NOT NULL,
+    hour   TEXT NOT NULL,
+    rate   REAL NOT NULL,
+    PRIMARY KEY (server, field, key, hour)
+);
+CREATE INDEX IF NOT EXISTS idx_sec_volumes_hour ON sec_volumes (server, field, hour);
+
+-- Suppressions (added 1.31): a known, accepted detection on one entity. server ''
+-- = every server, detector '*' = every detection, entity = a value or a network.
+CREATE TABLE IF NOT EXISTS sec_suppressions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    server      TEXT NOT NULL DEFAULT '',
+    detector    TEXT NOT NULL,
+    entity      TEXT NOT NULL,
+    reason      TEXT NOT NULL,
+    created_by  TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL,
+    expires_at  TEXT,
+    hits        INTEGER NOT NULL DEFAULT 0,
+    last_hit_at TEXT,
+    UNIQUE (server, detector, entity)
+);
+
 -- AI chat (added 1.21). One user's conversations are theirs only. A message
 -- keeps the question or the final answer and the NAMES of the tools used, not
 -- the tool results (log data does not get a second copy here).
@@ -1712,7 +1740,8 @@ class ArchiveDB:
         r = self.conn.execute("SELECT MIN(started_at) FROM sec_runs").fetchone()
         return r[0] if r else None
 
-    def prune_security(self, incident_days: int, run_days: int = 30, seen_days: int = 400) -> int:
+    def prune_security(self, incident_days: int, run_days: int = 30, seen_days: int = 400,
+                       volume_days: int = 16) -> int:
         now = datetime.utcnow()
         with self._lock:
             try:
@@ -1728,6 +1757,11 @@ class ArchiveDB:
                                   (_dt_to_str(now - timedelta(days=seen_days)),))
                 self.conn.execute("DELETE FROM sec_pairs WHERE last_seen < ?",
                                   (_dt_to_str(now - timedelta(days=seen_days)),))
+                self.conn.execute("DELETE FROM sec_volumes WHERE hour < ?",
+                                  (_dt_to_str(now - timedelta(days=volume_days)),))
+                # an expired suppression stays listed for 90 days, then goes
+                self.conn.execute("DELETE FROM sec_suppressions WHERE expires_at IS NOT NULL AND expires_at < ?",
+                                  (_dt_to_str(now - timedelta(days=90)),))
                 self.conn.commit()
                 return n
             except Exception:
@@ -1757,6 +1791,98 @@ class ArchiveDB:
                     "INSERT INTO sec_pairs (server, account, source, first_seen, last_seen) VALUES (?, ?, ?, ?, ?) "
                     "ON CONFLICT (server, account, source) DO UPDATE SET last_seen = excluded.last_seen",
                     [(server, a, b, now, now) for a, b in pairs])
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    # --- message volume history (1.30) --------------------------------------------
+
+    def volume_history(self, server: str, field: str, keys: list[str],
+                       since: datetime) -> tuple[dict, set, dict]:
+        """({key: {hour: rate}}, {hours with any row for this field}, {key: first hour})
+        since `since`, for the given keys."""
+        lo = _dt_to_str(since)
+        samples: dict[str, dict[str, float]] = {}
+        first: dict[str, str] = {}
+        for i in range(0, len(keys), 500):
+            chunk = keys[i:i + 500]
+            marks = ",".join("?" * len(chunk))
+            for k, h, r in self.conn.execute(
+                    f"SELECT key, hour, rate FROM sec_volumes WHERE server = ? AND field = ? "  # nosec B608 - placeholders only
+                    f"AND hour >= ? AND key IN ({marks})", (server, field, lo, *chunk)):
+                samples.setdefault(k, {})[h] = r
+                if k not in first or h < first[k]:
+                    first[k] = h
+        observed = {h for (h,) in self.conn.execute(
+            "SELECT DISTINCT hour FROM sec_volumes WHERE server = ? AND field = ? AND hour >= ?",
+            (server, field, lo))}
+        return samples, observed, first
+
+    def record_volumes(self, server: str, rows: list[tuple[str, str, float]], hour: datetime) -> None:
+        h = _dt_to_str(hour)
+        with self._lock:
+            try:
+                self.conn.executemany(
+                    "INSERT INTO sec_volumes (server, field, key, hour, rate) VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT (server, field, key, hour) DO UPDATE SET rate = excluded.rate",
+                    [(server, f, k, h, float(r)) for f, k, r in rows])
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    # --- suppressions (1.31) -----------------------------------------------------
+
+    def list_suppressions(self) -> list[dict]:
+        return [dict(r) for r in self.conn.execute(
+            "SELECT * FROM sec_suppressions ORDER BY id DESC")]
+
+    def add_suppression(self, *, server: str, detector: str, entity: str, reason: str,
+                        username: str, expires_at: datetime | None) -> tuple[int, bool]:
+        """(id, created). The same server/detection/entity again replaces the
+        reason and expiry and keeps the counters."""
+        now = _dt_to_str(datetime.utcnow())
+        exp = _dt_to_str(expires_at) if expires_at else None
+        with self._lock:
+            try:
+                row = self.conn.execute("SELECT id FROM sec_suppressions WHERE server = ? AND detector = ? "
+                                        "AND entity = ?", (server, detector, entity)).fetchone()
+                if row:
+                    self.conn.execute("UPDATE sec_suppressions SET reason = ?, expires_at = ?, created_by = ?, "
+                                      "created_at = ? WHERE id = ?", (reason, exp, username, now, row[0]))
+                    self.conn.commit()
+                    return row[0], False
+                cur = self.conn.execute(
+                    "INSERT INTO sec_suppressions (server, detector, entity, reason, created_by, created_at, "
+                    "expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)", (server, detector, entity, reason, username, now, exp))
+                self.conn.commit()
+                return cur.lastrowid, True
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def delete_suppression(self, sid: int) -> dict | None:
+        with self._lock:
+            try:
+                row = self.conn.execute("SELECT * FROM sec_suppressions WHERE id = ?", (sid,)).fetchone()
+                if not row:
+                    return None
+                self.conn.execute("DELETE FROM sec_suppressions WHERE id = ?", (sid,))
+                self.conn.commit()
+                return dict(row)
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def record_suppression_hits(self, hits: dict[int, int], when: datetime) -> None:
+        if not hits:
+            return
+        w = _dt_to_str(when)
+        with self._lock:
+            try:
+                self.conn.executemany("UPDATE sec_suppressions SET hits = hits + ?, last_hit_at = ? WHERE id = ?",
+                                      [(n, w, sid) for sid, n in hits.items()])
                 self.conn.commit()
             except Exception:
                 self._rollback_safely()

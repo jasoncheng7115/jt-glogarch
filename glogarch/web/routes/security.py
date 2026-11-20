@@ -14,10 +14,11 @@ from fastapi.responses import JSONResponse
 
 from glogarch.core.config import SecurityConfig
 from glogarch.security.attack import ATTACK_VERSION, coverage_matrix, techniques_for
-from glogarch.security.detectors import DETECTORS, PROBES, SEVERITIES
+from glogarch.security.detectors import DETECTORS, SEVERITIES
 from glogarch.security.risk import CRITICALITY, match_asset, normalize_asset, score_entities
-from glogarch.security.threat_intel import DEFAULT_FEEDS, FEEDS, describe, matcher_for
+from glogarch.security.threat_intel import FEEDS, describe, matcher_for
 from glogarch.security.runner import parse_db_ts
+from glogarch.security.coverage import detector_rows as _detector_rows, recent_coverage
 from glogarch.utils.logging import get_logger
 from glogarch.web.routes.api import _audit, _config_path, _db, _settings
 
@@ -208,25 +209,6 @@ async def analyze(request: Request, incident_id: int):
 
     asyncio.get_running_loop().run_in_executor(None, _work)
     return JSONResponse({"status": "running"}, status_code=202)
-
-
-def _detector_rows(cfg: SecurityConfig) -> list[dict]:
-    out = []
-    for d in DETECTORS:
-        s = cfg.detectors.get(d.id) or {}
-        p = PROBES[d.probe]
-        out.append({
-            "id": d.id,
-            "enabled": bool(s.get("enabled", d.default_enabled)),
-            "min_count": int(s.get("min_count") or d.min_count),
-            "default_min_count": d.min_count,
-            "exclude": s["exclude"] if "exclude" in s else d.exclude,
-            "default_exclude": d.exclude,
-            "probe": d.probe,
-            "query": p.query,
-            "fields": list(p.fields),
-        })
-    return out
 
 
 @router.get("/security/overview")
@@ -711,34 +693,6 @@ async def link_case_incidents(request: Request, case_id: int):
     return {"changed": done}
 
 
-def recent_coverage(db, hours: int = 24) -> tuple[list[dict], bool, str | None]:
-    """Coverage merged over the finished runs of the last `hours`: a probe field
-    counts its events across them, and is an error only if it failed in all.
-    One quiet hour (no WAF traffic at 3 am) must not read as "no data"."""
-    since = datetime.utcnow() - timedelta(hours=hours)
-    runs = [r for r in db.list_security_runs(limit=500) if r["status"] in ("ok", "partial")
-            and (parse_db_ts(r.get("started_at")) or datetime.min) >= since]
-    merged: dict[tuple, dict] = {}
-    for r in runs:
-        for c in r.get("coverage") or []:
-            m = merged.setdefault((c.get("probe"), c.get("field")),
-                                  {"probe": c.get("probe"), "field": c.get("field"), "events": 0, "missing": 0,
-                                   "error": "", "ok_runs": 0, "err_runs": 0})
-            if c.get("error"):
-                m["err_runs"] += 1
-                m["error"] = c["error"]
-            else:
-                m["ok_runs"] += 1
-                m["events"] += int(c.get("events") or 0)
-                m["missing"] += int(c.get("missing") or 0)
-    out = []
-    for m in merged.values():
-        if m["ok_runs"]:
-            m["error"] = ""
-        out.append({k: m[k] for k in ("probe", "field", "events", "missing", "error")})
-    return out, bool(runs), (runs[0].get("finished_at") if runs else None)
-
-
 @router.get("/security/attack")
 def attack_coverage(request: Request):
     """MITRE ATT&CK techniques the detections map to, and whether each is
@@ -823,6 +777,13 @@ async def save_settings(request: Request):
     new.renotify_hours = max(1.0, min(float(new.renotify_hours or old.renotify_hours), 720.0))
     new.new_days = max(1, min(int(new.new_days or old.new_days), 365))
     new.sigma_max_rules = max(0, min(int(new.sigma_max_rules), 500))
+    new.digest_cron = (new.digest_cron or "").strip() or old.digest_cron
+    try:
+        from apscheduler.triggers.cron import CronTrigger
+        from glogarch.scheduler.scheduler import posix_cron_to_apscheduler
+        CronTrigger.from_crontab(posix_cron_to_apscheduler(new.digest_cron))
+    except ValueError:
+        return JSONResponse({"error": f"Invalid summary schedule (cron): {new.digest_cron}"}, status_code=400)
 
     from glogarch.core.config_writer import update_config
 
@@ -837,5 +798,104 @@ async def save_settings(request: Request):
     _audit(request, "security_settings_saved",
            f"enabled={new.enabled} server={new.server or '(default)'} "
            f"interval={new.interval_minutes}m window={new.window_minutes}m "
-           f"ai_auto={new.ai_auto}/{new.ai_auto_min_severity}/{new.ai_auto_max_per_run}")
+           f"ai_auto={new.ai_auto}/{new.ai_auto_min_severity}/{new.ai_auto_max_per_run} "
+           f"digest={new.digest_enabled}/{new.digest_cron}")
     return {"status": "saved", "registered": registered}
+
+
+# --- weekly summary (1.32) ------------------------------------------------------------
+
+@router.get("/security/digest")
+def digest_preview(request: Request):
+    from glogarch.notify.sender import format_security_digest
+    from glogarch.security.digest import build_digest, healthy, server_name
+    settings = _settings(request)
+    d = build_digest(settings, _db(request))
+    title, body = format_security_digest(d, server_name(settings))
+    return {**d, "healthy": healthy(d), "title": title, "body": body}
+
+
+@router.post("/security/digest/send")
+async def digest_send(request: Request):
+    from glogarch.security.digest import send_digest
+    try:
+        d = await send_digest(_settings(request), _db(request))
+    except Exception as e:
+        return JSONResponse({"error": f"The summary could not be sent: {e}"}, status_code=502)
+    _audit(request, "security_digest_sent", f"new={d['new_total']} runs={d['runs_total']}")
+    return {"status": "sent"}
+
+
+# --- suppressions (1.31) ------------------------------------------------------------
+
+_SUPPRESS_DAYS = (0, 1, 7, 30, 90, 365)
+
+
+def _suppression_row(r: dict, now: datetime, db) -> dict:
+    exp = parse_db_ts(r.get("expires_at"))
+    title = None
+    if r["detector"].startswith("sigma:"):
+        rule = db.get_sigma_rule(int(r["detector"].split(":", 1)[1]))
+        title = f"Sigma: {rule['title']}" if rule else None   # a deleted rule shows its id
+    return {**r, "active": exp is None or exp > now, "detector_title": title}
+
+
+@router.get("/security/suppressions")
+def list_suppressions(request: Request):
+    db = _db(request)
+    now = datetime.utcnow()
+    return {"suppressions": [_suppression_row(r, now, db) for r in db.list_suppressions()],
+            "days": list(_SUPPRESS_DAYS)}
+
+
+@router.post("/security/suppressions")
+async def add_suppression(request: Request):
+    from glogarch.security.suppress import DAYS_MAX, MAX_REASON, SuppressionError, normalize_entity
+    body = await request.json() or {}
+    db = _db(request)
+    settings = _settings(request)
+    detector = str(body.get("detector") or "").strip()
+    if detector != "*" and detector not in {d.id for d in DETECTORS} and not re.fullmatch(r"sigma:\d+", detector):
+        return JSONResponse({"error": "Unknown detection"}, status_code=400)
+    server = str(body.get("server") or "").strip()
+    if server and server not in {s.name for s in settings.servers}:
+        return JSONResponse({"error": "Unknown server"}, status_code=400)
+    try:
+        entity = normalize_entity(str(body.get("entity") or ""))
+    except SuppressionError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    reason = str(body.get("reason") or "").strip()
+    if not reason:
+        return JSONResponse({"error": "A reason is required"}, status_code=400)
+    if len(reason) > MAX_REASON:
+        return JSONResponse({"error": f"The reason is longer than {MAX_REASON} characters"}, status_code=400)
+    try:
+        days = int(body.get("days", 30))
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "Days must be a number"}, status_code=400)
+    if days < 0 or days > DAYS_MAX:
+        return JSONResponse({"error": f"Days must be between 0 and {DAYS_MAX}"}, status_code=400)
+    user = request.session.get("username", "")
+    expires = datetime.utcnow() + timedelta(days=days) if days else None
+    sid, created = db.add_suppression(server=server, detector=detector, entity=entity, reason=reason,
+                                      username=user, expires_at=expires)
+    _audit(request, "security_suppression_added",
+           f"id={sid} server={server or '*'} detector={detector} entity={entity} days={days or 'never'} "
+           f"reason={reason[:120]}")
+    closed = None
+    iid = body.get("incident_id")
+    if body.get("close_incident") and isinstance(iid, int):
+        if db.set_security_status(iid, "closed", user):
+            closed = iid
+            _audit(request, "security_incident_status", f"incident={iid} status=closed (suppressed)")
+    return {"id": sid, "created": created, "entity": entity, "closed_incident": closed}
+
+
+@router.delete("/security/suppressions/{sid}")
+def delete_suppression(request: Request, sid: int):
+    row = _db(request).delete_suppression(sid)
+    if not row:
+        return JSONResponse({"error": "Suppression not found"}, status_code=404)
+    _audit(request, "security_suppression_removed",
+           f"id={sid} server={row['server'] or '*'} detector={row['detector']} entity={row['entity']}")
+    return {"deleted": sid}

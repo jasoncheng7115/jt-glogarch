@@ -16,9 +16,13 @@ from glogarch.core.database import ArchiveDB
 from glogarch.graylog.client import GraylogClient
 from glogarch.graylog.system import SystemMonitor
 from glogarch.ratelimit.limiter import RateLimiter
-from glogarch.security.detectors import AUTH_OK, NEW_SOURCE_LEARN_DAYS, NEW_SOURCE_MEMORY_DAYS, sev_rank
+from glogarch.security.detectors import (
+    ANOMALY_FACTOR, ANOMALY_HISTORY_DAYS, ANOMALY_LEARN_DAYS, ANOMALY_MEDIUM_FACTOR, ANOMALY_MIN_DAYS,
+    ANOMALY_Z, AUTH_OK, NEW_SOURCE_LEARN_DAYS, NEW_SOURCE_MEMORY_DAYS, sev_rank,
+)
 from glogarch.security.engine import run_detectors
 from glogarch.security.graylog_fetch import make_fetch, make_pair_fetch
+from glogarch.security.suppress import apply_suppressions
 from glogarch.utils.logging import get_logger
 
 log = get_logger("security")
@@ -117,6 +121,19 @@ async def run_security_analysis(settings: Settings, db: ArchiveDB, *,
     if res.pairs:
         findings += new_source_findings(db, server.name, res.pairs, now, cfg.exclude_query)
         db.record_pairs(server.name, [(a, b) for a, b, _ in res.pairs], now)
+    if res.volume_settings is not None:
+        findings += volume_findings(db, server.name, res.volumes, now, int(cfg.window_minutes),
+                                    min_count=res.volume_settings["min_count"],
+                                    exclude=res.volume_settings["exclude"], global_exclude=cfg.exclude_query)
+        rate = 60.0 / max(1, int(cfg.window_minutes))
+        db.record_volumes(server.name, [(f, k, n * rate) for f, k, n in res.volumes], now.replace(minute=0, second=0))
+    suppressed = 0
+    try:
+        findings, hits = apply_suppressions(findings, server.name, db.list_suppressions(), now)
+        db.record_suppression_hits(hits, now)
+        suppressed = sum(hits.values())
+    except Exception as e:   # a broken suppression list must not stop the analysis
+        log.warning("Suppressions not applied", error=str(e))
     changes = db.apply_security_findings(
         server.name, findings, now, reopen_hours=cfg.reopen_hours,
         new_days=cfg.new_days, learning=learning)
@@ -150,14 +167,14 @@ async def run_security_analysis(settings: Settings, db: ArchiveDB, *,
     except Exception as e:
         log.warning("Security retention prune failed", error=str(e))
     log.info("Security analysis finished", server=server.name, source=source, status=status,
-             queries=res.queries, findings=len(findings), notified=len(to_notify))
+             queries=res.queries, findings=len(findings), suppressed=suppressed, notified=len(to_notify))
     extra = {}
     if ai_inline:
         extra["ai_analysed"] = await _auto_ai_analysis(settings, db, changes)
     else:
         extra["_changes"] = changes          # the caller runs the AI after answering
     return {**summary, "status": status, "queries": res.queries, "findings": len(findings),
-            "notified": len(to_notify), "errors": res.errors, **extra}
+            "notified": len(to_notify), "suppressed": suppressed, "errors": res.errors, **extra}
 
 
 def new_source_findings(db: ArchiveDB, server: str, pairs: list[tuple[str, str, int]], now: datetime,
@@ -189,6 +206,69 @@ def new_source_findings(db: ArchiveDB, server: str, pairs: list[tuple[str, str, 
                     "metrics": {"count": sum(n for _, n in srcs), "new_sources": [b for b, _ in srcs[:5]]},
                     "external": True if ext else (False if all(is_external(b) is False for b, _ in srcs) else None),
                     "query": build_query(f"{AUTH_OK} AND user_name:{lucene_quote(a)} AND source_ip:({ors})", global_exclude)})
+    return out
+
+
+def _median(vals: list[float]) -> float:
+    v = sorted(vals)
+    n = len(v)
+    return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2
+
+
+def usual_rate(samples: dict[str, float], observed: set[str], now: datetime) -> tuple[float, float, int] | None:
+    """(median, robust sigma, days) of the rate at this time of day: for each of the
+    last ANOMALY_HISTORY_DAYS days, the mean of the hours now-24h*k -1h..+1h. An hour
+    in which the analysis ran (`observed`) but this key had no row counts as 0; a day
+    on which the analysis did not run at that time is left out. None when fewer than
+    ANOMALY_MIN_DAYS days remain."""
+    from glogarch.core.database import _dt_to_str
+    base = now.replace(minute=0, second=0, microsecond=0)
+    days = []
+    for k in range(1, ANOMALY_HISTORY_DAYS + 1):
+        hours = [_dt_to_str(base - timedelta(days=k) + timedelta(hours=d)) for d in (-1, 0, 1)]
+        seen = [h for h in hours if h in observed]
+        if not seen:
+            continue
+        days.append(sum(samples.get(h, 0.0) for h in seen) / len(seen))
+    if len(days) < ANOMALY_MIN_DAYS:
+        return None
+    med = _median(days)
+    mad = _median([abs(x - med) for x in days]) * 1.4826
+    return med, max(mad, 0.1 * med, 1.0), len(days)
+
+
+def volume_findings(db: ArchiveDB, server: str, volumes: list[tuple[str, str, int]], now: datetime,
+                    window_minutes: int, *, min_count: int, exclude: str = "", global_exclude: str = "") -> list[dict]:
+    """A host or event category sending far more than usual at this time of day
+    (see detectors.ANOMALY_*). Called BEFORE this run's volumes are recorded."""
+    from glogarch.security.engine import build_query, is_external, lucene_quote
+    per_hour = 60.0 / max(1, window_minutes)
+    since = now - timedelta(days=ANOMALY_HISTORY_DAYS + 1)
+    learned = now - timedelta(days=ANOMALY_LEARN_DAYS)
+    out = []
+    for fld in sorted({f for f, _, _ in volumes}):
+        rows = [(k, n) for f, k, n in volumes if f == fld and n * per_hour >= min_count]
+        if not rows:
+            continue
+        samples, observed, first = db.volume_history(server, fld, [k for k, _ in rows], since)
+        for key, n in rows:
+            f = parse_db_ts(first.get(key))
+            if f is None or f > learned:
+                continue                       # history too young: still learning
+            usual = usual_rate(samples.get(key, {}), observed, now)
+            if usual is None:
+                continue
+            med, sigma, days = usual
+            rate = n * per_hour
+            if rate < ANOMALY_FACTOR * max(med, 1.0) or (rate - med) / sigma < ANOMALY_Z:
+                continue
+            ratio = rate / max(med, 1.0)
+            out.append({"detector": "volume_anomaly", "entity": key, "entity_field": fld,
+                        "severity": "medium" if ratio >= ANOMALY_MEDIUM_FACTOR else "low",
+                        "metrics": {"count": n, "rate": round(rate), "usual": round(med),
+                                    "ratio": round(ratio, 1), "days": days},
+                        "external": is_external(key) if fld == "source" else None,
+                        "query": build_query(f"{fld}:{lucene_quote(key)}", exclude, global_exclude)})
     return out
 
 

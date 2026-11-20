@@ -1123,6 +1123,11 @@
             </table>
             </div>
             <div class="pagination" id="sec-pager"></div>
+            <details class="sec-supp mt15">
+                <summary><span data-i18n="sup_title">Suppressions</span> <span class="text-muted fs-085" id="sec-supp-count"></span></summary>
+                <p class="text-muted fs-085" data-i18n="sup_list_help">A suppressed detection still runs; its matches are counted here instead of opening incidents.</p>
+                <div id="sec-supp-list"></div>
+            </details>
         </div>
 
         <div class="card hidden" id="sec-cases-panel">
@@ -1237,6 +1242,14 @@
                 <button class="u134" data-act="caseClose" title="Close">&times;</button>
                 <h3 data-i18n="case_title" data-icon="log">Investigation</h3>
                 <div id="sec-case-content"></div>
+            </div>
+        </div>
+
+        <div id="sec-suppress-modal" class="modal-overlay u066">
+            <div class="modal-card sec-case-pick">
+                <button class="u134" data-act="secSuppressClose" title="Close">&times;</button>
+                <h3 data-i18n="sup_dialog_title" data-icon="eye_closed">Suppress this detection</h3>
+                <div id="sec-suppress-content"></div>
             </div>
         </div>
 
@@ -1682,6 +1695,7 @@ sudo bash upgrade-offline.sh</pre>
     <script src="/static/js/risk.js?v={{ version }}"></script>
     <script src="/static/js/sigma.js?v={{ version }}"></script>
     <script src="/static/js/overview.js?v={{ version }}"></script>
+    <script src="/static/js/suppress.js?v={{ version }}"></script>
     <script src="/static/js/ai.js?v={{ version }}"></script>
 </body>
 </html>

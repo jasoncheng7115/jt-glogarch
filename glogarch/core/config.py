@@ -302,6 +302,10 @@ class SecurityConfig(BaseModel):
     ti_enabled: bool = False
     ti_feeds: list[str] = Field(default_factory=lambda: ["spamhaus_drop", "tor_exit", "feodo"])
     ti_refresh_hours: int = 24
+    # Weekly summary through the notification channels (added 1.32), OFF by default.
+    # POSIX cron, local time; default Monday 08:00.
+    digest_enabled: bool = False
+    digest_cron: str = "0 8 * * 1"
 
 
 class AiConfig(BaseModel):

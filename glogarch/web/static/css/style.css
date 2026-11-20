@@ -2381,3 +2381,11 @@ button.ov-tile-link:hover { border-color: var(--accent); background: var(--card-
 .ov-list li > strong { float: right; }
 .ov-list a { text-decoration: none; }
 .sec-ai-nv { margin-right: 16px; }
+
+/* Suppressions (1.31) */
+.sec-supp > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.sec-supp .sup-reason { max-width: 360px; overflow-wrap: anywhere; }
+.sec-supp tr.sup-expired td { opacity: .6; }
+
+/* Weekly security summary preview (1.32) */
+.sec-dg-preview { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85em; margin-top: 8px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); }

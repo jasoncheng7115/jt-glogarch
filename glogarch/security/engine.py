@@ -54,6 +54,10 @@ class RunResult:
     queries: int = 0
     sigma: dict = field(default_factory=dict)   # rule id -> {"count": int|None, "error": str}
     pairs: list = field(default_factory=list)   # (account, source, count) of successful logins
+    # volume_anomaly: (field, key, count) of the window and the effective
+    # min_count/exclude (the runner decides; it has the history).
+    volumes: list = field(default_factory=list)
+    volume_settings: dict | None = None
 
 
 def metric_key(fn: str, fld: str | None) -> str:
@@ -161,6 +165,10 @@ async def run_detectors(fetch: Fetch, time_from: datetime, time_to: datetime, *,
             await _pairs(fetch_pairs, res, det, build_query(PROBES[det.probe].query, exclude, global_exclude),
                          time_from, time_to)
             continue
+        if det.id == "volume_anomaly":
+            await _volume(fetch, res, det, build_query("*", exclude, global_exclude), time_from, time_to)
+            res.volume_settings = {"min_count": min_count, "exclude": exclude}
+            continue
         if det.id == "source_silent":
             await _silent(fetch, res, det, min_count, build_query("*", exclude, global_exclude), time_to)
             continue
@@ -248,6 +256,32 @@ async def _pairs(fetch_pairs, res: RunResult, det: Detector, query: str, time_fr
         res.pairs.append((a, b, n))
     cov.truncated = len(rows) >= probe.limit
     res.coverage.append(cov)
+
+
+async def _volume(fetch, res: RunResult, det: Detector, query: str, time_from, time_to) -> None:
+    """Counts of the window per host and per event category; the runner compares
+    them with their history (it has it)."""
+    probe = PROBES[det.probe]
+    for fld in probe.fields:
+        cov = Coverage(probe.id, fld)
+        try:
+            res.queries += 1
+            rows = await fetch(query, fld, probe.metrics, time_from, time_to, probe.limit)
+        except Exception as e:
+            cov.error = str(e)[:300]
+            res.errors.append(f"{probe.id}/{fld}: {cov.error}")
+            res.coverage.append(cov)
+            continue
+        for r in rows:
+            n = int(r.get("count") or 0)
+            cov.events += n
+            ent = str(r.get("entity") or "")
+            if ent in ("", EMPTY):
+                cov.missing += n
+                continue
+            res.volumes.append((fld, ent, n))
+        cov.truncated = len(rows) >= probe.limit
+        res.coverage.append(cov)
 
 
 async def _silent(fetch, res: RunResult, det: Detector, min_count: int, query: str, time_to: datetime) -> None:
