@@ -1109,7 +1109,8 @@
                 <button class="btn-secondary btn-sm sec-c-new" data-act="secExportCsv" data-i18n="sec_btn_csv" data-icon="download">Export CSV</button>
             </div>
             <div class="table-wrap">
-            <table class="sec-table">
+            <table class="sec-table sec-inc-table">
+                <colgroup><col class="c-sev"><col class="c-det"><col class="c-ent"><col class="c-stats"><col class="c-dt"><col class="c-dt"><col class="c-st"><col class="c-act"></colgroup>
                 <thead><tr>
                     <th data-i18n="sec_th_severity">Severity</th>
                     <th data-i18n="sec_th_detector">Detection</th>
@@ -1220,11 +1221,13 @@
                     <button class="btn-secondary btn-sm sec-c-new" data-act="sigmaFieldMapForm" data-i18n="sigma_btn_fieldmap" data-icon="settings">Field map</button>
                     <button class="btn-primary btn-sm" data-act="sigmaAddForm" data-i18n="sigma_btn_add" data-icon="plus">Add rule</button>
                 </div>
+                <div class="sigma-bulk hidden" id="sigma-bulk"></div>
                 <p class="text-muted fs-085" data-i18n="sigma_help">Sigma is a shared format for detection rules. Paste a rule: it is converted to a Graylog query, shown before you save it, and once enabled runs with every security analysis, counted per host (or another field). What jt-glogarch cannot convert exactly is refused with the reason, never approximated. Matching on keyword fields is case-sensitive.</p>
                 <div id="sec-s-form" class="hidden"></div>
                 <div class="table-wrap">
                 <table class="sec-table">
                     <thead><tr>
+                        <th class="sl-chk"><input type="checkbox" id="sigma-chk-all" data-act-change="sigmaSelectAll" data-act-self data-i18n-title="sigma_sel_all" title="Select all"></th>
                         <th data-i18n="case_th_title">Title</th>
                         <th data-i18n="sec_th_severity">Severity</th>
                         <th data-i18n="sigma_th_query">Graylog query</th>
@@ -1254,10 +1257,11 @@
                         <select id="sl-state" data-act-change="slFilter"></select>
                         <button class="btn-primary btn-sm sl-add-sel" id="sl-add-sel" data-act="slAddSelected" disabled></button>
                     </div>
+                    <div class="sl-selbar hidden" id="sl-selbar"></div>
                     <div class="table-wrap">
                     <table class="sec-table sl-table">
                         <thead><tr>
-                            <th class="sl-chk"></th>
+                            <th class="sl-chk"><input type="checkbox" id="sl-chk-all" data-act-change="slSelectPage" data-act-self data-i18n-title="sl_sel_page" title="Select this page"></th>
                             <th data-i18n="case_th_title">Title</th>
                             <th data-i18n="sec_th_severity">Severity</th>
                             <th data-i18n="sl_th_source">Log source</th>

@@ -1185,6 +1185,11 @@ UI 測試用的 jt-glogarch 也必須指向那台測試 Graylog（在任何主�
 - [ ] 「資安事件」頁：偵測名稱下方的技術標記會開啟 MITRE 說明頁；ATT&CK 按鈕顯示戰術表，狀態與「涵蓋狀況」表一致。
       英文／繁中／日文、兩種主題、約 1436 px。
 
+### 資安頁面與 Sigma 全選（v1.36.1）
+
+- [ ] `tests/test_sigma_library.py`：`ids_only=1` 只回傳可加入的 ID；`/api/security/sigma-bulk` 啟用到 `sigma_max_rules` 為止、其餘以 `cap` 回報，可停用，非布林值拒絕。`tests/test_security_attack.py`：`attack.py` 裡每個戰術與技術都有英文（＝MITRE）、繁中、日文名稱。`tests/test_phone_layout.py`：未翻譯的文字在 `.i18n-ready` 之前隱藏，1.2 秒後仍會顯示。
+- [ ] 手動（約 1436 px、兩種主題、390 px）：事件清單欄位對齊、圖示按鈕同尺寸、AI 判定色點、日期分兩行；總覽圖約 210 px 高、數字卡同高且靠左；ATT&CK 矩陣中文在上、英文在下，狀態在同一欄；設定／涵蓋狀況／ATT&CK 可用各自的按鈕收合，上方按鈕呈按下狀態；Sigma 規則庫：表頭勾選框選取整頁、「選取全部符合篩選的 N 條」、分批加入；Sigma 規則：全選、啟用／停用、上限提示；切換頁面時不再先閃英文。
+
 ### 智慧問答：統計、分頁、用量、迴圈、多台 LLM、預覽（v1.36.0）
 
 **自動**

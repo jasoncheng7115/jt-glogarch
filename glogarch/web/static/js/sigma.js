@@ -1,17 +1,18 @@
 /* jt-glogarch — Sigma rules on the Security Incidents page (added 1.27).
  * Rule titles, YAML and queries are user-supplied: esc() everything. */
 
-const _sigma = {rules: [], fieldMap: {}, max: 50};
+const _sigma = {rules: [], fieldMap: {}, max: 50, sel: new Set()};
 
 function sigmaLevelChip(level) {
     const sev = {informational: 'low', low: 'low', medium: 'medium', high: 'high', critical: 'high'}[level] || 'medium';
-    return `${secSevBadge(sev)} <span class="text-muted fs-08">${esc(level)}</span>`;
+    // the badge with Sigma's own level under it, the same shape in every row (high and critical were not aligned)
+    return `<span class="sigma-lv">${secSevBadge(sev)}<span>${esc(level)}</span></span>`;
 }
 
 async function sigmaLoad() {
     const d = await fetchJSON(`${API}/security/sigma`);
     const tb = document.getElementById('sec-s-tbody');
-    if (!d || d.error) { tb.innerHTML = `<tr><td colspan="6">${esc(d && d.error || '')}</td></tr>`; return; }
+    if (!d || d.error) { tb.innerHTML = `<tr><td colspan="7">${esc(d && d.error || '')}</td></tr>`; return; }
     _sigma.rules = d.rules || [];
     _sigma.fieldMap = d.field_map || {};
     _sigma.max = d.max_rules;
@@ -23,14 +24,63 @@ async function sigmaLoad() {
             : `<span class="text-muted">—</span>`;
         const q = r.query ? `<code class="sigma-q">${esc(r.query)}</code>` : `<span class="pk-err fs-08">${esc(jobNote(r.error))}</span>`;
         return `<tr>
+            <td class="sl-chk"><input type="checkbox" data-act-change="sigmaSelect" data-act-self data-id="${esc(String(r.id))}" ${_sigma.sel.has(r.id) ? 'checked' : ''} aria-label="${esc(r.title)}"></td>
             <td><strong>${esc(r.title)}</strong>${secAttackChips(r.attack)}<div class="text-muted fs-08">${r.source_url ? `<a href="${esc(r.source_url)}" target="_blank" rel="noopener noreferrer">SigmaHQ</a> · ` : ''}${esc(t('sigma_group'))}${esc(t('sec_colon'))}<code>${esc(r.group_by)}</code> · ${esc(t('sigma_threshold'))}${esc(t('sec_colon'))}${esc(String(r.threshold))}</div></td>
             <td>${sigmaLevelChip(r.level)}</td>
             <td class="sigma-q-cell">${q}</td>
             <td>${last}</td>
             <td><label class="sec-chk"><input type="checkbox" data-act-change="sigmaToggle" data-act-self data-id="${esc(String(r.id))}" ${r.enabled ? 'checked' : ''} ${r.query ? '' : 'disabled'}> ${esc(t(r.enabled ? 'sigma_on' : 'sigma_off'))}</label></td>
             <td class="sec-actions"><button class="btn-sm btn-secondary" data-act="sigmaTest" data-args="${esc(JSON.stringify([r.id]))}" ${r.query ? '' : 'disabled'}>${icon('play', 14)} ${esc(t('sigma_btn_test'))}</button><button class="btn-sm btn-secondary" data-act="sigmaDelete" data-args="${esc(JSON.stringify([r.id]))}" title="${esc(t('asset_btn_delete'))}" aria-label="${esc(t('asset_btn_delete'))}">${icon('trash', 14)}</button></td>
-        </tr><tr class="sigma-test-row hidden" id="sigma-test-${esc(String(r.id))}"><td colspan="6"></td></tr>`;
-    }).join('') : `<tr><td colspan="6" class="text-muted">${esc(t('sigma_empty'))}</td></tr>`;
+        </tr><tr class="sigma-test-row hidden" id="sigma-test-${esc(String(r.id))}"><td colspan="7"></td></tr>`;
+    }).join('') : `<tr><td colspan="7" class="text-muted">${esc(t('sigma_empty'))}</td></tr>`;
+    const ids = new Set(_sigma.rules.map(r => r.id));
+    [..._sigma.sel].forEach(i => { if (!ids.has(i)) _sigma.sel.delete(i); });
+    _sigmaBulkBar();
+}
+
+// select-all + enable / disable the selection (owner 2026-11-27); at most max_rules run per analysis
+function _sigmaBulkBar() {
+    const bar = document.getElementById('sigma-bulk');
+    const all = document.getElementById('sigma-chk-all');
+    const n = _sigma.sel.size;
+    if (all) {
+        all.checked = _sigma.rules.length > 0 && n === _sigma.rules.length;
+        all.indeterminate = n > 0 && n < _sigma.rules.length;
+        all.disabled = !_sigma.rules.length;
+    }
+    if (!bar) return;
+    bar.classList[n ? 'remove' : 'add']('hidden');
+    bar.innerHTML = n ? `<span>${esc(t('sigma_sel_n').replace('{n}', formatNumber(n)))}</span>
+        <button type="button" class="btn-sm btn-secondary" data-act="sigmaBulk" data-arg="on">${icon('check', 14)} ${esc(t('sigma_bulk_on'))}</button>
+        <button type="button" class="btn-sm btn-secondary" data-act="sigmaBulk" data-arg="off">${icon('close', 14)} ${esc(t('sigma_bulk_off'))}</button>
+        <span class="text-muted fs-08">${esc(t('sigma_bulk_cap').replace('{m}', formatNumber(_sigma.max || 0)))}</span>` : '';
+}
+
+function sigmaSelect(el) {
+    const id = Number(el.dataset.id);
+    if (el.checked) _sigma.sel.add(id); else _sigma.sel.delete(id);
+    _sigmaBulkBar();
+}
+
+function sigmaSelectAll(el) {
+    if (el.checked) _sigma.rules.forEach(r => _sigma.sel.add(r.id)); else _sigma.sel.clear();
+    sigmaLoad();
+}
+
+async function sigmaBulk(which) {
+    const ids = [..._sigma.sel];
+    if (!ids.length) return;
+    const d = await fetchJSON(`${API}/security/sigma-bulk`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ids, enabled: which === 'on'})});
+    if (!d || d.error) { secMsg(d && d.error, 'err'); return; }
+    const cap = d.skipped.filter(x => x.reason === 'cap').length;
+    const bad = d.skipped.filter(x => x.reason === 'not_convertible').length;
+    let msg = t('sigma_bulk_done').replace('{n}', formatNumber(d.changed.length));
+    if (cap) msg += ' ' + t('sigma_bulk_capped').replace('{n}', formatNumber(cap)).replace('{m}', formatNumber(d.max_rules));
+    if (bad) msg += ' ' + t('sigma_bulk_bad').replace('{n}', formatNumber(bad));
+    secMsg(msg, cap || bad ? 'err' : 'ok');
+    _sigma.sel.clear();
+    sigmaLoad();
 }
 
 function sigmaFormClose() {

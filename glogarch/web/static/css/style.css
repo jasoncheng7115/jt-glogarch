@@ -755,6 +755,10 @@
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+/* untranslated English is not painted: i18n.js adds .i18n-ready once it has translated the page;
+   without it (the script failed) the text shows anyway after 1.2 s */
+html:not(.i18n-ready) [data-i18n] { visibility: hidden; animation: i18n-reveal 0s linear 1.2s forwards; }
+@keyframes i18n-reveal { to { visibility: visible; } }
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -2495,16 +2499,18 @@ button.ov-tile-link:hover { border-color: var(--accent); background: var(--card-
 .ov-tile-value { font-size: 1.7em; font-weight: 600; color: var(--text); margin: 4px 0 2px; }
 .ov-of { font-size: 0.6em; color: var(--text-muted); font-weight: 400; }
 .ov-tile-sub { color: var(--text-muted); font-size: 0.8em; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
-.ov-chart { width: 100%; height: auto; display: block; }
-.ov-grid { stroke: var(--border); stroke-width: 1; }
-.ov-axis { fill: var(--text-muted); font-size: 8.5px; }   /* viewBox units: about 12px at a 1400px window */
+.ov-chart-box { width: 100%; min-height: 210px; overflow: hidden; }
+.ov-chart { display: block; }
+.ov-grid { stroke: var(--line); stroke-width: 1; }
+.ov-axis { fill: var(--text-muted); font-size: 11px; }   /* drawn at the box's width: real pixels */
 .ov-bar { stroke: var(--card-bg); stroke-width: 1; }
 .ov-bar-high { fill: var(--danger); background: var(--danger); }
 .ov-bar-medium { fill: var(--warning); background: var(--warning); }
 .ov-bar-low { fill: var(--text-muted); background: var(--text-muted); }
 .ov-hit { fill: transparent; }
 .ov-day:hover .ov-hit { fill: var(--border); opacity: 0.35; }
-.ov-legend { display: flex; gap: 14px; font-size: 0.82em; color: var(--text-muted); margin: 4px 0 6px; }
+.ov-legend { display: inline-flex; gap: 14px; margin-left: auto; font-size: 0.82em; font-weight: 400; color: var(--text-muted); }
+.card .ov-card-h { display: flex; align-items: center; gap: 8px; }
 .ov-key { display: inline-flex; align-items: center; gap: 5px; }
 .ov-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 .ov-table { margin-top: 8px; font-size: 0.85em; }
@@ -2949,3 +2955,75 @@ button.ov-tile-link:hover { border-color: var(--accent); background: var(--card-
 .ai-pv-busy i { width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.35);
     border-top-color: #fff; animation: spin 0.9s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .ai-pv-busy i { animation: none; } }
+
+/* Security incidents list (owner 2026-11-27: "這頁排的不好看"): fixed columns, the window column takes
+   the rest; icon buttons one size, the verdict a dot; dates on two lines */
+.sec-inc-table { table-layout: fixed; width: 100%; }
+.sec-inc-table col.c-sev { width: 64px; }
+.sec-inc-table col.c-det { width: 150px; }
+.sec-inc-table col.c-ent { width: 196px; }
+.sec-inc-table col.c-dt { width: 96px; }
+.sec-inc-table col.c-st { width: 76px; }
+.sec-inc-table col.c-act { width: 164px; }
+.sec-inc-table td { vertical-align: top; }
+.sec-inc-table td.sec-sev-cell { text-align: center; }
+.sec-inc-table td.sec-det, .sec-inc-table td.sec-entity { overflow-wrap: anywhere; }
+.sec-dt { display: flex; flex-direction: column; line-height: 1.45; font-variant-numeric: tabular-nums; }
+.sec-dt > span + span { color: var(--text-muted); font-size: 0.92em; }
+.sec-acts { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.sec-ics, .sec-tbs { display: inline-flex; gap: 4px; }
+.sec-actions .sec-ic, .sec-actions .sec-tb { margin-left: 0; }
+.sec-ic { position: relative; width: 30px; min-width: 30px; height: 30px; padding: 0 !important; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+.sec-ic-gap { display: inline-block; width: 30px; }
+.sec-tb { min-width: 72px; justify-content: center; }
+.sec-ic-dot { position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border-radius: 50%; background: currentColor; border: 1.5px solid var(--card-bg); }
+.sec-ic-dot.sec-verdict-malicious { background: var(--danger); }
+.sec-ic-dot.sec-verdict-suspicious { background: var(--warning); }
+.sec-ic-dot.sec-verdict-benign { background: var(--success); }
+.sec-ic-dot.sec-verdict-unclear { background: var(--text-muted); }
+.sec-ic-dot.sec-ic-run { background: var(--accent); animation: ai-pulse 1.2s ease-in-out infinite; }
+
+/* overview tiles (2026-11-27): title, big number, one line, all one height; severities as equal counters */
+.ov-tiles .ov-tile { display: flex; flex-direction: column; min-height: 112px; text-align: left; align-items: stretch; }
+.ov-tile .ov-tile-value { font-size: 2em; line-height: 1.15; margin: 8px 0 auto; }
+.ov-tile .ov-tile-sub { margin-top: 10px; min-height: 22px; }
+.ov-sev { display: inline-flex; align-items: center; gap: 6px; min-width: 62px; padding: 2px 8px; border-radius: 6px; font-size: 0.95em; }
+.ov-sev b { font-variant-numeric: tabular-nums; margin-left: auto; }
+.ov-sev-high { color: var(--danger-text); background: var(--tint-danger); }
+.ov-sev-medium { color: var(--warning); background: var(--tint-warning); }
+.ov-sev-low { color: var(--text-muted); background: var(--bg-subtle); }
+.ov-run-ok { color: var(--success); }
+.ov-run-partial { color: var(--warning); }
+.ov-run-error, .ov-run-skipped { color: var(--danger); }
+.ov-list { line-height: 1.5; }
+.ov-list li { display: flex; gap: 10px; align-items: baseline; }
+.ov-list li > span { flex: 1 1 auto; max-width: none; min-width: 0; }
+.ov-list li > strong { float: none; flex: none; font-variant-numeric: tabular-nums; }
+.ov-list code { font-size: 0.92em; }
+
+/* ATT&CK: the translated name, the official English under it */
+.atk-en { display: block; font-size: 0.85em; color: var(--text-muted); }
+.sec-attack-table td.sec-attack-tech code { margin-right: 4px; }
+.sec-attack-table td.sec-attack-tech .atk-en { margin-left: 0; }
+.ov-list .atk-en { display: block; }
+.sec-attack-det { display: grid; grid-template-columns: minmax(0, 250px) 96px; gap: 12px; align-items: center; padding: 2px 0; }
+.sec-attack-det .sec-attack-st { justify-self: start; }
+.sec-attack-table .sec-attack-st { font-size: 0.8em; padding: 1px 9px; line-height: 1.55; vertical-align: middle; }
+.sec-attack-table td { padding-top: 9px; padding-bottom: 9px; }
+
+/* Sigma select-all (2026-11-27) */
+.sl-selbar, .sigma-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 10px; padding: 8px 12px;
+    border-radius: 8px; background: var(--tint-accent); color: var(--text); font-size: 0.88em; }
+.btn-link { background: none; border: 0; padding: 0; color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; height: auto; }
+.btn-link:hover { color: var(--accent); background: none; }
+.sl-chk { width: 34px; }
+.sl-chk input { width: auto; height: auto; }
+.sigma-lv { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-width: 56px; }
+.sigma-lv > span:last-child { font-size: 0.75em; color: var(--text-muted); }
+.sl-table td, .sec-sigma-table td { padding-top: 10px; padding-bottom: 10px; }
+
+/* the panels opened from the security bar: a header with Collapse; the bar button shows pressed */
+.sec-panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.sec-panel-head h3 { margin: 0; flex: 1 1 auto; }
+.al-bar-right .btn-secondary.is-on { background: var(--tint-accent); border-color: var(--accent); color: var(--accent-text); }
+.al-bar-right .btn-secondary.is-on svg { color: var(--accent-text); }

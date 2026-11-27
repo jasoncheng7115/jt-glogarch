@@ -1110,6 +1110,20 @@ const I18N = {
         sl_btn_add: 'Add',
         sl_added: 'Added',
         sl_add_selected: 'Add selected ({n})',
+        sl_sel_page: 'Select every rule on this page that can be added',
+        sl_sel_page_done: 'All {n} rule(s) on this page are selected.',
+        sl_sel_all_matching: 'Select all {n} matching the filter',
+        sl_sel_all_done: '{n} rule(s) matching the filter are selected.',
+        sl_sel_clear: 'Clear the selection',
+        sl_adding: 'Adding {a} / {n}…',
+        sigma_sel_all: 'Select all rules',
+        sigma_sel_n: '{n} selected',
+        sigma_bulk_on: 'Enable',
+        sigma_bulk_off: 'Disable',
+        sigma_bulk_cap: 'Each analysis runs at most {m} enabled rules.',
+        sigma_bulk_done: '{n} rule(s) changed.',
+        sigma_bulk_capped: '{n} not enabled: at most {m} can be enabled.',
+        sigma_bulk_bad: '{n} not enabled: they do not convert.',
         sl_add_done: '{n} rule(s) added, disabled: enable each in Sigma rules above.',
         sl_add_skipped: '{n} skipped (already added or not convertible).',
         sl_page: '{a}–{b} of {n}',
@@ -1222,6 +1236,27 @@ const I18N = {
         srv_case_no_incidents: 'No incidents given',
         sec_btn_attack: 'ATT&CK',
         sec_attack_title: 'MITRE ATT&CK coverage',
+        atk_TA0043: 'Reconnaissance',
+        atk_TA0001: 'Initial Access',
+        atk_TA0003: 'Persistence',
+        atk_TA0004: 'Privilege Escalation',
+        atk_TA0005: 'Defense Evasion',
+        atk_TA0006: 'Credential Access',
+        atk_TA0008: 'Lateral Movement',
+        atk_TA0011: 'Command and Control',
+        atk_TA0040: 'Impact',
+        atk_T1110: 'Brute Force',
+        atk_T1110_001: 'Brute Force: Password Guessing',
+        atk_T1110_003: 'Brute Force: Password Spraying',
+        atk_T1078: 'Valid Accounts',
+        atk_T1021: 'Remote Services',
+        atk_T1595: 'Active Scanning',
+        atk_T1595_002: 'Active Scanning: Vulnerability Scanning',
+        atk_T1190: 'Exploit Public-Facing Application',
+        atk_T1071: 'Application Layer Protocol',
+        atk_T1498: 'Network Denial of Service',
+        atk_T1562: 'Impair Defenses',
+        sec_attack_tr_note: 'Names are MITRE’s official English names.',
         sec_attack_help: 'Techniques the detections are evidence of (ATT&CK {v}). Watched = the detection is on and this site’s logs carried the field it needs in the last 24 hours. IDS signatures only = seen only if the IDS has a signature for it (mapped by keywords in the signature).',
         sec_attack_tactic: 'Tactic',
         sec_attack_technique: 'Technique',
@@ -3351,6 +3386,20 @@ const I18N = {
         sl_btn_add: '加入',
         sl_added: '已加入',
         sl_add_selected: '加入選取的規則（{n}）',
+        sl_sel_page: '選取這一頁所有可以加入的規則',
+        sl_sel_page_done: '已選取這一頁的 {n} 條規則。',
+        sl_sel_all_matching: '選取全部符合篩選的 {n} 條',
+        sl_sel_all_done: '已選取符合篩選的 {n} 條規則。',
+        sl_sel_clear: '清除選取',
+        sl_adding: '加入中 {a}／{n}…',
+        sigma_sel_all: '選取全部規則',
+        sigma_sel_n: '已選取 {n} 條',
+        sigma_bulk_on: '啟用',
+        sigma_bulk_off: '停用',
+        sigma_bulk_cap: '每次分析最多執行 {m} 條已啟用的規則。',
+        sigma_bulk_done: '已變更 {n} 條規則。',
+        sigma_bulk_capped: '{n} 條沒有啟用：最多只能啟用 {m} 條。',
+        sigma_bulk_bad: '{n} 條沒有啟用：無法轉換。',
         sl_add_done: '已加入 {n} 條規則，預設停用：請在上方「Sigma 規則」逐條啟用。',
         sl_add_skipped: '略過 {n} 條（已加入或無法轉換）。',
         sl_page: '第 {a}–{b} 條，共 {n} 條',
@@ -3463,6 +3512,27 @@ const I18N = {
         srv_case_no_incidents: '沒有指定事件',
         sec_btn_attack: 'ATT&CK',
         sec_attack_title: 'MITRE ATT&CK 涵蓋範圍',
+        atk_TA0043: '偵察',
+        atk_TA0001: '初始存取',
+        atk_TA0003: '持續存取',
+        atk_TA0004: '權限提升',
+        atk_TA0005: '防禦規避',
+        atk_TA0006: '憑證存取',
+        atk_TA0008: '橫向移動',
+        atk_TA0011: '命令與控制',
+        atk_TA0040: '衝擊',
+        atk_T1110: '暴力破解',
+        atk_T1110_001: '暴力破解：密碼猜測',
+        atk_T1110_003: '暴力破解：密碼噴灑',
+        atk_T1078: '有效帳號',
+        atk_T1021: '遠端服務',
+        atk_T1595: '主動掃描',
+        atk_T1595_002: '主動掃描：弱點掃描',
+        atk_T1190: '利用對外應用程式',
+        atk_T1071: '應用層協定',
+        atk_T1498: '網路阻斷服務',
+        atk_T1562: '削弱防禦',
+        sec_attack_tr_note: '中文名稱為本工具的翻譯，以 MITRE 英文原名為準。',
         sec_attack_help: '各項偵測可作為哪些技術的證據（ATT&CK {v}）。「監看中」表示偵測已開啟，且最近 24 小時內此站台的記錄有它需要的欄位。「僅 IDS 簽章」表示只有在 IDS 剛好有對應簽章時才看得到（依簽章中的關鍵字對應）。',
         sec_attack_tactic: '戰術',
         sec_attack_technique: '技術',
@@ -5592,6 +5662,20 @@ const I18N = {
         sl_btn_add: '追加',
         sl_added: '追加済み',
         sl_add_selected: '選択したルールを追加（{n}）',
+        sl_sel_page: 'このページで追加できるルールをすべて選択',
+        sl_sel_page_done: 'このページの {n} 件のルールを選択しました。',
+        sl_sel_all_matching: 'フィルターに一致する {n} 件をすべて選択',
+        sl_sel_all_done: 'フィルターに一致する {n} 件のルールを選択しました。',
+        sl_sel_clear: '選択を解除',
+        sl_adding: '追加中 {a}／{n}…',
+        sigma_sel_all: 'すべてのルールを選択',
+        sigma_sel_n: '{n} 件選択中',
+        sigma_bulk_on: '有効にする',
+        sigma_bulk_off: '無効にする',
+        sigma_bulk_cap: '1 回の分析で実行される有効なルールは最大 {m} 件です。',
+        sigma_bulk_done: '{n} 件のルールを変更しました。',
+        sigma_bulk_capped: '{n} 件は有効にしませんでした：有効にできるのは最大 {m} 件です。',
+        sigma_bulk_bad: '{n} 件は有効にしませんでした：変換できません。',
         sl_add_done: '{n} 件のルールを無効の状態で追加しました。上の「Sigma ルール」で個別に有効にしてください。',
         sl_add_skipped: '{n} 件をスキップしました（追加済みまたは変換不可）。',
         sl_page: '{a}–{b} 件目／全 {n} 件',
@@ -5704,6 +5788,27 @@ const I18N = {
         srv_case_no_incidents: 'インシデントが指定されていません',
         sec_btn_attack: 'ATT&CK',
         sec_attack_title: 'MITRE ATT&CK のカバレッジ',
+        atk_TA0043: '偵察',
+        atk_TA0001: '初期アクセス',
+        atk_TA0003: '永続化',
+        atk_TA0004: '権限昇格',
+        atk_TA0005: '防御回避',
+        atk_TA0006: '認証情報アクセス',
+        atk_TA0008: '水平展開',
+        atk_TA0011: 'コマンド＆コントロール',
+        atk_TA0040: '影響',
+        atk_T1110: 'ブルートフォース',
+        atk_T1110_001: 'ブルートフォース：パスワード推測',
+        atk_T1110_003: 'ブルートフォース：パスワードスプレー',
+        atk_T1078: '有効なアカウント',
+        atk_T1021: 'リモートサービス',
+        atk_T1595: 'アクティブスキャン',
+        atk_T1595_002: 'アクティブスキャン：脆弱性スキャン',
+        atk_T1190: '公開アプリケーションの悪用',
+        atk_T1071: 'アプリケーション層プロトコル',
+        atk_T1498: 'ネットワークのサービス拒否',
+        atk_T1562: '防御の妨害',
+        sec_attack_tr_note: '日本語の名称は本ツールによる翻訳です。正式名称は MITRE の英語名です。',
         sec_attack_help: '各検出がどの手法の証拠になるかを示します（ATT&CK {v}）。「監視中」は、検出が有効で、過去 24 時間にこのサイトのレコードに必要なフィールドがあったことを示します。「IDS シグネチャのみ」は、IDS に該当するシグネチャがある場合にのみ検知できることを示します（シグネチャのキーワードで対応付け）。',
         sec_attack_tactic: '戦術',
         sec_attack_technique: '手法',
@@ -6729,6 +6834,7 @@ const I18N = {
 // --- Iconoir SVG Icons (MIT License, Copyright (c) 2021 Luca Burgio) ---
 const ICONS = {
     chevron_down: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9L12 15L18 9"/></svg>',
+    chevron_up: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15L12 9L18 15"/></svg>',
     info: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 11.5V16.5"/><path d="M12 7.51L12.01 7.499"/></svg>',
     search: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 17L21 21"/><path d="M19 11C19 15.4183 15.4183 19 11 19C6.58172 19 3 15.4183 3 11C3 6.58172 6.58172 3 11 3C15.4183 3 19 6.58172 19 11Z"/></svg>',
     dashboard: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21H7C4.79086 21 3 19.2091 3 17V10.7076C3 9.30887 3.73061 8.01175 4.92679 7.28679L9.92679 4.25649C11.2011 3.48421 12.7989 3.48421 14.0732 4.25649L19.0732 7.28679C20.2694 8.01175 21 9.30887 21 10.7076V17C21 19.2091 19.2091 21 17 21Z"/><path d="M9 17H15"/></svg>',
@@ -6983,6 +7089,7 @@ document.addEventListener('langchange', measureGlyphShift);
 document.addEventListener('DOMContentLoaded', () => {
     applyTheme();
     applyI18n();
+    document.documentElement.classList.add('i18n-ready');
 });
 
 // ---- The app's own dropdown, used instead of the browser's -----------------
@@ -7077,3 +7184,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 30);
     }).observe(document.body, { childList: true, subtree: true });
 });
+
+// The page's own text is English in the HTML; until it is translated, style.css keeps it hidden
+// (owner 2026-11-27: every page flashed English before the menu turned Chinese). This script is
+// loaded at the end of <body>, so the elements above it exist: translate them now instead of
+// waiting for every other script, then let them show. DOMContentLoaded runs it again for
+// anything a later script adds. If this file never loads, CSS shows the text after 1.2 s.
+// (only in a real page: the tests load this file into a bare stand-in for document)
+if (typeof document !== 'undefined' && document.body && document.documentElement
+        && typeof document.documentElement.setAttribute === 'function' && document.documentElement.classList
+        && typeof document.querySelectorAll === 'function') {
+    try {
+        applyTheme();
+        applyI18n();
+    } catch (e) {
+        if (typeof console !== 'undefined') console.warn('early i18n pass failed; the DOMContentLoaded pass will try again', e);
+    }
+    document.documentElement.classList.add('i18n-ready');
+}

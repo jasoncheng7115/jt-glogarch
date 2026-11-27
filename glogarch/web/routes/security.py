@@ -374,6 +374,41 @@ async def add_sigma(request: Request):
     return {"id": rid, "query": conv["query"]}
 
 
+@router.post("/security/sigma-bulk")
+async def bulk_sigma(request: Request):
+    """Enable or disable many rules at once (owner 2026-11-27, with select-all). Enabling stops at
+    `sigma_max_rules`: the rest are reported, never silently left off."""
+    body = await request.json() or {}
+    if not isinstance(body.get("enabled"), bool):
+        return JSONResponse({"error": "enabled: true or false"}, status_code=400)
+    want = body["enabled"]
+    ids = [int(x) for x in (body.get("ids") or [])[:5000] if str(x).isdigit()]
+    db = _db(request)
+    cap = int(_settings(request).security.sigma_max_rules)
+    on = len(db.list_sigma_rules(enabled_only=True))
+    changed, skipped = [], []
+    for rid in ids:
+        cur = db.get_sigma_rule(rid)
+        if not cur:
+            skipped.append({"id": rid, "reason": "not_found"})
+            continue
+        if bool(cur["enabled"]) == want:
+            continue
+        if want and not cur["query"]:
+            skipped.append({"id": rid, "reason": "not_convertible"})
+            continue
+        if want and on >= cap:
+            skipped.append({"id": rid, "reason": "cap"})
+            continue
+        db.update_sigma_rule(rid, {"enabled": want})
+        on += 1 if want else -1
+        changed.append(rid)
+    if changed:
+        _audit(request, "security_sigma_updated",
+               f"bulk enabled={want} rules={','.join(map(str, changed[:200]))}{' ...' if len(changed) > 200 else ''}")
+    return {"changed": changed, "skipped": skipped, "max_rules": cap, "enabled": on}
+
+
 @router.post("/security/sigma/{rule_id}")
 async def update_sigma(request: Request, rule_id: int):
     body = await request.json() or {}
@@ -495,7 +530,7 @@ def _library_view(e: dict, gl_fields: set | None, added: dict) -> dict:
 
 @router.get("/security/sigma-library")
 def sigma_library(request: Request, q: str = "", product: str = "", level: str = "", state: str = "all",
-                  offset: int = 0, limit: int = 50):
+                  offset: int = 0, limit: int = 50, ids_only: int = 0):
     import json as _json
 
     from glogarch.security.sigma_library import LICENSE, LICENSE_URL, PACKAGES
@@ -536,6 +571,10 @@ def sigma_library(request: Request, q: str = "", product: str = "", level: str =
         return True
 
     hits = [e for e in entries if keep(e)]
+    if ids_only:
+        # "select every rule this filter matches" (owner 2026-11-27): the ids that can still be added
+        return {"ids": [e["sigma_id"] for e in hits if e.get("query") and e["sigma_id"] not in added],
+                "total": len(hits)}
     offset, limit = max(0, int(offset)), max(1, min(int(limit), 200))
     pub = {k: v for k, v in meta.items() if k != "graylog_fields"}
     pub["graylog_field_count"] = len(gl_fields) if gl_fields is not None else None

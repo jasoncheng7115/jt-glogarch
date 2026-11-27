@@ -102,29 +102,101 @@ function slRenderRows() {
 function _slSelButton() {
     const b = document.getElementById('sl-add-sel');
     b.innerHTML = `${icon('plus', 14)} ${esc(t('sl_add_selected').replace('{n}', formatNumber(_sl.sel.size)))}`;
-    b.disabled = !_sl.sel.size;
+    b.disabled = !_sl.sel.size || !!_sl.adding;
+    // the header box: ticked when every rule on this page that can be added is selected
+    const page = _slPageIds();
+    const all = document.getElementById('sl-chk-all');
+    if (all) {
+        const n = page.filter(i => _sl.sel.has(i)).length;
+        all.checked = page.length > 0 && n === page.length;
+        all.indeterminate = n > 0 && n < page.length;
+        all.disabled = !page.length;
+    }
+    _slSelBar();
+}
+
+function _slPageIds() {
+    return _sl.items.filter(it => it.query && !it.added_rule_id).map(it => it.sigma_id);
+}
+
+// after the whole page is ticked: offer every rule the filter matches (like a mail client does)
+function _slSelBar() {
+    const bar = document.getElementById('sl-selbar');
+    if (!bar) return;
+    const page = _slPageIds();
+    const pageAll = page.length > 0 && page.every(i => _sl.sel.has(i));
+    let html = '';
+    if (_sl.selAll) {
+        html = `<span>${esc(t('sl_sel_all_done').replace('{n}', formatNumber(_sl.sel.size)))}</span>
+            <button type="button" class="btn-link" data-act="slSelectNone">${esc(t('sl_sel_clear'))}</button>`;
+    } else if (pageAll && _sl.total > page.length) {
+        html = `<span>${esc(t('sl_sel_page_done').replace('{n}', formatNumber(page.length)))}</span>
+            <button type="button" class="btn-link" data-act="slSelectAllMatching">${esc(t('sl_sel_all_matching').replace('{n}', formatNumber(_sl.total)))}</button>`;
+    }
+    bar.innerHTML = html;
+    bar.classList.toggle('hidden', !html);
 }
 
 function slSelect(el) {
-    if (el.checked) _sl.sel.add(el.dataset.id); else _sl.sel.delete(el.dataset.id);
+    if (el.checked) _sl.sel.add(el.dataset.id); else { _sl.sel.delete(el.dataset.id); _sl.selAll = false; }
     _slSelButton();
 }
 
-function slFilter() { _sl.offset = 0; slLoad(); }
+function slSelectPage(el) {
+    const page = _slPageIds();
+    if (el.checked) page.forEach(i => _sl.sel.add(i));
+    else { page.forEach(i => _sl.sel.delete(i)); _sl.selAll = false; }
+    slRenderRows();
+}
+
+async function slSelectAllMatching() {
+    const d = await fetchJSON(`${API}/security/sigma-library?${_slQuery()}&ids_only=1`);
+    if (!d || d.error) { secMsg(d && d.error, 'err'); return; }
+    (d.ids || []).forEach(i => _sl.sel.add(i));
+    _sl.selAll = true;
+    slRenderRows();
+}
+
+function slSelectNone() {
+    _sl.sel.clear();
+    _sl.selAll = false;
+    slRenderRows();
+}
+
+function slFilter() { _sl.offset = 0; _sl.sel.clear(); _sl.selAll = false; slLoad(); }
 
 function slPage(dir) {
     _sl.offset = Math.max(0, _sl.offset + Number(dir) * _sl.limit);
     slLoad();
 }
 
+// The server takes 100 per request: send them in batches and say how far it got. Every rule
+// comes in DISABLED, so adding a thousand starts no queries.
+const SL_BATCH = 100;
 async function _slAddIds(ids) {
-    const d = await fetchJSON(`${API}/security/sigma-library/add`, {method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ids})});
-    if (!d || d.error) { secMsg(d && d.error, 'err'); return; }
-    let msg = t('sl_add_done').replace('{n}', formatNumber(d.added.length));
-    if (d.skipped.length) msg += ' ' + t('sl_add_skipped').replace('{n}', formatNumber(d.skipped.length));
-    secMsg(msg, d.added.length ? 'ok' : 'err');
-    ids.forEach(i => _sl.sel.delete(i));
+    if (_sl.adding) return;
+    _sl.adding = true;
+    const b = document.getElementById('sl-add-sel');
+    let added = 0, skipped = 0, err = '';
+    for (let k = 0; k < ids.length; k += SL_BATCH) {
+        if (b && ids.length > SL_BATCH) {
+            b.disabled = true;
+            b.innerHTML = `<span class="spinner-text">${esc(t('sl_adding').replace('{a}', formatNumber(k)).replace('{n}', formatNumber(ids.length)))}</span>`;
+        }
+        const part = ids.slice(k, k + SL_BATCH);
+        const d = await fetchJSON(`${API}/security/sigma-library/add`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ids: part})});
+        if (!d || d.error) { err = (d && d.error) || 'error'; break; }
+        added += d.added.length;
+        skipped += d.skipped.length;
+        part.forEach(i => _sl.sel.delete(i));
+    }
+    _sl.adding = false;
+    _sl.selAll = false;
+    let msg = t('sl_add_done').replace('{n}', formatNumber(added));
+    if (skipped) msg += ' ' + t('sl_add_skipped').replace('{n}', formatNumber(skipped));
+    if (err) secMsg(`${msg} ${err}`, 'err');
+    else secMsg(msg, added ? 'ok' : 'err');
     if (typeof sigmaLoad === 'function') sigmaLoad();
     slLoad();
 }

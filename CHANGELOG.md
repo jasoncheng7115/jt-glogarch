@@ -2,6 +2,17 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.36.1] - 2026-11-27
+
+### Changed
+
+- **Security Incidents list reads cleanly.** Fixed column widths (the window column takes the rest), the search / AI / suppress / case buttons are icons of one size with the AI verdict as a coloured dot (its word in the tooltip), only Acknowledge and Close carry words, and first / last seen show the date over the time (the time zone in the tooltip).
+- **Security overview.** The daily chart is drawn at the box's own width (one unit = one pixel), so it is a third of the height it was and its labels are the page's size; the legend sits in the title row. The four tiles are one height with the number in the middle line; open incidents by severity are equal counters; the ranking lists line up.
+- **ATT&CK in Chinese and Japanese.** Tactic and technique names show this tool's translation with MITRE's official English name under it (MITRE publishes English only; the page says so), in the overview ranking, the coverage matrix and the technique chips. The matrix lists one detection per line with its state in a column of its own.
+- **Settings, Coverage and ATT&CK panels** have their own Collapse button, and the bar button stays pressed while its panel is open.
+- **Sigma: select all.** The SigmaHQ library list selects every addable rule on the page, then offers "select all N matching the filter"; adding goes in batches of 100 with progress, every rule still added disabled. The Sigma rules list selects all and enables or disables the selection, stopping at the per-run limit (`sigma_max_rules`) and saying how many were left off. Sigma levels sit under their badge in every row.
+- **No English flash.** Text waiting for translation is no longer painted: it shows once the page is translated (right as the script loads, not after every other script), and on its own after 1.2 s if the script never runs.
+
 ## [1.36.0] - 2026-11-26
 
 ### Added (AI chat)

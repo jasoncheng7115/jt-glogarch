@@ -1539,6 +1539,11 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
       ATT&CK button shows the tactic table with states matching the Coverage table. en / zh-TW /
       ja, both themes, ~1436 px.
 
+### Security pages and Sigma select-all (v1.36.1)
+
+- [ ] `tests/test_sigma_library.py`: `ids_only=1` returns only addable ids; `/api/security/sigma-bulk` enables up to `sigma_max_rules` and reports the rest as `cap`, disables, refuses a non-boolean. `tests/test_security_attack.py`: every tactic / technique in `attack.py` has en (= MITRE), zh-TW and ja names. `tests/test_phone_layout.py`: untranslated text hidden until `.i18n-ready`, shown after 1.2 s anyway.
+- [ ] By hand (~1436 px, both themes, 390 px): incidents list columns aligned, icon buttons one size, verdict dot, dates on two lines; overview chart about 210 px high, tiles one height and left-aligned; ATT&CK matrix in Chinese with English under it, states in one column; Settings / Coverage / ATT&CK each collapse from their own button and the bar button shows pressed; Sigma library: header box selects the page, "select all N matching", add in batches; Sigma rules: select all, enable / disable, cap message; no English flash when moving between pages.
+
 ### AI chat: statistics, paging, budgets, loops, several LLMs, preview (v1.36.0)
 
 **Automated**

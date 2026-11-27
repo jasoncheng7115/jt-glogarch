@@ -62,6 +62,14 @@ function secContext(m, waf) {
 
 function secUtc(s) { return s ? formatDT(s.endsWith('Z') ? s : s + 'Z') : '—'; }
 
+// date over time in a table cell; the time zone (the same for every row) only in the tooltip
+function secDT(s) {
+    if (!s) return '—';
+    const full = secUtc(s);
+    const [d, tm] = full.split(' ');
+    return `<span class="sec-dt" title="${esc(full)}"><span>${esc(d)}</span><span>${esc(tm || '')}</span></span>`;
+}
+
 async function secInit() {
     if (!document.getElementById('sec-status-card')) return;
     await secLoadOverview();
@@ -136,29 +144,39 @@ function secRow(i) {
     const ext = i.external === 1 ? ` <span class="sec-tag">${esc(t('sec_external'))}</span>`
         : (i.external === 0 ? ` <span class="sec-tag sec-tag-int">${esc(t('sec_internal'))}</span>` : '');
     const isNew = i.is_new ? ` <span class="sec-tag sec-tag-new">${esc(t('sec_new'))}</span>` : '';
-    const link = /^https?:\/\//.test(i.graylog_url || '')
-        ? `<a class="btn-sm btn-secondary" href="${esc(i.graylog_url)}" target="_blank" rel="noopener noreferrer" title="${esc(t('sec_open_graylog'))}" aria-label="${esc(t('sec_open_graylog'))}">${icon('search', 14)}</a>` : '';
+    // icon buttons are all one size; only acknowledge / close carry words (owner 2026-11-27:
+    // buttons of different widths left every row ragged)
+    const ib = (act, args, ic, tip, extra = '') =>
+        `<button type="button" class="btn-sm btn-secondary sec-ic" data-act="${act}" data-args="${esc(JSON.stringify(args))}" title="${esc(tip)}" aria-label="${esc(tip)}">${icon(ic, 15)}${extra}</button>`;
     const acts = [];
+    if (/^https?:\/\//.test(i.graylog_url || '')) {
+        acts.push(`<a class="btn-sm btn-secondary sec-ic" href="${esc(i.graylog_url)}" target="_blank" rel="noopener noreferrer" title="${esc(t('sec_open_graylog'))}" aria-label="${esc(t('sec_open_graylog'))}">${icon('search', 15)}</a>`);
+    } else acts.push('<span class="sec-ic-gap"></span>');
     const ai = _sec.data && _sec.data.ai;
     if (ai && ai.analysis_enabled) {
-        const v = i.ai ? ` ${secVerdictChip(i.ai.verdict)}` : '';
-        acts.push(`<button class="btn-sm btn-secondary" data-act="secOpenAi" data-args="${esc(JSON.stringify([i.id]))}" title="${esc(t('sec_ai_title'))}">${icon('chat', 14)} ${esc(t(i.ai_running ? 'sec_ai_running_short' : 'sec_btn_ai'))}${v}</button>`);
+        // the verdict is a dot on the AI button (its word is in the tooltip), so the button keeps its width
+        const v = i.ai && i.ai.verdict;
+        const tip = t('sec_ai_title') + (i.ai_running ? ` · ${t('sec_ai_running_short')}` : v ? ` · ${t('sec_ai_v_' + v)}` : '');
+        const dot = i.ai_running ? '<span class="sec-ic-dot sec-ic-run"></span>' : v ? `<span class="sec-ic-dot sec-verdict-${esc(v)}"></span>` : '';
+        acts.push(ib('secOpenAi', [i.id], 'chat', tip, dot));
     }
-    acts.push(`<button class="btn-sm btn-secondary" data-act="secSuppress" data-args="${esc(JSON.stringify([i.id]))}" title="${esc(t('sup_btn_title'))}" aria-label="${esc(t('sup_btn_title'))}">${icon('eye_closed', 14)}</button>`);
-    acts.push(`<button class="btn-sm btn-secondary" data-act="casePick" data-args="${esc(JSON.stringify([i.id]))}" title="${esc(t('case_pick_title'))}" aria-label="${esc(t('case_pick_title'))}">${icon('log', 14)}</button>`);
-    if (i.status === 'open') acts.push(`<button class="btn-sm btn-secondary" data-act="secSetStatus" data-args="${esc(JSON.stringify([i.id, 'acknowledged']))}">${icon('check', 14)} ${esc(t('sec_btn_ack'))}</button>`);
-    if (i.status !== 'closed') acts.push(`<button class="btn-sm btn-secondary" data-act="secSetStatus" data-args="${esc(JSON.stringify([i.id, 'closed']))}">${icon('close', 14)} ${esc(t('sec_btn_close'))}</button>`);
-    else acts.push(`<button class="btn-sm btn-secondary" data-act="secSetStatus" data-args="${esc(JSON.stringify([i.id, 'open']))}">${icon('refresh', 14)} ${esc(t('sec_btn_reopen'))}</button>`);
+    acts.push(ib('secSuppress', [i.id], 'eye_closed', t('sup_btn_title')));
+    acts.push(ib('casePick', [i.id], 'log', t('case_pick_title')));
+    const tb = (args, ic, key) => `<button type="button" class="btn-sm btn-secondary sec-tb" data-act="secSetStatus" data-args="${esc(JSON.stringify(args))}">${icon(ic, 14)} ${esc(t(key))}</button>`;
+    const words = [];
+    if (i.status === 'open') words.push(tb([i.id, 'acknowledged'], 'check', 'sec_btn_ack'));
+    if (i.status !== 'closed') words.push(tb([i.id, 'closed'], 'close', 'sec_btn_close'));
+    else words.push(tb([i.id, 'open'], 'refresh', 'sec_btn_reopen'));
     const by = i.status_by ? `<div class="text-muted fs-08">${esc(i.status_by)}</div>` : '';
     return `<tr>
-        <td>${secSevBadge(i.severity)}</td>
-        <td>${esc(secDetTitle(i.detector, i.detector_title))}${secAttackChips(i.attack)}</td>
+        <td class="sec-sev-cell">${secSevBadge(i.severity)}</td>
+        <td class="sec-det">${esc(secDetTitle(i.detector, i.detector_title))}${secAttackChips(i.attack)}</td>
         <td class="sec-entity"><code>${esc(i.entity)}</code>${ext}${isNew}${assetTag(i.asset)}${tiTags(i.threat_intel)}<div class="text-muted fs-08">${esc(i.entity_field)}</div>${(i.cases || []).map(c => `<button type="button" class="case-badge" data-act="caseOpen" data-args="${esc(JSON.stringify([c.id]))}" title="${esc(c.title)}">${icon('log', 12)} #${esc(String(c.id))} ${esc(t('case_st_' + c.status))}</button>`).join('')}</td>
         <td>${secStats(i.metrics)}<div class="text-muted fs-08">${esc(t('sec_peak').replace('{n}', formatNumber(i.peak_count)))} · ${esc(t('sec_runs').replace('{n}', formatNumber(i.runs)))}</div></td>
-        <td>${esc(secUtc(i.first_seen))}</td>
-        <td>${esc(secUtc(i.last_seen))}</td>
+        <td>${secDT(i.first_seen)}</td>
+        <td>${secDT(i.last_seen)}</td>
         <td class="sec-status">${esc(t('sec_st_' + i.status))}${by}</td>
-        <td class="sec-actions">${link}${acts.join('')}</td>
+        <td class="sec-actions"><div class="sec-acts"><span class="sec-ics">${acts.join('')}</span><span class="sec-tbs">${words.join('')}</span></div></td>
     </tr>`;
 }
 
@@ -200,17 +218,36 @@ async function secRunNow() {
     await secLoad();
 }
 
+// The three panels opened from the bar: each has its own Collapse button, and the bar's button
+// shows pressed while its panel is open (owner 2026-11-27: nothing said how to close them).
+function secPanelHead(title, act) {
+    return `<div class="sec-panel-head"><h3>${esc(title)}</h3><button type="button" class="btn-sm btn-secondary" data-act="${act}">${icon('chevron_up', 14)} ${esc(t('btn_collapse'))}</button></div>`;
+}
+
+function secSyncToggles() {
+    [['secToggleSettings', 'sec-settings'], ['secToggleCoverage', 'sec-coverage'], ['secToggleAttack', 'sec-attack']].forEach(([act, id]) => {
+        const panel = document.getElementById(id);
+        const on = !!panel && !panel.classList.contains('hidden');
+        document.querySelectorAll(`.al-bar-right [data-act="${act}"]`).forEach(b => {
+            b.classList.toggle('is-on', on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            b.setAttribute('aria-expanded', on ? 'true' : 'false');
+        });
+    });
+}
+
 function secToggleCoverage() {
     const el = document.getElementById('sec-coverage');
     el.classList.toggle('hidden');
     secRenderCoverage();
+    secSyncToggles();
 }
 
 function secRenderCoverage() {
     const el = document.getElementById('sec-coverage');
     if (!el || el.classList.contains('hidden') || !_sec.data) return;
     const cov = _sec.data.coverage || [];
-    if (!cov.length) { el.innerHTML = `<p class="text-muted">${esc(t('sec_cov_none'))}</p>`; return; }
+    if (!cov.length) { el.innerHTML = `${secPanelHead(t('sec_cov_title'), 'secToggleCoverage')}<p class="text-muted">${esc(t('sec_cov_none'))}</p>`; return; }
     // A probe tries several fields (the WAF's peer is client_ip, the firewall's
     // source_ip). An empty alternate is only a problem when NO field has data.
     const usedField = {};
@@ -228,7 +265,7 @@ function secRenderCoverage() {
         return `<tr><td>${esc(t('sec_probe_' + c.probe))}</td><td><code>${esc(c.field)}</code></td>
             <td>${formatNumber(c.events)}</td><td>${state}${c.truncated ? ` <span class="text-muted fs-08">${esc(t('sec_cov_truncated'))}</span>` : ''}</td></tr>`;
     }).join('');
-    el.innerHTML = `<h3>${esc(t('sec_cov_title'))}</h3>
+    el.innerHTML = `${secPanelHead(t('sec_cov_title'), 'secToggleCoverage')}
         <p class="text-muted fs-085">${esc(t('sec_cov_help'))} ${esc(t('sec_cov_at').replace('{t}', secUtc(_sec.data.coverage_at)))}</p>
         <div class="table-wrap"><table><thead><tr><th>${esc(t('sec_cov_probe'))}</th><th>${esc(t('sec_cov_field'))}</th>
         <th>${esc(t('sec_cov_events'))}</th><th>${esc(t('sec_cov_filled'))}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -236,30 +273,53 @@ function secRenderCoverage() {
 
 // ---- MITRE ATT&CK (added 1.23) ---------------------------------------------------------
 
+// ATT&CK names: MITRE publishes English only, so zh-TW / ja show this tool's translation with the
+// official English kept beside it (owner 2026-11-27); an id we have no translation for stays English.
+function atkName(id, en) {
+    const lang = typeof getLang === 'function' ? getLang() : 'en';
+    if (lang === 'en' || !id) return en || '';
+    const k = 'atk_' + String(id).replace('.', '_');
+    const s = t(k);
+    return s === k ? (en || '') : s;
+}
+
+function atkLabel(id, en) {
+    const loc = atkName(id, en);
+    return !en || loc === en ? esc(en || '') : `${esc(loc)}<span class="atk-en">${esc(en)}</span>`;
+}
+
+function atkTip(id, en) {
+    const loc = atkName(id, en);
+    return !en || loc === en ? (en || '') : `${loc} (${en})`;
+}
+
 function secAttackChips(list) {
     if (!list || !list.length) return '';
     return '<div class="sec-attack-chips">' + list.map(x => /^https:\/\/attack\.mitre\.org\//.test(x.url)
-        ? `<a class="sec-attack" href="${esc(x.url)}" target="_blank" rel="noopener noreferrer" title="${esc(x.name)}">${esc(x.id)}</a>`
-        : `<span class="sec-attack" title="${esc(x.name)}">${esc(x.id)}</span>`).join('') + '</div>';
+        ? `<a class="sec-attack" href="${esc(x.url)}" target="_blank" rel="noopener noreferrer" title="${esc(atkTip(x.id, x.name))}">${esc(x.id)}</a>`
+        : `<span class="sec-attack" title="${esc(atkTip(x.id, x.name))}">${esc(x.id)}</span>`).join('') + '</div>';
 }
 
 async function secToggleAttack() {
     const el = document.getElementById('sec-attack');
     el.classList.toggle('hidden');
+    secSyncToggles();
     if (el.classList.contains('hidden')) return;
-    el.innerHTML = `<span class="spinner-text">${esc(t('loading'))}</span>`;
+    el.innerHTML = `${secPanelHead(t('sec_attack_title'), 'secToggleAttack')}<span class="spinner-text">${esc(t('loading'))}</span>`;
     const d = await fetchJSON(`${API}/security/attack`);
-    if (!d || d.error) { el.innerHTML = `<p class="pk-err">${esc(d && d.error)}</p>`; return; }
+    if (!d || d.error) { el.innerHTML = `${secPanelHead(t('sec_attack_title'), 'secToggleAttack')}<p class="pk-err">${esc(d && d.error)}</p>`; return; }
     const rows = [];
     d.tactics.forEach(ta => ta.techniques.forEach((te, n) => {
-        const dets = te.detectors.map(x => `<div>${esc(secDetTitle(x.detector))}${x.by_signature ? ` <span class="text-muted fs-08">${esc(t('sec_attack_by_sig'))}</span>` : ''} <span class="sec-attack-st sec-attack-st-${esc(x.state)}">${esc(t('sec_attack_st_' + x.state))}</span></div>`).join('');
-        rows.push(`<tr>${n === 0 ? `<td rowspan="${ta.techniques.length}" class="sec-attack-tactic"><strong>${esc(ta.name)}</strong><div class="text-muted fs-08">${esc(ta.id)}</div></td>` : ''}
-            <td><a href="${esc(te.url)}" target="_blank" rel="noopener noreferrer"><code>${esc(te.id)}</code></a> ${esc(te.name)}</td>
+        // one line per detection: its name, then its state in a column of its own
+        const dets = te.detectors.map(x => `<div class="sec-attack-det"><span>${esc(secDetTitle(x.detector))}${x.by_signature ? ` <span class="text-muted fs-08">${esc(t('sec_attack_by_sig'))}</span>` : ''}</span><span class="sec-attack-st sec-attack-st-${esc(x.state)}">${esc(t('sec_attack_st_' + x.state))}</span></div>`).join('');
+        const taLoc = atkName(ta.id, ta.name);
+        rows.push(`<tr>${n === 0 ? `<td rowspan="${ta.techniques.length}" class="sec-attack-tactic"><strong>${esc(taLoc)}</strong><div class="text-muted fs-08">${taLoc !== ta.name ? `${esc(ta.name)} · ` : ''}${esc(ta.id)}</div></td>` : ''}
+            <td class="sec-attack-tech"><a href="${esc(te.url)}" target="_blank" rel="noopener noreferrer"><code>${esc(te.id)}</code></a> ${atkLabel(te.id, te.name)}</td>
             <td><span class="sec-attack-st sec-attack-st-${esc(te.state)}">${esc(t('sec_attack_st_' + te.state))}</span></td>
-            <td class="fs-085">${dets}</td></tr>`);
+            <td class="fs-085 sec-attack-dets">${dets}</td></tr>`);
     }));
-    el.innerHTML = `<h3>${esc(t('sec_attack_title'))}</h3>
-        <p class="text-muted fs-085">${esc(t('sec_attack_help').replace('{v}', d.version))} ${d.coverage_at ? esc(t('sec_cov_at').replace('{t}', secUtc(d.coverage_at))) : ''}</p>
+    el.innerHTML = `${secPanelHead(t('sec_attack_title'), 'secToggleAttack')}
+        <p class="text-muted fs-085">${esc(t('sec_attack_help').replace('{v}', d.version))} ${d.coverage_at ? esc(t('sec_cov_at').replace('{t}', secUtc(d.coverage_at))) : ''}${typeof getLang === 'function' && getLang() !== 'en' ? ` ${esc(t('sec_attack_tr_note'))}` : ''}</p>
         <div class="table-wrap"><table class="sec-attack-table"><thead><tr><th>${esc(t('sec_attack_tactic'))}</th><th>${esc(t('sec_attack_technique'))}</th>
         <th>${esc(t('sec_attack_state'))}</th><th>${esc(t('sec_th_detector'))}</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
 }
@@ -268,6 +328,7 @@ function secToggleSettings() {
     const el = document.getElementById('sec-settings');
     el.classList.toggle('hidden');
     if (!el.classList.contains('hidden')) secRenderSettings();
+    secSyncToggles();
 }
 
 function secRenderSettings() {
@@ -290,7 +351,7 @@ function secRenderSettings() {
         <td><input type="text" class="sec-det-ex" value="${esc(x.exclude)}" placeholder="${esc(t('sec_exclude_ph'))}"></td>
     </tr>`).join('');
     document.getElementById('sec-settings').innerHTML = `
-        <h3>${esc(t('sec_settings_title'))}</h3>
+        ${secPanelHead(t('sec_settings_title'), 'secToggleSettings')}
         <p class="text-muted fs-085">${esc(t('sec_settings_help'))}</p>
         <div class="sec-form">
             <label class="sec-chk sec-enable"><input type="checkbox" id="sec-s-enabled" ${s.enabled ? 'checked' : ''}> ${esc(t('sec_s_enabled'))}</label>
