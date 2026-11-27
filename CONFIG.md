@@ -69,6 +69,8 @@ export:
   base_path: /data/graylog-archives     # Archive storage path
   batch_size: 1000                      # API mode: messages per request
   chunk_duration_minutes: 60            # Time span per archive file (minutes)
+  gap_refill_hours: 168                 # Scheduled API export: re-export holes earlier runs left (a failed
+                                        # chunk) within this many hours before the resume point (0 = off)
   max_file_size_mb: 50                  # Auto-split if file exceeds this
   min_disk_space_mb: 500                # Stop export if disk below this
   delay_between_requests_ms: 5          # Delay between API requests (ms)
@@ -338,7 +340,8 @@ rate_limit:
 
 ```yaml
 notify:
-  language: zh-TW                       # en or zh-TW
+  language: zh-TW                       # en, zh-TW or ja
+  link_base_url: ""                     # e.g. https://192.0.2.10:8990: security notifications link to each incident (empty = no links)
   on_export_complete: true
   on_import_complete: true
   on_cleanup_complete: false
@@ -448,8 +451,17 @@ security:
   ai_auto_min_severity: high  # high | medium | low: new or escalated incidents from this severity
   ai_auto_max_per_run: 3      # 1..10; each is one model call and about ten Graylog searches
   ai_notify_verdicts: []      # v1.29.0: e.g. [malicious, suspicious]: one follow-up notification after automatic analysis
+  field_map: {}               # v1.35.0: where this site keeps what the built-in detections read (Settings -> Field mapping);
+                              #   keys q_auth_failure, q_auth_success, q_ids_passed, q_web_attack (queries),
+                              #   f_peer, f_waf_peer (comma lists), f_account, f_host, f_ids_signature,
+                              #   f_ids_severity, f_ids_peer, f_uri, f_vhost, f_category; missing = GIM default
+                              #   (1.35) q_waf_blocked: which web attacks the WAF refused (read inside
+                              #   q_web_attack); f_status: the HTTP response code (incident context)
   sigma_field_map: {}         # v1.27.0: Sigma field -> Graylog field (edited on the Sigma tab)
   sigma_max_rules: 50         # enabled Sigma rules, one aggregation each per run
+  sigma_library_enabled: false   # v1.33.0: download SigmaHQ's rule packages (checked daily, github.com only)
+  sigma_library_package: core    # core | core+ | core++ | emerging_threats | all
+  sigma_library_auto_update: true  # rules added from the library follow new releases
   ti_enabled: false           # v1.28.0: download threat-intel lists (nothing about this site is sent)
   ti_feeds: [spamhaus_drop, tor_exit, feodo]
   ti_refresh_hours: 24        # 1..168
@@ -458,6 +470,9 @@ security:
   detectors:                  # per detection: enabled, min_count, exclude (all optional)
     account_multi_host:
       exclude: "user_name:/.*[$]/"   # the default: machine accounts (DC1$)
+    waf_scanner:
+      blocked_min_count: 1000        # v1.35.0: a scan the WAF blocked stays low (not notified at the
+                                     #   default threshold) below this many events in the window
     account_new_source:              # v1.29.0, off by default (keeps every account/source pair; 7-day learning)
       enabled: false
     volume_anomaly:                  # v1.30.0, off by default (two aggregations of all messages per run;
@@ -488,16 +503,29 @@ the first failure (LLM down, token budget used up).
 ```yaml
 ai:
   enabled: false              # the AI Chat page
-  url: ""                     # OpenAI-compatible server, e.g. http://10.0.0.5:8080/v1
-  model: ""
-  api_key: ""                 # masked by the API; a masked value on save keeps the stored key
-  timeout_seconds: 300        # 10..900
-  allow_external: false       # a server outside the private network is refused unless true (audited)
-  temperature: 0.2
+  llm_servers:                # v1.36.0: one or more LLM servers
+    - name: local             # shown in the chat's server picker
+      kind: openai            # openai (llama.cpp, vLLM, LM Studio, Ollama /v1) | anthropic (Claude API)
+      url: http://10.0.0.5:8080/v1   # anthropic: empty = https://api.anthropic.com
+      model: ""
+      api_key: ""             # masked by the API; masked on save = kept, only for the same type and URL
+      timeout_seconds: 300    # 10..900
+      allow_external: false   # outside the private network refused unless true (audited); Claude needs it
+      temperature: 0.2        # openai only (the Claude API refuses sampling settings)
+      context_tokens: 0       # 0 = ask the server (llama.cpp /props, /v1/models, LM Studio, Ollama, Claude)
+      effort: ""              # anthropic only: low|medium|high|xhigh|max; "" = the model's default
+      daily_tokens: 0         # this server's own limits; 0 = none
+      monthly_tokens: 0
+  default_llm: local          # used for incident analysis and as the chat's default
+  url: ""                     # 1.21-1.35 single server: becomes llm_servers[0] on load; a save writes
+  model: ""                   #   the default OpenAI-compatible server back here so an older
+  api_key: ""                 #   version still finds it
   max_tool_rounds: 6          # then the model must answer from what it has
   max_range_hours: 24         # longest range for tools that pull messages; exact counts allow 31 days
-  daily_tokens: 0             # 0 = no limit; counted per UTC day
+  daily_tokens: 0             # whole site, every user and server; 0 = no limit; per UTC day
   monthly_tokens: 0
+  user_daily_tokens: 0        # v1.36.0: per signed-in user; 0 = no limit
+  user_monthly_tokens: 0
   chat_retention_days: 90     # 0 = keep forever
   mcp_enabled: false          # POST /mcp for external AI clients
   mcp_graylog_tools: []       # empty = the default read-only set
@@ -522,7 +550,17 @@ detections use, through fixed queries about that incident (at most its last 24 h
 counts and top values, successful logins by the same source or account, 8 example messages,
 and the entity's earlier incidents. The example messages are sent to the model and not stored;
 the counts, the model's answer and the model name are kept with the incident (and deleted with
-it). It uses the same LLM server, timeout and token budget as the chat.
+it). It uses the default LLM server and the same token limits as the chat.
+
+**v1.36.0.** Each request is sized to the model's context window (`context_tokens`, or what the server
+reports): the answer length, how much of each tool result, how many earlier turns, and which tools
+are offered. A tool result too big for that is kept in memory for 30 minutes (same user, channel
+and Graylog server only, never on disk) and the model reads it a page at a time with `read_result`.
+`aggregate` and `summarize_messages` do counting and pattern-finding in jt-glogarch: `aggregate`
+caps a breakdown at 10,000 rows and 500 time buckets (OpenSearch's limit is 65,535 buckets);
+`summarize_messages` reads at most 10,000 messages (Graylog's paging window) for at most 60 s.
+A Claude server needs the Python package `anthropic` (a dependency since 1.36.0; imported only when
+such a server is used).
 
 ---
 

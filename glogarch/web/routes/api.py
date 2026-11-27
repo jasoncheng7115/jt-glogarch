@@ -18,6 +18,7 @@ from sse_starlette.sse import EventSourceResponse
 from glogarch.utils.tlsverify import verify_for_url
 from glogarch.archive.storage import ArchiveStorage
 from glogarch.cleanup.cleaner import Cleaner
+from glogarch.core.archive_status import job_eta_seconds as _job_eta_seconds
 from glogarch.core.config import Settings
 from glogarch.core.database import ArchiveDB
 from glogarch.core.models import ArchiveStatus, JobStatus
@@ -262,6 +263,10 @@ async def trigger_export(request: Request, background_tasks: BackgroundTasks):
 
     mode = body.get("mode") or settings.export_mode
     server_name = body.get("server")
+    # get_server() falls back to the first server for an unknown name: a page left open
+    # after a server was removed would export the WRONG server without a word
+    if server_name and not settings.has_server(server_name):
+        return JSONResponse({"error": f"Unknown Graylog server '{server_name}'"}, status_code=400)
     server_config = settings.get_server(server_name)
     days = body.get("days")
     resume = body.get("resume", True)
@@ -406,10 +411,9 @@ async def trigger_import(request: Request, background_tasks: BackgroundTasks):
     # --- Compliance: Graylog API credentials are MANDATORY ---
     # Pre-flight check + post-import reconciliation both need API access.
     # No more "monitor_mode = none" / SSH path — those can't fix mapping conflicts.
-    target_api_url = (body.get("target_api_url") or "").strip()
-    target_api_token = (body.get("target_api_token") or "").strip()
-    target_api_username = (body.get("target_api_username") or "").strip()
-    target_api_password = body.get("target_api_password") or ""
+    target_api_url = (body.get("target_api_url") or "").strip() or (settings.import_config.target_api_url or "").strip()
+    target_api_token, target_api_username, target_api_password = target_credentials(
+        body, settings.import_config, target_api_url)
 
     # Fall back to the pre-configured restore-target defaults when a field is
     # empty or still holds the masked placeholder ("***") that the settings
@@ -418,12 +422,6 @@ async def trigger_import(request: Request, background_tasks: BackgroundTasks):
     _ic = settings.import_config
     if not target_api_url:
         target_api_url = (_ic.target_api_url or "").strip()
-    if (not target_api_token) or ("***" in target_api_token):
-        target_api_token = (_ic.target_api_token or "").strip()
-    if (not target_api_password) or ("***" in target_api_password):
-        target_api_password = _ic.target_api_password or ""
-    if not target_api_username:
-        target_api_username = (_ic.target_api_username or "").strip()
 
     if not target_api_url:
         return JSONResponse(
@@ -632,7 +630,6 @@ async def import_capacity_estimate(request: Request):
     will delete the freshly-imported data."""
     from glogarch.import_.preflight import PreflightChecker
     from glogarch.utils.netguard import ssrf_block_reason
-    from glogarch.core.config_writer import reconcile_secret
     from glogarch.utils.sanitize import sanitize
 
     body = await request.json()
@@ -658,9 +655,7 @@ async def import_capacity_estimate(request: Request):
     reason = ssrf_block_reason(url)
     if reason:
         return JSONResponse({"error": reason}, status_code=400)
-    token = reconcile_secret(body.get("target_api_token"), ic.target_api_token) or ""
-    user = (body.get("target_api_username") or "").strip() or (ic.target_api_username or "")
-    pw = reconcile_secret(body.get("target_api_password"), ic.target_api_password) or ""
+    token, user, pw = target_credentials(body, ic, url)
     if not token and not (user and pw):
         return JSONResponse({"error": "Provide a token or username + password"}, status_code=400)
 
@@ -919,7 +914,6 @@ async def import_set_retention(request: Request):
     won't delete freshly-imported data. NEVER lowers below the current value."""
     from glogarch.import_.preflight import PreflightChecker
     from glogarch.utils.netguard import ssrf_block_reason
-    from glogarch.core.config_writer import reconcile_secret
     from glogarch.utils.sanitize import sanitize
     import httpx as _httpx
     import json
@@ -935,9 +929,7 @@ async def import_set_retention(request: Request):
     reason = ssrf_block_reason(url) if url else "target_api_url required"
     if reason:
         return JSONResponse({"error": reason}, status_code=400)
-    token = reconcile_secret(body.get("target_api_token"), ic.target_api_token) or ""
-    user = (body.get("target_api_username") or "").strip() or (ic.target_api_username or "")
-    pw = reconcile_secret(body.get("target_api_password"), ic.target_api_password) or ""
+    token, user, pw = target_credentials(body, ic, url)
     auth = _httpx.BasicAuth(token, "token") if token else _httpx.BasicAuth(user, pw)
     try:
         async with _httpx.AsyncClient(verify=verify_for_url(settings, url), timeout=20,
@@ -1354,6 +1346,9 @@ async def save_schedule(request: Request):
         })
         if server:
             config_data["server"] = server
+        elif body.get("server_default") is True:
+            # set back to the default server (an empty "server" alone means "unchanged")
+            config_data.pop("server", None)
         if body.get("keep_indices"):
             config_data["keep_indices"] = int(body["keep_indices"])
         else:
@@ -1422,7 +1417,6 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
     """Immediately run a schedule's export using its saved config."""
     import json as _json
     from datetime import timedelta
-    from glogarch.export.exporter import _ensure_naive
 
     db = _db(request)
     settings = _settings(request)
@@ -1546,12 +1540,8 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
                         log.warning("Schedule last_run write failed — schedule state now wrong in UI", error=str(e))
     else:
         exporter = Exporter(server_config, settings.export, settings.rate_limit, db, integrity=settings.integrity)
-        first_stream = stream_ids[0] if stream_ids else None
-        rp = exporter.get_resume_point(stream_id=first_stream)
-        if rp:
-            rp = _ensure_naive(rp)
-            if rp > _ensure_naive(time_from):
-                time_from = rp
+        # same plan as the scheduled run: resume point + holes earlier runs left
+        time_from, refill, _rp = exporter.plan_scheduled_run(time_from, time_to, stream_ids)
 
         def _run_in_thread():
             started = False
@@ -1559,7 +1549,7 @@ async def run_schedule_now(request: Request, name: str, background_tasks: Backgr
                 result = asyncio.run(exporter.export(
                     time_from=time_from, time_to=time_to,
                     streams=stream_ids, progress_callback=_cb, source=f"manual:api:{name}",
-                    job_id=job_id,
+                    job_id=job_id, refill_windows=refill or None,
                 ))
                 started = True
                 _publish_export_end(job_id, result)
@@ -1871,7 +1861,8 @@ def get_archive_path(request: Request):
 async def set_archive_path(request: Request):
     """Update archive base path with validation. Does NOT move files."""
     body = await request.json()
-    new_path = body.get("base_path", "").strip()
+    # the setup wizard sent {"path"} until 1.34 and got 400, so a custom path could not be set there
+    new_path = str(body.get("base_path") or body.get("path") or "").strip()
     if not new_path:
         return JSONResponse({"error": "base_path is required"}, status_code=400)
 
@@ -2500,6 +2491,7 @@ def get_notify_config(request: Request):
     n = settings.notify
     return {
         "language": n.language,
+        "link_base_url": n.link_base_url,
         "on_export_complete": n.on_export_complete,
         "on_import_complete": n.on_import_complete,
         "on_cleanup_complete": n.on_cleanup_complete,
@@ -2507,6 +2499,7 @@ def get_notify_config(request: Request):
         "on_verify_failed": n.on_verify_failed,
         "on_sensitive_operation": n.on_sensitive_operation,
         "on_audit_alert": n.on_audit_alert,
+        "on_security_incident": n.on_security_incident,
         "telegram": {"enabled": n.telegram.enabled, "bot_token": _mask(n.telegram.bot_token), "chat_id": n.telegram.chat_id},
         "discord": {"enabled": n.discord.enabled, "webhook_url": _mask(n.discord.webhook_url)},
         "slack": {"enabled": n.slack.enabled, "webhook_url": _mask(n.slack.webhook_url)},
@@ -2532,7 +2525,18 @@ async def save_notify_config(request: Request):
 
     # Update in-memory
     n = settings.notify
-    for key in ("on_export_complete", "on_import_complete", "on_cleanup_complete", "on_error", "on_verify_failed", "on_sensitive_operation", "on_audit_alert"):
+    # validated now, applied only once every channel below has passed its checks
+    language = link = None
+    if "language" in body:
+        # sent by the form since the language setting existed, and never stored until 1.34
+        if body["language"] not in ("en", "zh-TW", "ja"):
+            return JSONResponse({"error": "Notification language must be en, zh-TW or ja"}, status_code=400)
+        language = body["language"]
+    if "link_base_url" in body:
+        link, why = normalize_link_base(body.get("link_base_url"))
+        if why:
+            return JSONResponse({"error": why}, status_code=400)
+    for key in ("on_export_complete", "on_import_complete", "on_cleanup_complete", "on_error", "on_verify_failed", "on_sensitive_operation", "on_audit_alert", "on_security_incident"):
         if key in body:
             setattr(n, key, body[key])
 
@@ -2565,6 +2569,11 @@ async def save_notify_config(request: Request):
                                 {"error": f"{ch_name}.{k}: {reason}"}, status_code=400)
                     setattr(ch_obj, k, v)
 
+    if language is not None:
+        n.language = language
+    if link is not None:
+        n.link_base_url = link
+
     # Save to config.yaml — persist the RECONCILED model (with real secrets),
     # never the raw request body, which may carry masked "***" placeholders for
     # unchanged secrets. Writing the body verbatim used to overwrite real
@@ -2579,6 +2588,49 @@ async def save_notify_config(request: Request):
 
 
 # --- Helpers ---
+
+def _same_url(a: str | None, b: str | None) -> bool:
+    return (a or "").strip().rstrip("/") == (b or "").strip().rstrip("/")
+
+
+def target_credentials(body: dict, ic, url: str) -> tuple[str, str, str]:
+    """(token, username, password) for an import target: what the request typed,
+    the stored import defaults for an empty or masked field. ONE rule for every
+    endpoint that talks to the target.
+    - A username + real password typed with no token is a choice: the default token
+      must not come back and win over it (the token is used first; until 1.34 typed
+      credentials were ignored).
+    - Stored secrets go only to the stored target URL: a request naming another
+      server gets nothing it did not type (the AI settings' rule, since 1.34)."""
+    raw_user = (body.get("target_api_username") or "").strip()
+    raw_pw = body.get("target_api_password") or ""
+    raw_token = (body.get("target_api_token") or "").strip()
+    stored_ok = _same_url(url, ic.target_api_url)
+    typed = lambda v: bool(v) and "***" not in v
+    typed_userpass = bool(raw_user) and typed(raw_pw)
+    if typed(raw_token):
+        token = raw_token
+    else:
+        token = "" if (typed_userpass or not stored_ok) else (ic.target_api_token or "").strip()
+    user = raw_user or ((ic.target_api_username or "").strip() if stored_ok else "")
+    pw = raw_pw if typed(raw_pw) else ((ic.target_api_password or "") if stored_ok else "")
+    return token, user, pw
+
+
+def normalize_link_base(value) -> tuple[str, str]:
+    """The jt-glogarch address for links in notifications: http(s)://host[:port],
+    no path, query or credentials. Only ever written into messages, never fetched."""
+    import re as _re
+    v = str(value or "").strip().rstrip("/")
+    if not v:
+        return "", ""
+    # scheme://host[:port] and nothing else: letters, digits, dots, hyphens, an IPv6
+    # literal in brackets, a numeric port (no path, query, fragment, credentials)
+    m = _re.fullmatch(r"(https?)://(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]+)(?::(\d{1,5}))?", v)
+    if not m or len(v) > 200 or (m.group(3) and not 0 < int(m.group(3)) < 65536):
+        return "", "jt-glogarch address must look like https://host:8990 (no path)"
+    return v, ""
+
 
 def _parse_dt(s: str | None) -> datetime | None:
     if not s:
@@ -2675,39 +2727,6 @@ def _job_to_dict(j) -> dict:
     return d
 
 
-def _job_eta_seconds(d: dict) -> float | None:
-    """Seconds of work left at the rate this job has averaged so far.
-
-    A first full backlog can be billions of records. One site sat at
-    "4% · 58h26m" with no way to tell whether that meant another day or
-    another two months — it was 53 days. Elapsed time alone cannot answer the
-    only question the operator has, so derive the remainder from the job's own
-    measured rate. Deliberately naive (a flat average): the point is to tell
-    hours from months, and a throttled export's rate already reflects its
-    pauses. Returns None until there is enough signal to be worth showing.
-    """
-    if d.get("status") != "running" or d.get("completed_at"):
-        return None
-    done = int(d.get("messages_done") or 0)
-    total = int(d.get("messages_total") or 0)
-    started = d.get("started_at")
-    if not (done > 0 and total > done and started):
-        return None
-    try:
-        from datetime import datetime, timezone
-        st = datetime.fromisoformat(str(started).replace("Z", "+00:00"))
-        if st.tzinfo is None:
-            st = st.replace(tzinfo=timezone.utc)
-        elapsed = (datetime.now(timezone.utc) - st).total_seconds()
-    except Exception:
-        return None
-    # Under a minute of history, or a rate of zero, says nothing useful yet.
-    if elapsed < 60:
-        return None
-    rate = done / elapsed
-    if rate <= 0:
-        return None
-    return (total - done) / rate
 
 
 def _schedule_to_dict(s, running_since: str | None = None) -> dict:
@@ -2721,22 +2740,11 @@ def _schedule_to_dict(s, running_since: str | None = None) -> dict:
     # Compute next fire time from cron expression if enabled
     next_run = None
     if s.enabled and s.cron_expr:
-        try:
-            from apscheduler.triggers.cron import CronTrigger
-            from apscheduler.schedulers.asyncio import AsyncIOScheduler
-            from glogarch.scheduler.scheduler import posix_cron_to_apscheduler
-            # Use the scheduler's local timezone for display
-            tz = AsyncIOScheduler().timezone
-            # POSIX cron numbers dow as 0/7=Sun, 6=Sat; APScheduler numbers
-            # 0=Mon, 6=Sun. Convert so the displayed next-fire matches what
-            # apply_schedule() actually registers with APScheduler.
-            cron_for_aps = posix_cron_to_apscheduler(s.cron_expr)
-            trigger = CronTrigger.from_crontab(cron_for_aps, timezone=tz)
-            next_fire = trigger.get_next_fire_time(None, datetime.now(tz))
-            if next_fire:
-                next_run = next_fire.isoformat()
-        except Exception as e:
-            log.debug("Could not compute the next fire time for a schedule", error=str(e))
+        # POSIX cron -> what apply_schedule() registers (scheduler's local tz)
+        from glogarch.scheduler.scheduler import next_fire_time
+        next_fire = next_fire_time(s.cron_expr)
+        if next_fire:
+            next_run = next_fire.isoformat()
     return {
         "id": s.id,
         "name": s.name,
@@ -2825,6 +2833,15 @@ async def save_config_server(request: Request):
     username = body.get("username")
     if username is None and existing:
         username = existing.username
+    if body.get("auth_type") == "password":
+        # Switching a server from token to username/password: the form's empty token
+        # means "unchanged" to reconcile_secret, so the old token stayed and, used
+        # first by the client, the new credentials never took effect (until 1.34).
+        if not (username or "").strip():
+            return JSONResponse({"error": "Enter the Graylog username"}, status_code=400)
+        if not password:   # typed now or already stored: without one the next export gets 401
+            return JSONResponse({"error": "Enter the Graylog password"}, status_code=400)
+        auth_token = None
     verify_ssl = bool(body.get("verify_ssl", existing.verify_ssl if existing else True))
 
     # Per-server OpenSearch: present with hosts → rebuild; key omitted → keep
@@ -2910,6 +2927,13 @@ def delete_config_server(request: Request, name: str):
             cfg = {}
         if cfg.get("server") == name:
             refs.append(f"report '{r.get('name')}'")
+    srv = next(s for s in settings.servers if s.name == name)
+    if srv.opensearch is not None and srv.opensearch.datanode:
+        # its private key (all_access) and its role mapping in Graylog would stay behind
+        return JSONResponse(
+            {"error": f"Server '{name}' has a connected Data Node. Disconnect it first: that removes "
+                      "its certificate and its access in Graylog.", "code": "datanode_connected"},
+            status_code=409)
     if refs:
         return JSONResponse(
             {"error": f"Server '{name}' is still used by {', '.join(refs)}. Point them at "
@@ -3025,6 +3049,75 @@ async def test_saved_server(request: Request, name: str):
             return {"connected": False, "error": f"HTTP {resp.status_code}"}
     except Exception as e:
         return {"connected": False, "error": sanitize(str(e))}
+
+
+# Graylog heap -> API export speed hint (export / schedule dialogs, sizing card).
+# Read-only (/api/system/jvm with the server's stored connection), cached so
+# opening a dialog does not query Graylog every time.
+_API_HEAP_CACHE: dict[str, tuple[float, dict]] = {}
+_API_HEAP_TTL_SEC = 600
+
+
+def _api_mode_in_use(settings, db, server_name: str) -> bool:
+    """Is API mode what this server's exports actually use: the default export
+    mode, or an enabled export schedule for this server set to API mode."""
+    import json as _json
+    if (settings.export_mode or "api") == "api":
+        return True
+    try:
+        for s in db.list_schedules():
+            if not s.enabled or s.job_type != "export":
+                continue
+            try:
+                cfg = _json.loads(s.config_json or "{}") or {}
+            except ValueError:
+                cfg = {}
+            if settings.get_server(cfg.get("server")).name != server_name:
+                continue
+            if cfg.get("mode", settings.export_mode) == "api":
+                return True
+    except Exception as e:
+        log.debug("Could not read schedules for the API heap hint", error=str(e))
+    return False
+
+
+@router.get("/servers/api-heap")
+async def server_api_heap(request: Request, server: str = ""):
+    """The Graylog's -Xmx and roughly how fast an API export can read from it.
+    `server` empty = the default server. Never an error status: the hint is
+    advisory, so a failure is {"available": false}."""
+    import time as _time
+    import httpx
+    from glogarch.graylog.system import api_export_estimate
+    settings = _settings(request)
+    if server and not settings.has_server(server):
+        return {"available": False, "reason": "unknown_server"}
+    try:
+        srv = settings.get_server(server or None)
+    except ValueError:
+        return {"available": False, "reason": "no_server"}
+    now = _time.monotonic()
+    hit = _API_HEAP_CACHE.get(srv.name)
+    if hit and now - hit[0] < _API_HEAP_TTL_SEC:
+        est = hit[1]
+    else:
+        est = None
+        auth = (httpx.BasicAuth(srv.auth_token, "token") if srv.auth_token
+                else httpx.BasicAuth(srv.username or "", srv.password or ""))
+        try:
+            async with httpx.AsyncClient(verify=srv.verify_ssl, timeout=5.0) as client:
+                r = await client.get(f"{srv.url.rstrip('/')}/api/system/jvm", auth=auth,
+                                     headers={"Accept": "application/json"})
+                if r.status_code == 200:
+                    est = api_export_estimate((r.json().get("max_memory") or {}).get("bytes", 0))
+        except Exception as e:
+            log.debug("Could not read Graylog heap for the API export hint",
+                      server=srv.name, error=str(e))
+        if est is None:
+            return {"available": False, "server": srv.name, "reason": "unreadable"}
+        _API_HEAP_CACHE[srv.name] = (now, est)
+    return {"available": True, "server": srv.name, **est,
+            "api_in_use": _api_mode_in_use(settings, _db(request), srv.name)}
 
 
 # --- Graylog Data Node access (beta) ---------------------------------------
@@ -3273,13 +3366,25 @@ async def save_config_import_defaults(request: Request):
             return JSONResponse({"error": "gelf_port must be an integer"}, status_code=400)
     if body.get("gelf_protocol") in ("tcp", "udp"):
         ic.gelf_protocol = body["gelf_protocol"]
+    old_url = ic.target_api_url
     if "target_api_url" in body:
         ic.target_api_url = (body.get("target_api_url") or "").strip()
     if "target_api_username" in body:
         ic.target_api_username = (body.get("target_api_username") or "").strip()
-    # Secrets: reconcile so a masked/empty value keeps the stored secret.
-    ic.target_api_token = reconcile_secret(body.get("target_api_token"), ic.target_api_token) or ""
-    ic.target_api_password = reconcile_secret(body.get("target_api_password"), ic.target_api_password) or ""
+    # Secrets: a masked/empty value keeps the stored secret, with the same two exceptions
+    # as target_credentials (what "Test" uses): a typed username + password with an empty
+    # token removes the token, and a new URL does not inherit the old server's secrets.
+    raw_token = body.get("target_api_token") or ""
+    raw_pw = body.get("target_api_password") or ""
+    typed_pw = bool(raw_pw) and "***" not in raw_pw
+    moved = not _same_url(old_url, ic.target_api_url)
+    if moved:
+        ic.target_api_token = ""  # nosec B105 - clearing a stored secret, not a hardcoded one
+        ic.target_api_password = ""  # nosec B105 - clearing a stored secret, not a hardcoded one
+    ic.target_api_token = reconcile_secret(raw_token, ic.target_api_token) or ""
+    ic.target_api_password = reconcile_secret(raw_pw, ic.target_api_password) or ""
+    if not raw_token.strip() and ic.target_api_username and typed_pw:
+        ic.target_api_token = ""  # nosec B105 - clearing a stored secret, not a hardcoded one
 
     # Persist the whole 'import' section (alias of import_config) atomically.
     section = ic.model_dump()
@@ -3297,7 +3402,6 @@ async def test_config_import_defaults(request: Request):
     import httpx
     from glogarch.utils.sanitize import sanitize
     from glogarch.utils.netguard import ssrf_block_reason
-    from glogarch.core.config_writer import reconcile_secret
     body = await request.json()
     ic = _settings(request).import_config
     url = (body.get("target_api_url") or "").strip() or (ic.target_api_url or "")
@@ -3306,9 +3410,7 @@ async def test_config_import_defaults(request: Request):
     _reason = ssrf_block_reason(url)
     if _reason:
         return JSONResponse({"connected": False, "error": _reason}, status_code=400)
-    token = reconcile_secret(body.get("target_api_token"), ic.target_api_token) or ""
-    username = (body.get("target_api_username") or "").strip() or (ic.target_api_username or "")
-    password = reconcile_secret(body.get("target_api_password"), ic.target_api_password) or ""
+    token, username, password = target_credentials(body, ic, url)
     if token:
         auth = httpx.BasicAuth(token, "token")
     elif username and password:
@@ -3345,7 +3447,6 @@ async def flush_target_graylog(request: Request):
     """
     from glogarch.graylog.maintenance import GraylogFlusher
     from glogarch.utils.netguard import ssrf_block_reason
-    from glogarch.core.config_writer import reconcile_secret
     from glogarch.utils.sanitize import sanitize
 
     body = await request.json()
@@ -3366,9 +3467,7 @@ async def flush_target_graylog(request: Request):
     else:
         ic = settings.import_config
         url = (body.get("target_api_url") or "").strip() or (ic.target_api_url or "")
-        token = reconcile_secret(body.get("target_api_token"), ic.target_api_token) or ""
-        username = (body.get("target_api_username") or "").strip() or (ic.target_api_username or "")
-        password = reconcile_secret(body.get("target_api_password"), ic.target_api_password) or ""
+        token, username, password = target_credentials(body, ic, url)
         verify_ssl = False
 
     if not url:
@@ -3422,7 +3521,6 @@ def _target_creds(request: Request, body: dict):
     does: a configured server by exact name, else the import defaults reconciled
     with any masked secrets in the body. Returns (url, token, user, pw, verify)
     or raises ValueError with a message for the caller to return as 400/404."""
-    from glogarch.core.config_writer import reconcile_secret
     settings = _settings(request)
     server_name = (body.get("server") or "").strip()
     if server_name:
@@ -3433,9 +3531,7 @@ def _target_creds(request: Request, body: dict):
                 srv.password or "", srv.verify_ssl)
     ic = settings.import_config
     url = (body.get("target_api_url") or "").strip() or (ic.target_api_url or "")
-    token = reconcile_secret(body.get("target_api_token"), ic.target_api_token) or ""
-    user = (body.get("target_api_username") or "").strip() or (ic.target_api_username or "")
-    pw = reconcile_secret(body.get("target_api_password"), ic.target_api_password) or ""
+    token, user, pw = target_credentials(body, ic, url)
     if not url:
         raise ValueError("target_api_url or server is required")
     from glogarch.utils.netguard import ssrf_block_reason
@@ -3652,7 +3748,8 @@ async def save_report(request: Request):
     for k in _REPORT_SECRET_KEYS:
         cfg[k] = reconcile_secret(cfg.get(k), old_cfg.get(k))
     cfg_json = _json.dumps(cfg, ensure_ascii=False)
-    enabled = bool(body.get("enabled", True))
+    # a client that does not send it keeps the stored state (never re-enables a disabled report)
+    enabled = bool(body["enabled"]) if "enabled" in body else (bool(old_rec["enabled"]) if old_rec else True)
     old_name = old_rec["name"] if old_rec else None
     try:
         if old_rec:
@@ -3673,6 +3770,26 @@ async def save_report(request: Request):
             log.warning("Report cron registration failed — saved schedule will NOT fire until restart", error=str(e))
     _audit(request, "report_saved", f"report={name}")
     return {"status": "saved", "name": name}
+
+
+@router.post("/reports/{name}/enabled")
+async def set_report_enabled(request: Request, name: str):
+    """The switch in the report list (owner 2026-11-26): on = its schedule runs; off = it
+    does not (Generate now still works). Registered / removed in the scheduler at once."""
+    body = await request.json() or {}
+    if not isinstance(body.get("enabled"), bool):
+        return JSONResponse({"error": "enabled: true or false"}, status_code=400)
+    db = _db(request)
+    if not db.set_report_enabled(name, body["enabled"]):
+        return JSONResponse({"error": "Report not found"}, status_code=404)
+    sched = getattr(request.app.state, "scheduler", None)
+    if sched:
+        try:
+            sched.apply_report(name)      # removes the job first; adds it back only when enabled
+        except Exception as e:
+            log.warning("Report schedule could not be updated - takes effect after a restart", error=str(e))
+    _audit(request, "report_enabled" if body["enabled"] else "report_disabled", f"report={name}")
+    return {"status": "enabled" if body["enabled"] else "disabled", "name": name}
 
 
 @router.delete("/reports/{name}")

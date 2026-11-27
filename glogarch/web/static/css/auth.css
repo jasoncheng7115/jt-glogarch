@@ -9,7 +9,10 @@ body.auth.auth-top { align-items:flex-start; padding:40px 16px; box-sizing:borde
 .login-card { background:var(--card-bg); padding:40px; border-radius:12px; border:1px solid var(--border); width:380px; }
 .login-header { text-align:center; margin-bottom:25px; }
 .login-header h1 { justify-content:center; color:var(--accent); font-size:1.6em; margin-bottom:2px; }
-.login-header .version { color:var(--text-muted); font-size:0.7em; font-weight:normal; opacity:0.7; }
+/* the project's logo above the name, centred like the lines under it (owner 2026-11-27: beside
+   the name it pushed the title off the axis of "Graylog Open Archive") */
+.login-logo { display:block; width:44px; height:44px; margin:0 auto 10px; }
+[data-theme="dark"] .login-logo { border-radius:8px; box-shadow:0 0 0 1px var(--border-strong); }
 .login-header .subtitle { color:var(--text-muted); font-size:0.85em; }
 .login-card .form-group { margin-bottom:18px; }
 .login-card .form-group label { display:flex; align-items:center; gap:6px; margin-bottom:6px; color:var(--text-label); font-size:0.9em; }
@@ -19,17 +22,23 @@ body.auth.auth-top { align-items:flex-start; padding:40px 16px; box-sizing:borde
 .login-error { background:rgba(244,67,54,0.15); color:var(--danger); padding:10px; border-radius:6px; text-align:center; margin-bottom:15px; font-size:0.9em; }
 .login-error.is-warn { background:rgba(255,152,0,0.1); border-color:var(--warning); color:var(--warning); }
 .login-error.is-danger { background:rgba(244,67,54,0.1); border-color:var(--danger); }
-.login-footer { display:flex; justify-content:space-between; align-items:center; margin-top:20px; gap:8px; }
-.login-note { color:var(--text-muted); font-size:0.8em; }
-.login-controls { display:flex; gap:6px; align-items:stretch; height:32px; }
+/* the note gets its own row (beside the controls it wrapped into three lines); the controls are centred under it (owner: right-aligned looked lopsided) */
+.login-footer { display:flex; flex-wrap:wrap; justify-content:center; align-items:center; margin-top:20px; gap:12px 8px; }
+/* a reminder, not fine print (owner 2026-11-27) */
+.login-note { flex:1 1 100%; display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:8px; background:var(--tint-accent); color:var(--accent-text); font-size:0.85em; line-height:1.45; box-sizing:border-box; }
+.login-note svg { flex:none; width:16px; height:16px; }
+/* the language list and the theme button are one height (owner 2026-11-27: they differed) */
+.login-controls { display:flex; gap:6px; align-items:center; flex:none; }
 .login-controls select { height:32px; padding:0 8px; border:1px solid var(--border); border-radius:4px; background:var(--input-bg); color:var(--text-muted); font-size:0.8em; box-sizing:border-box; }
-.login-controls .theme-toggle { width:32px; min-height:32px; height:32px; }
+.login-controls .theme-toggle { min-width:34px; min-height:34px; height:34px; box-sizing:border-box; }
+.login-controls .theme-toggle[data-label] { width:auto; display:inline-flex; align-items:center; gap:6px; padding:0 12px; font-size:0.85em; color:var(--text-muted); }
+.login-controls .theme-toggle[data-label] svg { width:16px; height:16px; flex:none; }
+.login-controls .custom-select-trigger, .login-controls select { height:34px; min-height:34px; box-sizing:border-box; }
 
 /* --- Setup wizard card --- */
 .setup-card { background:var(--card-bg); padding:32px 36px; border-radius:12px; border:1px solid var(--border); width:560px; max-width:100%; }
 .setup-header { text-align:center; margin-bottom:20px; }
 .setup-header h1 { justify-content:center; color:var(--accent); font-size:1.5em; margin-bottom:2px; }
-.setup-header .version { color:var(--text-muted); font-size:0.65em; font-weight:normal; opacity:0.7; }
 .setup-steps { display:flex; gap:6px; margin-bottom:22px; }
 .setup-steps .dot { flex:1; height:5px; border-radius:3px; background:var(--border); }
 .setup-steps .dot.active { background:var(--accent); }
@@ -61,3 +70,6 @@ body.auth.auth-top { align-items:flex-start; padding:40px 16px; box-sizing:borde
 .setup-controls select { height:30px; padding:0 8px; border:1px solid var(--border); border-radius:4px; background:var(--input-bg); color:var(--text-muted); font-size:0.78em; }
 .setup-controls .theme-toggle { width:30px; height:30px; min-height:30px; }
 .hidden { display:none !important; }
+/* The name sits on the axis of the logo and the line under it; no version on the sign-in and
+   setup pages (owner 2026-11-27), the sidebar shows it after sign-in. */
+.login-header h1, .setup-header h1 { display:inline-block; }

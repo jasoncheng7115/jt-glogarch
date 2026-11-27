@@ -189,6 +189,22 @@ code, pre { font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, 
   margin-bottom: 32px;
 }
 .hero .ctas { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
+.hero .hero-shot {
+  display: block;
+  max-width: 1080px;
+  margin: 48px auto 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--panel);
+  box-shadow: 0 24px 64px rgba(15, 23, 42, .16), 0 2px 8px rgba(15, 23, 42, .06);
+  cursor: zoom-in;
+  transition: transform .2s, box-shadow .2s;
+}
+.hero .hero-shot:hover { transform: translateY(-2px); box-shadow: 0 30px 72px rgba(15, 23, 42, .20), 0 2px 8px rgba(15, 23, 42, .06); }
+.hero .hero-shot img { display: block; width: 100%; height: auto; }
+@media (max-width: 640px) { .hero .hero-shot { margin-top: 28px; border-radius: 10px; } }
 
 .btn {
   display: inline-flex; align-items: center; gap: 8px;
@@ -895,3 +911,5 @@ footer .row { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap
 .sh-kw   { color: #8fb8ff; }
 .sh-flag { color: #7ee2a8; }
 .sh-url  { color: #c7b3ff; }
+/* an icon inside a section's note line (content packs) */
+.subhead .icon { width: 16px; height: 16px; vertical-align: -3px; margin-right: 4px; color: var(--muted); }

@@ -1,25 +1,25 @@
 {
  "bomFormat": "CycloneDX",
  "specVersion": "1.5",
- "serialNumber": "urn:uuid:3506b0e9-ff3f-4439-bb29-e44e1d9f6421",
+ "serialNumber": "urn:uuid:10391e08-956f-4024-9fb3-7f1dc1f35a0b",
  "version": 1,
  "metadata": {
-  "timestamp": "2026-11-20T01:54:43+00:00",
+  "timestamp": "2026-11-27T01:24:27+00:00",
   "tools": {
    "components": [
     {
      "type": "application",
      "name": "glogarch.sbom",
-     "version": "1.32.1"
+     "version": "1.36.0"
     }
    ]
   },
   "component": {
    "type": "application",
-   "bom-ref": "pkg:pypi/jt-glogarch@1.32.1",
+   "bom-ref": "pkg:pypi/jt-glogarch@1.36.0",
    "name": "jt-glogarch",
-   "version": "1.32.1",
-   "purl": "pkg:pypi/jt-glogarch@1.32.1",
+   "version": "1.36.0",
+   "purl": "pkg:pypi/jt-glogarch@1.36.0",
    "licenses": [
     {
      "license": {
@@ -282,6 +282,20 @@
   },
   {
    "type": "library",
+   "bom-ref": "pkg:pypi/anthropic@2.14.0",
+   "name": "anthropic",
+   "version": "2.14.0",
+   "purl": "pkg:pypi/anthropic@2.14.0",
+   "licenses": [
+    {
+     "license": {
+      "id": "Apache-2.0"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
    "bom-ref": "pkg:pypi/python-multipart@0.0.22",
    "name": "python-multipart",
    "version": "0.0.22",
@@ -356,15 +370,13 @@
   },
   {
    "type": "library",
-   "bom-ref": "pkg:pypi/idna@3.3",
+   "bom-ref": "pkg:pypi/idna@3.20",
    "name": "idna",
-   "version": "3.3",
-   "purl": "pkg:pypi/idna@3.3",
+   "version": "3.20",
+   "purl": "pkg:pypi/idna@3.20",
    "licenses": [
     {
-     "license": {
-      "id": "BSD-3-Clause"
-     }
+     "expression": "BSD-3-Clause"
     }
    ]
   },
@@ -601,6 +613,75 @@
   },
   {
    "type": "library",
+   "bom-ref": "pkg:pypi/docstring-parser@0.18.0",
+   "name": "docstring_parser",
+   "version": "0.18.0",
+   "purl": "pkg:pypi/docstring-parser@0.18.0",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/httpx2@2.14.0",
+   "name": "httpx2",
+   "version": "2.14.0",
+   "purl": "pkg:pypi/httpx2@2.14.0",
+   "licenses": [
+    {
+     "expression": "BSD-3-Clause"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/jiter@0.18.0",
+   "name": "jiter",
+   "version": "0.18.0",
+   "purl": "pkg:pypi/jiter@0.18.0",
+   "licenses": [
+    {
+     "expression": "MIT"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/opentelemetry-api@1.45.2",
+   "name": "opentelemetry-api",
+   "version": "1.45.2",
+   "purl": "pkg:pypi/opentelemetry-api@1.45.2",
+   "licenses": [
+    {
+     "expression": "Apache-2.0"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/sniffio@1.3.1",
+   "name": "sniffio",
+   "version": "1.3.1",
+   "purl": "pkg:pypi/sniffio@1.3.1",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    },
+    {
+     "license": {
+      "id": "Apache-2.0"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
    "bom-ref": "pkg:pypi/pyee@13.0.1",
    "name": "pyee",
    "version": "13.0.1",
@@ -655,6 +736,30 @@
   },
   {
    "type": "library",
+   "bom-ref": "pkg:pypi/httpcore2@2.14.0",
+   "name": "httpcore2",
+   "version": "2.14.0",
+   "purl": "pkg:pypi/httpcore2@2.14.0",
+   "licenses": [
+    {
+     "expression": "BSD-3-Clause"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:pypi/truststore@0.10.5",
+   "name": "truststore",
+   "version": "0.10.5",
+   "purl": "pkg:pypi/truststore@0.10.5",
+   "licenses": [
+    {
+     "expression": "MIT"
+    }
+   ]
+  },
+  {
+   "type": "library",
    "bom-ref": "pkg:npm/chart.js@4.4.1",
    "name": "chart.js",
    "version": "4.4.1",
@@ -676,6 +781,38 @@
     {
      "name": "jt-glogarch:location",
      "value": "glogarch/report/assets/chart.umd.min.js (PDF reports)"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:npm/mermaid@11.4.1",
+   "name": "mermaid",
+   "version": "11.4.1",
+   "purl": "pkg:npm/mermaid@11.4.1",
+   "licenses": [
+    {
+     "license": {
+      "id": "MIT"
+     }
+    }
+   ],
+   "hashes": [
+    {
+     "alg": "SHA-256",
+     "content": "a43bc1afd446f9c4cc66ac5dd45d02e8d65e26fc5344ec0ef787f88d6ddb6f9e"
+    }
+   ],
+   "externalReferences": [
+    {
+     "type": "distribution",
+     "url": "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"
+    }
+   ],
+   "properties": [
+    {
+     "name": "jt-glogarch:location",
+     "value": "glogarch/ai/assets/mermaid.min.js (Mermaid diagrams in the AI chat preview pane, rendered inside a sandboxed frame)"
     }
    ]
   },
@@ -732,10 +869,10 @@
   },
   {
    "type": "library",
-   "bom-ref": "pkg:github/jasoncheng7115/jasontools-mcp@dd6d2cf5ddef6cc26f9d098b58c3d147d27ae7d7#mcp_graylog",
+   "bom-ref": "pkg:github/jasoncheng7115/jasontools-mcp@31579591656785d8efb4010dc5b1ca0b50658f8a#mcp_graylog",
    "name": "mcp_graylog",
-   "version": "1.10.2",
-   "purl": "pkg:github/jasoncheng7115/jasontools-mcp@dd6d2cf5ddef6cc26f9d098b58c3d147d27ae7d7#mcp_graylog",
+   "version": "1.12.0",
+   "purl": "pkg:github/jasoncheng7115/jasontools-mcp@31579591656785d8efb4010dc5b1ca0b50658f8a#mcp_graylog",
    "licenses": [
     {
      "license": {
@@ -746,7 +883,7 @@
    "hashes": [
     {
      "alg": "SHA-256",
-     "content": "dced80c8de7291c0906f7fe1c701c66484a8f2395f17940c97d97303875f1e4d"
+     "content": "cd55ffd6a0db2e6a0ee6c1a0c9d17e33adc59f76165042d20146dd538faf6e3c"
     }
    ],
    "externalReferences": [
@@ -812,7 +949,7 @@
  ],
  "dependencies": [
   {
-   "ref": "pkg:pypi/jt-glogarch@1.32.1",
+   "ref": "pkg:pypi/jt-glogarch@1.36.0",
    "dependsOn": [
     "pkg:pypi/click@8.3.1",
     "pkg:pypi/httpx@0.28.1",
@@ -831,14 +968,16 @@
     "pkg:pypi/tabulate@0.10.0",
     "pkg:pypi/sse-starlette@3.3.3",
     "pkg:pypi/itsdangerous@2.2.0",
+    "pkg:pypi/anthropic@2.14.0",
     "pkg:pypi/python-multipart@0.0.22",
     "pkg:pypi/playwright@1.59.0",
     "pkg:pypi/pymupdf@1.28.0",
     "pkg:pypi/pillow@12.1.0",
     "pkg:npm/chart.js@4.4.1",
+    "pkg:npm/mermaid@11.4.1",
     "pkg:npm/iconoir",
     "file:glogarch/report/assets/worldmap.svg",
-    "pkg:github/jasoncheng7115/jasontools-mcp@dd6d2cf5ddef6cc26f9d098b58c3d147d27ae7d7#mcp_graylog",
+    "pkg:github/jasoncheng7115/jasontools-mcp@31579591656785d8efb4010dc5b1ca0b50658f8a#mcp_graylog",
     "browser:chromium@147.0.7727.15",
     "browser:chromium-headless-shell@147.0.7727.15"
    ]
@@ -853,7 +992,7 @@
     "pkg:pypi/anyio@4.13.0",
     "pkg:pypi/certifi@2026.10.19",
     "pkg:pypi/httpcore@1.0.9",
-    "pkg:pypi/idna@3.3"
+    "pkg:pypi/idna@3.20"
    ]
   },
   {
@@ -956,6 +1095,19 @@
    "dependsOn": []
   },
   {
+   "ref": "pkg:pypi/anthropic@2.14.0",
+   "dependsOn": [
+    "pkg:pypi/anyio@4.13.0",
+    "pkg:pypi/docstring-parser@0.18.0",
+    "pkg:pypi/httpx2@2.14.0",
+    "pkg:pypi/jiter@0.18.0",
+    "pkg:pypi/opentelemetry-api@1.45.2",
+    "pkg:pypi/pydantic@2.12.5",
+    "pkg:pypi/sniffio@1.3.1",
+    "pkg:pypi/typing-extensions@4.15.0"
+   ]
+  },
+  {
    "ref": "pkg:pypi/python-multipart@0.0.22",
    "dependsOn": []
   },
@@ -978,7 +1130,7 @@
    "ref": "pkg:pypi/anyio@4.13.0",
    "dependsOn": [
     "pkg:pypi/exceptiongroup@1.3.1",
-    "pkg:pypi/idna@3.3",
+    "pkg:pypi/idna@3.20",
     "pkg:pypi/typing-extensions@4.15.0"
    ]
   },
@@ -990,7 +1142,7 @@
    ]
   },
   {
-   "ref": "pkg:pypi/idna@3.3",
+   "ref": "pkg:pypi/idna@3.20",
    "dependsOn": []
   },
   {
@@ -1073,6 +1225,34 @@
    "dependsOn": []
   },
   {
+   "ref": "pkg:pypi/docstring-parser@0.18.0",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/httpx2@2.14.0",
+   "dependsOn": [
+    "pkg:pypi/anyio@4.13.0",
+    "pkg:pypi/httpcore2@2.14.0",
+    "pkg:pypi/idna@3.20",
+    "pkg:pypi/truststore@0.10.5",
+    "pkg:pypi/typing-extensions@4.15.0"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/jiter@0.18.0",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/opentelemetry-api@1.45.2",
+   "dependsOn": [
+    "pkg:pypi/typing-extensions@4.15.0"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/sniffio@1.3.1",
+   "dependsOn": []
+  },
+  {
    "ref": "pkg:pypi/pyee@13.0.1",
    "dependsOn": [
     "pkg:pypi/typing-extensions@4.15.0"
@@ -1090,6 +1270,17 @@
   },
   {
    "ref": "pkg:pypi/mdurl@0.1.2",
+   "dependsOn": []
+  },
+  {
+   "ref": "pkg:pypi/httpcore2@2.14.0",
+   "dependsOn": [
+    "pkg:pypi/h11@0.16.0",
+    "pkg:pypi/truststore@0.10.5"
+   ]
+  },
+  {
+   "ref": "pkg:pypi/truststore@0.10.5",
    "dependsOn": []
   }
  ]

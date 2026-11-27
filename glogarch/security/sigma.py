@@ -32,6 +32,9 @@ import re
 import yaml
 
 MAX_RULE_BYTES = 64 * 1024
+# libyaml's loader when present (PyYAML wheels ship it): the same safe subset, ~10x
+# faster, which matters for a library of thousands of rules (added 1.33)
+YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 # Analyzed (tokenized) text in Graylog: searched as phrases, never by regex.
 # GELF's short_message is stored as `message` (measured on 7.2.2: a query on
 # short_message matched nothing).
@@ -56,16 +59,34 @@ def neg(q: str) -> str:
     return f"(*:* AND NOT {q})"
 
 
+def refuse_aliases(text: str) -> None:
+    """YAML anchors and aliases are refused: a few nested aliases expand into a
+    billion strings the moment a value is turned into text (measured: six levels
+    in 368 bytes already took 0.3 s, each level multiplies by ten). Sigma rules do
+    not use them. Read as a stream of parser events, so nothing is expanded."""
+    try:
+        for ev in yaml.parse(text, Loader=YAML_LOADER):  # nosec B506 - events only, nothing constructed
+            if isinstance(ev, yaml.AliasEvent) or getattr(ev, "anchor", None):
+                raise SigmaError("YAML anchors and aliases (& and *) are not supported in a Sigma rule")
+    except yaml.YAMLError as e:
+        raise SigmaError(f"Not valid YAML: {str(e).splitlines()[0][:200]}")
+
+
 def parse_rule(text: str) -> dict:
     if len(text.encode("utf-8", "replace")) > MAX_RULE_BYTES:
         raise SigmaError(f"Rule is larger than {MAX_RULE_BYTES // 1024} KiB")
+    refuse_aliases(text)
     try:
-        docs = [d for d in yaml.safe_load_all(text) if d is not None]
+        docs = [d for d in yaml.load_all(text, Loader=YAML_LOADER) if d is not None]  # nosec B506 - a safe loader
     except yaml.YAMLError as e:
         raise SigmaError(f"Not valid YAML: {str(e).splitlines()[0][:200]}")
     if len(docs) != 1:
         raise SigmaError("Give one Sigma rule at a time")
-    r = docs[0]
+    return rule_from_doc(docs[0])
+
+
+def rule_from_doc(r) -> dict:
+    """A loaded YAML document -> the parsed rule (what parse_rule returns)."""
     if not isinstance(r, dict) or not isinstance(r.get("detection"), dict):
         raise SigmaError("Not a Sigma rule: no detection section")
     if not str(r.get("title") or "").strip():
@@ -73,7 +94,8 @@ def parse_rule(text: str) -> dict:
     det = r["detection"]
     if "condition" not in det:
         raise SigmaError("The detection section has no condition")
-    tags = [str(t).lower() for t in (r.get("tags") or []) if isinstance(t, (str, int))]
+    tags = r.get("tags") if isinstance(r.get("tags"), list) else []
+    tags = [str(t).lower() for t in tags if isinstance(t, (str, int))]
     level = str(r.get("level") or "medium").lower()
     return {"sigma_id": str(r.get("id") or "")[:64], "title": str(r["title"]).strip()[:200],
             "level": level if level in LEVELS else "medium", "status": str(r.get("status") or "")[:30],
@@ -143,6 +165,8 @@ def _lucene_regex(rx: str, field: str) -> str:
     the meaning (`^`/`$` kept by dropping the .* on that side), refuse what Lucene
     lacks (\\d, \\w, \\s, \\b, (?i), lookarounds, classes like [:alpha:])."""
     i = 0
+    depth = 0          # open groups; a ( or ) inside [...] is a literal
+    in_class = False
     while i < len(rx):                      # walk the escapes: \\\\W is a backslash then W, not \\W
         c = rx[i]
         if c == "\\":
@@ -153,7 +177,26 @@ def _lucene_regex(rx: str, field: str) -> str:
             continue
         if rx.startswith("(?", i) or rx.startswith("[:", i):
             raise SigmaError(f"{field}|re: this regular expression uses PCRE syntax Lucene does not have")
+        if in_class:
+            if c == "]":
+                in_class = False
+        elif c == "[":
+            in_class = True
+            # a ] right after [ or [^ is a literal member, not the end of the class
+            if rx.startswith("[^]", i):
+                i += 2
+            elif rx.startswith("[]", i):
+                i += 1
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth < 0:
+                raise SigmaError(f"{field}|re: unbalanced parentheses")
         i += 1
+    if depth or in_class:
+        # it would make a broken Graylog query (e.g. "(" became a:/.*(().*/)
+        raise SigmaError(f"{field}|re: unbalanced parentheses or brackets")
     head, tail = rx.startswith("^"), rx.endswith("$") and not rx.endswith("\\$")
     core = rx[1 if head else 0:len(rx) - (1 if tail else 0)]
     if "^" in core.replace("[^", "") or ("$" in core.replace("\\$", "")):
@@ -339,6 +382,13 @@ class _Cond:
 
 def convert(rule: dict, field_map: dict | None = None) -> str:
     """A parsed rule -> one Graylog query. Raises SigmaError with the reason."""
+    try:
+        return _convert(rule, field_map)
+    except RecursionError:
+        raise SigmaError("The condition or a selection is nested too deeply")
+
+
+def _convert(rule: dict, field_map: dict | None = None) -> str:
     field_map = field_map or {}
     det = rule["detection"]
     sels = {}

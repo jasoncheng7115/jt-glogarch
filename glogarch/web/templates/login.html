@@ -12,7 +12,8 @@
 <body class="auth">
     <div class="login-card">
         <div class="login-header">
-            <h1>jt-glogarch <span class="version">v{{ version }}</span></h1>
+            <img src="/static/favicon.svg" alt="" class="login-logo">
+            <h1>jt-glogarch</h1>
             <div class="subtitle">Graylog Open Archive</div>
         </div>
 
@@ -36,6 +37,7 @@
 
         <form method="POST" action="/login" id="login-form" autocomplete="off">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if next %}<input type="hidden" name="next" value="{{ next | e }}">{% endif %}
             <div class="form-group">
                 <label data-i18n="login_username" data-icon="user">Username</label>
                 <input type="text" name="username" placeholder="admin" autocomplete="off" autofocus required>
@@ -48,14 +50,14 @@
         </form>
 
         <div class="login-footer">
-            <span class="login-note" data-i18n="login_note">Authenticates via Graylog API</span>
+            <span class="login-note" data-i18n="login_note" data-icon="info">Authenticates via Graylog API</span>
             <div class="login-controls">
                 <select id="lang-select">
                     <option value="en">English</option>
                     <option value="zh-TW">繁體中文</option>
                     <option value="ja">日本語</option>
                 </select>
-                <button class="theme-toggle" id="theme-toggle" title="Toggle theme"></button>
+                <button type="button" class="theme-toggle" id="theme-toggle" data-label title="Toggle theme"></button>
             </div>
         </div>
     </div>

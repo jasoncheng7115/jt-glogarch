@@ -18,9 +18,11 @@ from glogarch.graylog.system import SystemMonitor
 from glogarch.ratelimit.limiter import RateLimiter
 from glogarch.security.detectors import (
     ANOMALY_FACTOR, ANOMALY_HISTORY_DAYS, ANOMALY_LEARN_DAYS, ANOMALY_MEDIUM_FACTOR, ANOMALY_MIN_DAYS,
-    ANOMALY_Z, AUTH_OK, NEW_SOURCE_LEARN_DAYS, NEW_SOURCE_MEMORY_DAYS, sev_rank,
+    ANOMALY_Z, NEW_SOURCE_LEARN_DAYS, NEW_SOURCE_MEMORY_DAYS, sev_rank,
 )
+from glogarch.security.context import add_context
 from glogarch.security.engine import run_detectors
+from glogarch.security.fieldmap import FieldMap
 from glogarch.security.graylog_fetch import make_fetch, make_pair_fetch
 from glogarch.security.suppress import apply_suppressions
 from glogarch.utils.logging import get_logger
@@ -103,7 +105,7 @@ async def run_security_analysis(settings: Settings, db: ArchiveDB, *,
                 make_fetch(client),
                 t_from.replace(tzinfo=timezone.utc), now.replace(tzinfo=timezone.utc),
                 settings=cfg.detectors, global_exclude=cfg.exclude_query, sigma_rules=rules,
-                fetch_pairs=make_pair_fetch(client))
+                fetch_pairs=make_pair_fetch(client), field_map=cfg.field_map)
     except Exception as e:
         db.finish_security_run(run_id, status="error", errors=[str(e)])
         log.warning("Security analysis failed", server=server.name, error=str(e))
@@ -119,12 +121,14 @@ async def run_security_analysis(settings: Settings, db: ArchiveDB, *,
     learning = first is not None and first > now - timedelta(hours=LEARNING_HOURS)
     findings = [asdict(f) for f in res.findings]
     if res.pairs:
-        findings += new_source_findings(db, server.name, res.pairs, now, cfg.exclude_query)
+        findings += new_source_findings(db, server.name, res.pairs, now, cfg.exclude_query,
+                                        fm=FieldMap.from_config(cfg.field_map))
         db.record_pairs(server.name, [(a, b) for a, b, _ in res.pairs], now)
     if res.volume_settings is not None:
         findings += volume_findings(db, server.name, res.volumes, now, int(cfg.window_minutes),
                                     min_count=res.volume_settings["min_count"],
-                                    exclude=res.volume_settings["exclude"], global_exclude=cfg.exclude_query)
+                                    exclude=res.volume_settings["exclude"], global_exclude=cfg.exclude_query,
+                                    host_field=FieldMap.from_config(cfg.field_map).host)
         rate = 60.0 / max(1, int(cfg.window_minutes))
         db.record_volumes(server.name, [(f, k, n * rate) for f, k, n in res.volumes], now.replace(minute=0, second=0))
     suppressed = 0
@@ -134,6 +138,16 @@ async def run_security_analysis(settings: Settings, db: ArchiveDB, *,
         suppressed = sum(hits.values())
     except Exception as e:   # a broken suppression list must not stop the analysis
         log.warning("Suppressions not applied", error=str(e))
+    if findings:
+        # who reported it, which site, which paths (security/context.py): a few
+        # top-value aggregations, stored with the incident, never fatal
+        try:
+            async with GraylogClient(server, RateLimiter(settings.rate_limit)) as client:
+                res.queries += await add_context(
+                    make_fetch(client), findings, FieldMap.from_config(cfg.field_map),
+                    t_from.replace(tzinfo=timezone.utc), now.replace(tzinfo=timezone.utc), res.errors)
+        except Exception as e:
+            log.warning("Incident context not collected", error=str(e))
     changes = db.apply_security_findings(
         server.name, findings, now, reopen_hours=cfg.reopen_hours,
         new_days=cfg.new_days, learning=learning)
@@ -142,7 +156,7 @@ async def run_security_analysis(settings: Settings, db: ArchiveDB, *,
     for f, ch in zip(findings, changes):
         if notify_decision(ch, cfg.notify_min_severity, now, cfg.renotify_hours):
             inc = db.get_security_incident(ch["id"]) or {}
-            to_notify.append({**f, "change": ch["change"], "severity": ch["severity"],
+            to_notify.append({**f, "id": ch["id"], "change": ch["change"], "severity": ch["severity"],
                               "is_new": bool(inc.get("is_new")) and ch["change"] == "new"})
             sev_by_id[ch["id"]] = ch["severity"]
     if to_notify:
@@ -178,11 +192,13 @@ async def run_security_analysis(settings: Settings, db: ArchiveDB, *,
 
 
 def new_source_findings(db: ArchiveDB, server: str, pairs: list[tuple[str, str, int]], now: datetime,
-                        global_exclude: str = "") -> list[dict]:
+                        global_exclude: str = "", fm: FieldMap | None = None) -> list[dict]:
     """One finding per account that logged in from a source it has not used for
     NEW_SOURCE_MEMORY_DAYS, once its history is at least NEW_SOURCE_LEARN_DAYS old.
     Called BEFORE the pairs of this run are recorded."""
     from glogarch.security.engine import build_query, is_external, lucene_quote
+    from glogarch.security.fieldmap import DEFAULT
+    fm = fm or DEFAULT
     accounts = sorted({a for a, _, _ in pairs})
     known, first = db.pair_history(server, accounts)
     memory = now - timedelta(days=NEW_SOURCE_MEMORY_DAYS)
@@ -201,11 +217,12 @@ def new_source_findings(db: ArchiveDB, server: str, pairs: list[tuple[str, str, 
         srcs.sort(key=lambda x: -x[1])
         ext = any(is_external(b) for b, _ in srcs)
         ors = " OR ".join(lucene_quote(b) for b, _ in srcs[:20])
-        out.append({"detector": "account_new_source", "entity": a, "entity_field": "user_name",
+        out.append({"detector": "account_new_source", "entity": a, "entity_field": fm.account,
                     "severity": "medium" if ext else "low",
                     "metrics": {"count": sum(n for _, n in srcs), "new_sources": [b for b, _ in srcs[:5]]},
                     "external": True if ext else (False if all(is_external(b) is False for b, _ in srcs) else None),
-                    "query": build_query(f"{AUTH_OK} AND user_name:{lucene_quote(a)} AND source_ip:({ors})", global_exclude)})
+                    "query": build_query(f"{fm.q_auth_success} AND {fm.account}:{lucene_quote(a)} "
+                                         f"AND {fm.peer[0]}:({ors})", global_exclude)})
     return out
 
 
@@ -238,7 +255,8 @@ def usual_rate(samples: dict[str, float], observed: set[str], now: datetime) -> 
 
 
 def volume_findings(db: ArchiveDB, server: str, volumes: list[tuple[str, str, int]], now: datetime,
-                    window_minutes: int, *, min_count: int, exclude: str = "", global_exclude: str = "") -> list[dict]:
+                    window_minutes: int, *, min_count: int, exclude: str = "", global_exclude: str = "",
+                    host_field: str = "source") -> list[dict]:
     """A host or event category sending far more than usual at this time of day
     (see detectors.ANOMALY_*). Called BEFORE this run's volumes are recorded."""
     from glogarch.security.engine import build_query, is_external, lucene_quote
@@ -267,7 +285,7 @@ def volume_findings(db: ArchiveDB, server: str, volumes: list[tuple[str, str, in
                         "severity": "medium" if ratio >= ANOMALY_MEDIUM_FACTOR else "low",
                         "metrics": {"count": n, "rate": round(rate), "usual": round(med),
                                     "ratio": round(ratio, 1), "days": days},
-                        "external": is_external(key) if fld == "source" else None,
+                        "external": is_external(key) if fld == host_field else None,
                         "query": build_query(f"{fld}:{lucene_quote(key)}", exclude, global_exclude)})
     return out
 
@@ -277,7 +295,7 @@ async def _auto_ai_analysis(settings: Settings, db: ArchiveDB, changes: list[dic
     escalated incidents (security.ai_auto). Its time never delays a
     notification, and its failure never fails the run."""
     cfg, ai = settings.security, settings.ai
-    if not (cfg.ai_auto and ai.analysis_enabled and ai.url):
+    if not (cfg.ai_auto and ai.analysis_enabled and ai.llm() is not None):
         return 0
     from glogarch.security.ai_analysis import analyze_incident, auto_candidates
     done = 0

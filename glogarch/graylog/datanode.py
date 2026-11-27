@@ -24,6 +24,7 @@ archiving (see scheduler).
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import socket
@@ -44,6 +45,12 @@ log = get_logger("graylog.datanode")
 
 DEFAULT_ROLES = ["all_access"]
 DEFAULT_LIFETIME_DAYS = 90
+# A scheduled run that cannot REACH the Data Node (restarting, network blip)
+# waits and tries again before archiving through the much slower Graylog API
+# (owner 2026-11-27): 1, 2 and 5 minutes, about 10 minutes in all with the
+# probes. A refused certificate is not retried this way: it gets one new
+# certificate, as before.
+UNREACHABLE_RETRY_SEC = (60, 120, 300)
 OPENSEARCH_PORT = 9200
 # Renew when less than this share of the lifetime is left (and never later
 # than RENEW_MIN_DAYS before expiry), so one failed renewal still leaves days
@@ -381,9 +388,33 @@ def _is_auth_failure(err: str | None) -> bool:
     # Only refusals a NEW certificate can cure. An unreachable host or a
     # hostname mismatch is not one: re-issuing on those would mint a
     # certificate on every run.
+    # A CA that Graylog replaced shows here as a chain error (found by a review):
+    # "unable to get local issuer certificate" / a self-signed one in the chain. A
+    # hostname mismatch is still not one.
     return any(k in e for k in ("401", "403", "unauthorized", "forbidden",
                                 "bad certificate", "unknown ca",
-                                "certificate expired", "certificate unknown"))
+                                "certificate expired", "certificate unknown",
+                                "unable to get local issuer certificate",
+                                "self-signed certificate in certificate chain",
+                                "self signed certificate in certificate chain"))
+
+
+def name_clash(settings, server_name: str) -> str | None:
+    """Why this server cannot get its own certificate folder and principal, or None.
+    Names are reduced to ASCII for both, so `台北` and `高雄` (or `log 3` and `log_3`)
+    would share one folder and one principal: connecting one overwrote the other's
+    key, disconnecting one revoked the other (found by a review)."""
+    if _safe_name(server_name) in (".", "..") or not _safe_name(server_name).strip("._-"):
+        return f"The server name {server_name!r} cannot name a certificate folder; rename the server"
+    mine = (_safe_name(server_name), default_principal(server_name))
+    for other in getattr(settings, "servers", []):
+        if other.name == server_name:
+            continue
+        theirs = (_safe_name(other.name), default_principal(other.name))
+        if mine[0] == theirs[0] or mine[1] == theirs[1]:
+            return (f"The servers {server_name!r} and {other.name!r} would share one Data Node "
+                    "certificate; rename one of them (letters, digits, '.', '-' and '_' are kept)")
+    return None
 
 
 async def connect(settings, server_name: str, hosts: list[str] | None = None,
@@ -395,6 +426,9 @@ async def connect(settings, server_name: str, hosts: list[str] | None = None,
     wrong host leaves a working configuration untouched.
     """
     server = _server(settings, server_name)
+    clash = name_clash(settings, server_name)
+    if clash:
+        raise DataNodeError(clash)
     nodes = await list_datanodes(server)
     found = opensearch_hosts(nodes)
     use_hosts = [h.strip().rstrip("/") for h in (hosts or []) if h and h.strip()] or found
@@ -409,7 +443,13 @@ async def connect(settings, server_name: str, hosts: list[str] | None = None,
     lifetime = int(lifetime_days or (prev.datanode_lifetime_days if prev is not None
                                      and prev.datanode else DEFAULT_LIFETIME_DAYS))
     lifetime = max(1, min(lifetime, 3650))
-    with _lock_for(server_name):
+    # never wait for this lock here: connect() runs on the web server's event loop, and a
+    # blocked loop can never let the holder finish (two clicks on Connect froze the service)
+    lock = _lock_for(server_name)
+    if not lock.acquire(blocking=False):
+        raise DataNodeError("A certificate for this server is being issued or renewed right now; "
+                            "try again in a minute")
+    try:
         bundle = await issue_client_cert(server, principal, roles, lifetime)
         paths = store_bundle(getattr(settings, "_config_path", ""), server_name, bundle)
         cfg = build_os_config(paths, use_hosts, principal, roles, lifetime,
@@ -425,6 +465,8 @@ async def connect(settings, server_name: str, hosts: list[str] | None = None,
                 f"{', '.join(use_hosts)} could not be reached with it: "
                 f"{test.get('error', 'unknown error')}")
         persist_os_block(settings, server_name, cfg)
+    finally:
+        lock.release()
     log.info("Data Node OpenSearch access configured", server=server_name,
              hosts=use_hosts, principal=principal, roles=roles,
              not_after=cfg.cert_not_after)
@@ -493,11 +535,38 @@ async def ensure_fresh(settings, server_name: str, force: bool = False
         lock.release()
 
 
-async def ensure_working(settings, server_name: str
+async def ensure_working(settings, server_name: str, *, retry_delays=(),
+                         stats: dict | None = None, sleep=asyncio.sleep
                          ) -> tuple[OpenSearchConfig | None, str | None]:
     """Renew when due, then prove the certificate works. Re-issue once when
     OpenSearch refuses it (role mapping removed, CA replaced). Returns
-    (block, problem) — `problem` is None when OpenSearch answered."""
+    (block, problem) — `problem` is None when OpenSearch answered.
+
+    `retry_delays` (seconds): when the Data Node could not be REACHED, wait
+    each delay in turn and try again; stops at the first success, at a
+    refusal (a new certificate was already tried) or when the block is gone.
+    `stats` gets {"attempts", "waited_sec"}."""
+    cfg, problem = await _ensure_working_once(settings, server_name)
+    attempts, waited = 1, 0
+    for delay in retry_delays:
+        if not problem or cfg is None or not cfg.datanode or _is_auth_failure(problem):
+            break
+        log.warning("Data Node OpenSearch not reachable — trying again", server=server_name,
+                    attempt=attempts, wait_sec=delay, problem=problem[:300])
+        await sleep(delay)
+        waited += delay
+        attempts += 1
+        cfg, problem = await _ensure_working_once(settings, server_name)
+    if attempts > 1 and not problem:
+        log.info("Data Node OpenSearch reachable again", server=server_name,
+                 attempts=attempts, waited_sec=waited)
+    if stats is not None:
+        stats.update(attempts=attempts, waited_sec=waited)
+    return cfg, problem
+
+
+async def _ensure_working_once(settings, server_name: str
+                               ) -> tuple[OpenSearchConfig | None, str | None]:
     cfg, _renewed, err = await ensure_fresh(settings, server_name)
     if cfg is None or not cfg.datanode:
         return cfg, None

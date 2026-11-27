@@ -676,7 +676,9 @@ async function alLoadChanges() {
     const items = r.items || [];
     const undone = new Set(items.map(b => b.undoes_batch).filter(Boolean));
     tbody.innerHTML = items.length ? items.map(b => {
-        const canUndo = (b.applied + b.pending) > 0 && !b.undoes_batch;
+        // failed rows too: a write can land and still be reported failed (timeout, Graylog
+        // storing something else); the server skips what that batch did not leave in place
+        const canUndo = (b.applied + b.pending + (b.failed || 0)) > 0 && !b.undoes_batch;
         const result = t('al_batch_result').replace('{applied}', formatNumber(b.applied + b.restored))
             .replace('{failed}', formatNumber(b.failed)) +
             (b.restored ? ` · ${t('al_batch_restored').replace('{n}', formatNumber(b.restored))}` : '');

@@ -112,7 +112,7 @@ async function setupNext() {
         const path = $('s4-path').value.trim();
         if (path && path !== '/data/graylog-archives') {
             busy(true);
-            const r = await api('/settings/archive-path', { path });
+            const r = await api('/settings/archive-path', { base_path: path });
             busy(false);
             if (r.error) return showError(r.error);
         }

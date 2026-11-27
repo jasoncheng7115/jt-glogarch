@@ -43,11 +43,24 @@ cols = {r[1] for r in db.conn.execute("PRAGMA table_info(archives)")}
 chk({"hmac_sha256", "field_schema"} <= cols, "migration added the new columns")
 tables = {r[0] for r in db.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
 new_tables = {"sec_incidents", "sec_runs", "sec_ai_analyses", "ai_conversations",
-              "sec_cases", "sec_case_incidents", "sec_case_notes", "sec_assets", "sec_sigma_rules", "sec_ti_entries", "sec_ti_feeds", "sec_pairs", "sec_volumes", "sec_suppressions"}
+              "sec_cases", "sec_case_incidents", "sec_case_notes", "sec_assets", "sec_sigma_rules", "sec_ti_entries", "sec_ti_feeds", "sec_pairs", "sec_volumes", "sec_suppressions",
+              "sec_sigma_library", "sec_sigma_library_meta"}
 chk(new_tables <= tables, "security/AI tables created on the upgraded DB",
     ", ".join(sorted(new_tables - tables)) or "all present")
 cid = db.create_security_case("upgrade check", "low", "", "verify")
 chk(db.get_security_case(cid)["timeline"][0]["kind"] == "created", "a case can be written after the upgrade")
+sg_cols = {r[1] for r in db.conn.execute("PRAGMA table_info(sec_sigma_rules)")}
+chk("origin" in sg_cols, "sec_sigma_rules.origin added (1.33) on the upgraded DB")
+rid = db.add_sigma_rule({"title": "upgrade check", "level": "low", "yaml": "x", "origin": "library"}, "verify")
+chk(db.get_sigma_rule(rid)["origin"] == "library", "a library Sigma rule can be written after the upgrade")
+am_cols = {r[1] for r in db.conn.execute("PRAGMA table_info(ai_messages)")}
+chk({"truncated", "calls"} <= am_cols, "ai_messages.truncated / calls added (1.33.1 / 1.34) on the upgraded DB")
+conv = db.ai_create_conversation("verify", "s", "upgrade check")
+db.ai_add_message(conv, "assistant", "cut", truncated=True,
+                  calls=[{"name": "count_messages", "ok": True, "query": "*", "count": 1}])
+got = db.ai_get_conversation(conv, "verify")["messages"][0]
+chk(got["truncated"] == 1 and got["calls"][0]["count"] == 1,
+    "an AI answer (incomplete, with its queries) can be written after the upgrade")
 
 # --- principle 3: scheduled archiving must survive ---
 kept = {x.name for x in db.list_schedules()}

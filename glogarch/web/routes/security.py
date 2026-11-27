@@ -156,8 +156,8 @@ def _ai_ready(settings) -> str | None:
     ai = settings.ai
     if not ai.analysis_enabled:
         return "AI analysis of incidents is turned off"
-    if not ai.url:
-        return "Set the LLM URL first"
+    if ai.llm() is None:
+        return "Set up an LLM server first"
     return None
 
 
@@ -181,7 +181,7 @@ async def analyze(request: Request, incident_id: int):
     if not db.get_security_incident(incident_id):
         return JSONResponse({"error": "Incident not found"}, status_code=404)
     from glogarch.ai import llm
-    why = llm.budget_left(settings.ai, db.ai_usage())
+    why = llm.limits_left(settings.ai, settings.ai.llm(), db, request.session.get("username", ""))
     if why:
         return JSONResponse({"error": why}, status_code=429)
     body = {}
@@ -232,8 +232,9 @@ def overview(request: Request):
         "enabled": cfg.enabled,
         "server": cfg.server or settings.default_server,
         "servers": [s.name for s in settings.servers],
-        "settings": cfg.model_dump(exclude={"detectors"}),
+        "settings": cfg.model_dump(exclude={"detectors", "field_map"}),
         "detectors": _detector_rows(cfg),
+        "field_map": _field_map_view(cfg),
         "counts_24h": db.security_counts(now - timedelta(hours=24)),
         "counts_7d": db.security_counts(now - timedelta(days=7)),
         "runs": runs,
@@ -241,7 +242,7 @@ def overview(request: Request):
         "coverage_at": (last_done or {}).get("finished_at"),
         "next_run": next_run,
         "running": _run_lock.locked(),
-        "ai": {"analysis_enabled": settings.ai.analysis_enabled, "configured": bool(settings.ai.url),
+        "ai": {"analysis_enabled": settings.ai.analysis_enabled, "configured": settings.ai.llm() is not None,
                "chat_enabled": settings.ai.enabled},
     }
 
@@ -324,10 +325,16 @@ def _sigma_convert(text: str, field_map: dict) -> tuple[dict | None, str]:
 @router.get("/security/sigma")
 def list_sigma(request: Request):
     cfg = _settings(request).security
-    rules = _db(request).list_sigma_rules()
+    db = _db(request)
+    rules = db.list_sigma_rules()
+    # a rule taken from the SigmaHQ library links back to its source (DRL 1.1 credit)
+    from glogarch.security.sigma_library import SOURCE_URL
+    paths = {e["sigma_id"]: e["path"] for e in db.list_sigma_library()} if any(r.get("origin") == "library" for r in rules) else {}
     for r in rules:
         r["attack"] = techniques_for(f"sigma:{r['id']}", "", r["tags"])
         r.pop("yaml", None)
+        p = paths.get(r.get("sigma_id")) if r.get("origin") == "library" else None
+        r["source_url"] = SOURCE_URL.format(path=p) if p else None
     return {"rules": rules, "field_map": cfg.sigma_field_map, "max_rules": cfg.sigma_max_rules,
             "enabled": sum(1 for r in rules if r["enabled"])}
 
@@ -455,8 +462,176 @@ async def save_sigma_fieldmap(request: Request):
         if q != full["query"] or err != full["error"]:
             db.update_sigma_rule(r["id"], {"query": q, "error": err, **({"enabled": False} if err else {})})
             changed += 1
+    # and the library, so its "converts" / "fields" columns follow the map too
+    import json as _json
+
+    from glogarch.security.sigma_library import convert_entry
+
+    def _reconvert_library():
+        rows = []
+        for e in db.list_sigma_library(with_yaml=True):
+            c = convert_entry(e["yaml"], fmap)
+            rows.append((c["query"], c["error"], _json.dumps(c["fields"]), e["sigma_id"]))
+        db.update_sigma_library_conversions(rows)
+    await asyncio.to_thread(_reconvert_library)
     _audit(request, "security_sigma_fieldmap", f"fields={len(fmap)} rules_reconverted={changed}")
     return {"fields": len(fmap), "reconverted": changed}
+
+
+# --- Sigma rule library (added 1.33) ------------------------------------------------
+
+_LIB_STATES = ("all", "convertible", "fields_ok", "not_added", "added")
+
+
+def _library_view(e: dict, gl_fields: set | None, added: dict) -> dict:
+    from glogarch.security.sigma_library import SOURCE_URL
+    missing = None if gl_fields is None else [f for f in e.get("fields") or [] if f not in gl_fields]
+    return {k: e.get(k) for k in ("sigma_id", "title", "level", "status", "product", "category", "service",
+                                   "author", "modified", "path", "query", "error", "fields")} | {
+        "attack": techniques_for("sigma:0", "", e.get("tags") or []),
+        "source_url": SOURCE_URL.format(path=e.get("path") or ""),
+        "missing_fields": missing, "added_rule_id": added.get(e["sigma_id"])}
+
+
+@router.get("/security/sigma-library")
+def sigma_library(request: Request, q: str = "", product: str = "", level: str = "", state: str = "all",
+                  offset: int = 0, limit: int = 50):
+    import json as _json
+
+    from glogarch.security.sigma_library import LICENSE, LICENSE_URL, PACKAGES
+    cfg = _settings(request).security
+    db = _db(request)
+    meta = db.sigma_library_meta()
+    try:
+        gl_fields = set(_json.loads(meta["graylog_fields"])) if meta.get("graylog_fields") else None
+    except ValueError:
+        gl_fields = None
+    added = {r["sigma_id"]: r["id"] for r in db.list_sigma_rules() if r.get("sigma_id")}
+    entries = db.list_sigma_library()
+    products: dict[str, int] = {}
+    for e in entries:
+        k = e.get("product") or e.get("category") or e.get("service") or "-"
+        products[k] = products.get(k, 0) + 1
+    ql = q.strip().lower()[:200]
+    state = state if state in _LIB_STATES else "all"
+
+    def keep(e):
+        if product and product not in (e.get("product"), e.get("category"), e.get("service")) \
+                and not (product == "-" and not (e.get("product") or e.get("category") or e.get("service"))):
+            return False
+        if level and e.get("level") != level:
+            return False
+        if ql and ql not in (e.get("title") or "").lower() and ql not in e["sigma_id"] \
+                and not any(ql in t for t in e.get("tags") or []):
+            return False
+        if state == "convertible" and not e.get("query"):
+            return False
+        if state == "fields_ok" and (not e.get("query") or gl_fields is None
+                                     or any(f not in gl_fields for f in e.get("fields") or [])):
+            return False
+        if state == "not_added" and e["sigma_id"] in added:
+            return False
+        if state == "added" and e["sigma_id"] not in added:
+            return False
+        return True
+
+    hits = [e for e in entries if keep(e)]
+    offset, limit = max(0, int(offset)), max(1, min(int(limit), 200))
+    pub = {k: v for k, v in meta.items() if k != "graylog_fields"}
+    pub["graylog_field_count"] = len(gl_fields) if gl_fields is not None else None
+    return {"meta": pub,
+            "settings": {"enabled": cfg.sigma_library_enabled, "package": cfg.sigma_library_package,
+                         "auto_update": cfg.sigma_library_auto_update},
+            "packages": [{"id": k, "about": v["about"]} for k, v in PACKAGES.items()],
+            "license": LICENSE, "license_url": LICENSE_URL,
+            "products": sorted(products.items(), key=lambda x: (-x[1], x[0])),
+            "total": len(hits), "offset": offset,
+            "items": [_library_view(e, gl_fields, added) for e in hits[offset:offset + limit]]}
+
+
+@router.get("/security/sigma-library/{sigma_id}")
+def sigma_library_entry(request: Request, sigma_id: str):
+    e = _db(request).get_sigma_library_entry(sigma_id[:64])
+    if not e:
+        return JSONResponse({"error": "Not in the Sigma library"}, status_code=404)
+    return {"sigma_id": e["sigma_id"], "title": e["title"], "yaml": e["yaml"], "query": e["query"], "error": e["error"]}
+
+
+@router.post("/security/sigma-library/settings")
+async def sigma_library_settings(request: Request):
+    from glogarch.security.sigma_library import PACKAGES
+    body = await request.json() or {}
+    settings = _settings(request)
+    cur = settings.security
+    package = str(body.get("package") or cur.sigma_library_package)
+    if package not in PACKAGES:
+        return JSONResponse({"error": "Unknown Sigma package"}, status_code=400)
+    new = cur.model_copy(update={
+        "sigma_library_enabled": bool(body.get("enabled", cur.sigma_library_enabled)),
+        "sigma_library_package": package,
+        "sigma_library_auto_update": bool(body.get("auto_update", cur.sigma_library_auto_update))})
+    from glogarch.core.config_writer import update_config
+
+    def _mut(cfg):
+        cfg["security"] = new.model_dump()
+    update_config(_config_path(request), _mut)
+    settings.security = new
+    sched = getattr(request.app.state, "scheduler", None)
+    if sched is not None:
+        sched.apply_security_schedule()
+    _audit(request, "security_sigma_library_settings",
+           f"enabled={new.sigma_library_enabled} package={package} auto_update={new.sigma_library_auto_update}")
+    return {"status": "saved"}
+
+
+@router.post("/security/sigma-library/refresh")
+async def sigma_library_refresh(request: Request):
+    settings = _settings(request)
+    if not settings.security.sigma_library_enabled:
+        return JSONResponse({"error": "The Sigma library download is turned off"}, status_code=400)
+    body = await request.json() or {}
+    from glogarch.security.sigma_library import refresh
+    res = await refresh(settings, _db(request), force=bool(body.get("force")))
+    _audit(request, "security_sigma_library_refresh",
+           f"status={res.get('status')} tag={res.get('tag', '')} count={res.get('count', '')} "
+           f"updated_rules={len(res.get('updated_rules') or [])}")
+    if res.get("status") == "error":
+        return JSONResponse({"error": f"Sigma library download failed: {res['error']}"}, status_code=502)
+    return res
+
+
+@router.post("/security/sigma-library/add")
+async def sigma_library_add(request: Request):
+    """Adds library rules to this site's Sigma rules, DISABLED (the operator enables each)."""
+    body = await request.json() or {}
+    ids = [str(x)[:64] for x in (body.get("ids") or [])][:100]
+    group_by = str(body.get("group_by") or "source").strip()
+    if not _GROUP_FIELD.match(group_by):
+        return JSONResponse({"error": "Group by: a Graylog field name"}, status_code=400)
+    threshold = max(1, min(int(body.get("threshold") or 1), 1000000))
+    db = _db(request)
+    fmap = _settings(request).security.sigma_field_map
+    have = {r["sigma_id"] for r in db.list_sigma_rules() if r.get("sigma_id")}
+    added, skipped = [], []
+    for sid in ids:
+        e = db.get_sigma_library_entry(sid)
+        if not e:
+            skipped.append({"sigma_id": sid, "reason": "not_found"})
+            continue
+        if sid in have:
+            skipped.append({"sigma_id": sid, "reason": "already_added"})
+            continue
+        conv, err = _sigma_convert(e["yaml"], fmap)
+        if err:
+            skipped.append({"sigma_id": sid, "reason": "not_convertible"})
+            continue
+        rid = db.add_sigma_rule({**conv, "yaml": e["yaml"], "group_by": group_by, "threshold": threshold,
+                                 "origin": "library"}, request.session.get("username", ""))
+        have.add(sid)
+        added.append(rid)
+    if added:
+        _audit(request, "security_sigma_library_added", f"rules={','.join(map(str, added))}")
+    return {"added": added, "skipped": skipped}
 
 
 # --- assets and risk (added 1.25) -----------------------------------------------
@@ -561,9 +736,15 @@ async def ti_save(request: Request):
     body = await request.json() or {}
     settings = _settings(request)
     feeds = [f for f in (body.get("feeds") or []) if f in FEEDS] if "feeds" in body else list(settings.security.ti_feeds)
+    enabled = body.get("enabled", settings.security.ti_enabled)
+    if not isinstance(enabled, bool):   # "false" (a string) must not switch the downloads on
+        return JSONResponse({"error": "enabled must be true or false"}, status_code=400)
+    try:
+        hours = int(body.get("refresh_hours") or settings.security.ti_refresh_hours)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "refresh_hours must be a number"}, status_code=400)
     new = settings.security.model_copy(update={
-        "ti_enabled": bool(body.get("enabled", settings.security.ti_enabled)), "ti_feeds": feeds,
-        "ti_refresh_hours": max(1, min(int(body.get("refresh_hours") or settings.security.ti_refresh_hours), 168))})
+        "ti_enabled": enabled, "ti_feeds": feeds, "ti_refresh_hours": max(1, min(hours, 168))})
     from glogarch.core.config_writer import update_config
 
     def _mut(cfg):
@@ -741,7 +922,8 @@ async def save_settings(request: Request):
     body = await request.json() or {}
     settings = _settings(request)
     cur = settings.security.model_dump()
-    merged = {**cur, **{k: v for k, v in body.items() if k in cur and k != "detectors"}}
+    # the field map has its own endpoint (validated there)
+    merged = {**cur, **{k: v for k, v in body.items() if k in cur and k not in ("detectors", "field_map")}}
     if "detectors" in body:
         known = {d.id for d in DETECTORS}
         dets = {}
@@ -753,6 +935,9 @@ async def save_settings(request: Request):
                 entry["enabled"] = bool(v["enabled"])
             if v.get("min_count") not in (None, ""):
                 entry["min_count"] = max(1, int(v["min_count"]))
+            if v.get("blocked_min_count") not in (None, "") and next(
+                    (d.blocked_min_count for d in DETECTORS if d.id == k), 0):
+                entry["blocked_min_count"] = max(1, int(v["blocked_min_count"]))
             if "exclude" in v:
                 entry["exclude"] = str(v["exclude"] or "")[:500]
             dets[k] = entry
@@ -778,11 +963,8 @@ async def save_settings(request: Request):
     new.new_days = max(1, min(int(new.new_days or old.new_days), 365))
     new.sigma_max_rules = max(0, min(int(new.sigma_max_rules), 500))
     new.digest_cron = (new.digest_cron or "").strip() or old.digest_cron
-    try:
-        from apscheduler.triggers.cron import CronTrigger
-        from glogarch.scheduler.scheduler import posix_cron_to_apscheduler
-        CronTrigger.from_crontab(posix_cron_to_apscheduler(new.digest_cron))
-    except ValueError:
+    from glogarch.security.digest import digest_cron_problem
+    if digest_cron_problem(new.digest_cron):
         return JSONResponse({"error": f"Invalid summary schedule (cron): {new.digest_cron}"}, status_code=400)
 
     from glogarch.core.config_writer import update_config
@@ -801,6 +983,65 @@ async def save_settings(request: Request):
            f"ai_auto={new.ai_auto}/{new.ai_auto_min_severity}/{new.ai_auto_max_per_run} "
            f"digest={new.digest_enabled}/{new.digest_cron}")
     return {"status": "saved", "registered": registered}
+
+
+# --- field map (1.35) ----------------------------------------------------------------
+
+def _field_map_view(cfg) -> dict:
+    from glogarch.security.fieldmap import FieldMap, GROUPS, SPEC
+    return {"values": FieldMap.from_config(cfg.field_map).values(), "stored": dict(cfg.field_map),
+            "defaults": {k: v[1] for k, v in SPEC.items()},
+            "kinds": {k: v[0] for k, v in SPEC.items()}, "groups": GROUPS}
+
+
+@router.post("/security/fieldmap")
+async def save_field_map(request: Request):
+    """Where this site keeps what the built-in detectors read. Empty / default
+    values are not stored (= the GIM default)."""
+    from glogarch.security.fieldmap import validate
+    body = await request.json() or {}
+    fmap, errors = validate(body.get("field_map"))
+    if errors:
+        return JSONResponse({"error": "; ".join(errors[:5])}, status_code=400)
+    settings = _settings(request)
+    new = settings.security.model_copy(update={"field_map": fmap})
+    from glogarch.core.config_writer import update_config
+
+    def _mut(cfg):
+        cfg["security"] = new.model_dump()
+    update_config(_config_path(request), _mut)
+    settings.security = new
+    _audit(request, "security_fieldmap_saved",
+           " ".join(f"{k}={v}" for k, v in sorted(fmap.items()))[:900] or "defaults")
+    return {"status": "saved", "field_map": _field_map_view(new)}
+
+
+@router.post("/security/fieldmap/detect")
+async def detect_field_map(request: Request):
+    """Fields of a sample of one group's events that could hold each thing, with
+    the exact share of events that have them. Reads only; the page picks."""
+    from glogarch.security.ai_analysis import server_ctx
+    from glogarch.security.fieldmap import FieldMap, detect, validate
+    body = await request.json() or {}
+    settings = _settings(request)
+    cfg = settings.security
+    try:
+        server = settings.get_server(cfg.server or None)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    # the form's values, unsaved: what the administrator is trying out
+    trial, errors = validate(body.get("field_map") or {})
+    if errors:
+        return JSONResponse({"error": "; ".join(errors[:5])}, status_code=400)
+    fm = FieldMap.from_config(trial if isinstance(body.get("field_map"), dict) else cfg.field_map)
+    try:
+        out = await detect(server_ctx(settings, _db(request), server), str(body.get("group") or ""), fm)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        log.warning("Field detection failed", error=str(e))
+        return JSONResponse({"error": f"Graylog query failed: {str(e)[:300]}"}, status_code=502)
+    return {**out, "server": server.name}
 
 
 # --- weekly summary (1.32) ------------------------------------------------------------
@@ -884,8 +1125,15 @@ async def add_suppression(request: Request):
            f"reason={reason[:120]}")
     closed = None
     iid = body.get("incident_id")
-    if body.get("close_incident") and isinstance(iid, int):
-        if db.set_security_status(iid, "closed", user):
+    if body.get("close_incident") is True and isinstance(iid, int) and not isinstance(iid, bool):
+        # only an incident this suppression covers (its server, detection and entity):
+        # the id comes from the page and could name any incident
+        from glogarch.security.suppress import Suppressor
+        inc = db.get_security_incident(iid)
+        covers = inc and Suppressor([{"id": sid, "server": server, "detector": detector, "entity": entity,
+                                      "expires_at": None}], "").match(
+            inc.get("server", ""), inc.get("detector", ""), str(inc.get("entity", ""))) == sid
+        if covers and db.set_security_status(iid, "closed", user):
             closed = iid
             _audit(request, "security_incident_status", f"incident={iid} status=closed (suppressed)")
     return {"id": sid, "created": created, "entity": entity, "closed_incident": closed}

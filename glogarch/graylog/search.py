@@ -13,6 +13,7 @@ from typing import Any, AsyncIterator, Callable
 
 from glogarch.graylog.client import GraylogClient
 from glogarch.graylog.system import SystemMonitor
+from glogarch.utils.errtext import exc_text
 from glogarch.utils.logging import get_logger
 
 log = get_logger("graylog.search")
@@ -115,7 +116,7 @@ class GraylogSearch:
             return SearchResult(messages, total)
 
         except Exception as e:
-            log.error("Search failed", error=str(e), query=query)
+            log.error("Search failed", error=exc_text(e), query=query)
             raise
 
     def _extract_messages(self, data: dict, fields: list[str] | None = None) -> list[dict]:

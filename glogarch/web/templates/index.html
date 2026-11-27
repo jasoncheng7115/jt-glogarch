@@ -627,6 +627,7 @@
                     <option value="opensearch" data-i18n-opt="export_mode_os_desc">OpenSearch Direct</option>
                 </select>
                 <small class="form-hint" id="export-mode-hint"></small>
+                <small class="form-hint api-heap-hint" id="export-heap-hint"></small>
                 <div class="u069" id="export-mode-coverage"></div>
             </div>
             <div class="form-group">
@@ -742,7 +743,7 @@
             <div id="sched-export-options">
                 <div class="form-group">
                     <label data-i18n="sched_server" data-icon="server">Graylog Server</label>
-                    <select id="sched-server">
+                    <select id="sched-server" data-act-change="refreshSchedHeapHint">
                         <option value="" data-i18n-opt="sched_server_default">Default Server</option>
                     </select>
                 </div>
@@ -753,6 +754,7 @@
                         <option value="opensearch" data-i18n-opt="export_mode_os_desc">OpenSearch Direct</option>
                     </select>
                     <small class="form-hint" id="sched-mode-hint"></small>
+                    <small class="form-hint api-heap-hint" id="sched-heap-hint"></small>
                     <div class="u069" id="sched-mode-coverage"></div>
                 </div>
                 <div class="form-group" id="sched-days-group">
@@ -821,7 +823,7 @@
         </div>
 
         <div class="section">
-            <h2 data-i18n="notify_language" data-icon="globe">Notification Language</h2>
+            <h2 data-i18n="notify_lang_section" data-icon="globe">Language and links</h2>
             <div class="form-card">
                 <div id="notify-lang-form"></div>
             </div>
@@ -1003,7 +1005,7 @@
         </details>
 
         {% elif page == 'reports' %}
-        <h1><span data-i18n="page_reports" data-icon="report">Reports</span> <span class="report-beta">BETA</span></h1>
+        <h1><span data-i18n="page_reports" data-icon="report">Reports</span></h1>
         <div class="text-muted fs-085 mb15" data-i18n="reports_subtitle">Generate branded PDF reports from Graylog dashboards and archive statistics — schedule and email delivery.</div>
         <div id="reports-engine-warn" class="hidden mb15"></div>
 
@@ -1016,7 +1018,6 @@
                 <thead><tr>
                     <th data-i18n="reports_th_name">Name</th>
                     <th data-i18n="reports_th_content">Content</th>
-                    <th data-i18n="settings_th_default">Enabled</th>
                     <th data-i18n="th_last_run">Last Run</th>
                     <th data-i18n="th_actions">Actions</th>
                 </tr></thead>
@@ -1235,6 +1236,42 @@
                 </table>
                 </div>
             </div>
+            <div class="card mb15" id="sl-card">
+                <div class="filters sec-filters">
+                    <h3 class="risk-h" data-i18n="sl_title" data-icon="download">SigmaHQ rule library</h3>
+                    <span class="u028" id="sl-total"></span>
+                    <button class="btn-secondary btn-sm sec-c-new" data-act="slSettingsForm" data-i18n="sl_btn_settings" data-icon="settings">Download settings</button>
+                    <button class="btn-primary btn-sm" id="sl-check" data-act="slCheck" data-i18n="sl_btn_check" data-icon="refresh">Check now</button>
+                </div>
+                <p class="text-muted fs-085" data-i18n="sl_help">SigmaHQ publishes thousands of community detection rules.</p>
+                <div id="sl-form" class="hidden"></div>
+                <div id="sl-status" class="sl-status"></div>
+                <div id="sl-browse" class="hidden">
+                    <div class="filters sl-filters">
+                        <input type="search" id="sl-q" maxlength="200" data-i18n-placeholder="sl_search_ph" placeholder="Search" data-act-change="slFilter">
+                        <select id="sl-product" data-act-change="slFilter"></select>
+                        <select id="sl-level" data-act-change="slFilter"></select>
+                        <select id="sl-state" data-act-change="slFilter"></select>
+                        <button class="btn-primary btn-sm sl-add-sel" id="sl-add-sel" data-act="slAddSelected" disabled></button>
+                    </div>
+                    <div class="table-wrap">
+                    <table class="sec-table sl-table">
+                        <thead><tr>
+                            <th class="sl-chk"></th>
+                            <th data-i18n="case_th_title">Title</th>
+                            <th data-i18n="sec_th_severity">Severity</th>
+                            <th data-i18n="sl_th_source">Log source</th>
+                            <th data-i18n="sl_th_fields">Fields</th>
+                            <th data-i18n="sl_th_conv">Conversion</th>
+                            <th></th>
+                        </tr></thead>
+                        <tbody id="sl-tbody"></tbody>
+                    </table>
+                    </div>
+                    <div class="sl-pager" id="sl-pager"></div>
+                    <p class="text-muted fs-08 sl-license" id="sl-license"></p>
+                </div>
+            </div>
         </div>
 
         <div id="sec-case-modal" class="modal-overlay u066">
@@ -1265,36 +1302,51 @@
         <h1 data-i18n="page_ai_chat" data-icon="chat">AI Chat</h1>
         <div class="text-muted fs-085 mb15" data-i18n="ai_subtitle">Ask about the logs in Graylog and the security incidents. The AI reads them with your own Graylog account, read-only; every lookup is in the audit log.</div>
 
-        <div class="card mb15" id="ai-status-card">
-            <div class="al-bar">
-                <div class="al-bar-left" id="ai-status"><span class="spinner-text" data-i18n="loading">Loading</span></div>
-                <div class="al-bar-right">
-                    <button class="btn-secondary btn-sm" data-act="aiToggleSettings" data-i18n="sec_btn_settings" data-icon="settings">Settings</button>
-                </div>
+        <div class="card mb15 ai-bar-card" id="ai-status-card">
+            <div class="ai-bar">
+                <div class="ai-status" id="ai-status"><span class="spinner-text" data-i18n="loading">Loading</span></div>
+                <button class="btn-secondary btn-sm ai-settings-btn" id="ai-settings-btn" aria-expanded="false" aria-controls="ai-settings" data-act="aiToggleSettings"><span class="ai-settings-label" data-i18n="sec_btn_settings" data-icon="settings">Settings</span><span class="ai-chev" id="ai-settings-chev" aria-hidden="true"></span></button>
             </div>
             <div class="pk-message hidden" id="ai-message"></div>
             <div class="ai-signin hidden" id="ai-signin"></div>
+            <div class="ai-settings-panel hidden" id="ai-settings"></div>
         </div>
 
-        <div class="card mb15 hidden" id="ai-settings"></div>
-
         <div class="ai-layout" id="ai-layout">
-            <div class="card ai-side">
-                <button class="btn-primary btn-sm ai-new" data-act="aiNewChat" data-i18n="ai_new_chat" data-icon="plus">New chat</button>
+            <div class="card ai-side" id="ai-side">
+                <div class="ai-side-top">
+                    <button class="btn-primary btn-sm ai-new" data-act="aiNewChat" data-i18n="ai_new_chat" data-icon="plus">New chat</button>
+                    <button type="button" class="btn-primary btn-sm ai-new-mini" data-act="aiNewChat" data-i18n-title="ai_new_chat" title="New chat"></button>
+                    <button type="button" class="ai-act ai-side-fold" id="ai-side-fold" data-act="aiToggleSide" data-i18n-title="ai_side_fold" title="Hide the list" aria-expanded="true"></button>
+                </div>
+                <input type="text" id="ai-conv-search" class="pk-input ai-conv-search" role="searchbox" maxlength="200" data-i18n-placeholder="ai_conv_search" placeholder="Search conversations" data-act-input="aiSearchConvs" autocomplete="off">
                 <div id="ai-convs" class="ai-convs"></div>
+                <div id="ai-usage" class="ai-usage"></div>
             </div>
             <div class="card ai-main">
+                <div id="ai-head" class="ai-head hidden"></div>
                 <div id="ai-thread" class="ai-thread"></div>
                 <div id="ai-progress" class="ai-progress hidden"></div>
+                <div id="ai-notice" class="ai-notice hidden"></div>
                 <div class="ai-compose">
-                    <textarea id="ai-input" rows="3" maxlength="4000" data-i18n-placeholder="ai_input_ph" placeholder="e.g. Which external IPs failed to log in most in the last 24 hours?"></textarea>
-                    <div class="ai-compose-actions">
-                        <span class="text-muted fs-08" data-i18n="ai_enter_hint">Ctrl+Enter to send</span>
-                        <button class="btn-secondary btn-sm hidden" id="ai-stop" data-act="aiStop" data-i18n="ai_stop" data-icon="close">Stop</button>
-                        <button class="btn-primary" id="ai-send" data-act="aiSend" data-i18n="ai_send" data-icon="send">Send</button>
+                    <div class="ai-compose-box">
+                        <textarea id="ai-input" rows="3" maxlength="4000" data-i18n-placeholder="ai_input_ph" placeholder="e.g. Which external IPs failed to log in most in the last 24 hours?"></textarea>
+                        <div class="ai-compose-actions">
+                            <span class="text-muted fs-08 ai-enter-hint" id="ai-enter-hint">Ctrl + Enter</span>
+                            <label class="ai-switch" data-i18n-title="ai_think_pref_tip" title="Show the model's thinking while it works">
+                                <input type="checkbox" id="ai-think-pref" role="switch" data-act-change="aiThinkPref" data-act-self>
+                                <span class="ai-switch-track" aria-hidden="true"></span>
+                                <span class="ai-switch-label glyph-centre" data-i18n="ai_think_pref">Show thinking</span>
+                            </label>
+                            <span class="ai-compose-btns">
+                                <button class="btn-secondary btn-sm hidden" id="ai-stop" data-act="aiStop" data-i18n="ai_stop" data-icon="close">Stop</button>
+                                <button class="btn-primary btn-sm" id="ai-send" data-act="aiSend" data-i18n="ai_send" data-icon="send">Send</button>
+                            </span>
+                        </div>
                     </div>
                 </div>
             </div>
+            <div class="card ai-preview hidden" id="ai-preview" aria-label="Preview"></div>
         </div>
 
         {% elif page == 'packs' %}
@@ -1694,8 +1746,10 @@ sudo bash upgrade-offline.sh</pre>
     <script src="/static/js/cases.js?v={{ version }}"></script>
     <script src="/static/js/risk.js?v={{ version }}"></script>
     <script src="/static/js/sigma.js?v={{ version }}"></script>
+    <script src="/static/js/sigma_library.js?v={{ version }}"></script>
     <script src="/static/js/overview.js?v={{ version }}"></script>
     <script src="/static/js/suppress.js?v={{ version }}"></script>
+    <script src="/static/js/fieldmap.js?v={{ version }}"></script>
     <script src="/static/js/ai.js?v={{ version }}"></script>
 </body>
 </html>

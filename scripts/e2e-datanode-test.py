@@ -201,6 +201,33 @@ async def main() -> int:
     check("ensure_working re-issued and recovered", problem is None
           and (await dn.probe(cfg3)).get("connected"), problem or "")
 
+    # [6b] Data Node unreachable (restarting): wait and try again, no new certificate
+    print("[6b] unreachable Data Node")
+    dn_container = os.environ.get("DN_CONTAINER", "dn-datanode")
+    subprocess.run(["docker", "stop", dn_container], capture_output=True, timeout=120)
+    cert_before = open(cfg3.client_cert_file).read()
+    stats = {}
+    _c, problem = await dn.ensure_working(st, "e2e-dn", retry_delays=(1, 1, 1), stats=stats)
+    check("a stopped Data Node is tried 4 times, then reported", problem is not None
+          and stats == {"attempts": 4, "waited_sec": 3}, f"{stats} {(problem or '')[:80]}")
+    check("no new certificate is minted for an unreachable node",
+          open(cfg3.client_cert_file).read() == cert_before)
+    started = []
+
+    async def _sleep_and_start(sec):
+        if not started:
+            subprocess.run(["docker", "start", dn_container], capture_output=True, timeout=120)
+            started.append(1)
+        await asyncio.sleep(sec)
+    stats = {}
+    cfg4, problem = await dn.ensure_working(st, "e2e-dn", retry_delays=(15,) * 16, stats=stats,
+                                            sleep=_sleep_and_start)
+    check("the Data Node coming back during the wait is used directly",
+          problem is None and stats["attempts"] > 1 and (await dn.probe(cfg4)).get("connected"),
+          f"{stats} {(problem or '')[:80]}")
+    if not started:
+        subprocess.run(["docker", "start", dn_container], capture_output=True, timeout=120)
+
     # [7] scheduled run with an unusable certificate falls back to the API
     print("[7] scheduler fallback")
     from glogarch.core.models import ScheduleRecord
@@ -212,7 +239,7 @@ async def main() -> int:
     sch.settings, sch.db = st, db
     good = dn.ensure_working
 
-    async def _bad(settings, name):
+    async def _bad(settings, name, **k):
         return settings.get_server(name).opensearch, "e2e: simulated 403 Forbidden"
     dn.ensure_working = _bad
     # Record which exporter the scheduler builds; both stay the real classes.

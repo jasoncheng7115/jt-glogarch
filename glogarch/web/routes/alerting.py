@@ -308,6 +308,10 @@ async def alerting_apply(request: Request):
         return JSONResponse({"error": "The preview expired or was already applied - preview again"},
                             status_code=409)
     srv = _server(request, plan["server"])
+    if srv is not None and srv.name != plan["server"]:
+        # renamed or removed since the preview: never write to the default server instead
+        return JSONResponse({"error": f"Server '{plan['server']}' is no longer configured - preview again"},
+                            status_code=409)
     ident = _ident(request, srv)
     if srv is None or ident is None:
         return _need_signin(srv)
@@ -396,6 +400,8 @@ async def alerting_test_notification(request: Request):
     nid = (body.get("notification_id") or "").strip()
     if srv is None or not nid:
         return JSONResponse({"error": "server and notification_id are required"}, status_code=400)
+    if not _ID_RE.fullmatch(nid):   # it goes into a Graylog URL path ("../.." would reach other endpoints)
+        return JSONResponse({"error": "Not a notification id"}, status_code=400)
 
     async def fn(c):
         return await c.test_notification(nid)

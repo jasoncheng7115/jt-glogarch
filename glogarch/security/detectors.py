@@ -34,6 +34,13 @@ def sev_rank(s: str) -> int:
 AUTH_FAIL = "event_category:authentication AND event_outcome:failure"
 AUTH_OK = "event_category:authentication AND event_outcome:success"
 PEER_FIELDS = ("source_ip", "client_ip")
+# A WAF event the WAF refused (added 1.35). `event_action:blocked` is GIM; the
+# second part is the ModSecurity fields of the Jason Tools WAF parsing. Measured on
+# log4 2026-11-23 (7 days, 4,252 events): `waf_would_block:true AND engine:Enabled`
+# = 1,346 = exactly the 403s; DetectionOnly marks would_block but lets the request
+# through (197 answered 200). A site with neither matches nothing here, so every
+# event counts as let through: the detection behaves as before 1.35.
+WAF_BLOCKED = "event_action:blocked OR (waf_would_block:true AND engine:Enabled)"
 
 
 @dataclass(frozen=True)
@@ -46,6 +53,9 @@ class Probe:
     fields: tuple[str, ...]
     metrics: tuple[tuple[str, str | None], ...] = (("count", None),)
     limit: int = 100
+    # The GIM names of `metrics`, when a site's field map counts other fields
+    # (fieldmap.FieldMap.probes); empty = `metrics` are already GIM names.
+    canon: tuple[tuple[str, str | None], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -62,6 +72,11 @@ class Detector:
     # Default exclusion (Lucene), editable per site.
     exclude: str = ""
     default_enabled: bool = True
+    # WAF scans (added 1.35): a peer whose events the WAF (almost) all refused is
+    # recorded as low (no notification at the default threshold) unless it sent
+    # at least this many in the window; then it keeps its severity and the
+    # notification says it was blocked. 0 = no blocked handling.
+    blocked_min_count: int = 0
 
 
 PROBES: dict[str, Probe] = {p.id: p for p in (
@@ -135,9 +150,10 @@ DETECTORS: tuple[Detector, ...] = (
              severity=({"max_sev": 1, "sev": "high"},
                        {"max_sev": 2, "count": 100, "sev": "low"})),
     # One peer scanning many paths through the WAF.
+    # Owner, 2026-11-23: "如果是被擋下的就不用爆了 除非很大量 但也要爆被擋了".
     Detector("waf_scanner", "waf_peer", min_count=20, min_card=("uri", 20),
              severity=({"external": True, "card": 100, "sev": "high"},
-                       {"sev": "medium"})),
+                       {"sev": "medium"}), blocked_min_count=1000),
     # Off by default: it aggregates a day of ALL messages per run (one terms
     # aggregation by source, 1000 buckets), heavier than the other probes.
     Detector("source_silent", "silent_sources", min_count=50,

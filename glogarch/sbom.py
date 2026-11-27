@@ -271,6 +271,21 @@ def vendored_components(pkg_dir: Path = _PKG_DIR) -> list[dict]:
                     "hashes": [{"alg": "SHA-256", "content": _sha256_file(chart)}],
                     "properties": [{"name": "jt-glogarch:location",
                                     "value": "glogarch/report/assets/chart.umd.min.js (PDF reports)"}]})
+    # bundled browser libraries with a manifest beside them (glogarch/ai/assets/*.json)
+    assets = pkg_dir / "ai" / "assets"
+    for man_path in sorted(assets.glob("*.json")) if assets.is_dir() else []:
+        man = json.loads(man_path.read_text(encoding="utf-8"))
+        f = assets / str(man.get("file") or "")
+        if not f.is_file():
+            continue
+        name, ver = man.get("name", f.stem), man.get("version", "")
+        purl = f"pkg:npm/{name}@{ver}" if ver else f"pkg:npm/{name}"
+        out.append({"type": "library", "bom-ref": purl, "name": name, "version": ver, "purl": purl,
+                    "licenses": [{"license": {"id": man.get("license") or "NOASSERTION"}}],
+                    "hashes": [{"alg": "SHA-256", "content": _sha256_file(f)}],
+                    "externalReferences": [{"type": "distribution", "url": man.get("source", "")}],
+                    "properties": [{"name": "jt-glogarch:location",
+                                    "value": f"glogarch/ai/assets/{f.name} ({man.get('used_for', '')})"}]})
     i18n = pkg_dir / "web" / "static" / "js" / "i18n.js"
     if i18n.is_file() and "Iconoir" in i18n.read_text(encoding="utf-8", errors="replace")[:600]:
         out.append({"type": "library", "bom-ref": "pkg:npm/iconoir", "name": "iconoir",

@@ -54,6 +54,9 @@ class GraylogServerConfig(BaseModel):
 class ExportConfig(BaseModel):
     base_path: str = "/data/graylog-archives"
     chunk_duration_minutes: int = 60
+    # Scheduled API export: refill holes earlier runs left (a failed chunk) within
+    # this many hours before the resume point. 0 = off (the pre-1.35 behaviour).
+    gap_refill_hours: int = 168
     max_file_size_mb: int = 50
     query: str = "*"
     streams: list[str] = Field(default_factory=list)
@@ -234,6 +237,9 @@ class NotifyConfig(BaseModel):
     on_sensitive_operation: bool = True
     on_audit_alert: bool = True
     on_security_incident: bool = True
+    # The address people open jt-glogarch at (https://host:8990). When set,
+    # security notifications link to each incident; empty = no links (default).
+    link_base_url: str = ""
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     discord: DiscordConfig = Field(default_factory=DiscordConfig)
     slack: SlackConfig = Field(default_factory=SlackConfig)
@@ -288,6 +294,9 @@ class SecurityConfig(BaseModel):
     exclude_query: str = ""          # Lucene, applied to every detector
     # Per detector: {"enabled": bool, "min_count": int, "exclude": str}
     detectors: dict[str, dict] = Field(default_factory=dict)
+    # Where this site's logs keep what the built-in detectors read (added 1.35,
+    # security/fieldmap.py): key -> query or field(s); a missing key = the GIM default.
+    field_map: dict[str, str] = Field(default_factory=dict)
     # AI analysis after a run (added 1.22; needs ai.analysis_enabled): new or
     # escalated incidents at or above this severity, at most N per run.
     ai_auto: bool = False
@@ -298,6 +307,12 @@ class SecurityConfig(BaseModel):
     # many enabled rules run (each is one aggregation per run).
     sigma_field_map: dict[str, str] = Field(default_factory=dict)
     sigma_max_rules: int = 50
+    # Sigma rule library (added 1.33): SigmaHQ's release package, downloaded about
+    # once a day when on (OFF by default: internet egress is the site's call).
+    # auto_update: rules added from the library follow upstream changes.
+    sigma_library_enabled: bool = False
+    sigma_library_package: str = "core"
+    sigma_library_auto_update: bool = True
     # Threat-intel lists (added 1.28): downloaded from fixed public feeds, OFF by default.
     ti_enabled: bool = False
     ti_feeds: list[str] = Field(default_factory=lambda: ["spamhaus_drop", "tor_exit", "feodo"])
@@ -308,27 +323,88 @@ class SecurityConfig(BaseModel):
     digest_cron: str = "0 8 * * 1"
 
 
-class AiConfig(BaseModel):
-    """AI chat + MCP endpoint (added 1.21, glogarch/ai/). Everything OFF by default.
+LLM_KINDS = ("openai", "anthropic")
+ANTHROPIC_URL = "https://api.anthropic.com"
 
-    The LLM is any OpenAI-compatible server (llama.cpp, vLLM, LM Studio, Ollama's
-    /v1). Owner's rule: a private-network server by default; an external one only
-    after `allow_external` is set (audited, and the page keeps warning)."""
-    enabled: bool = False
-    url: str = ""                    # e.g. http://10.0.0.5:8080/v1
+
+class LLMServerConfig(BaseModel):
+    """One LLM server (1.36, owner 2026-11-26: several servers, pick one, no
+    re-entering everything to switch). `openai` = any OpenAI-compatible server
+    (llama.cpp, vLLM, LM Studio, Ollama's /v1); `anthropic` = the Claude API
+    through the official SDK. External hosts need `allow_external` (owner's rule)."""
+    name: str
+    kind: str = "openai"
+    url: str = ""                    # openai: http://10.0.0.5:8080/v1; anthropic: https://api.anthropic.com
     model: str = ""
     api_key: str = ""                # secret: masked by the API, kept on a masked save
     timeout_seconds: int = 300
     allow_external: bool = False
+    temperature: float = 0.2         # openai only: the Claude API refuses sampling settings
+    context_tokens: int = 0          # 0 = ask the server (llama.cpp /props, vLLM, LM Studio, Ollama, Claude models API)
+    effort: str = ""                 # anthropic only: low|medium|high|xhigh|max; "" = the model's default
+    daily_tokens: int = 0            # this server's own limits; 0 = none
+    monthly_tokens: int = 0
+
+
+class AiConfig(BaseModel):
+    """AI chat + MCP endpoint (added 1.21, glogarch/ai/). Everything OFF by default.
+
+    The LLM servers are `llm_servers` (1.36); `url` / `model` / `api_key` /
+    `timeout_seconds` / `allow_external` / `temperature` are the single server of
+    1.21-1.35: a config that has only them gets that server as `llm_servers[0]`
+    on load, and a save writes the default OpenAI-compatible server back into them,
+    so going back to an older version keeps working. Owner's rule: a
+    private-network server by default; an external one only after
+    `allow_external` is set (audited, and the page keeps warning)."""
+    enabled: bool = False
+    url: str = ""                    # legacy single server (see above)
+    model: str = ""
+    api_key: str = ""
+    timeout_seconds: int = 300
+    allow_external: bool = False
     temperature: float = 0.2
+    llm_servers: list[LLMServerConfig] = Field(default_factory=list)
+    default_llm: str = ""            # name in llm_servers; "" = the first
     max_tool_rounds: int = 6
     max_range_hours: float = 24.0    # cap for tools that pull messages
-    daily_tokens: int = 0            # 0 = no limit
+    daily_tokens: int = 0            # whole site, every user and server; 0 = no limit
     monthly_tokens: int = 0
+    user_daily_tokens: int = 0       # per signed-in user (1.36); 0 = no limit
+    user_monthly_tokens: int = 0
     chat_retention_days: int = 90
     mcp_enabled: bool = False        # /mcp for external AI clients (Graylog token auth)
     mcp_graylog_tools: list[str] = Field(default_factory=list)  # empty = the default set
     analysis_enabled: bool = False   # AI analysis of security incidents (added 1.22)
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.llm_servers and self.url:
+            self.llm_servers = [LLMServerConfig(
+                name=(self.model or "LLM")[:60], kind="openai", url=self.url, model=self.model,
+                api_key=self.api_key, timeout_seconds=self.timeout_seconds,
+                allow_external=self.allow_external, temperature=self.temperature)]
+        if self.llm_servers and self.default_llm not in {s.name for s in self.llm_servers}:
+            self.default_llm = self.llm_servers[0].name
+
+    def llm(self, name: str | None = None) -> LLMServerConfig | None:
+        """The server by exact name, else the default, else None."""
+        if name:
+            hit = next((s for s in self.llm_servers if s.name == name), None)
+            if hit is not None:
+                return hit
+        return next((s for s in self.llm_servers if s.name == self.default_llm),
+                    self.llm_servers[0] if self.llm_servers else None)
+
+    def mirror_legacy(self) -> None:
+        """Write an OpenAI-compatible server (the default when it is one) into the
+        1.35 fields, so an older version reading this file still finds an LLM."""
+        d = self.llm()
+        o = d if d is not None and d.kind == "openai" else next(
+            (s for s in self.llm_servers if s.kind == "openai"), None)
+        if o is None:
+            self.url = ""
+            return
+        self.url, self.model, self.api_key = o.url, o.model, o.api_key
+        self.timeout_seconds, self.allow_external, self.temperature = o.timeout_seconds, o.allow_external, o.temperature
 
 
 class Settings(BaseModel):

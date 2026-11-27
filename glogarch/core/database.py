@@ -320,7 +320,32 @@ CREATE TABLE IF NOT EXISTS sec_sigma_rules (
     updated_at  TEXT NOT NULL,
     last_run_at TEXT,
     last_count  INTEGER,
-    last_error  TEXT NOT NULL DEFAULT ''
+    last_error  TEXT NOT NULL DEFAULT '',
+    origin      TEXT NOT NULL DEFAULT ''
+);
+
+-- Sigma rule library (added 1.33): SigmaHQ's release package, replaced as a whole
+-- on each download. Nothing here runs; a rule runs once added to sec_sigma_rules.
+CREATE TABLE IF NOT EXISTS sec_sigma_library (
+    sigma_id    TEXT PRIMARY KEY,
+    path        TEXT NOT NULL DEFAULT '',
+    title       TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT '',
+    level       TEXT NOT NULL DEFAULT '',
+    author      TEXT NOT NULL DEFAULT '',
+    modified    TEXT NOT NULL DEFAULT '',
+    product     TEXT NOT NULL DEFAULT '',
+    category    TEXT NOT NULL DEFAULT '',
+    service     TEXT NOT NULL DEFAULT '',
+    tags        TEXT NOT NULL DEFAULT '[]',
+    yaml        TEXT NOT NULL,
+    query       TEXT NOT NULL DEFAULT '',
+    error       TEXT NOT NULL DEFAULT '',
+    fields      TEXT NOT NULL DEFAULT '[]'
+);
+CREATE TABLE IF NOT EXISTS sec_sigma_library_meta (
+    k TEXT PRIMARY KEY,
+    v TEXT NOT NULL DEFAULT ''
 );
 
 -- Threat-intel lists (added 1.28): the entries of each downloaded feed.
@@ -385,7 +410,8 @@ CREATE TABLE IF NOT EXISTS ai_conversations (
     server     TEXT NOT NULL DEFAULT '',
     title      TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    pinned_at  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_ai_conv_user ON ai_conversations (username, updated_at);
 CREATE TABLE IF NOT EXISTS ai_messages (
@@ -397,7 +423,12 @@ CREATE TABLE IF NOT EXISTS ai_messages (
     tools           TEXT NOT NULL DEFAULT '[]',
     tokens          INTEGER NOT NULL DEFAULT 0,
     elapsed_ms      INTEGER NOT NULL DEFAULT 0,
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    truncated       INTEGER NOT NULL DEFAULT 0,
+    calls           TEXT NOT NULL DEFAULT '[]',
+    followups       TEXT NOT NULL DEFAULT '[]',
+    llm             TEXT NOT NULL DEFAULT '',
+    stopped_at      TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_ai_msg_conv ON ai_messages (conversation_id, id);
 -- Tokens spent per UTC day, for the daily / monthly budget.
@@ -405,6 +436,16 @@ CREATE TABLE IF NOT EXISTS ai_usage (
     day    TEXT PRIMARY KEY,
     tokens INTEGER NOT NULL DEFAULT 0,
     calls  INTEGER NOT NULL DEFAULT 0
+);
+-- The same tokens by LLM server and signed-in user (1.36), for their own limits.
+-- ai_usage stays the site total: its limits mean what they meant before.
+CREATE TABLE IF NOT EXISTS ai_usage_detail (
+    day      TEXT NOT NULL,
+    llm      TEXT NOT NULL DEFAULT '',
+    username TEXT NOT NULL DEFAULT '',
+    tokens   INTEGER NOT NULL DEFAULT 0,
+    calls    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, llm, username)
 );
 """
 
@@ -467,6 +508,9 @@ def _str_to_dt(s: str | None) -> datetime | None:
         # Convert to UTC first (should already be, but be safe), then strip
         dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
+
+
+AI_MAX_PINNED = 5   # pinned AI conversations per user (owner 2026-11-26)
 
 
 class ArchiveDB:
@@ -560,6 +604,39 @@ class ArchiveDB:
                 conn.execute("ALTER TABLE api_audit ADD COLUMN target_name TEXT NOT NULL DEFAULT ''")
         except Exception as e:
             log.warning("Schema migration failed (api_audit.target_name) — audit inserts may break", error=str(e))
+        # sec_sigma_rules.origin (1.33): 'library' = added from the downloaded library
+        try:
+            existing_sg = {row[1] for row in conn.execute("PRAGMA table_info(sec_sigma_rules)").fetchall()}
+            if existing_sg and "origin" not in existing_sg:
+                conn.execute("ALTER TABLE sec_sigma_rules ADD COLUMN origin TEXT NOT NULL DEFAULT ''")
+        except Exception as e:
+            log.warning("Schema migration failed (sec_sigma_rules.origin)", error=str(e))
+        # ai_messages.truncated: the answer still stopped at the length limit
+        try:
+            existing_am = {row[1] for row in conn.execute("PRAGMA table_info(ai_messages)").fetchall()}
+            if existing_am and "truncated" not in existing_am:
+                conn.execute("ALTER TABLE ai_messages ADD COLUMN truncated INTEGER NOT NULL DEFAULT 0")
+            # ai_messages.calls: what each tool call asked Graylog (query, range, count)
+            if existing_am and "calls" not in existing_am:
+                conn.execute("ALTER TABLE ai_messages ADD COLUMN calls TEXT NOT NULL DEFAULT '[]'")
+            # ai_messages.followups: the questions suggested under an answer (1.35)
+            if existing_am and "followups" not in existing_am:
+                conn.execute("ALTER TABLE ai_messages ADD COLUMN followups TEXT NOT NULL DEFAULT '[]'")
+            # ai_messages.llm: which LLM server answered (1.36, several servers)
+            if existing_am and "llm" not in existing_am:
+                conn.execute("ALTER TABLE ai_messages ADD COLUMN llm TEXT NOT NULL DEFAULT ''")
+            # ai_messages.stopped_at: the user stopped this question before it was answered
+            if existing_am and "stopped_at" not in existing_am:
+                conn.execute("ALTER TABLE ai_messages ADD COLUMN stopped_at TEXT NOT NULL DEFAULT ''")
+        except Exception as e:
+            log.warning("Schema migration failed (ai_messages)", error=str(e))
+        # ai_conversations.pinned_at: pinned to the top of the list (1.36, at most 5)
+        try:
+            existing_ac = {row[1] for row in conn.execute("PRAGMA table_info(ai_conversations)").fetchall()}
+            if existing_ac and "pinned_at" not in existing_ac:
+                conn.execute("ALTER TABLE ai_conversations ADD COLUMN pinned_at TEXT")
+        except Exception as e:
+            log.warning("Schema migration failed (ai_conversations.pinned_at)", error=str(e))
         # report_history: triggered_by column (manual vs scheduled)
         try:
             existing_rh = {row[1] for row in conn.execute("PRAGMA table_info(report_history)").fetchall()}
@@ -962,6 +1039,34 @@ class ArchiveDB:
             for ts in _load_json_list(o):
                 if _parse_ms_ts(ts):
                     out.append((str(ts), fp))
+        return out
+
+    def archive_spans(
+        self,
+        server_name: str,
+        time_from: datetime,
+        time_to: datetime,
+    ) -> list[tuple[datetime, datetime]]:
+        """(time_from, time_to) of every completed archive of the server that
+        touches [time_from, time_to], any stream or mode, oldest first, plus
+        the newest one that ends before time_from (so a hole that starts before
+        the window still has its left edge).
+        Used to find holes earlier runs left (Exporter.find_gaps)."""
+        before = self.conn.execute(
+            "SELECT time_from, time_to FROM archives "
+            "WHERE server_name = ? AND status = 'completed' AND time_to < ? "
+            "ORDER BY time_to DESC LIMIT 1",
+            (server_name, _dt_to_str(time_from))).fetchall()
+        rows = before + self.conn.execute(
+            "SELECT time_from, time_to FROM archives "
+            "WHERE server_name = ? AND status = 'completed' "
+            "AND time_from <= ? AND time_to >= ? ORDER BY time_from",
+            (server_name, _dt_to_str(time_to), _dt_to_str(time_from))).fetchall()
+        out = []
+        for a, b in rows:
+            fa, fb = _str_to_dt(a), _str_to_dt(b)
+            if fa and fb:
+                out.append((fa, fb))
         return out
 
     def covered_null_spans(
@@ -1449,6 +1554,17 @@ class ArchiveDB:
                     (name, config_json, 1 if enabled else 0, report_id),
                 )
                 self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def set_report_enabled(self, name: str, enabled: bool) -> bool:
+        """Turn a report definition on or off (its schedule runs only when on)."""
+        with self._lock:
+            try:
+                cur = self.conn.execute("UPDATE reports SET enabled = ? WHERE name = ?", (1 if enabled else 0, name))
+                self.conn.commit()
+                return cur.rowcount > 0
             except Exception:
                 self._rollback_safely()
                 raise
@@ -1950,10 +2066,10 @@ class ArchiveDB:
             try:
                 cur = self.conn.execute(
                     "INSERT INTO sec_sigma_rules (sigma_id, title, level, tags, yaml, query, error, group_by, threshold, "
-                    "enabled, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+                    "enabled, created_by, created_at, updated_at, origin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
                     (data.get("sigma_id", ""), data["title"], data["level"], _json.dumps(data.get("tags") or []),
                      data["yaml"], data.get("query", ""), data.get("error", ""), data.get("group_by") or "source",
-                     int(data.get("threshold") or 1), username, now, now))
+                     int(data.get("threshold") or 1), username, now, now, data.get("origin", "")))
                 self.conn.commit()
                 return cur.lastrowid  # type: ignore[return-value]
             except Exception:
@@ -1982,6 +2098,67 @@ class ArchiveDB:
                                         (*args, rule_id))
                 self.conn.commit()
                 return cur.rowcount > 0
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    # --- Sigma rule library (added 1.33) ---
+
+    LIBRARY_COLS = ("sigma_id", "path", "title", "status", "level", "author", "modified", "product",
+                    "category", "service", "tags", "yaml", "query", "error", "fields")
+
+    @staticmethod
+    def _library_row(r) -> dict:
+        import json as _json
+        d = dict(r)
+        d["tags"] = _json.loads(d.get("tags") or "[]")
+        d["fields"] = _json.loads(d.get("fields") or "[]")
+        return d
+
+    def replace_sigma_library(self, entries: list[dict]) -> None:
+        import json as _json
+        rows = [tuple(_json.dumps(e.get(c) or []) if c in ("tags", "fields") else str(e.get(c) or "")
+                      for c in self.LIBRARY_COLS) for e in entries]
+        with self._lock:
+            try:
+                self.conn.execute("DELETE FROM sec_sigma_library")
+                self.conn.executemany(
+                    f"INSERT OR IGNORE INTO sec_sigma_library ({', '.join(self.LIBRARY_COLS)}) "  # nosec B608 - fixed column names
+                    f"VALUES ({', '.join('?' for _ in self.LIBRARY_COLS)})", rows)
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def update_sigma_library_conversions(self, rows: list[tuple[str, str, str]]) -> None:
+        """(query, error, fields_json, sigma_id) after the field map changed."""
+        with self._lock:
+            try:
+                self.conn.executemany("UPDATE sec_sigma_library SET query = ?, error = ?, fields = ? WHERE sigma_id = ?", rows)
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def list_sigma_library(self, with_yaml: bool = False) -> list[dict]:
+        cols = self.LIBRARY_COLS if with_yaml else tuple(c for c in self.LIBRARY_COLS if c != "yaml")
+        return [self._library_row(r) for r in self.conn.execute(
+            f"SELECT {', '.join(cols)} FROM sec_sigma_library ORDER BY title").fetchall()]  # nosec B608 - fixed column names
+
+    def get_sigma_library_entry(self, sigma_id: str) -> dict | None:
+        r = self.conn.execute("SELECT * FROM sec_sigma_library WHERE sigma_id = ?", (sigma_id,)).fetchone()
+        return self._library_row(r) if r else None
+
+    def sigma_library_meta(self) -> dict[str, str]:
+        return {r["k"]: r["v"] for r in self.conn.execute("SELECT k, v FROM sec_sigma_library_meta").fetchall()}
+
+    def set_sigma_library_meta(self, values: dict[str, str]) -> None:
+        with self._lock:
+            try:
+                self.conn.executemany(
+                    "INSERT INTO sec_sigma_library_meta (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v",
+                    [(k, str(v)) for k, v in values.items()])
+                self.conn.commit()
             except Exception:
                 self._rollback_safely()
                 raise
@@ -2297,16 +2474,21 @@ class ArchiveDB:
                 raise
 
     def ai_add_message(self, conversation_id: int, role: str, content: str, *, model: str = "",
-                       tools: list | None = None, tokens: int = 0, elapsed_ms: int = 0) -> int:
+                       tools: list | None = None, tokens: int = 0, elapsed_ms: int = 0,
+                       truncated: bool = False, calls: list | None = None,
+                       followups: list | None = None, llm: str = "") -> int:
         import json as _json
         now = _dt_to_str(datetime.utcnow())
         with self._lock:
             try:
                 cur = self.conn.execute(
                     "INSERT INTO ai_messages (conversation_id, role, content, model, tools, tokens, "
-                    "elapsed_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "elapsed_ms, created_at, truncated, calls, followups, llm) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (conversation_id, role, content, model, _json.dumps(tools or []), int(tokens),
-                     int(elapsed_ms), now))
+                     int(elapsed_ms), now, 1 if truncated else 0,
+                     _json.dumps(calls or [], ensure_ascii=False, default=str),
+                     _json.dumps([str(q) for q in (followups or [])], ensure_ascii=False), str(llm or "")))
                 self.conn.execute("UPDATE ai_conversations SET updated_at = ? WHERE id = ?",
                                   (now, conversation_id))
                 self.conn.commit()
@@ -2324,16 +2506,86 @@ class ArchiveDB:
             return None
         d = dict(r)
         msgs = self.conn.execute(
-            "SELECT id, role, content, model, tools, tokens, elapsed_ms, created_at FROM ai_messages "
-            "WHERE conversation_id = ? ORDER BY id", (conversation_id,)).fetchall()
-        d["messages"] = [{**dict(m), "tools": _json.loads(m["tools"] or "[]")} for m in msgs]
+            "SELECT id, role, content, model, tools, tokens, elapsed_ms, created_at, truncated, calls, "
+            "followups, llm, stopped_at FROM ai_messages WHERE conversation_id = ? ORDER BY id",
+            (conversation_id,)).fetchall()
+        d["messages"] = [{**dict(m), "tools": _json.loads(m["tools"] or "[]"),
+                          "calls": _json.loads(m["calls"] or "[]"),
+                          "followups": _json.loads(m["followups"] or "[]")} for m in msgs]
         return d
 
-    def ai_list_conversations(self, username: str, limit: int = 50) -> list[dict]:
-        rows = self.conn.execute(
-            "SELECT id, server, title, created_at, updated_at FROM ai_conversations "
-            "WHERE username = ? ORDER BY updated_at DESC, id DESC LIMIT ?", (username, limit)).fetchall()
-        return [dict(r) for r in rows]
+    def ai_mark_stopped(self, message_id: int) -> None:
+        """The user stopped this question before an answer came (shown as stopped)."""
+        with self._lock:
+            try:
+                self.conn.execute("UPDATE ai_messages SET stopped_at = ? WHERE id = ? AND role = 'user'",
+                                  (_dt_to_str(datetime.utcnow()), int(message_id)))
+                self.conn.commit()
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def ai_get_message(self, message_id: int, username: str) -> dict | None:
+        """One message, only when its conversation is the user's."""
+        r = self.conn.execute(
+            "SELECT m.id, m.role, m.content, m.conversation_id FROM ai_messages m "
+            "JOIN ai_conversations c ON c.id = m.conversation_id WHERE m.id = ? AND c.username = ?",
+            (message_id, username)).fetchone()
+        return dict(r) if r else None
+
+    def ai_list_conversations(self, username: str, limit: int = 50, q: str = "") -> list[dict]:
+        """Newest first. `q` matches the title or any message, case-insensitive
+        for ASCII (SQLite LIKE); % and _ in it are literal."""
+        sql = ("SELECT id, server, title, created_at, updated_at, pinned_at FROM ai_conversations c "
+               "WHERE username = ?")
+        params: list = [username]
+        q = (q or "").strip()[:200]
+        if q:
+            like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            sql += (" AND (title LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM ai_messages m "
+                    "WHERE m.conversation_id = c.id AND m.content LIKE ? ESCAPE '\\'))")
+            params += [like, like]
+        # pinned first (newest pin on top), then the rest newest first; a pinned one is
+        # listed even when it is older than the newest `limit`
+        rows = self.conn.execute(sql + " ORDER BY (pinned_at IS NULL), pinned_at DESC, updated_at DESC, id DESC "
+                                 "LIMIT ?", (*params, limit + AI_MAX_PINNED)).fetchall()
+        out = [dict(r) for r in rows]
+        pinned = [r for r in out if r.get("pinned_at")]
+        return pinned + [r for r in out if not r.get("pinned_at")][:limit]
+
+    def ai_pin_conversation(self, conversation_id: int, username: str, pinned: bool) -> str:
+        """'ok', 'not_found' or 'full' (already AI_MAX_PINNED pinned)."""
+        now = _dt_to_str(datetime.utcnow())
+        with self._lock:
+            try:
+                row = self.conn.execute("SELECT pinned_at FROM ai_conversations WHERE id = ? AND username = ?",
+                                        (conversation_id, username)).fetchone()
+                if not row:
+                    return "not_found"
+                if pinned and not row[0]:
+                    n = self.conn.execute("SELECT COUNT(*) FROM ai_conversations WHERE username = ? "
+                                          "AND pinned_at IS NOT NULL", (username,)).fetchone()[0]
+                    if n >= AI_MAX_PINNED:
+                        return "full"
+                if bool(row[0]) != pinned:
+                    self.conn.execute("UPDATE ai_conversations SET pinned_at = ? WHERE id = ? AND username = ?",
+                                      (now if pinned else None, conversation_id, username))
+                    self.conn.commit()
+                return "ok"
+            except Exception:
+                self._rollback_safely()
+                raise
+
+    def ai_rename_conversation(self, conversation_id: int, username: str, title: str) -> bool:
+        with self._lock:
+            try:
+                cur = self.conn.execute("UPDATE ai_conversations SET title = ? WHERE id = ? AND username = ?",
+                                        (title[:200], conversation_id, username))
+                self.conn.commit()
+                return cur.rowcount > 0
+            except Exception:
+                self._rollback_safely()
+                raise
 
     def ai_delete_conversation(self, conversation_id: int, username: str) -> bool:
         with self._lock:
@@ -2355,8 +2607,10 @@ class ArchiveDB:
         cutoff = _dt_to_str(datetime.utcnow() - timedelta(days=days))
         with self._lock:
             try:
+                # a pinned conversation is kept: the user marked it as one to keep
                 ids = [r[0] for r in self.conn.execute(
-                    "SELECT id FROM ai_conversations WHERE updated_at < ?", (cutoff,)).fetchall()]
+                    "SELECT id FROM ai_conversations WHERE updated_at < ? AND pinned_at IS NULL",
+                    (cutoff,)).fetchall()]
                 for i in ids:
                     self.conn.execute("DELETE FROM ai_messages WHERE conversation_id = ?", (i,))
                     self.conn.execute("DELETE FROM ai_conversations WHERE id = ?", (i,))
@@ -2366,25 +2620,47 @@ class ArchiveDB:
                 self._rollback_safely()
                 raise
 
-    def ai_add_usage(self, tokens: int, when: datetime | None = None) -> None:
+    def ai_add_usage(self, tokens: int, when: datetime | None = None, *, llm: str = "",
+                     username: str = "") -> None:
         day = (when or datetime.utcnow()).strftime("%Y-%m-%d")
         with self._lock:
             try:
                 self.conn.execute(
                     "INSERT INTO ai_usage (day, tokens, calls) VALUES (?, ?, 1) ON CONFLICT (day) "
                     "DO UPDATE SET tokens = tokens + excluded.tokens, calls = calls + 1", (day, int(tokens)))
+                self.conn.execute(
+                    "INSERT INTO ai_usage_detail (day, llm, username, tokens, calls) VALUES (?, ?, ?, ?, 1) "
+                    "ON CONFLICT (day, llm, username) DO UPDATE SET tokens = tokens + excluded.tokens, "
+                    "calls = calls + 1", (day, str(llm or ""), str(username or ""), int(tokens)))
                 self.conn.commit()
             except Exception:
                 self._rollback_safely()
                 raise
 
-    def ai_usage(self, when: datetime | None = None) -> dict:
+    def ai_usage(self, when: datetime | None = None, *, llm: str | None = None,
+                 username: str | None = None) -> dict:
+        """Tokens today and this month (UTC): the site total, or one LLM server's /
+        one user's (counted from 1.36 on) when `llm` / `username` is given."""
         now = when or datetime.utcnow()
         day = now.strftime("%Y-%m-%d")
         month = now.strftime("%Y-%m")
-        d = self.conn.execute("SELECT COALESCE(SUM(tokens), 0) FROM ai_usage WHERE day = ?", (day,)).fetchone()[0]
-        m = self.conn.execute("SELECT COALESCE(SUM(tokens), 0) FROM ai_usage WHERE day LIKE ?",
-                              (month + "-%",)).fetchone()[0]
+        if llm is None and username is None:
+            d = self.conn.execute("SELECT COALESCE(SUM(tokens), 0) FROM ai_usage WHERE day = ?", (day,)).fetchone()[0]
+            m = self.conn.execute("SELECT COALESCE(SUM(tokens), 0) FROM ai_usage WHERE day LIKE ?",
+                                  (month + "-%",)).fetchone()[0]
+            return {"day": int(d), "month": int(m)}
+        cond, args = [], []
+        if llm is not None:
+            cond.append("llm = ?")
+            args.append(llm)
+        if username is not None:
+            cond.append("username = ?")
+            args.append(username)
+        where = " AND ".join(cond)
+        d = self.conn.execute(f"SELECT COALESCE(SUM(tokens), 0) FROM ai_usage_detail WHERE day = ? AND {where}",  # nosec B608 - fixed column names, bound values
+                              (day, *args)).fetchone()[0]
+        m = self.conn.execute(f"SELECT COALESCE(SUM(tokens), 0) FROM ai_usage_detail WHERE day LIKE ? AND {where}",  # nosec B608 - fixed column names, bound values
+                              (month + "-%", *args)).fetchone()[0]
         return {"day": int(d), "month": int(m)}
 
     def list_report_history(self, limit: int = 50) -> list[dict]:

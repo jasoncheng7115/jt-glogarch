@@ -44,9 +44,17 @@ class GraylogPermissionError(Exception):
     """Graylog refused the action for this user (403)."""
 
 
+KNOWN_STATES = ("ENABLED", "DISABLED")
+
+
 def schedule_for(defn: dict) -> bool:
-    """The `schedule` value that KEEPS the definition's current state."""
-    return str(defn.get("state") or "").upper() == "ENABLED"
+    """The `schedule` value that KEEPS the definition's current state. A state we
+    do not know (missing, or a new one such as "PAUSED") is refused: the PUT's
+    `schedule` SETS the state, and guessing False would disable the definition."""
+    state = str(defn.get("state") or "").upper()
+    if state not in KNOWN_STATES:
+        raise ValueError(f"Unknown event definition state {defn.get('state')!r}; not changed")
+    return state == "ENABLED"
 
 
 def notif_ids(defn: dict) -> list[str]:
@@ -112,7 +120,7 @@ class Action:
         t = (d or {}).get("type") or ""
         if t not in ("add", "remove", "replace"):
             raise ValueError(f"Unknown action: {t}")
-        ids = [str(i) for i in (d.get("notification_ids") or []) if i]
+        ids = list(dict.fromkeys(str(i) for i in (d.get("notification_ids") or []) if i))   # no duplicates
         src, dst = str(d.get("from") or ""), str(d.get("to") or "")
         if t in ("add", "remove") and not ids:
             raise ValueError("Choose at least one notification")
@@ -358,6 +366,8 @@ async def apply_batch(client: "AlertingClient", db, *, batch_id: str, server: st
                 _progress(progress_cb, n, total)
                 continue
         why = skip_reason(fresh)
+        if not why and str(fresh.get("state") or "").upper() not in KNOWN_STATES:
+            why = f"Unknown state {fresh.get('state')!r}: not changed"   # schedule_for could only guess
         after = None if why else new_notifications(fresh, act)
         if why:
             res["skipped"].append({"id": did, "title": title, "reason": why})
@@ -371,6 +381,13 @@ async def apply_batch(client: "AlertingClient", db, *, batch_id: str, server: st
                 stored = await client.put_notifications(fresh, after)
                 if "state" not in stored:
                     stored = await client.get_definition(did)
+                if str(stored.get("state") or "").upper() != str(fresh.get("state") or "").upper():
+                    # Graylog flipped the enabled state: put the original state back once
+                    log.warning("Graylog changed an event definition's state; putting it back",
+                                definition=did, was=fresh.get("state"), now=stored.get("state"))
+                    stored = await client.put_notifications({**stored, "state": fresh.get("state")}, after)
+                    if "state" not in stored:
+                        stored = await client.get_definition(did)
                 bad = []
                 if notif_ids(stored) != [x["notification_id"] for x in after]:
                     bad.append("notifications differ from what was sent")
@@ -406,10 +423,13 @@ def _progress(cb, done: int, total: int) -> None:
 
 
 def restore_items(rows: list[dict]) -> list[dict]:
-    """Undo items for a batch's log rows: only rows that reached Graylog."""
+    """Undo items for a batch's log rows: every row whose write may have reached
+    Graylog. A "failed" row too: a timeout or a "stored something else" can follow a
+    PUT that landed (found by a review); the `expect` check skips any definition
+    whose notifications are not what that batch left there."""
     out = []
     for r in rows:
-        if r.get("status") not in ("applied", "pending"):
+        if r.get("status") not in ("applied", "pending", "failed"):
             continue
         out.append({"id": r["definition_id"], "title": r.get("title") or "",
                     "target": r["before_notifications"],

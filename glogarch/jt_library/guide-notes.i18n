@@ -46,5 +46,91 @@
       "zh-TW": "Raw UDP",
       "ja": "Raw UDP"
     }
+  },
+  "608138be-384d-51c1-a794-6926ded61ff6": {
+    "summary": {
+      "en": "SQL Server audit and login dashboards with a failed-login alert.",
+      "zh-TW": "SQL Server 稽核與登入看板、登入失敗告警",
+      "ja": "SQL Server の監査とログインのダッシュボード、およびログイン失敗アラートです。"
+    },
+    "collect": {
+      "en": "GELF (Windows event logs)",
+      "zh-TW": "GELF（Windows 事件記錄）",
+      "ja": "GELF（Windows イベントログ）"
+    },
+    "notes": {
+      "en": [
+        "Each record is handled by one pack only: this pack's gate rule (*-00-gate) writes parsed_by with the pack's name, and a record another pack claimed first is left alone. Search parsed_by:<name> to see what a pack handled.",
+        "Connect the pipeline only to a stream holding this device's logs. It handles only records no other pack claimed."
+      ],
+      "zh-TW": [
+        "每筆記錄只會被一個套件處理：本套件的閘門規則（*-00-gate）會寫入 parsed_by＝套件名稱，其他套件先認領的記錄不會再處理。可用 parsed_by:<名稱> 查某個套件處理了哪些記錄。",
+        "管線請只接到只含這種設備記錄的串流。它只處理其他套件沒認領的記錄。"
+      ],
+      "ja": [
+        "各レコードは 1 つのパックだけが処理します。このパックのゲートルール（*-00-gate）が parsed_by にパック名を書き込み、他のパックが先に取得したレコードは処理しません。parsed_by:<名前> で検索すると、そのパックが処理したレコードを確認できます。",
+        "パイプラインは、この機器のログだけを含むストリームにのみ接続してください。他のパックが取得していないレコードだけを処理します。"
+      ]
+    },
+    "upgrade": {
+      "en": [
+        "This revision adds the gate rule that claims records (parsed_by). Uninstall the previous revision first; rules you edited (host names in a gate, for example) have to be edited again."
+      ],
+      "zh-TW": [
+        "此修訂版加上認領記錄的閘門規則（parsed_by）。請先解除安裝前一版；您改過的規則（例如閘門裡的主機名）要重新修改。"
+      ],
+      "ja": [
+        "このリビジョンでは、レコードを取得するゲートルール（parsed_by）を追加しています。先に前のリビジョンをアンインストールしてください。変更したルール（ゲート内のホスト名など）は再度変更が必要です。"
+      ]
+    }
+  },
+  "ee04e1cf-7952-5bb0-b286-0c0275ddc08a": {
+    "summary": {
+      "en": "Windows successful-logon and logon event dashboards.",
+      "zh-TW": "Windows 登入成功與登入事件看板",
+      "ja": "Windows のログオン成功とログオンイベントのダッシュボードです。"
+    },
+    "collect": {
+      "en": "GELF (Windows event logs)",
+      "zh-TW": "GELF（Windows 事件記錄）",
+      "ja": "GELF（Windows イベントログ）"
+    }
+  },
+  "81ef56af-f8b5-50fd-a95b-6d5d76d1f803": {
+    "summary": {
+      "en": "Synology NAS file operation and connection dashboard.",
+      "zh-TW": "Synology NAS 檔案操作與連線看板",
+      "ja": "Synology NAS のファイル操作と接続のダッシュボードです。"
+    },
+    "collect": {
+      "en": "Syslog over UDP",
+      "zh-TW": "Syslog UDP",
+      "ja": "Syslog UDP"
+    },
+    "notes": {
+      "en": [
+        "Each record is handled by one pack only: this pack's gate rule (*-00-gate) writes parsed_by with the pack's name, and a record another pack claimed first is left alone. Search parsed_by:<name> to see what a pack handled.",
+        "Connect the pipeline only to a stream holding this device's logs. It handles only records no other pack claimed."
+      ],
+      "zh-TW": [
+        "每筆記錄只會被一個套件處理：本套件的閘門規則（*-00-gate）會寫入 parsed_by＝套件名稱，其他套件先認領的記錄不會再處理。可用 parsed_by:<名稱> 查某個套件處理了哪些記錄。",
+        "管線請只接到只含這種設備記錄的串流。它只處理其他套件沒認領的記錄。"
+      ],
+      "ja": [
+        "各レコードは 1 つのパックだけが処理します。このパックのゲートルール（*-00-gate）が parsed_by にパック名を書き込み、他のパックが先に取得したレコードは処理しません。parsed_by:<名前> で検索すると、そのパックが処理したレコードを確認できます。",
+        "パイプラインは、この機器のログだけを含むストリームにのみ接続してください。他のパックが取得していないレコードだけを処理します。"
+      ]
+    },
+    "upgrade": {
+      "en": [
+        "This revision adds the gate rule that claims records (parsed_by). Uninstall the previous revision first; rules you edited (host names in a gate, for example) have to be edited again."
+      ],
+      "zh-TW": [
+        "此修訂版加上認領記錄的閘門規則（parsed_by）。請先解除安裝前一版；您改過的規則（例如閘門裡的主機名）要重新修改。"
+      ],
+      "ja": [
+        "このリビジョンでは、レコードを取得するゲートルール（parsed_by）を追加しています。先に前のリビジョンをアンインストールしてください。変更したルール（ゲート内のホスト名など）は再度変更が必要です。"
+      ]
+    }
   }
 }

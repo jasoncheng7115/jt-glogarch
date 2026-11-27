@@ -32,6 +32,9 @@ dependencies = [
     "tabulate>=0.9",
     "sse-starlette>=1.8",
     "itsdangerous>=2.1",
+    # Claude API as an LLM server in the AI chat (1.36). Imported only when a Claude
+    # server is configured, so a host without it keeps every other feature.
+    "anthropic>=2.14,<3",
     "python-multipart>=0.0.7",
 ]
 
@@ -62,7 +65,7 @@ version = {attr = "glogarch.__version__"}
 include = ["glogarch*"]
 
 [tool.setuptools.package-data]
-glogarch = ["web/templates/*.html", "web/static/**/*", "report/templates/*.j2", "report/assets/*", "jt_library/*", "vendor/*.json"]
+glogarch = ["web/templates/*.html", "web/static/**/*", "report/templates/*.j2", "report/assets/*", "ai/assets/*", "jt_library/*", "vendor/*.json"]
 
 [tool.ruff]
 target-version = "py310"

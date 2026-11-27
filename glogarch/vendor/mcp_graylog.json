@@ -1,11 +1,11 @@
 {
   "name": "mcp_graylog",
-  "version": "1.10.2",
+  "version": "1.12.0",
   "license": "MIT",
   "author": "Jason Cheng (Jason Tools)",
   "upstream": "https://github.com/jasoncheng7115/jasontools-mcp/tree/main/mcp_graylog",
   "raw_url": "https://raw.githubusercontent.com/jasoncheng7115/jasontools-mcp/main/mcp_graylog/mcp_graylog.py",
-  "commit": "dd6d2cf5ddef6cc26f9d098b58c3d147d27ae7d7",
-  "sha256": "dced80c8de7291c0906f7fe1c701c66484a8f2395f17940c97d97303875f1e4d",
+  "commit": "31579591656785d8efb4010dc5b1ca0b50658f8a",
+  "sha256": "cd55ffd6a0db2e6a0ee6c1a0c9d17e33adc59f76165042d20146dd538faf6e3c",
   "note": "Kept byte-for-byte as published. Do not edit: glogarch/ai/graylog_tools.py wraps it. A newer upstream version is taken in whole (scripts/check-mcp-graylog.py)."
 }

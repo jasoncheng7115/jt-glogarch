@@ -113,20 +113,22 @@ async def deliver_to_channels(config: NotifyConfig, title: str, message: str,
             results.append(await _send_telegram(client, config.telegram, full_msg,
                                                 text=_telegram_rich(title, message, timestamp) if rich else None))
 
+        md = _rich_md(message) if rich else message
         if config.discord.enabled:
-            results.append(await _send_discord(client, config.discord, title, message, timestamp))
+            results.append(await _send_discord(client, config.discord, title, md, timestamp))
 
         if config.slack.enabled:
-            results.append(await _send_slack(client, config.slack, title, message, timestamp))
+            results.append(await _send_slack(client, config.slack, title,
+                                             _rich_md(message, "*") if rich else message, timestamp))
 
         if config.teams.enabled:
-            results.append(await _send_teams(client, config.teams, title, message, timestamp))
+            results.append(await _send_teams(client, config.teams, title, md, timestamp))
 
         if config.nextcloud_talk.enabled:
             results.append(await _send_nextcloud_talk(client, config.nextcloud_talk, full_msg))
 
         if config.zulip.enabled:
-            results.append(await _send_zulip(client, config.zulip, title, message, timestamp))
+            results.append(await _send_zulip(client, config.zulip, title, message, timestamp, rich=rich))
 
     if config.email.enabled:
         results.append(await _send_email(config.email, title, message, timestamp, rich=rich))
@@ -153,10 +155,50 @@ def _telegram_text(message: str) -> str:
 _CODE_SPAN = re.compile(r"`([^`\n]*)`")
 
 
-def _rich_html(message: str, code_open: str = "<code>") -> str:
+# A rich line that is a heading (starts with a severity mark) or a "Label：value"
+# row (our label: short, no colon, no code span). Only OUR text is made bold; a
+# value stays as written.
+_RICH_HEAD = ("🔴", "🟠", "🟡", "⚪", "🤖")
+_RICH_LABEL = re.compile(r"^([^\s:：`][^:：`\n]{0,15}?)([:：] ?)(?!//)(.+)$")
+
+
+def _rich_render(message: str, esc, code, bold) -> str:
+    """One rich message for one channel's markup: `esc` for text, `code` for a
+    `code span`, `bold` around a heading line or a row's label (1.35)."""
+    def inline(text: str) -> str:
+        return "".join(code(p[1:-1]) if len(p) > 1 and p[0] == p[-1] == "`" else esc(p)
+                       for p in re.split(r"(`[^`\n]*`)", text))
+    out = []
+    for line in message.split("\n"):
+        line = line.lstrip()
+        m = _RICH_LABEL.match(line)
+        if line.startswith(_RICH_HEAD):
+            out.append(bold(inline(line)))
+        elif m:
+            out.append(bold(esc(m.group(1))) + esc(m.group(2)) + inline(m.group(3)))
+        else:
+            out.append(inline(line))
+    return "\n".join(out)
+
+
+def _rich_md(message: str, star: str = "**") -> str:
+    """Discord / Teams (`**`) and Slack (`*`): the markdown they render."""
+    return _rich_render(message, lambda x: x, lambda x: f"`{x}`", lambda x: f"{star}{x}{star}")
+
+
+def _rich_html(message: str, code_open: str = "<code>", link_base: str = "") -> str:
     """Escaped HTML of a rich message: `code spans` (log values, already
-    backtick-free from _plain) become <code>; everything else is text."""
-    return _CODE_SPAN.sub(lambda m: f"{code_open}{m.group(1)}</code>", _html.escape(message))
+    backtick-free from _plain) become <code>, headings and row labels <b>;
+    everything else is text. With link_base, links into jt-glogarch itself (and
+    only those) become <a>: a URL written into a log line must never turn into a
+    link in an e-mail."""
+    out = _rich_render(message, _html.escape, lambda x: f"{code_open}{_html.escape(x)}</code>",
+                       lambda x: f"<b>{x}</b>")
+    if link_base:
+        base = re.escape(_html.escape(link_base))
+        out = re.sub(rf"(?m)^({base}/[A-Za-z0-9/?=&;._-]*)$",
+                     lambda m: f'<a href="{m.group(1)}">{m.group(1)}</a>', out)
+    return out
 
 
 def _telegram_rich(title: str, message: str, ts: str) -> str:
@@ -265,18 +307,51 @@ async def _send_nextcloud_talk(client: httpx.AsyncClient, cfg, message: str) -> 
 
 # --- Zulip ---
 
-def _zulip_content(title: str, message: str, ts: str) -> str:
-    """Zulip renders Markdown. The body goes in a code block so the padded stat
-    labels line up (the same reason Telegram uses <pre>) and so a log line full of
-    `*`, `_` or `#` is shown as written. The fence is longer than any backtick run
-    in the message, so a message containing ``` cannot close the block early."""
-    import re
-    longest = max((len(m) for m in re.findall(r"`+", message)), default=0)
-    fence = "`" * max(3, longest + 1)
-    return f"**[jt-glogarch] {title}**\n{fence}text\n{message}\n{fence}\n{ts}"
+# Zulip's Markdown has NO backslash escapes (measured 2026-11-22 with its render
+# API: `\*x\*` came out as a backslash plus italics) but passes numeric entities
+# through, so a character that could start formatting, a mention (`@**all**`), a
+# stream link (`#**x**`), an emoji (`:x:`), KaTeX (`$$`) or a link is written as
+# its entity. `&` first, so a log line that already holds `&#42;` stays literal.
+_ZULIP_ENT = {c: f"&#{ord(c)};" for c in "*_`#[]~$:|\\@<>"}
+_ZULIP_STAT = re.compile(r"^(\S[^:：\n]{0,15}?)[ \u3000]*([:：])[ \u3000]*(\S.*)$")
 
 
-async def _send_zulip(client: httpx.AsyncClient, cfg, title: str, message: str, ts: str) -> dict:
+def _zulip_escape(text: str) -> str:
+    return "".join(_ZULIP_ENT.get(c, c) for c in text.replace("&", "&amp;"))
+
+
+def _zulip_content(title: str, message: str, ts: str, rich: bool = False) -> str:
+    """Zulip renders Markdown, one line per line. Until 1.35 the body went into a
+    code block (for the padded stat labels): a long line then scrolled sideways
+    and a rich message showed its backticks (owner's screenshot, 2026-11-22).
+
+    Now every line is ordinary text, escaped, so a log line full of `*`, `_` or
+    `#` is shown as written and cannot mention anyone or start a block. Rich
+    messages keep their `code spans` (log values, backtick-free from _plain).
+    Other messages: a padded "Label: value" row becomes **Label**: value, and an
+    indented "- item" a list item; leading spaces are dropped (four of them
+    would start a code block)."""
+    out = []
+    for line in message.split("\n"):
+        if rich:
+            out.append(_rich_render(line, _zulip_escape, lambda x: f"`{x}`", lambda x: f"**{x}**"))
+            continue
+        bare = line.strip()
+        if bare.startswith("- "):
+            out.append("- " + _zulip_escape(bare[2:]))
+            continue
+        m = _ZULIP_STAT.match(bare)
+        if m:
+            sep = m.group(2) + (" " if m.group(2) == ":" else "")
+            out.append(f"**{_zulip_escape(m.group(1).strip())}**{sep}{_zulip_escape(m.group(3))}")
+        else:
+            out.append(_zulip_escape(bare))
+    body = "\n".join(out).strip("\n")
+    return f"**[jt-glogarch] {_zulip_escape(title)}**\n{body}\n\n{_zulip_escape(ts)}"
+
+
+async def _send_zulip(client: httpx.AsyncClient, cfg, title: str, message: str, ts: str,
+                      rich: bool = False) -> dict:
     try:
         if not (cfg.server_url and cfg.bot_email and cfg.api_key and cfg.stream):
             raise RuntimeError("Zulip server URL / bot email / API key / stream not set")
@@ -285,7 +360,7 @@ async def _send_zulip(client: httpx.AsyncClient, cfg, title: str, message: str, 
             auth=httpx.BasicAuth(cfg.bot_email, cfg.api_key),
             data={"type": "stream", "to": cfg.stream,
                   "topic": cfg.topic or "jt-glogarch",
-                  "content": _zulip_content(title, message, ts)},
+                  "content": _zulip_content(title, message, ts, rich)},
         )
         if resp.status_code >= 400:
             # Zulip says what is wrong ("Invalid API key", "Stream 'x' does not
@@ -322,7 +397,7 @@ async def _send_email(cfg, title: str, message: str, ts: str, rich: bool = False
         if rich:
             code = '<code style="background:#f0f0f5;padding:1px 5px;border-radius:4px;font-size:13px">'
             body_html = (f'<div style="font-size:14px;line-height:1.6">'
-                         f'{_rich_html(message, code).replace(chr(10), "<br>")}</div>')
+                         f'{_rich_html(message, code, _link("")).replace(chr(10), "<br>")}</div>')
         else:
             body_html = (f'<pre style="background:#f5f5f5;padding:12px;border-radius:6px;white-space:pre-wrap">'
                          f'{_html.escape(message)}</pre>')
@@ -418,12 +493,22 @@ _MSG = {
         "sec_new": "NEW",
         "sec_escalated": "escalated",
         "sec_ongoing": "still ongoing",
-        "sec_line": "[{sev}] {det}\n{entity}{ext}{flag}\n{stats}",
+        "sec_head": "{icon} {sev} · {det}",
+        "sec_e_peer": "From", "sec_e_account": "Account", "sec_e_signature": "Signature",
+        "sec_e_host": "Host", "sec_e_entity": "Entity",
+        "sec_c_source": "Reported by", "sec_c_vhost": "Site", "sec_c_uri": "Paths",
+        "sec_c_http_response_code": "Responses", "sec_c_user_name": "Accounts",
+        "sec_c_source_ip": "Source IPs", "sec_c_destination_ip": "Targets", "sec_c_event_category": "Categories",
+        "sec_l_size": "Size", "sec_l_status": "Status", "sec_l_waf": "WAF",
+        "sec_waf_all": "all blocked ({b})", "sec_waf_none": "none blocked ({p} let through)",
+        "sec_waf_some": "{b} blocked · {p} let through",
+        "sec_l_ai": "AI verdict", "sec_l_summary": "Summary",
+        "sec_ai_head": "{icon} {sev} · {det} · #{id}",
+        "sec_colon": ": ", "sec_ai_conf": " ({confidence})",
         "sec_external": " (external)",
-        "sec_footer": "Window: last {minutes} min · Server: {server}\nOpen Security Incidents in jt-glogarch for details.",
+        "sec_footer": "Last {minutes} min of logs on Graylog server {server}\nOpen Security Incidents in jt-glogarch for details.",
         "sec_ai_title": "🤖 AI analysis: {n} incident(s)",
-        "sec_ai_line": "#{id} {det}\n{entity}\nAI verdict: {verdict} ({confidence})\n{summary}",
-        "sec_ai_footer": "Server: {server} · Advice from the AI model; verify before acting.",
+        "sec_ai_footer": "Graylog server {server} · Advice from the AI model; verify before acting.",
         "sec_ai_v_malicious": "malicious", "sec_ai_v_suspicious": "suspicious", "sec_ai_v_benign": "benign",
         "sec_ai_v_unclear": "unclear", "sec_ai_c_low": "low confidence", "sec_ai_c_medium": "medium confidence",
         "sec_ai_c_high": "high confidence",
@@ -462,11 +547,13 @@ _MSG = {
         "sec_det_volume_anomaly": "Unusual message volume",
         "sec_m_rate": "per hour now", "sec_m_usual": "usual per hour at this time",
         "sec_m_ratio": "× the usual",
-        "datanode_fallback_title": "⚠️ Data Node certificate unusable — archived via Graylog API",
+        "datanode_fallback_title": "⚠️ Data Node unusable — archived via Graylog API",
         "datanode_fallback_body": ("Schedule: {schedule}\nServer: {server}\n"
-                                   "The Graylog Data Node client certificate could not be used: {problem}\n"
+                                   "The Graylog Data Node could not be used: {problem}\n"
+                                   "Tried {attempts} time(s) over {minutes} minute(s).\n"
                                    "This run archived through the Graylog API instead, so nothing was skipped.\n"
-                                   "Reconnect Data Node access in Settings → Graylog servers."),
+                                   "Not reachable: check that the Data Node is running and port 9200 is open to this host. "
+                                   "Certificate refused: reconnect Data Node access in Settings → Graylog servers."),
         "datanode_renew_failed_title": "⚠️ Data Node certificate renewal failed",
         "datanode_renew_failed_body": ("Server: {server}\nThe certificate expires {expires} ({days} day(s) left).\n"
                                        "Error: {problem}\n"
@@ -524,12 +611,22 @@ _MSG = {
         "sec_new": "首次出現",
         "sec_escalated": "等級升高",
         "sec_ongoing": "仍在持續",
-        "sec_line": "【{sev}】{det}\n{entity}{ext}{flag}\n{stats}",
+        "sec_head": "{icon} {sev}｜{det}",
+        "sec_e_peer": "攻擊來源", "sec_e_account": "帳號", "sec_e_signature": "IDS 規則",
+        "sec_e_host": "主機", "sec_e_entity": "對象",
+        "sec_c_source": "偵測來源", "sec_c_vhost": "網站", "sec_c_uri": "路徑",
+        "sec_c_http_response_code": "回應碼", "sec_c_user_name": "帳號",
+        "sec_c_source_ip": "來源 IP", "sec_c_destination_ip": "目標", "sec_c_event_category": "類別",
+        "sec_l_size": "規模", "sec_l_status": "狀態", "sec_l_waf": "WAF",
+        "sec_waf_all": "全部擋下（{b} 筆）", "sec_waf_none": "沒有擋下（{p} 筆都放行）",
+        "sec_waf_some": "擋下 {b} 筆 · 放行 {p} 筆",
+        "sec_l_ai": "AI 判定", "sec_l_summary": "摘要",
+        "sec_ai_head": "{icon} {sev}｜{det}｜#{id}",
+        "sec_colon": "：", "sec_ai_conf": "（{confidence}）",
         "sec_external": "（外部）",
-        "sec_footer": "時間範圍：最近 {minutes} 分鐘 · 伺服器：{server}\n詳情請到 jt-glogarch 的「資安事件」頁面查看。",
+        "sec_footer": "Graylog 伺服器 {server} 最近 {minutes} 分鐘的記錄\n詳情請到 jt-glogarch 的「資安事件」頁面查看。",
         "sec_ai_title": "🤖 AI 分析：{n} 件事件",
-        "sec_ai_line": "#{id} {det}\n{entity}\nAI 判定：{verdict}（{confidence}）\n{summary}",
-        "sec_ai_footer": "伺服器：{server} · AI 模型的建議，採取行動前請先查證。",
+        "sec_ai_footer": "Graylog 伺服器 {server} · AI 模型的建議，採取行動前請先查證。",
         "sec_ai_v_malicious": "惡意", "sec_ai_v_suspicious": "可疑", "sec_ai_v_benign": "無害",
         "sec_ai_v_unclear": "無法判斷", "sec_ai_c_low": "把握程度低", "sec_ai_c_medium": "把握程度中",
         "sec_ai_c_high": "把握程度高",
@@ -568,11 +665,13 @@ _MSG = {
         "sec_det_volume_anomaly": "記錄量異常",
         "sec_m_rate": "筆／小時（目前）", "sec_m_usual": "筆／小時（這個時段平常）",
         "sec_m_ratio": "倍",
-        "datanode_fallback_title": "⚠️ Data Node 憑證無法使用，已改用 Graylog API 歸檔",
+        "datanode_fallback_title": "⚠️ Data Node 無法使用，已改用 Graylog API 歸檔",
         "datanode_fallback_body": ("排程：{schedule}\n伺服器：{server}\n"
-                                   "無法使用 Graylog Data Node 用戶端憑證：{problem}\n"
+                                   "無法使用 Graylog Data Node：{problem}\n"
+                                   "共試了 {attempts} 次，等了 {minutes} 分鐘。\n"
                                    "本次已改用 Graylog API 歸檔，沒有略過任何資料。\n"
-                                   "請到「設定 → Graylog 伺服器」重新連接 Data Node。"),
+                                   "連不上：請確認 Data Node 正在執行，且本機連得到它的 9200 埠。"
+                                   "憑證被拒：請到「設定 → Graylog 伺服器」重新連接 Data Node。"),
         "datanode_renew_failed_title": "⚠️ Data Node 憑證更新失敗",
         "datanode_renew_failed_body": ("伺服器：{server}\n憑證到期：{expires}（剩 {days} 天）。\n"
                                        "錯誤：{problem}\n"
@@ -632,12 +731,22 @@ _MSG = {
         "sec_new": "初検出",
         "sec_escalated": "重大度上昇",
         "sec_ongoing": "継続中",
-        "sec_line": "【{sev}】{det}\n{entity}{ext}{flag}\n{stats}",
+        "sec_head": "{icon} {sev}｜{det}",
+        "sec_e_peer": "攻撃元", "sec_e_account": "アカウント", "sec_e_signature": "IDS ルール",
+        "sec_e_host": "ホスト", "sec_e_entity": "対象",
+        "sec_c_source": "検知元", "sec_c_vhost": "サイト", "sec_c_uri": "パス",
+        "sec_c_http_response_code": "応答コード", "sec_c_user_name": "アカウント",
+        "sec_c_source_ip": "送信元 IP", "sec_c_destination_ip": "宛先", "sec_c_event_category": "カテゴリ",
+        "sec_l_size": "規模", "sec_l_status": "状態", "sec_l_waf": "WAF",
+        "sec_waf_all": "すべてブロック（{b} 件）", "sec_waf_none": "ブロックなし（{p} 件すべて通過）",
+        "sec_waf_some": "ブロック {b} 件 · 通過 {p} 件",
+        "sec_l_ai": "AI 判定", "sec_l_summary": "要約",
+        "sec_ai_head": "{icon} {sev}｜{det}｜#{id}",
+        "sec_colon": "：", "sec_ai_conf": "（{confidence}）",
         "sec_external": "（外部）",
-        "sec_footer": "対象期間：直近 {minutes} 分 · サーバー：{server}\n詳細は jt-glogarch の「セキュリティインシデント」ページを確認してください。",
+        "sec_footer": "Graylog サーバー {server} の直近 {minutes} 分のログ\n詳細は jt-glogarch の「セキュリティインシデント」ページを確認してください。",
         "sec_ai_title": "🤖 AI 分析：{n} 件のインシデント",
-        "sec_ai_line": "#{id} {det}\n{entity}\nAI の判定：{verdict}（{confidence}）\n{summary}",
-        "sec_ai_footer": "サーバー：{server} · AI モデルの助言です。対応する前に確認してください。",
+        "sec_ai_footer": "Graylog サーバー {server} · AI モデルの助言です。対応する前に確認してください。",
         "sec_ai_v_malicious": "悪意あり", "sec_ai_v_suspicious": "不審", "sec_ai_v_benign": "無害",
         "sec_ai_v_unclear": "判断できません", "sec_ai_c_low": "確信度 低", "sec_ai_c_medium": "確信度 中",
         "sec_ai_c_high": "確信度 高",
@@ -676,11 +785,13 @@ _MSG = {
         "sec_det_volume_anomaly": "レコード量の異常",
         "sec_m_rate": "件／時（現在）", "sec_m_usual": "件／時（この時間帯の通常）",
         "sec_m_ratio": "倍（通常比）",
-        "datanode_fallback_title": "⚠️ Data Node 証明書が使用できないため、Graylog API でアーカイブしました",
+        "datanode_fallback_title": "⚠️ Data Node が使用できないため、Graylog API でアーカイブしました",
         "datanode_fallback_body": ("スケジュール：{schedule}\nサーバー：{server}\n"
-                                   "Graylog Data Node のクライアント証明書を使用できません：{problem}\n"
+                                   "Graylog Data Node を使用できません：{problem}\n"
+                                   "{attempts} 回試行し、{minutes} 分間待ちました。\n"
                                    "今回は Graylog API でアーカイブしたため、スキップされたデータはありません。\n"
-                                   "「設定 → Graylog サーバー」で Data Node に再接続してください。"),
+                                   "接続できない場合：Data Node が稼働中で、このホストからポート 9200 に接続できるか確認してください。"
+                                   "証明書が拒否された場合：「設定 → Graylog サーバー」で Data Node に再接続してください。"),
         "datanode_renew_failed_title": "⚠️ Data Node 証明書の更新に失敗しました",
         "datanode_renew_failed_body": ("サーバー：{server}\n証明書の有効期限：{expires}（残り {days} 日）。\n"
                                        "エラー：{problem}\n"
@@ -859,13 +970,15 @@ async def notify_error(operation: str, error: str):
     )
 
 
-async def notify_datanode_fallback(schedule: str, server: str, problem: str):
+async def notify_datanode_fallback(schedule: str, server: str, problem: str,
+                                   attempts: int = 1, waited_sec: int = 0):
     """A scheduled OpenSearch-direct run could not use the Data Node
     certificate and archived through the Graylog API instead."""
     await send_notification(
         NotifyEvent.ERROR,
         _t("datanode_fallback_title"),
-        _t("datanode_fallback_body", schedule=schedule, server=server, problem=problem[:300]),
+        _t("datanode_fallback_body", schedule=schedule, server=server, problem=problem[:300],
+           attempts=attempts, minutes=round((waited_sec or 0) / 60)),
     )
 
 
@@ -929,27 +1042,95 @@ def _sec_stats(metrics: dict) -> str:
     return " · ".join(parts)
 
 
+def _link(path: str) -> str:
+    """A link into jt-glogarch for a notification, or "" when notify.link_base_url
+    is not set (the default). The address is validated when saved."""
+    try:
+        base = get_settings().notify.link_base_url
+    except Exception as e:   # no settings loaded (a CLI run): no link
+        log.debug("No jt-glogarch address for notification links", error=str(e))
+        return ""
+    return f"{base}{path}" if base else ""
+
+
+_SEV_ICON = {"high": "🔴", "medium": "🟠", "low": "🟡"}
+# which kind of thing the entity is, per detection (the label of its line)
+_ENTITY_KIND = {
+    "waf_scanner": "peer", "auth_bruteforce": "peer", "auth_spray": "peer",
+    "auth_multi_host": "peer", "auth_success_after_fail": "peer",
+    "account_multi_host": "account", "account_new_source": "account",
+    "ids_alert_passed": "signature", "source_silent": "host",
+}
+_CONTEXT_ORDER = ("source", "vhost", "user_name", "source_ip", "destination_ip",
+                  "event_category", "uri", "http_response_code")
+
+
+def _sec_det(detector: str, m: dict) -> str:
+    if detector.startswith("sigma:"):
+        return "Sigma: " + _plain(str(m.get("sigma_title") or detector))
+    return _t("sec_det_" + detector)
+
+
+def _sec_values(vals: list) -> str:
+    """`a` · or `a` ×3 · `b` ×1 when there is more than one."""
+    if len(vals) == 1:
+        return _plain(str(vals[0][0]), 80)
+    return " · ".join(f"{_plain(str(v), 80)} ×{int(n):,}" for v, n in vals)
+
+
+def _sec_detail(detector: str, entity: str, external, m: dict, *, size: bool = True) -> list[str]:
+    """The "Label：value" lines of one incident (1.35, owner 2026-11-23: "不夠好看",
+    "要顯示是那個 source 抓到的"): what it is, who reported it, where, how much."""
+    sep = _t("sec_colon")
+    kind = _ENTITY_KIND.get(detector, "entity")
+    lines = [f"{_t('sec_e_' + kind)}{sep}{_plain(entity)}{_t('sec_external') if external else ''}"]
+    ctx = m.get("context") if isinstance(m.get("context"), dict) else {}
+    for k in _CONTEXT_ORDER:
+        if k in ("uri", "http_response_code"):
+            continue
+        if ctx.get(k):
+            lines.append(f"{_t('sec_c_' + k)}{sep}{_sec_values(ctx[k])}")
+    if "blocked" in m:
+        b, pz = int(m.get("blocked") or 0), int(m.get("passed") or 0)
+        waf = (_t("sec_waf_all", b=f"{b:,}") if not pz else
+               _t("sec_waf_none", p=f"{pz:,}") if not b else _t("sec_waf_some", b=f"{b:,}", p=f"{pz:,}"))
+        lines.append(f"{_t('sec_l_waf')}{sep}{waf}")
+    stats = _sec_stats(m) if size else ""
+    if stats:
+        lines.append(f"{_t('sec_l_size')}{sep}{stats}")
+    for k in ("uri", "http_response_code"):
+        if ctx.get(k):
+            lines.append(f"{_t('sec_c_' + k)}{sep}{_sec_values(ctx[k])}")
+    return lines
+
+
 async def notify_security_incidents(items: list[dict], server: str, window_minutes: int):
     """items: {detector, entity, severity, external, change, metrics}."""
     if not items:
         return []
-    lines = []
+    blocks = []
+    sep = _t("sec_colon")
     for it in items:
-        flag = {"new": "", "escalated": f" · {_t('sec_escalated')}",
-                "ongoing": f" · {_t('sec_ongoing')}"}.get(it.get("change"), "")
-        if it.get("is_new"):
-            flag = f" · {_t('sec_new')}" + flag
         m = it.get("metrics") or {}
-        tids = [t["id"] for t in techniques_for(it["detector"], it.get("entity", ""), m.get("sigma_tags"))]
+        det = it["detector"]
+        flags = []
+        if it.get("is_new"):
+            flags.append(_t("sec_new"))
+        if it.get("change") in ("escalated", "ongoing"):
+            flags.append(_t("sec_" + it["change"]))
+        tids = [t["id"] for t in techniques_for(det, it.get("entity", ""), m.get("sigma_tags"))]
+        lines = [_t("sec_head", icon=_SEV_ICON.get(it["severity"], "⚪"),
+                    sev=_t("sec_sev_" + it["severity"]), det=_sec_det(det, m))]
+        lines += _sec_detail(det, it["entity"], it.get("external"), m)
+        if flags:
+            lines.append(f"{_t('sec_l_status')}{sep}{' · '.join(flags)}")
         if tids:
-            flag += " · ATT&CK " + ", ".join(tids)
-        lines.append(_t("sec_line", sev=_t("sec_sev_" + it["severity"]),
-                        det=("Sigma: " + _plain(str(m.get("sigma_title") or it["detector"])))
-                        if it["detector"].startswith("sigma:") else _t("sec_det_" + it["detector"]),
-                        entity=_plain(it["entity"]),
-                        ext=_t("sec_external") if it.get("external") else "",
-                        flag=flag, stats=_sec_stats(it.get("metrics") or {})))
-    body = "\n\n".join(lines) + "\n\n" + _t("sec_footer", minutes=window_minutes, server=server)
+            lines.append(f"ATT&CK{sep}{', '.join(tids)}")
+        url = _link(f"/security?incident={int(it['id'])}") if it.get("id") else ""
+        if url:
+            lines.append(url)
+        blocks.append("\n".join(lines))
+    body = "\n\n".join(blocks) + "\n\n" + _t("sec_footer", minutes=window_minutes, server=server)
     return await send_notification(NotifyEvent.SECURITY_INCIDENT, _t("sec_title", n=len(items)), body, rich=True)
 
 
@@ -958,17 +1139,26 @@ async def notify_security_ai(items: list[dict], server: str):
     items: {incident: dict, row: analysis row}. Log-derived text goes through _plain()."""
     if not items:
         return []
-    lines = []
+    blocks = []
+    sep = _t("sec_colon")
     for it in items:
         inc, row = it["incident"], it["row"]
         m = inc.get("metrics") or {}
-        det = ("Sigma: " + _plain(str(m.get("sigma_title") or inc["detector"]))) if str(inc["detector"]).startswith("sigma:") \
-            else _t("sec_det_" + inc["detector"])
+        det = str(inc.get("detector") or "")
         summary = " ".join(str((row.get("result") or {}).get("summary") or "").split())[:300]
-        lines.append(_t("sec_ai_line", id=inc["id"], det=det, entity=_plain(inc["entity"]),
-                        verdict=_t("sec_ai_v_" + row["verdict"]), confidence=_t("sec_ai_c_" + row["confidence"]),
-                        summary=summary))
-    body = "\n\n".join(lines) + "\n\n" + _t("sec_ai_footer", server=server)
+        sev = inc.get("severity") or ""
+        lines = [_t("sec_ai_head", icon=_SEV_ICON.get(sev, "🤖"), sev=_t("sec_sev_" + sev) if sev else "",
+                    det=_sec_det(det, m), id=inc["id"])]
+        lines += _sec_detail(det, inc.get("entity", ""), inc.get("external"), m, size=False)
+        lines.append(f"{_t('sec_l_ai')}{sep}{_t('sec_ai_v_' + row['verdict'])}"
+                     f"{_t('sec_ai_conf', confidence=_t('sec_ai_c_' + row['confidence']))}")
+        if summary:
+            lines.append(f"{_t('sec_l_summary')}{sep}{summary}")
+        url = _link(f"/security?incident={int(inc['id'])}") if inc.get("id") else ""
+        if url:
+            lines.append(url)
+        blocks.append("\n".join(lines))
+    body = "\n\n".join(blocks) + "\n\n" + _t("sec_ai_footer", server=server)
     return await send_notification(NotifyEvent.SECURITY_INCIDENT, _t("sec_ai_title", n=len(items)), body, rich=True)
 
 
@@ -1008,6 +1198,9 @@ def format_security_digest(d: dict, server: str) -> tuple[str, str]:
 async def notify_security_digest(d: dict, server: str):
     """The weekly summary (security/digest.py). Routed like incidents."""
     title, body = format_security_digest(d, server)
+    url = _link("/security")
+    if url:
+        body += f"\n\n{url}"
     return await send_notification(NotifyEvent.SECURITY_INCIDENT, title, body, rich=True)
 
 

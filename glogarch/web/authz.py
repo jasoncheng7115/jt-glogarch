@@ -19,11 +19,15 @@ from urllib.parse import quote
 
 import httpx
 
-SESSION_AUTH_VERSION = 2
+from glogarch.web import gl_identity
+
+SESSION_AUTH_VERSION = 3   # 3: Graylog logins carry gl_boot (signed out after a restart)
 
 
 def session_is_authenticated(session) -> bool:
     """The ONE test of a signed-in session, used by pages and the API alike."""
+    if gl_identity.login_lost(session):
+        return False     # restarted: the Graylog identity this login acts as is gone
     return bool(session.get("authenticated")) and session.get("auth_v") == SESSION_AUTH_VERSION
 
 
@@ -31,6 +35,7 @@ def mark_authenticated(session, username: str) -> None:
     session["authenticated"] = True
     session["auth_v"] = SESSION_AUTH_VERSION
     session["username"] = username
+    session.pop(gl_identity.BOOT_KEY, None)
 
 
 class RoleCheck:

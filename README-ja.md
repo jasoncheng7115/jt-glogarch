@@ -1,4 +1,4 @@
-# jt-glogarch v1.32.1
+# jt-glogarch v1.36.0
 
 **Language**: [English](README.md) | [繁體中文](README-zh_TW.md) | **日本語**  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open（6.x / 7.x）向けのログのアーカイブ・リストアツール
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.32.1-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.36.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 > **作者：** Jason Cheng（[Jason Tools](https://github.com/jasoncheng7115)）
@@ -183,7 +183,7 @@ Telegram・Discord・Slack・Microsoft Teams・Nextcloud Talk・Zulip・Email（
 
 **公開パック**：ここには作者が公開したパックのみ掲載します。
 
-- Jason Tools ライブラリに組み込み（v1.18.1 以降）：**Windows Active Directory**、**Linux 登入與 SSH**（Linux の SSH と sudo ログイン）、**Apache HTTP Server**、**QNAP NAS**。コンテンツパック画面から直接インストールでき、ダウンロードには SOP（.md）が付きます。新規インストール、以前のバージョンからのアップグレード、アンインストールの手順です。
+- Jason Tools ライブラリに組み込み（v1.18.1 以降）：**Windows Active Directory**、**Linux 登入與 SSH**（Linux の SSH と sudo ログイン）、**Apache HTTP Server**、**QNAP NAS**、**SQL Server**、**Windows 登入事件**（Windows のログオンイベント）、**Synology NAS**（後の 3 つは v1.36.0 以降）。コンテンツパック画面から直接インストールでき、ダウンロードには SOP（.md）が付きます。新規インストール、以前のバージョンからのアップグレード、アンインストールの手順です。
 - 個別ダウンロード：[CubeCOS / OpenStack Log Pipeline](https://github.com/jasoncheng7115/it-scripts/blob/master/graylog/cubecos_contentpack_graylog63.json)。CubeCOS、OpenStack、Ceph、Masakari のログ用のパイプライン 1 つとルール 147 個です（パックの表記では Graylog 6.3 以降に対応）。リンク先からダウンロードし、コンテンツパック画面でアップロードしてください。
 
 ### アラート管理（v1.17.0 以降）
@@ -214,7 +214,8 @@ IDS アラート、Web スキャン。読み取るのは件数だけ（Graylog �
 「AI チャット」ページで、レコードとインシデントについて自然な言葉で質問できます。モデルは読み取り専用のツール
 （Graylog の集計 API による正確な件数と上位の値、セキュリティインシデント、アーカイブの範囲、そして変更せずに
 組み込んだ [mcp_graylog](https://github.com/jasoncheng7115/jasontools-mcp/tree/main/mcp_graylog) のツール）で調べ、
-使ったクエリを添えて回答します。参照にはあなた自身の Graylog アカウントを使うため Graylog の権限が適用され、
+使ったクエリを添えて回答します。各回答の下で、実際に実行したクエリとその時間範囲・結果を開き、同じ検索を Graylog で
+実行できます。回答は書かれるそばから表示されます。参照にはあなた自身の Graylog アカウントを使うため Graylog の権限が適用され、
 すべての参照は監査ログに記録されます。OpenAI 互換の LLM サーバー（llama.cpp、vLLM、LM Studio、Ollama の `/v1`）を
 使えます。ツールが返したレコードのデータが送られるため、プライベートネットワーク外のサーバーは許可しない限り拒否します。
 同じツールは `/mcp` で外部の AI クライアント（Claude Desktop、Open WebUI、opencode）にも提供され、各ユーザーの
@@ -238,6 +239,11 @@ Sigma の検出ルールを貼り付けると Graylog のクエリに変換し�
 なります。正確に変換できない部分は理由を示して拒否します。サイトごとのフィールド対応で Sigma のフィールド名を自分の
 フィールドに対応付けられます。
 
+### SigmaHQ ルールライブラリ（v1.33.0 以降、既定では無効）
+
+SigmaHQ の公式ルールパッケージをダウンロードし（毎日確認）、各ルールをフィールド対応で変換して、Graylog に存在しない
+フィールドを示します。ここで実際に一致し得るルールを選べます。追加したルールは無効の状態で始まり、新しいリリースに追従します。
+
 ### 週次セキュリティサマリー（v1.32.0 以降、既定では無効）
 
 スケジュールに従って 1 週間のまとめを通知チャネルで送信します。新規・未対応のインシデント、調査ケース、多い検出と対象、
@@ -247,6 +253,13 @@ AI の判定、抑制ルール、そして何より分析が実際に実行さ�
 
 ある検出を特定の対象（またはネットワーク）について既知で許容済みとして登録します。理由と有効期限が必要です。検出は
 実行を続け、一致回数を抑制ルールに記録しますが、インシデントの作成や通知は行いません。
+
+### フィールド対応（v1.35.0 以降）
+
+組み込みの検出は GIM のフィールド名（Jason Tools の解析パックが書き込む名前）を読みます。ログが相手のアドレス、アカウント、
+イベントの種類を別の名前で保存している場合は、「セキュリティインシデント → 設定 → フィールド対応」で指定します。
+「フィールドを探す」は Graylog の直近 7 日間の該当イベントを調べ、どのフィールドに何があり何件のイベントに値があるかを示し、
+フィールドがまったく取り出されていない入力（解析ルールが必要）を示します。
 
 ### レコード量の異常（v1.30.0 以降、既定では無効）
 
@@ -296,7 +309,7 @@ ATT&CK ビューでは、戦術ごとに検出がカバーする手法と、こ�
 インターネット接続のあるマシンで依存パッケージ一式を含むバンドルを作成し、閉域環境に持ち込んで
 新規インストールまたはアップグレードできます。導入時に pip がネットワークへ接続することはありません。
 
-### PDF レポート（ベータ）
+### PDF レポート
 
 Graylog のダッシュボードとアーカイブ統計から PDF レポートを生成し、スケジュール実行やメール送付が
 できます。オプションのレンダリングエンジン（ヘッドレス Chromium）が必要です。

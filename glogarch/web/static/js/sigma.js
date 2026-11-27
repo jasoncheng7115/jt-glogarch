@@ -23,7 +23,7 @@ async function sigmaLoad() {
             : `<span class="text-muted">—</span>`;
         const q = r.query ? `<code class="sigma-q">${esc(r.query)}</code>` : `<span class="pk-err fs-08">${esc(jobNote(r.error))}</span>`;
         return `<tr>
-            <td><strong>${esc(r.title)}</strong>${secAttackChips(r.attack)}<div class="text-muted fs-08">${esc(t('sigma_group'))}${esc(t('sec_colon'))}<code>${esc(r.group_by)}</code> · ${esc(t('sigma_threshold'))}${esc(t('sec_colon'))}${esc(String(r.threshold))}</div></td>
+            <td><strong>${esc(r.title)}</strong>${secAttackChips(r.attack)}<div class="text-muted fs-08">${r.source_url ? `<a href="${esc(r.source_url)}" target="_blank" rel="noopener noreferrer">SigmaHQ</a> · ` : ''}${esc(t('sigma_group'))}${esc(t('sec_colon'))}<code>${esc(r.group_by)}</code> · ${esc(t('sigma_threshold'))}${esc(t('sec_colon'))}${esc(String(r.threshold))}</div></td>
             <td>${sigmaLevelChip(r.level)}</td>
             <td class="sigma-q-cell">${q}</td>
             <td>${last}</td>

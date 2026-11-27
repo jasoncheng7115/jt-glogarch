@@ -59,7 +59,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Content-Security-Policy"] = self.CSP
+        if response.headers.get("x-jt-preview"):
+            # the AI chat's preview of a model-written page (routes/ai.py): its own sandboxing
+            # CSP stays, and only this app may frame it
+            del response.headers["x-jt-preview"]
+            if "content-security-policy" not in response.headers:
+                response.headers["Content-Security-Policy"] = self.CSP
+            response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        else:
+            response.headers["Content-Security-Policy"] = self.CSP
         response.headers["Permissions-Policy"] = (
             "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
         )
@@ -74,6 +82,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Sensitive (non-static) responses must never be cached by shared caches.
         if not request.url.path.startswith("/static/"):
             response.headers["Cache-Control"] = "no-store, max-age=0"
+        elif "cache-control" not in response.headers:
+            # revalidate every time (a 304 via the ETag): the ?v= in the page changes only with
+            # the version, and a browser's heuristic cache kept serving the previous file after
+            # a redeploy of the same version (owner 2026-11-25 still saw a fixed scroll bar)
+            response.headers["Cache-Control"] = "no-cache"
         if request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response

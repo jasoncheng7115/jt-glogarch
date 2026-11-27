@@ -37,7 +37,9 @@ h3 { font-weight: 600; }
 /* ---- Sidebar ------------------------------------------------------------- */
 .sidebar { border-right: 1px solid var(--sidebar-line); }
 .sidebar-header { padding-bottom: 16px; border-bottom-color: var(--sidebar-line); }
-.sidebar-header h2 { font-size: 1.25em; font-weight: 650; letter-spacing: -0.01em; }
+.sidebar-header h2 { font-size: 1.25em; font-weight: 650; letter-spacing: -0.01em; line-height: 1.25; }
+/* the "Graylog Open Archive vX" line sits right under the name (owner 2026-11-26: "可以往上一點") */
+.sidebar-header small { display: block; margin-top: 1px; line-height: 1.3; }
 .sidebar-footer { border-top-color: var(--sidebar-line); }
 .nav-links { padding: 10px 10px; }
 .nav-links li { margin-bottom: 2px; }
@@ -54,6 +56,11 @@ h3 { font-weight: 600; }
 .nav-links li a.active { border-left: none; background: var(--sidebar-active-bg); font-weight: 600; }
 .nav-links li a.active svg { color: var(--sidebar-active-icon); opacity: 1; }
 .sidebar.collapsed .nav-links { padding: 10px 6px; }
+/* collapsed: the icon alone, centred. The label is a text node (font-size 0) that still
+   takes the flex gap, and style.css adds a 3px left border; both pushed icons off centre
+   (owner 2026-11-26, screenshot) */
+.sidebar.collapsed .nav-links li a { gap: 0; padding: 10px 0; border-left: 0; justify-content: center; }
+.sidebar.collapsed .logout-link { gap: 0; }
 .lang-switcher select, .theme-toggle { border-color: var(--sidebar-line); border-radius: var(--r-sm); }
 
 /* ---- Cards --------------------------------------------------------------- */
@@ -156,6 +163,15 @@ td.u147 { font-size: 0.88em; white-space: nowrap; }
 
 :root .theme-toggle { width: 34px; padding: 0; background: rgba(255, 255, 255, 0.06); color: var(--sidebar-text); }
 :root .theme-toggle:hover { background: var(--sidebar-hover-bg); color: #fff; }
+/* login and setup sit on the page, not the dark sidebar: the theme button wears the
+   same frame as the language select beside it (owner 2026-11-23) */
+:root .login-controls .theme-toggle, :root .setup-controls .theme-toggle {
+    border: 1px solid var(--border-strong); border-radius: var(--r-sm);
+    background: var(--field-bg); color: var(--text-muted);
+}
+:root .login-controls .theme-toggle:hover, :root .setup-controls .theme-toggle:hover {
+    border-color: var(--accent); background: var(--field-bg); color: var(--text);
+}
 
 /* ---- Inputs -------------------------------------------------------------- */
 input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color: var(--accent); }
@@ -324,3 +340,42 @@ select:not(.custom-done) {
 .login-header h1 { font-size: 1.5em; color: var(--text); }
 .login-card input { height: 40px; padding: 0 12px; }
 :root .login-card button[type="submit"] { height: 40px; padding: 0; font-size: 1em; }
+
+/* ---- Phone width ---------------------------------------------------------
+   style.css has a phone layout (icon-only 54px sidebar), but the rules above
+   re-set the nav links' size and padding and the content padding after it, so
+   from 1.18.0 a phone got the labels as vertical text and every page 600-990px
+   wide (measured 2026-11-21 at 390px). Everything here is inside this block:
+   nothing changes above 768px. */
+@media (max-width: 768px) {
+    .content { padding: 14px 12px 32px; }
+    .nav-links { padding: 8px 4px; }
+    .nav-links li a { font-size: 0; gap: 0; padding: 10px 0; justify-content: center; }
+    .nav-links li a svg { width: 20px; height: 20px; }
+    .sidebar.collapsed .nav-links { padding: 8px 4px; }
+    .sidebar-header h2 { font-size: 0; gap: 0; justify-content: center; }
+    .ai-sep { display: none; }
+    h1 { font-size: 1.3em; }
+    .card { padding: 14px; }
+
+    /* a wide table scrolls inside its card instead of widening the page */
+    .content table:not(.is-hidden) { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    /* tab rows scroll sideways */
+    .arch-tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+    .arch-tabs::-webkit-scrollbar { display: none; }
+    .arch-tab { flex: none; }
+
+    /* filter and tool bars wrap */
+    .u054, .al-bar, .al-bar-left, .al-bar-right, .pk-toolbar, .filters { flex-wrap: wrap; }
+    .audit-filters input[type="datetime-local"] { width: 100%; flex: 1 1 100%; }
+    .form-group { min-width: 0; }
+    .content .custom-select { max-width: 100%; }
+
+    /* grid items may shrink below their content (the AI chat cards were 740px) */
+    .ai-layout > *, .ai-status, .ai-bar { min-width: 0; }
+    .ai-bar { flex-wrap: wrap; }
+    .ai-msg { max-width: 100%; }
+    .ai-head { padding: 8px 10px; }
+    .ai-calls { max-width: 100%; }
+}

@@ -1,0 +1,3663 @@
+{
+  "v": "1",
+  "id": "608138be-384d-51c1-a794-6926ded61ff6",
+  "rev": 3,
+  "name": "SQL Server",
+  "summary": "SQL Server 稽核與登入看板、登入失敗告警",
+  "description": "SQL Server 稽核與登入看板、登入失敗告警\n收集方式：GELF（Windows 事件記錄）。這個套件不會建立 Input，請自行建立並把來源指向它。\n★ 安裝後必做：把管線接到存放這類記錄的串流。沒有接串流的管線不會處理任何記錄。全新安裝的 Graylog 7 預設先執行管線、後分配串流，這時接在自建串流上的管線不會運作：請到 System → Configurations → Message Processors，把 Stream Rule Processor 移到 Pipeline Processor 前面。\n告警預設不掛通知，事件只會寫進 Graylog；需要通知請自行加上。\n★ 請只把管線接到「只含這種設備記錄」的串流。sql-server-00-gate 只認領其他套件沒認領的記錄，並寫入 parsed_by=sql-server；其他套件已認領的記錄不會再處理。\n",
+  "vendor": "Jason Cheng (Jason Tools)",
+  "url": "",
+  "server_version": "7.0.0",
+  "parameters": [],
+  "entities": [
+    {
+      "id": "ad3cc456-5423-5771-9d82-573d30da9f54",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "sql-server-00-passthrough"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"sql-server-00-passthrough\"\nwhen\n    true\nthen\nend"
+        }
+      }
+    },
+    {
+      "id": "c93f0c10-c564-5c36-9b7e-07ea20799625",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "sql-server-10-sqlserver-clientip"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"sql-server-10-sqlserver-clientip\"\nwhen\n    has_field(\"full_message\") && contains(to_string($message.full_message), \"SQL\")\nthen\n    set_fields(grok(pattern: \"\\\\[用戶端: %{IPV4:ClientIP}\\\\]\", value: to_string($message.full_message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "1b4ed7e3-0f6c-56af-8d50-3782e307ed51",
+      "type": {
+        "name": "pipeline",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "SQL Server - parse"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "pipeline \"SQL Server - parse\"\nstage -26 match either\nrule \"sql-server-00-gate\"\nstage 0 match either\nrule \"sql-server-00-passthrough\"\nrule \"sql-server-10-sqlserver-clientip\"\nend"
+        },
+        "connected_streams": []
+      }
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "dashboard",
+        "version": "2"
+      },
+      "id": "d262f4b2-ba21-59c1-8a93-c00229702843",
+      "data": {
+        "type": "DASHBOARD",
+        "title": {
+          "@type": "string",
+          "@value": "SQL Server"
+        },
+        "summary": {
+          "@type": "string",
+          "@value": "SQL Server 稽核與登入看板、登入失敗告警"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "SQL Server 稽核與登入看板、登入失敗告警"
+        },
+        "search": {
+          "queries": [
+            {
+              "id": "532598b0-ea95-4f4f-8b0b-5727960e2aa2",
+              "timerange": {
+                "range": 300,
+                "type": "relative"
+              },
+              "filters": [],
+              "query": {
+                "type": "elasticsearch",
+                "query_string": ""
+              },
+              "search_types": [
+                {
+                  "timerange": {
+                    "range": 604800,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:MSSQLSERVER AND Category:登入 AND EventType:AUDIT_FAILURE"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "c652a76c-786c-4876-8c2e-47c548ce30fb",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "EventType"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "range": 604800,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:MSSQLSERVER AND Category:備份 AND message:\"已備份\""
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "17b7a9cd-e4db-4420-9220-bbc038198508",
+                  "name": null,
+                  "limit": 150,
+                  "offset": 0,
+                  "decorators": [],
+                  "type": "messages",
+                  "filter": null,
+                  "filters": []
+                },
+                {
+                  "timerange": {
+                    "range": 604800,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:MSSQLSERVER AND Category:登入"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "ac9784d6-bcca-4ef1-b905-7ac9ad574d71",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "ClientIP"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "range": 604800,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:MSSQLSERVER AND Category:登入 AND EventType:AUDIT_FAILURE"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "0eeda727-af37-46a2-abaa-afb5dcf0a31f",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 1
+                      }
+                    }
+                  ],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source"
+                      ],
+                      "limit": 1530,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "range": 604800,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:MSSQLSERVER AND Category:伺服器 AND message:\"I/O 已凍結\""
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "fada3cf3-4dc3-4225-aa9a-ee979950dd96",
+                  "name": null,
+                  "limit": 150,
+                  "offset": 0,
+                  "decorators": [],
+                  "type": "messages",
+                  "filter": null,
+                  "filters": []
+                },
+                {
+                  "timerange": {
+                    "range": 604800,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:MSSQLSERVER AND Category:登入 AND EventType:AUDIT_SUCCESS"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "1f6cb80a-f79e-4643-b8ca-9d76a534746f",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 1
+                      }
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:MSSQLSERVER"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "e975ff07-4e96-4c9d-b11b-6c97f13de749",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source"
+                      ],
+                      "limit": 30,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "range": 604800,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:MSSQLSERVER AND Category:登入"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "aaa2e5f3-d2d4-4234-9c17-f1687efd8fbc",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "ClientIP"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:MSSQLSERVER"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "14a47fca-2958-4373-ad2c-6ffe2e7df99e",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 1
+                      }
+                    }
+                  ],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source"
+                      ],
+                      "limit": 1530,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "range": 604800,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:MSSQLSERVER"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "090748e1-7ff7-46a8-8e6a-67d6ee239e26",
+                  "name": null,
+                  "limit": 150,
+                  "offset": 0,
+                  "decorators": [],
+                  "type": "messages",
+                  "filter": null,
+                  "filters": []
+                },
+                {
+                  "timerange": {
+                    "range": 604800,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:MSSQLSERVER"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "87ec9744-a8c6-4cb3-9076-3810cbff9674",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "Category"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "range": 604800,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:MSSQLSERVER AND Category:登入 AND EventType:AUDIT_FAILURE"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "450ef2ae-509e-4c3a-ab4f-a2fc041942ae",
+                  "name": null,
+                  "limit": 150,
+                  "offset": 0,
+                  "decorators": [],
+                  "type": "messages",
+                  "filter": null,
+                  "filters": []
+                },
+                {
+                  "timerange": {
+                    "range": 604800,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:MSSQLSERVER AND Category:登入 AND EventType:AUDIT_SUCCESS"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "96d253db-8416-4903-ace2-01d8b5c61a5c",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "EventType"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                }
+              ]
+            },
+            {
+              "id": "4caeccc3-bdeb-53e9-aa9f-ad436b993bfc",
+              "timerange": {
+                "range": 300,
+                "type": "relative"
+              },
+              "filters": [],
+              "query": {
+                "type": "elasticsearch",
+                "query_string": ""
+              },
+              "search_types": [
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\")"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 1
+                      }
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "d441de80-4c52-4a42-acd7-99806de95a79",
+                  "filters": [],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "Category"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入 AND EventType:AUDIT_FAILURE"
+                  },
+                  "name": null,
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "70e9e973-67c1-44db-9239-666035919b95",
+                  "limit": 150,
+                  "filters": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source_host"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": true
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "03f42109-4cab-45f3-8069-3be5062e70f8",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入 AND EventType:AUDIT_SUCCESS"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [],
+                  "type": "pivot",
+                  "id": "df9b2866-fc10-4164-a37b-c5dc9590b56c",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\")"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "a0ecd7f7-ef17-4a3f-b4fd-689f671748e8",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source_ip"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "4cdd07c8-b5d4-459b-85d9-4b69a77cd784",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入 AND EventType:AUDIT_FAILURE"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [],
+                  "type": "pivot",
+                  "id": "94bde2bb-5bf0-4b27-a537-8afdd9650162",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入 AND EventType:AUDIT_FAILURE"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 1
+                      }
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "696c678f-a0b5-476b-a471-a724806e304b",
+                  "filters": [],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入 AND EventType:AUDIT_SUCCESS"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 1
+                      }
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "7429e6ca-4b7d-4f6e-a9e5-daa8dcc6602b",
+                  "filters": [],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\")"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "Category"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "fb434b19-a246-4e55-a53e-a1b1ca2a1552",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source_ip"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "631c2493-43dd-4539-bc2a-de5394e27bbb",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:備份 AND message:\"已備份\""
+                  },
+                  "name": null,
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "a6eb2bc7-ad19-463c-a607-06578e24435e",
+                  "limit": 150,
+                  "filters": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:伺服器 AND message:\"I/O 已凍結\""
+                  },
+                  "name": null,
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "31cc6f1a-6448-4ad3-a158-54a3fe4ba9ac",
+                  "limit": 150,
+                  "filters": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\")"
+                  },
+                  "name": null,
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "fbfb92ff-4eba-48c1-b54b-7b31797ea83d",
+                  "limit": 150,
+                  "filters": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 604800,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source_host"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": true
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "04f5d40f-ef5a-407b-80d1-0a1134c898ed",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                }
+              ]
+            },
+            {
+              "id": "f836afca-ad74-4b36-ad02-8619f61a6056",
+              "timerange": {
+                "from": 300,
+                "type": "relative"
+              },
+              "filters": [],
+              "query": {
+                "type": "elasticsearch",
+                "query_string": ""
+              },
+              "search_types": [
+                {
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "device_product:\"SQL Server\""
+                  },
+                  "streams": [],
+                  "id": "f0ae874a-3502-408a-be6c-1afef559ab30",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "act"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": true
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "device_product:\"SQL Server\""
+                  },
+                  "streams": [],
+                  "id": "d1698bd3-3a33-4cac-a3ff-a65d5c0106ac",
+                  "name": null,
+                  "limit": 150,
+                  "offset": 0,
+                  "decorators": [],
+                  "type": "messages",
+                  "filter": null,
+                  "filters": []
+                },
+                {
+                  "timerange": {
+                    "source": "search_type",
+                    "id": "888274cf-c2a6-44cd-9a7e-b6f2d8e8704b",
+                    "offset": "1i",
+                    "type": "offset"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "device_product:\"SQL Server\""
+                  },
+                  "streams": [],
+                  "id": "b44b0181-8f3f-4f1e-91db-885fda3206dd",
+                  "name": "trend",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "device_product:\"SQL Server\""
+                  },
+                  "streams": [],
+                  "id": "888274cf-c2a6-44cd-9a7e-b6f2d8e8704b",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "device_product:\"SQL Server\""
+                  },
+                  "streams": [],
+                  "id": "0992db1d-c44a-4f00-bf27-97f2fc65e83e",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": true
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "device_product:\"SQL Server\""
+                  },
+                  "streams": [],
+                  "id": "76b3deef-0cfb-4e76-ba66-5ad46b0cb7dd",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "EventlogCategory"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": true
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "device_product:\"SQL Server\""
+                  },
+                  "streams": [],
+                  "id": "28e65124-5287-413f-8bd4-82bb79a36980",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "duser"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": true
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "device_product:\"SQL Server\""
+                  },
+                  "streams": [],
+                  "id": "32ab9e0c-c9dd-455d-a6fc-1cddc277c531",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 1
+                      }
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "device_product:\"SQL Server\""
+                  },
+                  "streams": [],
+                  "id": "5d0dd629-2fc5-443d-9137-857818578c67",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": false,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 1
+                      }
+                    }
+                  ],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": true
+                    }
+                  ],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                }
+              ]
+            }
+          ],
+          "parameters": [],
+          "requires": {},
+          "owner": "admin",
+          "created_at": "2024-09-27T04:32:16.903Z"
+        },
+        "properties": [],
+        "requires": {},
+        "state": {
+          "532598b0-ea95-4f4f-8b0b-5727960e2aa2": {
+            "selected_fields": null,
+            "static_message_list_id": null,
+            "titles": {
+              "tab": {
+                "title": "SQL Server (7D)"
+              },
+              "widget": {
+                "6a1514fb-e7fa-4ff4-8717-fc1f11044a45": "I/O 凍結事件",
+                "5cf39b36-8436-43d3-bd59-a6e18b37ee14": "登入失敗 ",
+                "3e1e16e3-4337-4f4f-8fef-868074abd4b9": "登入來源 IP",
+                "f6abf600-5916-40b9-bad3-e4f957078c1d": "已備份資料庫事件",
+                "64bf9c47-9590-413e-b847-a16954873769": "All Message",
+                "65061f18-2a01-4ade-9b8b-e1575db65d54": "登入成功",
+                "40fa5434-544a-4cdb-9a06-95da8f8d4acf": "登入失敗事件",
+                "3467cbc8-698d-4a66-930f-266779e34190": "登入來源 IP",
+                "8f7ab074-c76d-4bfe-9de5-92a5b2f5f557": "事件類別",
+                "41fe4a48-40e6-4396-9ea0-9c23418ee5a1": "SQLServer 事件數量趨勢",
+                "3682e0b1-4919-4929-9e78-2198420e4ce9": "登入成功",
+                "e85a26b2-c256-4608-ae1c-12e922d25f1e": "登入失敗事件",
+                "ce233ff8-485d-470c-a0c1-dce589a4324c": "SQLServer 事件數量"
+              }
+            },
+            "widgets": [
+              {
+                "id": "3e1e16e3-4337-4f4f-8fef-868074abd4b9",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "range": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:MSSQLSERVER AND Category:登入"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "ClientIP"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "table",
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "column_limit": null
+                }
+              },
+              {
+                "id": "3682e0b1-4919-4929-9e78-2198420e4ce9",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "range": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:MSSQLSERVER AND Category:登入 AND EventType:AUDIT_SUCCESS"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "EventType"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "numeric",
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "column_limit": null
+                }
+              },
+              {
+                "id": "41fe4a48-40e6-4396-9ea0-9c23418ee5a1",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:MSSQLSERVER"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 1
+                        }
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "source"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 1530
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "bar",
+                  "visualization_config": {
+                    "barmode": "overlay",
+                    "axis_type": "linear"
+                  },
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "column_limit": 1530
+                }
+              },
+              {
+                "id": "5cf39b36-8436-43d3-bd59-a6e18b37ee14",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "range": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:MSSQLSERVER AND Category:登入 AND EventType:AUDIT_FAILURE"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "EventType"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "numeric",
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "column_limit": null
+                }
+              },
+              {
+                "id": "3467cbc8-698d-4a66-930f-266779e34190",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "range": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:MSSQLSERVER AND Category:登入"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "ClientIP"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "pie",
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "column_limit": null
+                }
+              },
+              {
+                "id": "ce233ff8-485d-470c-a0c1-dce589a4324c",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:MSSQLSERVER"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "source"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 30
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "table",
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": 30,
+                  "column_limit": null
+                }
+              },
+              {
+                "id": "6a1514fb-e7fa-4ff4-8717-fc1f11044a45",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "range": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:MSSQLSERVER AND Category:伺服器 AND message:\"I/O 已凍結\""
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source"
+                  ],
+                  "units": {},
+                  "show_message_row": true,
+                  "show_summary": null,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "e85a26b2-c256-4608-ae1c-12e922d25f1e",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "range": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:MSSQLSERVER AND Category:登入 AND EventType:AUDIT_FAILURE"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 1
+                        }
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "source"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 1530
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "bar",
+                  "visualization_config": {
+                    "barmode": "overlay",
+                    "axis_type": "linear"
+                  },
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "column_limit": 1530
+                }
+              },
+              {
+                "id": "f6abf600-5916-40b9-bad3-e4f957078c1d",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "range": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:MSSQLSERVER AND Category:備份 AND message:\"已備份\""
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source"
+                  ],
+                  "units": {},
+                  "show_message_row": true,
+                  "show_summary": null,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "40fa5434-544a-4cdb-9a06-95da8f8d4acf",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "range": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:MSSQLSERVER AND Category:登入 AND EventType:AUDIT_FAILURE"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "message"
+                  ],
+                  "units": {},
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "65061f18-2a01-4ade-9b8b-e1575db65d54",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "range": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:MSSQLSERVER AND Category:登入 AND EventType:AUDIT_SUCCESS"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 1
+                        }
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "bar",
+                  "visualization_config": {
+                    "barmode": "overlay",
+                    "axis_type": "linear"
+                  },
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "column_limit": null
+                }
+              },
+              {
+                "id": "64bf9c47-9590-413e-b847-a16954873769",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "range": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:MSSQLSERVER"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "EventType",
+                    "ClientIP"
+                  ],
+                  "units": {},
+                  "show_message_row": true,
+                  "show_summary": null,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "8f7ab074-c76d-4bfe-9de5-92a5b2f5f557",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "range": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:MSSQLSERVER"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "Category"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "table",
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "column_limit": null
+                }
+              }
+            ],
+            "widget_mapping": {
+              "6a1514fb-e7fa-4ff4-8717-fc1f11044a45": [
+                "fada3cf3-4dc3-4225-aa9a-ee979950dd96"
+              ],
+              "5cf39b36-8436-43d3-bd59-a6e18b37ee14": [
+                "c652a76c-786c-4876-8c2e-47c548ce30fb"
+              ],
+              "3e1e16e3-4337-4f4f-8fef-868074abd4b9": [
+                "ac9784d6-bcca-4ef1-b905-7ac9ad574d71"
+              ],
+              "f6abf600-5916-40b9-bad3-e4f957078c1d": [
+                "17b7a9cd-e4db-4420-9220-bbc038198508"
+              ],
+              "64bf9c47-9590-413e-b847-a16954873769": [
+                "090748e1-7ff7-46a8-8e6a-67d6ee239e26"
+              ],
+              "65061f18-2a01-4ade-9b8b-e1575db65d54": [
+                "1f6cb80a-f79e-4643-b8ca-9d76a534746f"
+              ],
+              "40fa5434-544a-4cdb-9a06-95da8f8d4acf": [
+                "450ef2ae-509e-4c3a-ab4f-a2fc041942ae"
+              ],
+              "3467cbc8-698d-4a66-930f-266779e34190": [
+                "aaa2e5f3-d2d4-4234-9c17-f1687efd8fbc"
+              ],
+              "8f7ab074-c76d-4bfe-9de5-92a5b2f5f557": [
+                "87ec9744-a8c6-4cb3-9076-3810cbff9674"
+              ],
+              "41fe4a48-40e6-4396-9ea0-9c23418ee5a1": [
+                "14a47fca-2958-4373-ad2c-6ffe2e7df99e"
+              ],
+              "3682e0b1-4919-4929-9e78-2198420e4ce9": [
+                "96d253db-8416-4903-ace2-01d8b5c61a5c"
+              ],
+              "e85a26b2-c256-4608-ae1c-12e922d25f1e": [
+                "0eeda727-af37-46a2-abaa-afb5dcf0a31f"
+              ],
+              "ce233ff8-485d-470c-a0c1-dce589a4324c": [
+                "e975ff07-4e96-4c9d-b11b-6c97f13de749"
+              ]
+            },
+            "positions": {
+              "6a1514fb-e7fa-4ff4-8717-fc1f11044a45": {
+                "col": 1,
+                "row": 18,
+                "height": 4,
+                "width": 6
+              },
+              "5cf39b36-8436-43d3-bd59-a6e18b37ee14": {
+                "col": 1,
+                "row": 5,
+                "height": 3,
+                "width": 3
+              },
+              "3e1e16e3-4337-4f4f-8fef-868074abd4b9": {
+                "col": 5,
+                "row": 15,
+                "height": 3,
+                "width": 4
+              },
+              "f6abf600-5916-40b9-bad3-e4f957078c1d": {
+                "col": 7,
+                "row": 18,
+                "height": 4,
+                "width": 6
+              },
+              "64bf9c47-9590-413e-b847-a16954873769": {
+                "col": 1,
+                "row": 22,
+                "height": 6,
+                "width": "Infinity"
+              },
+              "65061f18-2a01-4ade-9b8b-e1575db65d54": {
+                "col": 4,
+                "row": 13,
+                "height": 2,
+                "width": 9
+              },
+              "40fa5434-544a-4cdb-9a06-95da8f8d4acf": {
+                "col": 1,
+                "row": 8,
+                "height": 5,
+                "width": "Infinity"
+              },
+              "3467cbc8-698d-4a66-930f-266779e34190": {
+                "col": 1,
+                "row": 15,
+                "height": 3,
+                "width": 4
+              },
+              "8f7ab074-c76d-4bfe-9de5-92a5b2f5f557": {
+                "col": 9,
+                "row": 15,
+                "height": 3,
+                "width": 4
+              },
+              "41fe4a48-40e6-4396-9ea0-9c23418ee5a1": {
+                "col": 4,
+                "row": 1,
+                "height": 4,
+                "width": 9
+              },
+              "3682e0b1-4919-4929-9e78-2198420e4ce9": {
+                "col": 1,
+                "row": 13,
+                "height": 2,
+                "width": 3
+              },
+              "e85a26b2-c256-4608-ae1c-12e922d25f1e": {
+                "col": 4,
+                "row": 5,
+                "height": 3,
+                "width": 9
+              },
+              "ce233ff8-485d-470c-a0c1-dce589a4324c": {
+                "col": 1,
+                "row": 1,
+                "height": 4,
+                "width": 3
+              }
+            },
+            "formatting": {
+              "highlighting": []
+            },
+            "display_mode_settings": {
+              "positions": {}
+            }
+          },
+          "4caeccc3-bdeb-53e9-aa9f-ad436b993bfc": {
+            "selected_fields": null,
+            "static_message_list_id": null,
+            "titles": {
+              "tab": {
+                "title": "SQL Server 含來源主機 (7D)"
+              },
+              "widget": {
+                "6a1514fb-e7fa-4ff4-8717-fc1f11044a45": "I/O 凍結事件",
+                "5cf39b36-8436-43d3-bd59-a6e18b37ee14": "登入失敗 ",
+                "b778fef2-01ff-409e-9df1-cf291f3c1950": "sources",
+                "3e1e16e3-4337-4f4f-8fef-868074abd4b9": "登入來源 IP",
+                "f6abf600-5916-40b9-bad3-e4f957078c1d": "已備份資料庫事件",
+                "64bf9c47-9590-413e-b847-a16954873769": "All Message",
+                "65061f18-2a01-4ade-9b8b-e1575db65d54": "登入成功",
+                "f3c513de-54f2-4838-b0e8-8d3e348f1e8d": "事件類別",
+                "40fa5434-544a-4cdb-9a06-95da8f8d4acf": "登入失敗事件",
+                "3467cbc8-698d-4a66-930f-266779e34190": "登入來源 IP",
+                "8f7ab074-c76d-4bfe-9de5-92a5b2f5f557": "事件類別",
+                "1997fe72-e6a9-433b-9367-188fe983926d": "登入來源 Host",
+                "861b92e5-8fee-4dea-b46e-73aad6a03964": "登入來源 Host",
+                "4d3c7789-ed18-4371-ba9e-4bb1fca14239": "登入失敗  (copy)",
+                "3682e0b1-4919-4929-9e78-2198420e4ce9": "登入成功",
+                "e85a26b2-c256-4608-ae1c-12e922d25f1e": "登入事件"
+              }
+            },
+            "widgets": [
+              {
+                "id": "f6abf600-5916-40b9-bad3-e4f957078c1d",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:備份 AND message:\"已備份\""
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source"
+                  ],
+                  "show_message_row": true,
+                  "show_summary": null,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "f3c513de-54f2-4838-b0e8-8d3e348f1e8d",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\")"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "bar",
+                  "column_limit": 15,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 1
+                        }
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "Category"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "visualization_config": {
+                    "barmode": "overlay",
+                    "axis_type": "linear"
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "8f7ab074-c76d-4bfe-9de5-92a5b2f5f557",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\")"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "Category"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "64bf9c47-9590-413e-b847-a16954873769",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\")"
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "EventType",
+                    "source_ip",
+                    "source_host"
+                  ],
+                  "show_message_row": true,
+                  "show_summary": null,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "65061f18-2a01-4ade-9b8b-e1575db65d54",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入 AND EventType:AUDIT_SUCCESS"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "bar",
+                  "column_limit": 15,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 1
+                        }
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "source"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "visualization_config": {
+                    "barmode": "overlay",
+                    "axis_type": "linear"
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "3e1e16e3-4337-4f4f-8fef-868074abd4b9",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "source_ip"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "b778fef2-01ff-409e-9df1-cf291f3c1950",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\")"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "source"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "5cf39b36-8436-43d3-bd59-a6e18b37ee14",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入 AND EventType:AUDIT_FAILURE"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "numeric",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "row_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "trend": false,
+                    "trend_preference": "NEUTRAL"
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "861b92e5-8fee-4dea-b46e-73aad6a03964",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "pie",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "source_host"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": true
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "6a1514fb-e7fa-4ff4-8717-fc1f11044a45",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:伺服器 AND message:\"I/O 已凍結\""
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source"
+                  ],
+                  "show_message_row": true,
+                  "show_summary": null,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "1997fe72-e6a9-433b-9367-188fe983926d",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "source_host"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": true
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "3467cbc8-698d-4a66-930f-266779e34190",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "pie",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "source_ip"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "3682e0b1-4919-4929-9e78-2198420e4ce9",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入 AND EventType:AUDIT_SUCCESS"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "numeric",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "row_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "trend": false,
+                    "trend_preference": "NEUTRAL"
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "e85a26b2-c256-4608-ae1c-12e922d25f1e",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入 AND EventType:AUDIT_FAILURE"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "bar",
+                  "column_limit": 15,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 1
+                        }
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "source"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "visualization_config": {
+                    "barmode": "overlay",
+                    "axis_type": "linear"
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "40fa5434-544a-4cdb-9a06-95da8f8d4acf",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 604800,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "SourceName:(\"MSSQL$DB01\" OR \"MSSQL$DB02\") AND Category:登入 AND EventType:AUDIT_FAILURE"
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "full_message"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              }
+            ],
+            "widget_mapping": {
+              "6a1514fb-e7fa-4ff4-8717-fc1f11044a45": [
+                "31cc6f1a-6448-4ad3-a158-54a3fe4ba9ac"
+              ],
+              "5cf39b36-8436-43d3-bd59-a6e18b37ee14": [
+                "94bde2bb-5bf0-4b27-a537-8afdd9650162"
+              ],
+              "b778fef2-01ff-409e-9df1-cf291f3c1950": [
+                "a0ecd7f7-ef17-4a3f-b4fd-689f671748e8"
+              ],
+              "3e1e16e3-4337-4f4f-8fef-868074abd4b9": [
+                "631c2493-43dd-4539-bc2a-de5394e27bbb"
+              ],
+              "f6abf600-5916-40b9-bad3-e4f957078c1d": [
+                "a6eb2bc7-ad19-463c-a607-06578e24435e"
+              ],
+              "64bf9c47-9590-413e-b847-a16954873769": [
+                "fbfb92ff-4eba-48c1-b54b-7b31797ea83d"
+              ],
+              "65061f18-2a01-4ade-9b8b-e1575db65d54": [
+                "7429e6ca-4b7d-4f6e-a9e5-daa8dcc6602b"
+              ],
+              "f3c513de-54f2-4838-b0e8-8d3e348f1e8d": [
+                "d441de80-4c52-4a42-acd7-99806de95a79"
+              ],
+              "40fa5434-544a-4cdb-9a06-95da8f8d4acf": [
+                "70e9e973-67c1-44db-9239-666035919b95"
+              ],
+              "3467cbc8-698d-4a66-930f-266779e34190": [
+                "4cdd07c8-b5d4-459b-85d9-4b69a77cd784"
+              ],
+              "8f7ab074-c76d-4bfe-9de5-92a5b2f5f557": [
+                "fb434b19-a246-4e55-a53e-a1b1ca2a1552"
+              ],
+              "1997fe72-e6a9-433b-9367-188fe983926d": [
+                "04f5d40f-ef5a-407b-80d1-0a1134c898ed"
+              ],
+              "861b92e5-8fee-4dea-b46e-73aad6a03964": [
+                "03f42109-4cab-45f3-8069-3be5062e70f8"
+              ],
+              "3682e0b1-4919-4929-9e78-2198420e4ce9": [
+                "df9b2866-fc10-4164-a37b-c5dc9590b56c"
+              ],
+              "e85a26b2-c256-4608-ae1c-12e922d25f1e": [
+                "696c678f-a0b5-476b-a471-a724806e304b"
+              ]
+            },
+            "positions": {
+              "6a1514fb-e7fa-4ff4-8717-fc1f11044a45": {
+                "col": 1,
+                "row": 18,
+                "height": 4,
+                "width": 6
+              },
+              "5cf39b36-8436-43d3-bd59-a6e18b37ee14": {
+                "col": 1,
+                "row": 4,
+                "height": 2,
+                "width": 3
+              },
+              "b778fef2-01ff-409e-9df1-cf291f3c1950": {
+                "col": 1,
+                "row": 1,
+                "height": 3,
+                "width": 4
+              },
+              "3e1e16e3-4337-4f4f-8fef-868074abd4b9": {
+                "col": 4,
+                "row": 11,
+                "height": 4,
+                "width": 3
+              },
+              "f6abf600-5916-40b9-bad3-e4f957078c1d": {
+                "col": 7,
+                "row": 18,
+                "height": 4,
+                "width": 6
+              },
+              "64bf9c47-9590-413e-b847-a16954873769": {
+                "col": 1,
+                "row": 22,
+                "height": 6,
+                "width": "Infinity"
+              },
+              "65061f18-2a01-4ade-9b8b-e1575db65d54": {
+                "col": 4,
+                "row": 4,
+                "height": 2,
+                "width": 9
+              },
+              "f3c513de-54f2-4838-b0e8-8d3e348f1e8d": {
+                "col": 4,
+                "row": 15,
+                "height": 3,
+                "width": 9
+              },
+              "40fa5434-544a-4cdb-9a06-95da8f8d4acf": {
+                "col": 1,
+                "row": 8,
+                "height": 3,
+                "width": "Infinity"
+              },
+              "3467cbc8-698d-4a66-930f-266779e34190": {
+                "col": 1,
+                "row": 11,
+                "height": 4,
+                "width": 3
+              },
+              "8f7ab074-c76d-4bfe-9de5-92a5b2f5f557": {
+                "col": 1,
+                "row": 15,
+                "height": 3,
+                "width": 3
+              },
+              "1997fe72-e6a9-433b-9367-188fe983926d": {
+                "col": 10,
+                "row": 11,
+                "height": 4,
+                "width": 3
+              },
+              "861b92e5-8fee-4dea-b46e-73aad6a03964": {
+                "col": 7,
+                "row": 11,
+                "height": 4,
+                "width": 3
+              },
+              "3682e0b1-4919-4929-9e78-2198420e4ce9": {
+                "col": 1,
+                "row": 6,
+                "height": 2,
+                "width": 3
+              },
+              "e85a26b2-c256-4608-ae1c-12e922d25f1e": {
+                "col": 4,
+                "row": 6,
+                "height": 2,
+                "width": 9
+              }
+            },
+            "formatting": {
+              "highlighting": []
+            },
+            "display_mode_settings": {
+              "positions": {}
+            }
+          },
+          "f836afca-ad74-4b36-ad02-8619f61a6056": {
+            "selected_fields": null,
+            "static_message_list_id": null,
+            "titles": {
+              "tab": {
+                "title": "SQL Server CEF (1D)"
+              },
+              "widget": {
+                "078f28c0-4ef3-4599-8f63-566bbbd635e5": "事件趨勢圖",
+                "8e42f444-6395-4896-b9af-2fd0ba4c0be1": "All Messages",
+                "7c15df44-572d-4ebd-9268-2cd1f29d0a6f": "事件數量",
+                "e4307519-9d0b-4fab-a357-76301b17e508": "來源主機事件趨勢圖",
+                "cc8970f0-8da2-4f7d-bb51-b00412280a94": "來源主機排行",
+                "47658f83-eb4b-422d-9275-b62d331f2ce6": "事件類別",
+                "34db7201-b9a9-4fe0-8490-b52eaf480f60": "act Top15",
+                "2392fb91-66b3-4d0f-8acf-a9a8044847d2": "duser Top15"
+              }
+            },
+            "widgets": [
+              {
+                "id": "078f28c0-4ef3-4599-8f63-566bbbd635e5",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "device_product:\"SQL Server\""
+                },
+                "streams": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 1
+                        }
+                      }
+                    }
+                  ],
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "bar",
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "column_limit": null
+                }
+              },
+              {
+                "id": "8e42f444-6395-4896-b9af-2fd0ba4c0be1",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "device_product:\"SQL Server\""
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "fileType",
+                    "event_class_id",
+                    "message",
+                    "session__server__principal__name",
+                    "EventlogCategory",
+                    "name",
+                    "duser"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "7c15df44-572d-4ebd-9268-2cd1f29d0a6f",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "device_product:\"SQL Server\""
+                },
+                "streams": [],
+                "config": {
+                  "row_pivots": [],
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "numeric",
+                  "visualization_config": {
+                    "trend": true,
+                    "trend_preference": "NEUTRAL"
+                  },
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "column_limit": null
+                }
+              },
+              {
+                "id": "cc8970f0-8da2-4f7d-bb51-b00412280a94",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "device_product:\"SQL Server\""
+                },
+                "streams": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "source"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": true
+                      }
+                    }
+                  ],
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "bar",
+                  "visualization_config": {
+                    "barmode": "group",
+                    "axis_type": "linear"
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "column_limit": null
+                }
+              },
+              {
+                "id": "34db7201-b9a9-4fe0-8490-b52eaf480f60",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "device_product:\"SQL Server\""
+                },
+                "streams": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "act"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": true
+                      }
+                    }
+                  ],
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "table",
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "column_limit": null
+                }
+              },
+              {
+                "id": "47658f83-eb4b-422d-9275-b62d331f2ce6",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "device_product:\"SQL Server\""
+                },
+                "streams": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "EventlogCategory"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": true
+                      }
+                    }
+                  ],
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "table",
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "column_limit": null
+                }
+              },
+              {
+                "id": "e4307519-9d0b-4fab-a357-76301b17e508",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "device_product:\"SQL Server\""
+                },
+                "streams": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 1
+                        }
+                      }
+                    }
+                  ],
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "source"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": true
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "area",
+                  "visualization_config": {
+                    "interpolation": "linear",
+                    "axis_type": "linear"
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "column_limit": 15
+                }
+              },
+              {
+                "id": "2392fb91-66b3-4d0f-8acf-a9a8044847d2",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "device_product:\"SQL Server\""
+                },
+                "streams": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "duser"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": true
+                      }
+                    }
+                  ],
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "table",
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "column_limit": null
+                }
+              }
+            ],
+            "widget_mapping": {
+              "2392fb91-66b3-4d0f-8acf-a9a8044847d2": [
+                "28e65124-5287-413f-8bd4-82bb79a36980"
+              ],
+              "078f28c0-4ef3-4599-8f63-566bbbd635e5": [
+                "32ab9e0c-c9dd-455d-a6fc-1cddc277c531"
+              ],
+              "7c15df44-572d-4ebd-9268-2cd1f29d0a6f": [
+                "888274cf-c2a6-44cd-9a7e-b6f2d8e8704b",
+                "b44b0181-8f3f-4f1e-91db-885fda3206dd"
+              ],
+              "cc8970f0-8da2-4f7d-bb51-b00412280a94": [
+                "0992db1d-c44a-4f00-bf27-97f2fc65e83e"
+              ],
+              "47658f83-eb4b-422d-9275-b62d331f2ce6": [
+                "76b3deef-0cfb-4e76-ba66-5ad46b0cb7dd"
+              ],
+              "e4307519-9d0b-4fab-a357-76301b17e508": [
+                "5d0dd629-2fc5-443d-9137-857818578c67"
+              ],
+              "8e42f444-6395-4896-b9af-2fd0ba4c0be1": [
+                "d1698bd3-3a33-4cac-a3ff-a65d5c0106ac"
+              ],
+              "34db7201-b9a9-4fe0-8490-b52eaf480f60": [
+                "f0ae874a-3502-408a-be6c-1afef559ab30"
+              ]
+            },
+            "positions": {
+              "078f28c0-4ef3-4599-8f63-566bbbd635e5": {
+                "col": 4,
+                "row": 1,
+                "height": 2,
+                "width": 9
+              },
+              "7c15df44-572d-4ebd-9268-2cd1f29d0a6f": {
+                "col": 1,
+                "row": 1,
+                "height": 2,
+                "width": 3
+              },
+              "cc8970f0-8da2-4f7d-bb51-b00412280a94": {
+                "col": 1,
+                "row": 3,
+                "height": 4,
+                "width": 3
+              },
+              "47658f83-eb4b-422d-9275-b62d331f2ce6": {
+                "col": 1,
+                "row": 7,
+                "height": 4,
+                "width": 3
+              },
+              "e4307519-9d0b-4fab-a357-76301b17e508": {
+                "col": 4,
+                "row": 3,
+                "height": 4,
+                "width": 9
+              },
+              "8e42f444-6395-4896-b9af-2fd0ba4c0be1": {
+                "col": 1,
+                "row": 11,
+                "height": 6,
+                "width": "Infinity"
+              },
+              "34db7201-b9a9-4fe0-8490-b52eaf480f60": {
+                "col": 4,
+                "row": 7,
+                "height": 4,
+                "width": 5
+              },
+              "2392fb91-66b3-4d0f-8acf-a9a8044847d2": {
+                "col": 9,
+                "row": 7,
+                "height": 4,
+                "width": 4
+              }
+            },
+            "formatting": {
+              "highlighting": []
+            },
+            "display_mode_settings": {
+              "positions": {}
+            }
+          }
+        },
+        "created_at": "2026-11-01T00:00:00.000Z"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=6.2.6+23535c4"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "event_definition",
+        "version": "1"
+      },
+      "id": "cd2c6bf6-ca47-5619-be7a-966b05422f30",
+      "data": {
+        "_scope": {
+          "@type": "string",
+          "@value": "DEFAULT"
+        },
+        "title": {
+          "@type": "string",
+          "@value": "SQLServer 登入失敗告警"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "remediation_steps": null,
+        "updated_at": null,
+        "matched_at": "2025-11-13T06:09:22.273Z",
+        "priority": {
+          "@type": "integer",
+          "@value": 3
+        },
+        "alert": {
+          "@type": "boolean",
+          "@value": true
+        },
+        "config": {
+          "type": "aggregation-v1",
+          "query": {
+            "@type": "string",
+            "@value": "SourceName:MSSQLSERVER AND Category:登入 AND EventType:AUDIT_FAILURE"
+          },
+          "query_parameters": [],
+          "filters": [],
+          "streams": [],
+          "stream_categories": [],
+          "group_by": [],
+          "series": [
+            {
+              "type": "count",
+              "id": "count-source",
+              "field": "source"
+            }
+          ],
+          "conditions": {
+            "expression": {
+              "expr": ">=",
+              "left": {
+                "expr": "number-ref",
+                "ref": "count-source"
+              },
+              "right": {
+                "expr": "number",
+                "value": 3
+              }
+            }
+          },
+          "search_within_ms": 300000,
+          "execute_every_ms": 300000,
+          "use_cron_scheduling": false,
+          "cron_expression": null,
+          "cron_timezone": null,
+          "event_limit": 0
+        },
+        "field_spec": {},
+        "key_spec": [],
+        "notification_settings": {
+          "grace_period_ms": 0,
+          "backlog_size": 50
+        },
+        "notifications": [],
+        "storage": [
+          {
+            "type": "persist-to-streams-v1",
+            "streams": [
+              "000000000000000000000002"
+            ]
+          }
+        ],
+        "is_scheduled": {
+          "@type": "boolean",
+          "@value": true
+        },
+        "event_procedure": null
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ]
+    },
+    {
+      "id": "b9cf7766-b636-5d97-88bc-36a0ff5be9da",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "sql-server-00-gate"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Claims what no other pack claimed (parsed_by): connect this pipeline to a stream of this device only."
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"sql-server-00-gate\"\nwhen\n    !has_field(\"parsed_by\") OR\n    to_string($message.parsed_by) == \"sql-server\"\nthen\n    set_field(\"parsed_by\", \"sql-server\");\nend"
+        }
+      }
+    }
+  ]
+}

@@ -258,7 +258,6 @@
 .channel-fields[data-collapsed] { display: none; }
 
 /* Reports (beta) */
-.report-beta { display:inline-block; background:#ff9800; color:#3a2600; font-weight:700; font-size:10px; letter-spacing:1px; padding:2px 8px; border-radius:4px; vertical-align:middle; margin-left:6px; }
 .modal-wide { width:620px; max-width:94vw; max-height:90vh; overflow-y:auto; }
 .report-warn { background:rgba(255,152,0,0.12); color:var(--warning); padding:9px 12px; border-radius:6px; font-size:0.86em; }
 

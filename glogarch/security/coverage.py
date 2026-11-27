@@ -7,22 +7,29 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from glogarch.core.config import SecurityConfig
-from glogarch.security.detectors import DETECTORS, PROBES
+from glogarch.security.detectors import DETECTORS
+from glogarch.security.fieldmap import FieldMap
 from glogarch.security.runner import parse_db_ts
 
 
 def detector_rows(cfg: SecurityConfig) -> list[dict]:
     out = []
+    fm = FieldMap.from_config(cfg.field_map)
+    probes = fm.probes()
     for d in DETECTORS:
         s = cfg.detectors.get(d.id) or {}
-        p = PROBES[d.probe]
+        p = probes[d.probe]
+        default_ex = fm.exclude_default(d.exclude)
         out.append({
             "id": d.id,
             "enabled": bool(s.get("enabled", d.default_enabled)),
             "min_count": int(s.get("min_count") or d.min_count),
             "default_min_count": d.min_count,
-            "exclude": s["exclude"] if "exclude" in s else d.exclude,
-            "default_exclude": d.exclude,
+            # WAF scans (1.35): blocked scans below this stay low; 0 = not applicable
+            "blocked_min_count": int(s.get("blocked_min_count") or d.blocked_min_count) if d.blocked_min_count else 0,
+            "default_blocked_min_count": d.blocked_min_count,
+            "exclude": s["exclude"] if "exclude" in s else default_ex,
+            "default_exclude": default_ex,
             "probe": d.probe,
             "query": p.query,
             "fields": list(p.fields),

@@ -24,7 +24,7 @@ function secSevBadge(sev) {
     return `<span class="sec-sev sec-sev-${esc(sev)}">${esc(t('sec_sev_' + sev))}</span>`;
 }
 
-function secStats(m) {
+function secStats(m, withContext = true) {
     const order = ['count', 'success', 'card:user_name', 'card:source', 'card:source_ip',
         'card:uri', 'card:vhost', 'min:alert_severity', 'baseline', 'new_sources', 'rate', 'usual', 'ratio'];
     const parts = [];
@@ -34,7 +34,30 @@ function secStats(m) {
         if (Array.isArray(m[k])) { parts.push(`${esc(label)} ${esc(m[k].slice(0, 5).map(String).join(', '))}`); continue; }
         parts.push(k === 'min:alert_severity' ? `${label} ${esc(m[k])}` : `${formatNumber(m[k])} ${label}`);
     }
-    return parts.join(' · ');
+    const waf = secWaf(m);
+    if (waf && !withContext) parts.push(esc(waf));
+    return parts.join(' · ') + (withContext ? secContext(m, waf) : '');
+}
+
+// what the WAF did with a scan (metrics.blocked / passed, 1.35)
+function secWaf(m) {
+    if (!m || m.blocked == null) return '';
+    const b = formatNumber(m.blocked), p = formatNumber(m.passed || 0);
+    return !m.passed ? t('sec_waf_all').replace('{b}', b)
+        : !m.blocked ? t('sec_waf_none').replace('{p}', p)
+        : t('sec_waf_some').replace('{b}', b).replace('{p}', p);
+}
+
+// who reported it, where, which paths (metrics.context, 1.35)
+function secContext(m, waf) {
+    const c = (m && m.context && typeof m.context === 'object') ? m.context : {};
+    const keys = ['source', 'vhost', 'user_name', 'source_ip', 'destination_ip', 'event_category', 'uri', 'http_response_code'];
+    const rows = keys.filter(k => Array.isArray(c[k]) && c[k].length).map(k => {
+        const vals = c[k].map(([v, n]) => `<span class="sec-ctx-v"><code>${esc(String(v))}</code>${c[k].length > 1 ? ` ×${esc(formatNumber(n))}` : ''}</span>`).join('<span class="sep">·</span>');
+        return `<div class="sec-ctx"><span class="text-muted">${esc(t('sec_c_' + k))}${esc(t('sec_colon'))}</span>${vals}</div>`;
+    });
+    if (waf) rows.unshift(`<div class="sec-ctx sec-ctx-waf">${esc(waf)}</div>`);
+    return rows.length ? `<div class="sec-ctx-box fs-08">${rows.join('')}</div>` : '';
 }
 
 function secUtc(s) { return s ? formatDT(s.endsWith('Z') ? s : s + 'Z') : '—'; }
@@ -43,6 +66,18 @@ async function secInit() {
     if (!document.getElementById('sec-status-card')) return;
     await secLoadOverview();
     await secLoad();
+    await secOpenFromLink();
+}
+
+// /security?incident=<id> (the link in a notification): open that incident
+async function secOpenFromLink() {
+    const id = new URLSearchParams(window.location.search).get('incident');
+    if (!id || !/^\d+$/.test(id)) return;
+    const d = await fetchJSON(`${API}/security/incidents/${encodeURIComponent(id)}`);
+    if (!d || d.error) { secMsg(d && d.error, 'err'); return; }
+    _sec.rows[d.id] = d;
+    if (typeof secTab === 'function') secTab('incidents');
+    secOpenAi(d.id);
 }
 
 async function secLoadOverview() {
@@ -244,11 +279,14 @@ function secRenderSettings() {
     const sevs = ['high', 'medium', 'low', 'off'].map(v => opt(v, s.notify_min_severity, t('sec_notify_' + v))).join('');
     const aiSevs = ['high', 'medium', 'low'].map(v => opt(v, s.ai_auto_min_severity, t('sec_s_ai_sev_' + v))).join('');
     const num = (id, v, min, max) => `<input type="number" id="${id}" value="${esc(v)}" min="${min}" max="${max}">`;
+    if (typeof fmCapture === 'function') fmCapture();   // unsaved field-map edits survive a re-render
     const dets = d.detectors.map(x => `<tr data-det="${esc(x.id)}">
         <td><label class="sec-chk"><input type="checkbox" class="sec-det-en" ${x.enabled ? 'checked' : ''}> ${esc(secDetTitle(x.id))}</label>
             <div class="text-muted fs-08"><code>${esc(x.query)}</code> · ${esc(x.fields.join(' / '))}</div>
             ${x.id === 'volume_anomaly' ? `<div class="text-muted fs-08">${esc(t('sec_volume_hint'))}</div>` : ''}</td>
-        <td><input type="number" class="sec-det-min" min="1" value="${esc(x.min_count)}" title="${esc(t('sec_default_is').replace('{v}', x.default_min_count))}"></td>
+        <td><input type="number" class="sec-det-min" min="1" value="${esc(x.min_count)}" title="${esc(t('sec_default_is').replace('{v}', x.default_min_count))}">
+            ${x.default_blocked_min_count ? `<label class="sec-det-blocked-l"><span class="text-muted fs-08">${esc(t('sec_s_blocked_min'))}</span>
+                <input type="number" class="sec-det-blocked" min="1" value="${esc(x.blocked_min_count)}" title="${esc(t('sec_default_is').replace('{v}', x.default_blocked_min_count))}"></label>` : ''}</td>
         <td><input type="text" class="sec-det-ex" value="${esc(x.exclude)}" placeholder="${esc(t('sec_exclude_ph'))}"></td>
     </tr>`).join('');
     document.getElementById('sec-settings').innerHTML = `
@@ -280,12 +318,16 @@ function secRenderSettings() {
         </div>
         <div class="table-wrap"><table class="sec-det-table"><thead><tr><th>${esc(t('sec_th_detector'))}</th>
             <th>${esc(t('sec_s_min_count'))}</th><th>${esc(t('sec_s_det_exclude'))}</th></tr></thead><tbody>${dets}</tbody></table></div>
-        <div class="sec-save-row"><button class="btn-primary" data-act="secSaveSettings">${icon('check', 16)} ${esc(t('btn_save'))}</button></div>`;
+        <div class="sec-save-row"><button class="btn-primary" data-act="secSaveSettings">${icon('check', 16)} ${esc(t('btn_save'))}</button></div>
+        ${typeof fmPanelHtml === 'function' ? fmPanelHtml() : ''}`;
     if (typeof initCustomSelects === 'function') initCustomSelects();
 }
 
 async function secSaveSettings() {
     const v = id => document.getElementById(id).value;
+    // an empty number box is left out (the server keeps the stored value); Number('') is 0,
+    // which the server clamped to 5 minutes for the interval and window
+    const n = id => { const x = v(id).trim(); return x === '' ? undefined : Number(x); };
     const detectors = {};
     document.querySelectorAll('#sec-settings tr[data-det]').forEach(tr => {
         detectors[tr.dataset.det] = {
@@ -293,21 +335,23 @@ async function secSaveSettings() {
             min_count: tr.querySelector('.sec-det-min').value,
             exclude: tr.querySelector('.sec-det-ex').value,
         };
+        const bl = tr.querySelector('.sec-det-blocked');
+        if (bl) detectors[tr.dataset.det].blocked_min_count = bl.value;
     });
     const body = {
         enabled: document.getElementById('sec-s-enabled').checked,
         server: v('sec-s-server'),
-        interval_minutes: Number(v('sec-s-interval')),
-        window_minutes: Number(v('sec-s-window')),
+        interval_minutes: n('sec-s-interval'),
+        window_minutes: n('sec-s-window'),
         notify_min_severity: v('sec-s-notify'),
-        renotify_hours: Number(v('sec-s-renotify')),
-        reopen_hours: Number(v('sec-s-reopen')),
-        new_days: Number(v('sec-s-newdays')),
-        retention_days: Number(v('sec-s-retention')),
+        renotify_hours: n('sec-s-renotify'),
+        reopen_hours: n('sec-s-reopen'),
+        new_days: n('sec-s-newdays'),
+        retention_days: n('sec-s-retention'),
         exclude_query: v('sec-s-exclude'),
         ai_auto: document.getElementById('sec-s-ai-auto').checked,
         ai_auto_min_severity: v('sec-s-ai-min'),
-        ai_auto_max_per_run: Number(v('sec-s-ai-max')),
+        ai_auto_max_per_run: n('sec-s-ai-max'),
         ai_notify_verdicts: [...document.querySelectorAll('#sec-settings .sec-ai-notify:checked')].map(x => x.value),
         digest_enabled: document.getElementById('sec-s-dg').checked,
         digest_cron: v('sec-s-dg-cron'),
@@ -409,7 +453,7 @@ function _secAnalysis(a) {
 function secRenderAi(id, d) {
     const i = _sec.rows[id] || {};
     const head = `<div class="sec-ai-inc">${secSevBadge(i.severity || '')} <strong>${esc(secDetTitle(i.detector || '', i.detector_title))}</strong>${secAttackChips(i.attack)}
-        <code>${esc(i.entity || '')}</code> <span class="text-muted fs-08">#${esc(String(id))} · ${esc(secStats(i.metrics))}</span></div>`;
+        <code>${esc(i.entity || '')}</code> <span class="text-muted fs-08">#${esc(String(id))} · ${esc(secStats(i.metrics, false))}</span></div>`;
     const list = d.analyses || [];
     const latest = list[0];
     const older = list.slice(1);

@@ -26,9 +26,33 @@ Technical Capabilities:
 - Time snapshot for batch queries to prevent time drift
 
 Author: Jason Cheng (Jason Tools)
-Version: 1.10.2
+Version: 1.12.0
 License: MIT
 Repository: https://github.com/jasoncheng7115/jasontools-mcp
+
+Changes in 1.12.0:
+- get_log_statistics and get_log_level_analysis use server-side aggregation (exact counts
+  over the whole range, a few requests) instead of sampling; sampling is only the fallback.
+  On a busy Graylog 7.2 a 1-hour statistics call went from ~65 s and 52 requests to 0.5 s.
+- Error/warning rates count numeric syslog levels (0-3 error, 4 warning); they were 0 before.
+- Requests are adjusted to what each endpoint accepts: "*"/"*:*"/"" become "" for
+  /views/search (leading wildcard is rejected with 400) and "*" for /search/universal
+  (empty is rejected with 400); universal searches are capped at the 10000 result window
+  (they failed with 500). These were failing on every time slice.
+- An endpoint answering 404/405/415 is skipped for the rest of the process (per host,
+  method, path and response type), instead of being retried.
+- Embedding: no logging setup or log file on import (main() calls configure_logging());
+  call_tool(name, args, config=...) runs one tool with its own URL and credentials;
+  limits via GRAYLOG_MAX_ANALYSIS_MESSAGES, GRAYLOG_MAX_TIME_SLICES, GRAYLOG_MAX_RESULT_WINDOW;
+  log file via GRAYLOG_MCP_LOG_FILE ("off" disables it), now rotated at 20 MB (3 kept).
+- Debug tools test_accurate_counting and test_source_analysis_fix are hidden unless
+  GRAYLOG_ENABLE_DEBUG_TOOLS=1.
+
+Changes in 1.11.0:
+- Added five read-only event/alert tools: list_event_definitions, get_event_definition,
+  search_events, get_event_source_messages and list_event_notifications.
+- Notifications never return recipients, URLs, tokens, passwords, headers or templates;
+  only which settings are set. Emails, URLs and IPs in their descriptions are masked.
 
 Changes in 1.10.2:
 - Fixed: the file did not load on Python 3.10/3.11 (backslash inside an f-string
@@ -193,6 +217,7 @@ import asyncio
 import contextvars
 import json
 import logging
+import logging.handlers
 import os
 import sys
 import time
@@ -213,20 +238,43 @@ from mcp.types import Resource, Tool, TextContent, ImageContent, EmbeddedResourc
 import mcp.types as types
 
 # Version information
-__version__ = "1.10.2"
+__version__ = "1.12.0"
 __author__ = "Jason Cheng (Jason Tools) - AI Collaboration"
 __license__ = "MIT"
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("graylog-mcp-server")
 
-# File logging — always captures DEBUG+ for troubleshooting
-_log_file = os.path.join(os.path.expanduser("~"), ".mcp_graylog.log")
-_file_handler = logging.FileHandler(_log_file, encoding="utf-8")
-_file_handler.setLevel(logging.DEBUG)
-_file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-logger.addHandler(_file_handler)
+
+def _env_int(name: str, default: int) -> int:
+    """Integer limit from the environment, falling back to the default on bad input."""
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+# Limits (override with environment variables when embedding or on very large clusters)
+MAX_ANALYSIS_MESSAGES = _env_int("GRAYLOG_MAX_ANALYSIS_MESSAGES", 30000)
+MAX_TIME_SLICES = _env_int("GRAYLOG_MAX_TIME_SLICES", 100)
+ENABLE_DEBUG_TOOLS = os.environ.get("GRAYLOG_ENABLE_DEBUG_TOOLS", "").strip().lower() in ("1", "true", "yes")
+_DEBUG_TOOLS = {"test_accurate_counting", "test_source_analysis_fix"}
+
+
+def configure_logging(log_file: Optional[str] = None) -> None:
+    """Console + file logging for the standalone server. Not run on import, so embedding
+    applications keep their own logging setup; main() calls it."""
+    logging.basicConfig(level=logging.INFO)
+    path = log_file or os.environ.get("GRAYLOG_MCP_LOG_FILE") or os.path.join(os.path.expanduser("~"), ".mcp_graylog.log")
+    if path.lower() in ("", "none", "off"):
+        return
+    try:
+        handler = logging.handlers.RotatingFileHandler(path, maxBytes=20 * 1024 * 1024, backupCount=3, encoding="utf-8")
+    except OSError as e:
+        logger.warning(f"File logging disabled ({path}): {e}")
+        return
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logger.addHandler(handler)
 
 class GraylogError(Exception):
     """Custom exception for Graylog related errors"""
@@ -345,10 +393,10 @@ class LogAnalyzer:
             if timestamp:
                 level_timeline[level].append(timestamp)
         
-        # Calculate error rate
+        # Calculate error rate (string levels and numeric syslog levels 0-4)
         total = len(messages)
-        error_count = level_counts.get('error', 0) + level_counts.get('critical', 0) + level_counts.get('fatal', 0)
-        warning_count = level_counts.get('warning', 0) + level_counts.get('warn', 0)
+        error_count = sum(c for lv, c in level_counts.items() if _level_class(lv) == "error")
+        warning_count = sum(c for lv, c in level_counts.items() if _level_class(lv) == "warning")
         
         return {
             "level_distribution": dict(level_counts),
@@ -495,6 +543,46 @@ class LogAnalyzer:
 
 # (host, count strategy) pairs the server answered 404/405/415 for; skipped afterwards.
 _UNSUPPORTED_COUNT_STRATEGIES = set()
+# (host, method, path, wants_csv) answered 404/405/415: the server does not offer it, skip for the rest of the process.
+_UNSUPPORTED_ENDPOINTS = set()
+_UNSUPPORTED_ENDPOINT_RE = re.compile(r"^(?:HTTP (?:404|405|415)\b|API endpoint not found)")
+# OpenSearch rejects from + size above index.max_result_window (default 10000) with HTTP 500.
+MAX_RESULT_WINDOW = int(os.environ.get("GRAYLOG_MAX_RESULT_WINDOW", "10000"))
+_MATCH_ALL_QUERIES = {"", "*", "*:*"}
+
+
+def _normalize_request_query(method: str, path: str, params: Optional[Dict], data: Optional[Dict]):
+    """Adjust queries and limits to what each endpoint accepts (copies, never mutates).
+
+    - /search/universal/* (GET) rejects an empty query with 400 "must not be empty": send "*".
+    - /views/search/* rejects a leading wildcard ("*", "*:*") with 400: send "" (match all).
+    - /search/universal/* with offset + limit above the result window fails with 500: cap limit.
+    """
+    if params and path.startswith("/search/universal/"):
+        params = dict(params)
+        query = params.get("query")
+        if query is None or (isinstance(query, str) and query.strip() in _MATCH_ALL_QUERIES):
+            params["query"] = "*"
+        try:
+            offset = int(params.get("offset") or 0)
+            limit = int(params.get("limit") or 0)
+        except (TypeError, ValueError):
+            offset = limit = 0
+        if limit and offset + limit > MAX_RESULT_WINDOW:
+            if offset >= MAX_RESULT_WINDOW:
+                raise GraylogError(f"offset {offset} is beyond the server result window ({MAX_RESULT_WINDOW}); "
+                                   "narrow the time range instead of paging further")
+            params["limit"] = MAX_RESULT_WINDOW - offset
+    if data and path.startswith("/views/search"):
+        data = json.loads(json.dumps(data))
+        qs = data.get("query_string")
+        if isinstance(qs, dict) and isinstance(qs.get("query_string"), str) and qs["query_string"].strip() in _MATCH_ALL_QUERIES:
+            qs["query_string"] = ""
+        for query in data.get("queries") or []:
+            inner = (query or {}).get("query") or {}
+            if isinstance(inner.get("query_string"), str) and inner["query_string"].strip() in _MATCH_ALL_QUERIES:
+                inner["query_string"] = ""
+    return params, data
 
 
 class GraylogClient:
@@ -553,12 +641,20 @@ class GraylogClient:
                                      max_retries: int = 3) -> Union[Dict, str]:
         """Request method with retry mechanism"""
         last_exception = None
+        params, data = _normalize_request_query(method, path, params, data)
+        endpoint_key = (self.host, method.upper(), path, bool(expect_csv))
+        if endpoint_key in _UNSUPPORTED_ENDPOINTS:
+            raise GraylogError(f"Endpoint not available on this Graylog (skipped): {method} {path}")
         
         for attempt in range(max_retries):
             try:
                 return await self._make_request(method, path, params, data, expect_csv)
             except Exception as e:
                 last_exception = e
+                if _UNSUPPORTED_ENDPOINT_RE.match(str(e)) and "{" not in path and not re.search(r"/[0-9a-f]{24}\b|/[0-9A-Z]{26}\b", path):
+                    _UNSUPPORTED_ENDPOINTS.add(endpoint_key)
+                    logger.info(f"Endpoint unsupported, skipping from now on: {method} {path} ({str(e)[:60]})")
+                    raise
                 if _is_field_limit_error(str(e)):
                     scoped = self._with_scoped_query(params, data)
                     if scoped:
@@ -1961,13 +2057,13 @@ class GraylogClient:
         # Balance between performance and completeness
         # Adaptive slicing based on dataset size
         if total_count > 10000000:  # Very large dataset
-            MAX_SLICES = 100  # Allow more slices for very large datasets
+            MAX_SLICES = MAX_TIME_SLICES  # Allow more slices for very large datasets
             MIN_SLICE_DURATION = 30  # 30 seconds minimum per slice
         elif total_count > 1000000:  # Large dataset
-            MAX_SLICES = 50  # Moderate number of slices
+            MAX_SLICES = min(50, MAX_TIME_SLICES)  # Moderate number of slices
             MIN_SLICE_DURATION = 60  # 1 minute minimum per slice
         else:  # Normal dataset
-            MAX_SLICES = 30  # Fewer slices for smaller datasets
+            MAX_SLICES = min(30, MAX_TIME_SLICES)  # Fewer slices for smaller datasets
             MIN_SLICE_DURATION = 120  # 2 minutes minimum per slice
         
         # Calculate optimal number of slices
@@ -2168,28 +2264,55 @@ class GraylogClient:
 # Global client instance and config
 graylog_config = None
 
+# Per-call connection settings for embedding: call_tool(..., config={...}) sets this for one call.
+_graylog_config_override = contextvars.ContextVar("graylog_config_override", default=None)
+
+
 def get_graylog_client():
-    """Get Graylog client from global config"""
-    global graylog_config
+    """Get a Graylog client from the per-call config (if set) or the global config"""
+    config = _graylog_config_override.get() or graylog_config
     
-    if graylog_config is None:
+    if config is None:
         raise GraylogError("Graylog configuration not available")
     
     return GraylogClient(
-        host=graylog_config['host'],
-        username=graylog_config.get('username'),
-        password=graylog_config.get('password'),
-        api_token=graylog_config.get('api_token'),
-        verify_ssl=graylog_config['verify_ssl'],
-        timeout=graylog_config['timeout']
+        host=config['host'],
+        username=config.get('username'),
+        password=config.get('password'),
+        api_token=config.get('api_token'),
+        verify_ssl=config.get('verify_ssl', True),
+        timeout=config.get('timeout', 30.0)
     )
+
+
+async def call_tool(name: str, arguments: Optional[Dict] = None, config: Optional[Dict] = None) -> str:
+    """Embedding entry point: run one tool and return its text result.
+
+    config overrides the connection for this call only, e.g.
+    {"host": "https://graylog.example.com", "api_token": "...", "verify_ssl": True, "timeout": 30}
+    (or username/password instead of api_token). Without it the global graylog_config is used.
+    """
+    token = _graylog_config_override.set(config) if config else None
+    try:
+        result = await handle_call_tool(name, arguments or {})
+        return result[0].text if result else ""
+    finally:
+        if token is not None:
+            _graylog_config_override.reset(token)
 
 # Create MCP server
 server = Server("graylog-mcp")
 
 @server.list_tools()
 async def handle_list_tools() -> List[Tool]:
-    """List all available Graylog management tools - Complete version"""
+    """List all available Graylog management tools (debug tools only with GRAYLOG_ENABLE_DEBUG_TOOLS=1)"""
+    tools = _all_tools()
+    if not ENABLE_DEBUG_TOOLS:
+        tools = [tool for tool in tools if tool.name not in _DEBUG_TOOLS]
+    return tools
+
+
+def _all_tools() -> List[Tool]:
     return [
         # === Analysis tools (return aggregated stats, NOT raw messages) ===
         Tool(
@@ -2413,6 +2536,72 @@ async def handle_list_tools() -> List[Tool]:
                 },
                 "additionalProperties": False
             }
+        ),
+        # === Events & alerts (read-only) ===
+        Tool(
+            name="list_event_definitions",
+            description="Read-only list of event definitions (alert rules): id, title, priority, state, query, streams, search window, schedule (last/next run) and bound notifications. Filter by title text, state or priority; paginated. Use for 'which alert rules exist / are enabled'.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Case-insensitive text matched against title and description", "default": ""},
+                    "state": {"type": "string", "enum": ["all", "enabled", "disabled"], "default": "all"},
+                    "priority": {"type": "integer", "description": "1=low, 2=normal, 3=high, 4=critical; omit for all"},
+                    "page": {"type": "integer", "default": 1, "minimum": 1},
+                    "per_page": {"type": "integer", "default": 50, "minimum": 1, "maximum": 200}
+                },
+                "additionalProperties": False
+            }
+        ),
+        Tool(
+            name="get_event_definition",
+            description="Read-only full configuration of one event definition by id: query, filters, streams, group-by, aggregation conditions, search window/interval or cron, event fields, notifications (names only) and scheduler status.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "event_definition_id": {"type": "string", "description": "Event definition id (from list_event_definitions or search_events)"}
+                },
+                "required": ["event_definition_id"],
+                "additionalProperties": False
+            }
+        ),
+        Tool(
+            name="search_events",
+            description="Read-only search of triggered events/alerts in a time range. Filter by event definition ids, priority, alert flag or a query on event fields. Returns each event (time, definition, priority, message, key, group-by values, source streams) plus counts per definition. Use for 'which alerts fired in the last 24h'.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "range_from": {"type": "string", "description": "Start time, e.g. 'now-24h' or UTC '2026-01-01T00:00:00Z'", "default": "now-24h"},
+                    "range_to": {"type": "string", "default": "now"},
+                    "event_definition_ids": {"type": "array", "items": {"type": "string"}, "description": "Only these definitions"},
+                    "priority": {"type": "integer", "description": "Only this priority (1-4)"},
+                    "alerts": {"type": "string", "enum": ["include", "only", "exclude"], "default": "include", "description": "include=all events, only=alerts only, exclude=non-alert events only"},
+                    "query": {"type": "string", "description": "Optional Lucene query on event fields, e.g. 'source:mg1'", "default": ""},
+                    "page": {"type": "integer", "default": 1, "minimum": 1},
+                    "per_page": {"type": "integer", "default": 50, "minimum": 1, "maximum": 200}
+                },
+                "additionalProperties": False
+            }
+        ),
+        Tool(
+            name="get_event_source_messages",
+            description="Read-only: fetch the log messages that triggered one event, using the event's replay info (time window, query, streams, group-by values). Use after search_events to investigate an alert.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "event_id": {"type": "string", "description": "Event id from search_events"},
+                    "lookback_days": {"type": "integer", "description": "How far back to look for the event", "default": 30, "minimum": 1, "maximum": 365},
+                    "limit": {"type": "integer", "default": 20, "minimum": 1, "maximum": 200},
+                    "fields": {"type": "array", "items": {"type": "string"}, "description": "Fields to return; omit for all fields (values truncated)"}
+                },
+                "required": ["event_id"],
+                "additionalProperties": False
+            }
+        ),
+        Tool(
+            name="list_event_notifications",
+            description="Read-only list of event notifications: id, title, type and which event definitions use each. Recipients, URLs, tokens, passwords and headers are never returned; only whether they are set.",
+            inputSchema={"type": "object", "properties": {}, "additionalProperties": False}
         ),
         Tool(
             name="list_fields",
@@ -2782,6 +2971,83 @@ def normalize_query_string(query: str, auto_fix_escaping: bool = False) -> str:
 
     return normalized
 
+_ERROR_LEVELS = {"0", "1", "2", "3", "emerg", "emergency", "alert", "crit", "critical", "err", "error", "fatal", "severe"}
+_WARNING_LEVELS = {"4", "warn", "warning"}
+
+
+def _level_class(level) -> str:
+    """Classify a level value (text or numeric syslog severity) as error, warning or other."""
+    text = str(level).strip().lower()
+    if text in _ERROR_LEVELS:
+        return "error"
+    if text in _WARNING_LEVELS:
+        return "warning"
+    return "other"
+
+
+_SYSLOG_LEVEL_NAMES = {"0": "emergency", "1": "alert", "2": "critical", "3": "error", "4": "warning",
+                       "5": "notice", "6": "info", "7": "debug"}
+
+
+async def _aggregate_level_analysis(client, query: str, timerange: Dict, streams: List[str]) -> tuple:
+    """Exact level distribution via one server-side pivot."""
+    grouped, total = await client._aggregate_counts(query, timerange, [{
+        "type": "values", "fields": ["level"], "limit": 50}], streams)
+    counts = {}
+    for row in grouped["rows"]:
+        if row.get("source") == "leaf":
+            counts[str(row["key"][0])] = _pivot_count(row)
+    missing = counts.pop("(Empty Value)", 0)
+    errors = sum(c for lv, c in counts.items() if _level_class(lv) == "error")
+    warnings = sum(c for lv, c in counts.items() if _level_class(lv) == "warning")
+    ordered = dict(sorted(counts.items(), key=lambda item: item[1], reverse=True))
+    analysis = {
+        "level_distribution": ordered,
+        "level_names": {lv: _SYSLOG_LEVEL_NAMES[lv] for lv in ordered if lv in _SYSLOG_LEVEL_NAMES} or None,
+        "error_rate": round(errors / total * 100, 2) if total else 0,
+        "warning_rate": round(warnings / total * 100, 2) if total else 0,
+        "total_errors": errors,
+        "total_warnings": warnings,
+        "no_level_count": missing,
+        "most_common_level": next(iter(ordered.items()), ("info", 0)),
+        "note": "Errors are syslog levels 0-3 or text error/critical/fatal; warnings are level 4 or warn/warning.",
+    }
+    return {k: v for k, v in analysis.items() if v is not None}, total
+
+
+async def _aggregate_overview(client, query: str, timerange: Dict, streams: List[str], top_sources: int = 20) -> Dict:
+    """get_log_statistics from three server-side pivots: exact totals, sources, levels and time pattern."""
+    five_minute = 0 < timerange["range_seconds"] <= 3 * 3600
+    source_task = client._aggregate_counts(query, timerange, [{
+        "type": "values", "fields": ["source"], "limit": top_sources}], streams)
+    time_task = client._aggregate_counts(query, timerange, [{
+        "type": "time", "fields": ["timestamp"],
+        "interval": {"type": "timeunit", "timeunit": "5m" if five_minute else "1h"}}], streams)
+    (sources, total), (times, _), (levels, _) = await asyncio.gather(
+        source_task, time_task, _aggregate_level_analysis(client, query, timerange, streams))
+    top = [{"source": row["key"][0], "count": _pivot_count(row)} for row in sources["rows"] if row.get("source") == "leaf"]
+    top.sort(key=lambda item: item["count"], reverse=True)
+    for item in top:
+        item["pct"] = round(item["count"] / total * 100, 2) if total else 0
+    minutes = max(timerange["range_seconds"] / 60, 1) if timerange.get("range_seconds") else None
+    return {
+        "summary": {
+            "total_events": total,
+            "time_span_minutes": round(minutes, 1) if minutes else None,
+            "events_per_minute": round(total / minutes, 2) if minutes else None,
+            "sources_shown": len(top),
+            "error_rate": levels["error_rate"],
+            "warning_rate": levels["warning_rate"],
+            "most_active_source": top[0]["source"] if top else "N/A",
+        },
+        "source_analysis": {"top_sources": top, "note": f"Top {top_sources} sources by exact count."},
+        "level_analysis": levels,
+        "time_analysis": _aggregate_time_patterns(times["rows"], five_minute),
+        "method": "aggregation",
+        "note": "Exact counts over the whole range. For error keywords and sample messages use analyze_error_patterns or get_log_sample.",
+    }
+
+
 def _pivot_count(row: Dict) -> int:
     """Read a count series without treating malformed results as zero counts."""
     for value in row["values"]:
@@ -2820,6 +3086,153 @@ def _aggregate_time_patterns(rows: List[Dict], five_minute: bool) -> Dict:
             for start, count in sorted(series.items())
         ]
     return result
+
+
+_EVENT_PRIORITY = {1: "low", 2: "normal", 3: "high", 4: "critical"}
+_EVENT_TEXT_MAX = 300
+
+
+def _clip(value, limit=_EVENT_TEXT_MAX):
+    """Truncate long strings so tool output stays small."""
+    if isinstance(value, str) and len(value) > limit:
+        return value[:limit] + "..."
+    return value
+
+
+async def _fetch_all_pages(client, path, key, per_page=500, max_pages=20, params=None):
+    """Read a paginated Graylog list endpoint completely (bounded). Returns (items, total, merged scheduler context)."""
+    items, total, scheduler = [], None, {}
+    for page in range(1, max_pages + 1):
+        query = dict(params or {})
+        query.update({"page": page, "per_page": per_page})
+        response = await client.get(path, params=query)
+        if not isinstance(response, dict):
+            break
+        batch = response.get(key, [])
+        total = response.get("total", total)
+        items.extend(batch)
+        scheduler.update(((response.get("context") or {}).get("scheduler")) or {})
+        if len(batch) < per_page or (total is not None and len(items) >= total):
+            break
+    return items, total, {"scheduler": scheduler}
+
+
+async def _event_lookup_names(client):
+    """Map stream and notification ids to titles."""
+    streams = {}
+    try:
+        for stream in (await client.get("/streams")).get("streams", []):
+            streams[stream.get("id")] = stream.get("title")
+    except Exception as e:
+        logger.warning(f"Stream lookup failed: {e}")
+    notifications = {}
+    try:
+        items, _, _ = await _fetch_all_pages(client, "/events/notifications", "notifications")
+        for item in items:
+            notifications[item.get("id")] = {"title": item.get("title"), "type": (item.get("config") or {}).get("type")}
+    except Exception as e:
+        logger.warning(f"Notification lookup failed: {e}")
+    return streams, notifications
+
+
+def _event_definition_summary(definition, streams, notifications, scheduler):
+    """Compact view of an event definition for list output."""
+    config = definition.get("config") or {}
+    sched = scheduler.get(definition.get("id")) or {}
+    item = {
+        "id": definition.get("id"),
+        "title": definition.get("title"),
+        "priority": definition.get("priority"),
+        "priority_label": _EVENT_PRIORITY.get(definition.get("priority")),
+        "state": definition.get("state"),
+        "alert": definition.get("alert"),
+        "type": config.get("type"),
+        "query": _clip(config.get("query"), 200),
+        "streams": [streams.get(sid, sid) for sid in config.get("streams") or []],
+        "last_matched": definition.get("matched_at"),
+        "notifications": [(notifications.get(n.get("notification_id")) or {}).get("title") or n.get("notification_id")
+                          for n in definition.get("notifications") or []],
+    }
+    if config.get("search_within_ms") is not None:
+        item["search_within_min"] = round(config["search_within_ms"] / 60000, 2)
+    if config.get("use_cron_scheduling"):
+        item["cron"] = f"{config.get('cron_expression')} ({config.get('cron_timezone')})"
+    elif config.get("execute_every_ms") is not None:
+        item["execute_every_min"] = round(config["execute_every_ms"] / 60000, 2)
+    if sched:
+        item["scheduler"] = {"status": sched.get("status"), "last_run": sched.get("triggered_at"),
+                             "next_run": sched.get("next_time")}
+    return {k: v for k, v in item.items() if v not in (None, [], "")}
+
+
+def _event_summary(document, definitions, streams):
+    """Compact view of one triggered event."""
+    event = document.get("event", document)
+    definition_id = event.get("event_definition_id")
+    item = {
+        "id": event.get("id"),
+        "timestamp": event.get("timestamp"),
+        "event_definition_id": definition_id,
+        "event_definition": (definitions.get(definition_id) or {}).get("title"),
+        "priority": event.get("priority"),
+        "priority_label": _EVENT_PRIORITY.get(event.get("priority")),
+        "alert": event.get("alert"),
+        "message": _clip(event.get("message")),
+        "key": event.get("key"),
+        "group_by": event.get("group_by_fields") or None,
+        "aggregation": event.get("aggregation_conditions") or None,
+        "fields": {k: _clip(v, 200) for k, v in (event.get("fields") or {}).items()} or None,
+        "source_streams": [streams.get(sid, sid) for sid in event.get("source_streams") or []],
+        "window": f"{event.get('timerange_start')} .. {event.get('timerange_end')}" if event.get("timerange_start") else None,
+        "index": document.get("index_name"),
+    }
+    return {k: v for k, v in item.items() if v not in (None, [], "")}
+
+
+_SECRET_KEY_HINTS = ("password", "secret", "token", "api_key", "apikey", "auth", "header", "url",
+                     "recipient", "email", "user", "sender", "reply_to", "cc", "bcc", "webhook",
+                     "channel", "body", "template", "subject", "key")
+
+
+def _notification_safe_config(config):
+    """Report only which notification settings are set, never their values."""
+    safe = {"type": config.get("type")}
+    configured, counts = [], {}
+    for key, value in config.items():
+        if isinstance(value, dict) and "is_set" in value:
+            value = bool(value.get("is_set"))
+        if key == "type" or value in (None, "", [], {}, False):
+            continue
+        if value is True and any(h in key.lower() for h in _SECRET_KEY_HINTS):
+            configured.append(key)
+            continue
+        if isinstance(value, bool) and not any(h in key.lower() for h in _SECRET_KEY_HINTS):
+            safe[key] = value
+        elif isinstance(value, list) and any(h in key.lower() for h in ("recipient", "email", "user", "cc")):
+            counts[key] = len(value)
+        else:
+            configured.append(key)
+    safe["configured"] = sorted(configured)
+    if counts:
+        safe["recipient_counts"] = counts
+    return safe
+
+
+_REDACT_PATTERNS = [
+    (re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), "[email]"),
+    (re.compile(r"\b[a-z][a-z0-9+.-]*://\S+", re.I), "[url]"),
+    (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), "[ip]"),
+    (re.compile(r"\b[A-Za-z0-9_-]{32,}\b"), "[secret]"),
+]
+
+
+def _redact_text(value):
+    """Mask emails, URLs, IP addresses and token-like strings in free text."""
+    if not isinstance(value, str):
+        return value
+    for pattern, replacement in _REDACT_PATTERNS:
+        value = pattern.sub(replacement, value)
+    return value
 
 
 def _health_timestamp(value):
@@ -2955,6 +3368,14 @@ async def execute_tool(name: str, arguments: dict) -> Union[dict, str]:
             analysis_limit = arguments.get("analysis_limit", 15000)
             
             logger.info(f"Processing log statistics with FIXED source analysis for query '{query}' with limit {analysis_limit}")
+
+            try:
+                timerange = client._build_timerange(range_from, range_to)
+                result = await _aggregate_overview(client, query, timerange, streams)
+                result.update({"query": query, "time_range": {"from": range_from, "to": range_to}})
+                return result
+            except Exception as e:
+                logger.warning("Statistics aggregation failed; falling back to sampling: %s", e)
             
             try:
                 # Apply stream filter to query as workaround for API stream parameter issues
@@ -3154,9 +3575,9 @@ async def execute_tool(name: str, arguments: dict) -> Union[dict, str]:
                     )
                     
                     # Limit to reasonable number for analysis
-                    if len(messages) > 30000:
-                        logger.info(f"Limiting error analysis to first 30000 messages out of {len(messages)}")
-                        messages = messages[:30000]
+                    if len(messages) > MAX_ANALYSIS_MESSAGES:
+                        logger.info(f"Limiting error analysis to first {MAX_ANALYSIS_MESSAGES} messages out of {len(messages)}")
+                        messages = messages[:MAX_ANALYSIS_MESSAGES]
                         
                 except GraylogError as e:
                     if "too_many_nested_clauses" in str(e):
@@ -3200,6 +3621,14 @@ async def execute_tool(name: str, arguments: dict) -> Union[dict, str]:
             range_from = arguments.get("range_from", "now-5m")
             range_to = arguments.get("range_to", "now")
             streams = arguments.get("streams", [])
+
+            try:
+                timerange = client._build_timerange(range_from, range_to)
+                level_analysis, total = await _aggregate_level_analysis(client, query, timerange, streams)
+                return {"level_analysis": level_analysis, "total_count": total, "sample_size": total,
+                        "query": query, "time_range": {"from": range_from, "to": range_to}, "method": "aggregation"}
+            except Exception as e:
+                logger.warning("Level aggregation failed; falling back to sampling: %s", e)
             
             try:
                 # Apply stream filter to query as workaround for API stream parameter issues
@@ -3307,7 +3736,7 @@ async def execute_tool(name: str, arguments: dict) -> Union[dict, str]:
                     to_time=range_to,
                     fields=fields,
                     streams=streams,
-                    target_limit=30000
+                    target_limit=MAX_ANALYSIS_MESSAGES
                 )
                 
                 logger.info(f"Accurate total count: {accurate_total_count}, messages retrieved: {len(messages)}")
@@ -4044,6 +4473,196 @@ async def execute_tool(name: str, arguments: dict) -> Union[dict, str]:
             except Exception as e:
                 raise GraylogError(f"Failed to find silent sources: {e}")
 
+        elif name == "list_event_definitions":
+            try:
+                text = str(arguments.get("query", "") or "").strip().lower()
+                state = str(arguments.get("state", "all")).lower()
+                priority = arguments.get("priority")
+                page = max(1, int(arguments.get("page", 1)))
+                per_page = min(max(1, int(arguments.get("per_page", 50))), 200)
+                items, total, context = await _fetch_all_pages(client, "/events/definitions", "event_definitions")
+                scheduler = (context or {}).get("scheduler") or {}
+                streams, notifications = await _event_lookup_names(client)
+                selected = []
+                for definition in items:
+                    if state != "all" and str(definition.get("state", "")).lower() != state:
+                        continue
+                    if priority is not None and definition.get("priority") != int(priority):
+                        continue
+                    if text and text not in f"{definition.get('title', '')} {definition.get('description', '')}".lower():
+                        continue
+                    selected.append(definition)
+                selected.sort(key=lambda d: str(d.get("title", "")).lower())
+                start = (page - 1) * per_page
+                rows = [_event_definition_summary(d, streams, notifications, scheduler) for d in selected[start:start + per_page]]
+                by_state = Counter(str(d.get("state")) for d in items)
+                return {"total_definitions": total if total is not None else len(items), "by_state": dict(by_state),
+                        "matched": len(selected), "page": page, "per_page": per_page,
+                        "has_more": start + per_page < len(selected), "event_definitions": rows}
+            except Exception as e:
+                raise GraylogError(f"Failed to list event definitions: {e}")
+
+        elif name == "get_event_definition":
+            try:
+                definition_id = str(arguments["event_definition_id"]).strip()
+                definition = await client.get(f"/events/definitions/{definition_id}")
+                streams, notifications = await _event_lookup_names(client)
+                scheduler = {}
+                try:
+                    listing = await client.get("/events/definitions", params={"query": definition.get("title", ""), "per_page": 50})
+                    scheduler = (listing.get("context") or {}).get("scheduler") or {}
+                except Exception as e:
+                    logger.warning(f"Scheduler lookup failed: {e}")
+                config = dict(definition.get("config") or {})
+                config["streams"] = [streams.get(sid, sid) for sid in config.get("streams") or []]
+                if isinstance(config.get("query"), str):
+                    config["query"] = _clip(config["query"], 2000)
+                result = {
+                    "id": definition.get("id"),
+                    "title": definition.get("title"),
+                    "description": _clip(definition.get("description"), 1000),
+                    "priority": definition.get("priority"),
+                    "priority_label": _EVENT_PRIORITY.get(definition.get("priority")),
+                    "state": definition.get("state"),
+                    "alert": definition.get("alert"),
+                    "updated_at": definition.get("updated_at"),
+                    "last_matched": definition.get("matched_at"),
+                    "config": config,
+                    "key_spec": definition.get("key_spec"),
+                    "field_spec": {k: {"type": (v or {}).get("data_type"), "provider": [(p or {}).get("type") for p in (v or {}).get("providers") or []]}
+                                   for k, v in (definition.get("field_spec") or {}).items()},
+                    "notification_settings": definition.get("notification_settings"),
+                    "notifications": [{"id": n.get("notification_id"),
+                                       "title": (notifications.get(n.get("notification_id")) or {}).get("title"),
+                                       "type": (notifications.get(n.get("notification_id")) or {}).get("type")}
+                                      for n in definition.get("notifications") or []],
+                    "tags": definition.get("tags") or None,
+                    "tactics_techniques": definition.get("tactics_techniques") or None,
+                }
+                sched = scheduler.get(definition.get("id"))
+                if sched:
+                    result["scheduler"] = {"status": sched.get("status"), "last_run": sched.get("triggered_at"),
+                                           "next_run": sched.get("next_time"), "queued_notifications": sched.get("queued_notifications")}
+                return {k: v for k, v in result.items() if v not in (None, [], "", {})}
+            except Exception as e:
+                raise GraylogError(f"Failed to get event definition: {e}")
+
+        elif name == "search_events":
+            try:
+                range_from = arguments.get("range_from", "now-24h")
+                range_to = arguments.get("range_to", "now")
+                tr = client._build_timerange(range_from, range_to)
+                timerange = ({"type": "relative", "range": tr["range"]} if tr["type"] == "relative"
+                             else {"type": "absolute", "from": tr["from"], "to": tr["to"]})
+                page = max(1, int(arguments.get("page", 1)))
+                per_page = min(max(1, int(arguments.get("per_page", 50))), 200)
+                query = str(arguments.get("query", "") or "").strip()
+                if arguments.get("priority") is not None:
+                    clause = f"priority:{int(arguments['priority'])}"
+                    query = f"({query}) AND {clause}" if query else clause
+                event_filter = {"alerts": arguments.get("alerts", "include")}
+                if arguments.get("event_definition_ids"):
+                    event_filter["event_definitions"] = list(arguments["event_definition_ids"])
+                body = {"query": query, "page": page, "per_page": per_page, "filter": event_filter,
+                        "timerange": timerange, "sort_by": "timestamp", "sort_direction": "desc"}
+                response = await client.post("/events/search", data=body)
+                context = response.get("context") or {}
+                definitions = context.get("event_definitions") or {}
+                streams = {sid: (info or {}).get("title") for sid, info in (context.get("streams") or {}).items()}
+                missing = set()
+                for document in response.get("events", []):
+                    missing.update(sid for sid in (document.get("event") or {}).get("source_streams") or [] if sid not in streams)
+                if missing:
+                    try:
+                        for stream in (await client.get("/streams")).get("streams", []):
+                            streams.setdefault(stream.get("id"), stream.get("title"))
+                    except Exception as e:
+                        logger.warning(f"Stream lookup failed: {e}")
+                events = [_event_summary(document, definitions, streams) for document in response.get("events", [])]
+                total = response.get("total_events", len(events))
+                per_definition = Counter((e.get("event_definition") or e.get("event_definition_id")) for e in events)
+                return {"time_range": {"from": range_from, "to": range_to}, "total_events": total,
+                        "page": page, "per_page": per_page, "has_more": page * per_page < total,
+                        "page_counts_by_definition": dict(per_definition.most_common()),
+                        "events": events}
+            except Exception as e:
+                raise GraylogError(f"Failed to search events: {e}")
+
+        elif name == "get_event_source_messages":
+            try:
+                event_id = str(arguments["event_id"]).strip()
+                if not re.fullmatch(r"[A-Za-z0-9_-]+", event_id):
+                    raise GraylogError("event_id must be the id returned by search_events")
+                lookback = min(max(1, int(arguments.get("lookback_days", 30))), 365)
+                limit = min(max(1, int(arguments.get("limit", 20))), 200)
+                fields = arguments.get("fields") or []
+                found = await client.post("/events/search", data={
+                    "query": f"id:{event_id}", "page": 1, "per_page": 1, "filter": {"alerts": "include"},
+                    "timerange": {"type": "relative", "range": lookback * 86400}})
+                documents = found.get("events", []) if isinstance(found, dict) else []
+                if not documents:
+                    return {"event_id": event_id, "found": False,
+                            "note": f"No event with this id in the last {lookback} days. Increase lookback_days or check the id."}
+                event = documents[0].get("event", {})
+                replay = event.get("replay_info") or {}
+                if not replay.get("timerange_start"):
+                    return {"event_id": event_id, "found": True, "event": _event_summary(documents[0], {}, {}),
+                            "note": "This event has no replay info (e.g. a system event), so its source messages cannot be looked up."}
+                base_query = (replay.get("query") or "").strip() or "*"
+                clauses = []
+                for field, value in (event.get("group_by_fields") or {}).items():
+                    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+                    clauses.append(f'{field}:"{escaped}"')
+                query = base_query if not clauses else (f"({base_query}) AND " if base_query != "*" else "") + " AND ".join(clauses)
+                params = {"query": query, "from": replay["timerange_start"], "to": replay["timerange_end"],
+                          "limit": limit, "sort": "timestamp:desc"}
+                stream_ids = replay.get("streams") or []
+                if stream_ids:
+                    params["filter"] = "streams:" + ",".join(stream_ids)
+                if fields:
+                    params["fields"] = ",".join(fields)
+                response = await client.get("/search/universal/absolute", params=params)
+                messages = []
+                for item in response.get("messages", []) if isinstance(response, dict) else []:
+                    message = item.get("message", {})
+                    if fields:
+                        message = {k: message.get(k) for k in fields if k in message}
+                    else:
+                        message = {k: v for k, v in message.items() if not k.startswith("gl2_") and k != "streams"}
+                    messages.append({k: _clip(v) for k, v in message.items()})
+                streams, _ = await _event_lookup_names(client)
+                return {"event": _event_summary(documents[0], {}, streams),
+                        "replay": {"query": query, "from": replay["timerange_start"], "to": replay["timerange_end"],
+                                   "streams": [streams.get(sid, sid) for sid in stream_ids]},
+                        "total_results": response.get("total_results") if isinstance(response, dict) else None,
+                        "returned": len(messages), "messages": messages}
+            except GraylogError:
+                raise
+            except Exception as e:
+                raise GraylogError(f"Failed to get event source messages: {e}")
+
+        elif name == "list_event_notifications":
+            try:
+                notifications, total, _ = await _fetch_all_pages(client, "/events/notifications", "notifications")
+                definitions, _, _ = await _fetch_all_pages(client, "/events/definitions", "event_definitions")
+                used_by = defaultdict(list)
+                for definition in definitions:
+                    for n in definition.get("notifications") or []:
+                        used_by[n.get("notification_id")].append(definition.get("title"))
+                rows = []
+                for item in notifications:
+                    users = sorted(t for t in used_by.get(item.get("id"), []) if t)
+                    rows.append({"id": item.get("id"), "title": item.get("title"),
+                                 "description": _clip(_redact_text(item.get("description")), 200) or None,
+                                 **_notification_safe_config(item.get("config") or {}),
+                                 "used_by_count": len(users), "used_by": users[:20]})
+                rows.sort(key=lambda r: str(r.get("title", "")).lower())
+                return {"total": total if total is not None else len(rows),
+                        "note": "Recipients, URLs, tokens, passwords, headers and templates are never returned; 'configured' lists only which settings are set. Emails, URLs and IPs in descriptions are masked.",
+                        "notifications": [{k: v for k, v in r.items() if v is not None} for r in rows]}
+            except Exception as e:
+                raise GraylogError(f"Failed to list event notifications: {e}")
+
         elif name == "list_fields":
             prefix = str(arguments.get("prefix", "") or "").lower()
             try:
@@ -4517,6 +5136,7 @@ def parse_args():
 
 async def main():
     """Main function with comprehensive testing and debugging"""
+    configure_logging()
     try:
         global graylog_config
         

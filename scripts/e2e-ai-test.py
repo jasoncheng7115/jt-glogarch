@@ -13,6 +13,8 @@ Seeds 60 failed logins from one address over GELF, then checks:
   2. /mcp with a real Graylog API token issued by the stack (initialize,
      tools/list, tools/call), audited; a bogus token is refused,
   3. an mcp_graylog tool through /mcp as well (1.10.2+ loads on Python 3.10),
+     and its event tools (1.12.0): definitions, notifications without recipients
+     or URLs, triggered events over 2 days, the messages behind an event,
   4. with AI_URL set, a real LLM answers the count question correctly,
   5. a real detector run opens a password-spraying incident for the seeded peer, its
      AI-analysis evidence matches Graylog, and (with AI_URL) a real model returns a
@@ -95,6 +97,73 @@ def main() -> int:
             httpx.delete(f"{GL_URL}/api/users/{uid}/tokens/{token_id}", auth=(GL_USER, GL_PASS), headers=H)
         print("RESULT: ALL PASS" if ok else "RESULT: FAILED")
     return rc if ok else 1
+
+
+def _gl_create(path, body):
+    """Graylog 7 wants {"entity": ...}; 6 takes the object itself."""
+    try:
+        return gl("POST", path, json={"entity": body})
+    except httpx.HTTPStatusError:
+        return gl("POST", path, json=body)
+
+
+async def events_step(c, auth, q, tag) -> None:
+    """mcp_graylog 1.11/1.12 event tools through /mcp, and the owner's rule: a
+    notification's recipients, URL and addresses never come back (1.35)."""
+    # An HTTP notification (the stack has no e-mail transport): Graylog itself returns
+    # its URL, here with a token in it, so this is what must not come back.
+    secret = f"s3cr3t-{tag}"
+    note = _gl_create("/api/events/notifications", {
+        "title": f"e2e notify {tag}", "description": f"call ops-{tag}@example.com or https://wiki.example.com/{tag} 10.9.8.7",
+        "config": {"type": "http-notification-v1", "url": f"https://hook.example.com/{tag}?token={secret}",
+                   "basic_auth": {"set_value": f"u-{tag}:pw-{tag}"}}})
+    nid = note["id"]
+    did = None
+    try:
+        d = _gl_create("/api/events/definitions?schedule=true", {
+            "title": f"e2e definition {tag}", "description": "e2e", "priority": 2, "alert": False,
+            "config": {"type": "aggregation-v1", "query": q, "query_parameters": [], "streams": [], "group_by": [],
+                       "series": [], "conditions": {"expression": None}, "search_within_ms": 600000,
+                       "execute_every_ms": 60000, "event_limit": 100},   # 7.2 refuses 0
+            "field_spec": {}, "key_spec": [], "notification_settings": {"grace_period_ms": 0, "backlog_size": 0},
+            "notifications": [{"notification_id": nid}],
+            "storage": [{"type": "persist-to-streams-v1", "streams": ["000000000000000000000002"]}]})
+        did = d["id"]
+
+        def call(name, args, rid):
+            r = c.post("/mcp", json={"jsonrpc": "2.0", "id": rid, "method": "tools/call",
+                                     "params": {"name": name, "arguments": args}}, headers=auth)
+            res = r.json()["result"]
+            return res["isError"], (res["content"][0]["text"] if res.get("content") else "")
+        err, text = call("list_event_definitions", {"query": tag}, 40)
+        check(not err and f"e2e definition {tag}" in text and f"e2e notify {tag}" in text,
+              f"list_event_definitions finds the definition and names its notification: {text[:120]!r}")
+        err, text = call("get_event_definition", {"event_definition_id": did}, 41)
+        check(not err and q.split(" AND ")[0] in text, "get_event_definition returns its query")
+        err, text = call("list_event_notifications", {}, 42)
+        leaked = [x for x in (secret, "hook.example.com", f"ops-{tag}@", "wiki.example.com", "10.9.8.7", f"pw-{tag}")
+                  if x in text]
+        check(not err and f"e2e notify {tag}" in text and not leaked,
+              f"list_event_notifications lists it without URL, token, password or addresses (leaked: {leaked})")
+        err, text = call("get_event_definition", {"event_definition_id": did}, 45)
+        check(not err and not [x for x in (secret, "hook.example.com") if x in text],
+              "get_event_definition names its notification without the notification's URL")
+        found = ""
+        for _ in range(24):              # the definition runs every minute
+            err, text = call("search_events", {"range_from": "now-2d", "event_definition_ids": [did], "per_page": 3}, 43)
+            if err or did in text:
+                found = text
+                break
+            await asyncio.sleep(5)
+        check(not err and did in found, "search_events over 2 days (past the 24 h message cap) finds the triggered event")
+        if did in found:
+            ev = next((e for e in json.loads(found).get("events", []) if e.get("event_definition_id") == did), {})
+            err, text = call("get_event_source_messages", {"event_id": ev.get("id", ""), "limit": 3}, 44)
+            check(not err and "e2e-host" in text, f"get_event_source_messages returns the messages behind it: {text[:100]!r}")
+    finally:
+        if did:
+            httpx.delete(f"{GL_URL}/api/events/definitions/{did}", auth=(GL_USER, GL_PASS), headers=H)
+        httpx.delete(f"{GL_URL}/api/events/notifications/{nid}", auth=(GL_USER, GL_PASS), headers=H)
 
 
 async def run(tmp: Path, q: str, token: str, tag: str) -> int:
@@ -189,6 +258,7 @@ async def run(tmp: Path, q: str, token: str, tag: str) -> int:
                              "params": {"name": "find_silent_sources", "arguments": {"lookback_hours": 100000}}},
                headers=auth)
     check(r.json()["result"]["isError"], "find_silent_sources look-back is capped")
+    await events_step(c, auth, q, tag)
 
     # 4. a real LLM, if configured
     if AI_URL:
@@ -196,12 +266,15 @@ async def run(tmp: Path, q: str, token: str, tag: str) -> int:
         from glogarch.core.config import AiConfig
         acfg = AiConfig(enabled=True, url=AI_URL, model=os.environ.get("AI_MODEL", ""),
                         api_key=os.environ.get("AI_KEY", ""), allow_external=False)
+        ctx.settings.ai = acfg               # 1.36: run_chat takes the LLM server entry; limits come from settings.ai
         events = []
 
         async def emit(e):
             events.append(e)
-        out = await run_chat(acfg, ctx, [], f"How many failed logins came from {PEER} in the last 30 minutes "
-                                             f"in messages with e2e:{tag}? Give the number.", "en", emit)
+        out = await run_chat(acfg.llm(), ctx, [], f"How many failed logins came from {PEER} in the last 30 minutes "
+                                                   f"in messages with e2e:{tag}? Give the number.", "en", emit)
+        model_ev = next((e for e in events if e.get("phase") == "model"), {})
+        check(model_ev.get("context", 0) > 0, f"the chat read the model's context window: {model_ev}")
         # What jt-glogarch guarantees: the number in the answer is what the tool returned
         # for the query the model chose (no invented facts). Whether the model chose
         # the RIGHT query is model quality: reported, not failed (measured 2026-11-19:
@@ -210,7 +283,7 @@ async def run(tmp: Path, q: str, token: str, tag: str) -> int:
         check(not out["error"] and calls, f"real LLM used a tool ({out['elapsed_ms']} ms, tools {out['tools']}) {out['error']}")
         truth = None
         # the newest call that produced a number (the model may look at incidents afterwards)
-        for c in reversed([x for x in calls if x["name"] in ("count_messages", "top_values")]):
+        for c in reversed([x for x in calls if x["name"] in ("count_messages", "top_values", "aggregate")]):
             r = await G.call_tool(c["name"], c["args"], ctx)
             try:
                 body = json.loads(r["result"]) if r.get("ok") else {}
@@ -221,8 +294,25 @@ async def run(tmp: Path, q: str, token: str, tag: str) -> int:
                 truth = body["rows"][0].get("count")
             if truth is not None:
                 break
-        check(truth is not None and str(truth) in out["answer"].replace(",", ""),
-              f"the answer states what its own query returned ({truth}): {out['answer'][:100]!r}")
+        stated = truth is not None and str(truth) in out["answer"].replace(",", "")
+        check(stated, f"the answer states what its own query returned ({truth}): {out['answer'][:100]!r}")
+        if not stated:   # say which query gave which number, so model quality and our bug can be told apart
+            for x in out.get("calls") or []:
+                print(f"    call {x['name']}: query={x.get('query')!r} range={x.get('range')} "
+                      f"count={x.get('count')} rows={x.get('rows')} ok={x['ok']} {x.get('error', '')}")
+            print(f"    answer: {out['answer'][:600]!r}")
+        # 1.34: the answer was streamed, and each query is kept with what it really ran
+        streamed = ""
+        for e in (e for e in events if e.get("phase") == "answer"):
+            streamed = e["text"] if e.get("reset") else streamed + e.get("delta", "")
+        check(streamed.strip() == out["answer"].strip(),
+              f"the streamed text adds up to the stored answer ({len(streamed)} / {len(out['answer'])} chars)")
+        rec = [x for x in out.get("calls") or [] if x["name"] in ("count_messages", "top_values") and x["ok"]]
+        check(rec and all(x.get("range", {}).get("from") and isinstance(x.get("query"), str) for x in rec),
+              f"each query is recorded with its range ({len(rec)} recorded)")
+        counted = [x["count"] for x in rec if "count" in x]
+        check(not counted or truth in counted or any(x.get("rows") for x in rec),
+              f"a recorded count matches Graylog ({counted} vs {truth})")
         used_q = json.dumps([c["args"] for c in calls], ensure_ascii=False)
         if f"e2e:{tag}" not in used_q:
             print(f"WARN model quality: its query dropped the e2e:{tag} condition: {used_q[:200]}")

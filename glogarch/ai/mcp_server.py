@@ -30,6 +30,12 @@ log = get_logger("ai.mcp")
 PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")
 RATE_PER_MIN = 120
 _AUTH_TTL = 60
+# found by a review: refused tokens are limited per address (each new token costs two
+# Graylog calls), a batch counts every call and has a size cap, and the tables stay small
+AUTH_FAILS_PER_MIN = 20
+MAX_BATCH = 20
+MAX_BODY_BYTES = 1024 * 1024
+_MAX_KEYS = 10_000
 
 _auth_cache: dict[str, tuple[float, str | None, str]] = {}
 _rate: dict[str, list[float]] = {}
@@ -49,16 +55,43 @@ def token_from_headers(headers) -> str:
     return ""
 
 
-def rate_ok(key: str, now: float | None = None) -> bool:
+def rate_key(kind: str, value: str) -> str:
+    """A rate-limit key: a hash of the whole value (a token prefix let one caller use
+    up another's quota), never the value itself."""
+    return kind + ":" + hashlib.sha256(value.encode()).hexdigest()[:32]
+
+
+def _prune(table: dict, now: float, keep: float) -> None:
+    if len(table) <= _MAX_KEYS:
+        return
+    for k in [k for k, v in table.items() if not v or now - (v[-1] if isinstance(v, list) else v[0]) > keep]:
+        table.pop(k, None)
+    while len(table) > _MAX_KEYS:          # still too many: drop the oldest entries
+        table.pop(next(iter(table)))
+
+
+def rate_ok(key: str, now: float | None = None, limit: int = RATE_PER_MIN, cost: int = 1) -> bool:
     now = now or time.time()
     with _lock:
+        _prune(_rate, now, 60)
         hits = [t for t in _rate.get(key, []) if now - t < 60]
-        if len(hits) >= RATE_PER_MIN:
+        if len(hits) + cost > limit:
             _rate[key] = hits
             return False
-        hits.append(now)
+        hits.extend([now] * cost)
         _rate[key] = hits
         return True
+
+
+def auth_fail_blocked(ip: str, now: float | None = None) -> bool:
+    """This address has had too many refused tokens in the last minute."""
+    now = now or time.time()
+    with _lock:
+        return len([t for t in _rate.get(rate_key("fail", ip), []) if now - t < 60]) >= AUTH_FAILS_PER_MIN
+
+
+def note_auth_fail(ip: str, now: float | None = None) -> None:
+    rate_ok(rate_key("fail", ip), now, limit=10 ** 9)
 
 
 async def authenticate(settings, server, token: str) -> tuple[str | None, str]:
@@ -75,6 +108,7 @@ async def authenticate(settings, server, token: str) -> tuple[str | None, str]:
     user = rc.username if rc.allowed else None
     reason = "" if rc.allowed else (rc.reason or "not allowed")
     with _lock:
+        _prune(_auth_cache, now, _AUTH_TTL)
         _auth_cache[key] = (now, user, reason)
     return user, reason
 
@@ -89,6 +123,9 @@ def _ok(id_, result) -> dict:
 
 async def handle(msg, ctx: Ctx, version: str, ip: str = "") -> dict | None:
     """One JSON-RPC message -> response (None for a notification)."""
+    if isinstance(msg, dict) and msg.get("jsonrpc") == "2.0" and "method" not in msg \
+            and ("result" in msg or "error" in msg):
+        return None   # a response from the client (to a request we never send): nothing to answer
     if not isinstance(msg, dict) or msg.get("jsonrpc") != "2.0" or not isinstance(msg.get("method"), str):
         return _err(msg.get("id") if isinstance(msg, dict) else None, -32600, "Invalid Request")
     id_ = msg.get("id")
@@ -96,6 +133,8 @@ async def handle(msg, ctx: Ctx, version: str, ip: str = "") -> dict | None:
     params = msg.get("params") or {}
     if id_ is None:  # notification (notifications/initialized, cancelled, ...)
         return None
+    if not isinstance(params, dict):
+        return _err(id_, -32602, "Invalid params: an object is expected")
     if method == "initialize":
         asked = params.get("protocolVersion")
         return _ok(id_, {
@@ -103,7 +142,7 @@ async def handle(msg, ctx: Ctx, version: str, ip: str = "") -> dict | None:
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": "jt-glogarch", "version": version},
             "instructions": (f"Read-only access to the logs in Graylog server '{ctx.server.name}' and to "
-                             "jt-glogarch's security incidents and archive coverage. Times are UTC. "
+                             "jt-glogarch's security incidents and archive status. Times are UTC. "
                              "Use count_messages / top_values for exact numbers."),
         })
     if method == "ping":
@@ -115,6 +154,8 @@ async def handle(msg, ctx: Ctx, version: str, ip: str = "") -> dict | None:
     if method == "tools/call":
         name = params.get("name") or ""
         args = params.get("arguments") or {}
+        if not isinstance(name, str) or not isinstance(args, dict):
+            return _err(id_, -32602, "Invalid params: name must be a string and arguments an object")
         res = await call_tool(name, args, ctx)
         _audit_tool(ctx, name, args, res, ip)
         text = res["result"] if res.get("ok") else f"Error: {res.get('error')}"

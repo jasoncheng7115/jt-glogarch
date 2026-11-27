@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 from glogarch.ai import llm
 from glogarch.ai.chat import LANG_NAMES, data_block
 from glogarch.ai.graylog_tools import Ctx, _count, _sample, _top_values
-from glogarch.security.detectors import AUTH_OK, PEER_FIELDS
+from glogarch.security.fieldmap import FieldMap
 from glogarch.security.attack import techniques_for
 from glogarch.security.risk import match_asset
 from glogarch.security.threat_intel import describe, matcher_for
@@ -177,7 +177,11 @@ async def collect_evidence(inc: dict, ctx: Ctx, window_minutes: int) -> dict:
     r = await run("count", _count, {"query": q, **rng})
     if r:
         ev["events_in_window"] = r["count"]
-    for fld in _BREAKDOWN.get(inc.get("detector") or "", _DEFAULT_BREAKDOWN):
+    # the breakdown names GIM fields; this site may keep them elsewhere (security.field_map)
+    fm = FieldMap.from_config(getattr(getattr(ctx.settings, "security", None), "field_map", None))
+    ids = inc.get("detector") == "ids_alert_passed"
+    breakdown = dict.fromkeys(fm.field(f, ids) for f in _BREAKDOWN.get(inc.get("detector") or "", _DEFAULT_BREAKDOWN))
+    for fld in breakdown:
         if fld == inc.get("entity_field"):
             continue
         r = await run(f"top {fld}", _top_values, {"field": fld, "query": q, "limit": TOP_N, **rng})
@@ -187,12 +191,12 @@ async def collect_evidence(inc: dict, ctx: Ctx, window_minutes: int) -> dict:
     ent, efld = str(inc.get("entity") or ""), inc.get("entity_field") or ""
     if inc.get("detector", "").startswith(("auth_", "account_")) and ent and efld:
         # Did the same peer / account also log in successfully? (a possible compromise)
-        ok_q = f"{AUTH_OK} AND {efld}:{lucene_quote(ent)}"
+        ok_q = f"{fm.q_auth_success} AND {efld}:{lucene_quote(ent)}"
         r = await run("successes", _count, {"query": ok_q, **rng})
         if r is not None:
             succ: dict = {"query": ok_q, "count": r["count"]}
             if r["count"]:
-                by = "user_name" if efld in PEER_FIELDS else "source_ip"
+                by = fm.account if efld in fm.peer else fm.peer[0]
                 t = await run("successes by", _top_values, {"field": by, "query": ok_q, "limit": TOP_N, **rng})
                 succ["by_" + by] = [x for x in (t or {}).get("rows", []) if x.get("value") not in (None, "", EMPTY)]
             ev["successful_logins"] = succ
@@ -319,16 +323,18 @@ async def analyze_incident(settings, db, incident_id: int, *, lang: str = "en",
                            trigger: str = "manual", username: str = "") -> dict:
     """Collects evidence, asks the model, stores and returns the analysis row.
     Never raises for an LLM or Graylog problem: the stored row carries `error`."""
-    cfg = settings.ai
+    cfg = settings.ai.llm()          # the default LLM server (1.36: several can be configured)
     t0 = time.monotonic()
     inc = db.get_security_incident(int(incident_id))
     if not inc:
         raise ValueError("Incident not found")
     row = {"incident_id": inc["id"], "trigger": trigger, "username": username, "lang": lang,
-           "model": cfg.model, "verdict": None, "confidence": None, "result": None,
+           "model": cfg.model if cfg else "", "verdict": None, "confidence": None, "result": None,
            "evidence": None, "unverified": [], "tokens": 0, "elapsed_ms": 0, "error": ""}
     try:
-        why = llm.budget_left(cfg, db.ai_usage())
+        if cfg is None:
+            raise llm.LLMError("Set up an LLM server first")
+        why = llm.limits_left(settings.ai, cfg, db, username)
         if why:
             raise llm.LLMError(why)
         server = settings.get_server(inc.get("server") or None)
@@ -340,7 +346,7 @@ async def analyze_incident(settings, db, incident_id: int, *, lang: str = "en",
         rep = await _ask(cfg, messages)
         row["tokens"] += rep.tokens
         row["model"] = rep.model or cfg.model
-        db.ai_add_usage(rep.tokens)
+        db.ai_add_usage(rep.tokens, llm=cfg.name, username=username)
         result = parse_analysis(rep.content)
         if result is None:
             messages += [{"role": "assistant", "content": rep.content[:2000]},
@@ -348,7 +354,7 @@ async def analyze_incident(settings, db, incident_id: int, *, lang: str = "en",
                                                      "the JSON object with the six keys."}]
             rep = await _ask(cfg, messages)
             row["tokens"] += rep.tokens
-            db.ai_add_usage(rep.tokens)
+            db.ai_add_usage(rep.tokens, llm=cfg.name, username=username)
             result = parse_analysis(rep.content)
         if result is None:
             raise llm.LLMError("The model did not return a usable analysis")

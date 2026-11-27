@@ -80,13 +80,13 @@ async function ovLoad() {
     const risk = d.risk_top.length ? d.risk_top.map(x => `<li><span><code>${esc(x.entity)}</code>${typeof assetTag === 'function' ? assetTag(x.asset) : ''}</span><strong>${esc(String(x.score))}</strong></li>`).join('')
         : `<li class="text-muted">${esc(t('ov_none'))}</li>`;
     el.innerHTML = `<div class="ov-tiles">${tiles}</div>
-        <div class="card mb15"><h3 class="risk-h">${esc(t('ov_chart_title'))}</h3>
-            <p class="text-muted fs-08">${esc(t('ov_chart_help'))}</p>
+        <div class="card ov-card mb15"><h3 class="ov-card-h">${icon('report', 16)}<span>${esc(t('ov_chart_title'))}</span></h3>
+            <p class="text-muted fs-08 ov-help">${esc(t('ov_chart_help'))}</p>
             ${ovChart(d.days, d.per_day)}${ovTable(d.days, d.per_day)}</div>
         <div class="ov-lists">
-            <div class="card"><h3 class="risk-h">${esc(t('ov_top_detectors'))}</h3><ol class="ov-list">${dets}</ol></div>
-            <div class="card"><h3 class="risk-h">${esc(t('ov_top_techniques'))}</h3><ol class="ov-list">${techs}</ol></div>
-            <div class="card"><h3 class="risk-h">${esc(t('ov_top_risk'))}</h3><ol class="ov-list">${risk}</ol>
+            <div class="card ov-card"><h3 class="ov-card-h">${icon('search', 16)}<span>${esc(t('ov_top_detectors'))}</span></h3><ol class="ov-list">${dets}</ol></div>
+            <div class="card ov-card"><h3 class="ov-card-h">${icon('shield', 16)}<span>${esc(t('ov_top_techniques'))}</span></h3><ol class="ov-list">${techs}</ol></div>
+            <div class="card ov-card"><h3 class="ov-card-h">${icon('warning', 16)}<span>${esc(t('ov_top_risk'))}</span></h3><ol class="ov-list">${risk}</ol>
                 <button type="button" class="btn-sm btn-secondary" data-act="secTab" data-arg="risk">${icon('arrow_right', 14)} ${esc(t('ov_to_risk'))}</button></div>
         </div>`;
 }

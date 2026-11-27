@@ -30,6 +30,7 @@ from glogarch.export.health_guard import BackpressureStop, HealthGuard
 from glogarch.opensearch.client import OpenSearchClient
 from glogarch.ratelimit.limiter import RateLimiter
 from glogarch import __version__
+from glogarch.utils.errtext import exc_text
 from glogarch.utils.logging import get_logger
 from glogarch.utils.timefmt import parse_fixed_naive, shapes_for
 
@@ -385,7 +386,7 @@ class OpenSearchExporter:
                             result.messages_total += salvaged
                             if _is_cancellation(e) or isinstance(e, BackpressureStop):
                                 raise   # not an index failure — ends the run
-                            err = f"Index {index_name} failed: {e}"
+                            err = f"Index {index_name} failed: {exc_text(e)}"
                             log.error(err, records_kept=salvaged)
                             result.errors.append(err)
 

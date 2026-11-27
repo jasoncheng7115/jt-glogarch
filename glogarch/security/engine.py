@@ -14,8 +14,9 @@ from datetime import datetime, timedelta
 from typing import Awaitable, Callable
 
 from glogarch.security.detectors import (
-    AUTH_OK, BASELINE_HOURS, DETECTORS, PROBES, SILENT_HOURS, Detector, Probe,
+    BASELINE_HOURS, DETECTORS, SILENT_HOURS, Detector, Probe,
 )
+from glogarch.security.fieldmap import FieldMap
 
 EMPTY = "(Empty Value)"
 MAX_SUCCESS_CANDIDATES = 50
@@ -104,6 +105,14 @@ def severity_for(det: Detector, row: dict, external: bool | None) -> str | None:
     return None
 
 
+def canon_rows(probe: Probe, rows: list[dict]) -> list[dict]:
+    """Metric keys back to their GIM names (`card:user` -> `card:user_name`)."""
+    if not probe.canon or probe.canon == probe.metrics:
+        return rows
+    ren = {metric_key(*m): metric_key(*c) for m, c in zip(probe.metrics, probe.canon)}
+    return [{ren.get(k, k): v for k, v in r.items()} for r in rows]
+
+
 def qualifies(det: Detector, row: dict) -> bool:
     if row.get("count", 0) < det.min_count:
         return False
@@ -118,10 +127,14 @@ async def run_detectors(fetch: Fetch, time_from: datetime, time_to: datetime, *,
                         settings: dict | None = None,
                         global_exclude: str = "",
                         sigma_rules: list[dict] | None = None,
-                        fetch_pairs=None) -> RunResult:
+                        fetch_pairs=None,
+                        field_map: dict | None = None) -> RunResult:
     """`settings` maps detector id -> {"enabled": bool, "min_count": int,
-    "exclude": str}; missing keys fall back to the detector's defaults."""
+    "exclude": str}; missing keys fall back to the detector's defaults.
+    `field_map` = security.field_map (fieldmap.py): where this site keeps what."""
     settings = settings or {}
+    fm = FieldMap.from_config(field_map)
+    PROBES = fm.probes()
     res = RunResult()
     active: list[tuple[Detector, int, str]] = []
     for det in DETECTORS:
@@ -129,8 +142,9 @@ async def run_detectors(fetch: Fetch, time_from: datetime, time_to: datetime, *,
         if not s.get("enabled", det.default_enabled):
             continue
         min_count = int(s.get("min_count") or det.min_count)
-        exclude = s["exclude"] if "exclude" in s else det.exclude
-        active.append((det, min_count, exclude))
+        exclude = s["exclude"] if "exclude" in s else fm.exclude_default(det.exclude)
+        blocked_min = int(s.get("blocked_min_count") or det.blocked_min_count) if det.blocked_min_count else 0
+        active.append((replace(det, blocked_min_count=blocked_min), min_count, exclude))
 
     # One aggregation per (probe, field, exclusion): detectors sharing a probe
     # share its rows.
@@ -144,7 +158,7 @@ async def run_detectors(fetch: Fetch, time_from: datetime, time_to: datetime, *,
         cov = Coverage(probe.id, fld)
         try:
             res.queries += 1
-            rows = await fetch(q, fld, probe.metrics, time_from, time_to, probe.limit)
+            rows = canon_rows(probe, await fetch(q, fld, probe.metrics, time_from, time_to, probe.limit))
         except Exception as e:  # recorded per probe; the other probes still run
             cov.error = str(e)[:300]
             res.errors.append(f"{probe.id}/{fld}: {cov.error}")
@@ -162,15 +176,15 @@ async def run_detectors(fetch: Fetch, time_from: datetime, time_to: datetime, *,
 
     for det, min_count, exclude in active:
         if det.id == "account_new_source":
-            await _pairs(fetch_pairs, res, det, build_query(PROBES[det.probe].query, exclude, global_exclude),
+            await _pairs(fetch_pairs, res, PROBES[det.probe], build_query(PROBES[det.probe].query, exclude, global_exclude),
                          time_from, time_to)
             continue
         if det.id == "volume_anomaly":
-            await _volume(fetch, res, det, build_query("*", exclude, global_exclude), time_from, time_to)
+            await _volume(fetch, res, PROBES[det.probe], build_query("*", exclude, global_exclude), time_from, time_to)
             res.volume_settings = {"min_count": min_count, "exclude": exclude}
             continue
         if det.id == "source_silent":
-            await _silent(fetch, res, det, min_count, build_query("*", exclude, global_exclude), time_to)
+            await _silent(fetch, res, PROBES[det.probe], min_count, build_query("*", exclude, global_exclude), time_to)
             continue
         probe = PROBES[det.probe]
         eff = replace(det, min_count=min_count)
@@ -181,13 +195,19 @@ async def run_detectors(fetch: Fetch, time_from: datetime, time_to: datetime, *,
             hits = [r for r in rows if r.get("entity") not in (None, "", EMPTY) and qualifies(eff, r)]
             if det.id == "auth_success_after_fail":
                 hits = await _with_success(fetch, res, hits, fld, time_from, time_to,
-                                           build_query(AUTH_OK, global_exclude))
+                                           build_query(fm.q_auth_success, global_exclude))
+            if det.blocked_min_count:
+                hits = await _with_blocked(fetch, res, hits, fld, time_from, time_to,
+                                           build_query(f"({probe.query}) AND ({fm.q_waf_blocked})",
+                                                       exclude, global_exclude))
             for r in hits:
                 ent = str(r["entity"])
                 ext = is_external(ent)
                 sev = severity_for(eff, r, ext)
                 if sev is None:
                     continue
+                if blocked_only(eff, r) and int(r.get("count") or 0) < det.blocked_min_count:
+                    sev = "low"   # refused by the WAF and not a flood: recorded, not shouted
                 res.findings.append(Finding(
                     detector=det.id, entity=ent, entity_field=fld, severity=sev,
                     metrics={k: v for k, v in r.items() if k != "entity"},
@@ -230,10 +250,9 @@ async def _sigma(fetch, res: RunResult, rule: dict, time_from, time_to, global_e
             query=build_query(f"({rule['query']}) AND {fld}:{lucene_quote(ent)}", global_exclude)))
 
 
-async def _pairs(fetch_pairs, res: RunResult, det: Detector, query: str, time_from, time_to) -> None:
+async def _pairs(fetch_pairs, res: RunResult, probe: Probe, query: str, time_from, time_to) -> None:
     """Collects (account, source) pairs; the runner decides which are new (it has the history)."""
-    probe = PROBES[det.probe]
-    cov = Coverage(probe.id, "user_name+source_ip")
+    cov = Coverage(probe.id, "+".join(probe.fields))
     if fetch_pairs is None:
         cov.error = "no pair aggregation available"
         res.coverage.append(cov)
@@ -258,10 +277,9 @@ async def _pairs(fetch_pairs, res: RunResult, det: Detector, query: str, time_fr
     res.coverage.append(cov)
 
 
-async def _volume(fetch, res: RunResult, det: Detector, query: str, time_from, time_to) -> None:
+async def _volume(fetch, res: RunResult, probe: Probe, query: str, time_from, time_to) -> None:
     """Counts of the window per host and per event category; the runner compares
     them with their history (it has it)."""
-    probe = PROBES[det.probe]
     for fld in probe.fields:
         cov = Coverage(probe.id, fld)
         try:
@@ -284,21 +302,21 @@ async def _volume(fetch, res: RunResult, det: Detector, query: str, time_from, t
         res.coverage.append(cov)
 
 
-async def _silent(fetch, res: RunResult, det: Detector, min_count: int, query: str, time_to: datetime) -> None:
+async def _silent(fetch, res: RunResult, probe: Probe, min_count: int, query: str, time_to: datetime) -> None:
     """Sources with >= min_count messages in the baseline window and none in the
     last SILENT_HOURS. Two aggregations; if the recent list is truncated (1000+
     sources still sending) nothing can be concluded, so nothing is reported."""
     recent_from = time_to - timedelta(hours=SILENT_HOURS)
     base_from = recent_from - timedelta(hours=BASELINE_HOURS)
-    probe = PROBES[det.probe]
-    cov = Coverage(probe.id, "source")
+    host = probe.fields[0]
+    cov = Coverage(probe.id, host)
     try:
         res.queries += 2
-        base = await fetch(query, "source", probe.metrics, base_from, recent_from, probe.limit)
-        recent = await fetch(query, "source", probe.metrics, recent_from, time_to, probe.limit)
+        base = await fetch(query, host, probe.metrics, base_from, recent_from, probe.limit)
+        recent = await fetch(query, host, probe.metrics, recent_from, time_to, probe.limit)
     except Exception as e:
         cov.error = str(e)[:300]
-        res.errors.append(f"{probe.id}/source: {cov.error}")
+        res.errors.append(f"{probe.id}/{host}: {cov.error}")
         res.coverage.append(cov)
         return
     for r in base:
@@ -308,7 +326,7 @@ async def _silent(fetch, res: RunResult, det: Detector, min_count: int, query: s
     cov.truncated = len(base) >= probe.limit
     res.coverage.append(cov)
     if len(recent) >= probe.limit:
-        res.errors.append(f"{probe.id}/source: {probe.limit}+ sources in the last {SILENT_HOURS} h; "
+        res.errors.append(f"{probe.id}/{host}: {probe.limit}+ sources in the last {SILENT_HOURS} h; "
                           "silence cannot be judged")
         return
     still = {str(r.get("entity")) for r in recent}
@@ -318,9 +336,43 @@ async def _silent(fetch, res: RunResult, det: Detector, min_count: int, query: s
         if not ent or ent == EMPTY or ent in still or n < min_count:
             continue
         res.findings.append(Finding(
-            detector=det.id, entity=ent, entity_field="source", severity="medium",
+            detector="source_silent", entity=ent, entity_field=host, severity="medium",
             metrics={"baseline": n, "silent_hours": SILENT_HOURS},
-            external=None, query=f"source:{lucene_quote(ent)}"))
+            external=None, query=f"{host}:{lucene_quote(ent)}"))
+
+
+def blocked_only(det: Detector, row: dict) -> bool:
+    """The WAF refused (almost) all of it: what got through is below the
+    detection's own minimum. Unknown (no `blocked` count) = not blocked."""
+    return "blocked" in row and int(row.get("passed") or 0) < det.min_count
+
+
+async def _with_blocked(fetch, res, hits, fld, time_from, time_to, blocked_query):
+    """`blocked` / `passed` per peer: one more aggregation of the same events
+    that the WAF refused. A failure leaves the hits as they were (counted as
+    let through, the pre-1.35 behaviour), never drops them."""
+    if not hits:
+        return hits
+    top = sorted(hits, key=lambda r: -int(r.get("count") or 0))[:MAX_SUCCESS_CANDIDATES]
+    ids = " OR ".join(lucene_quote(str(r["entity"])) for r in top)
+    try:
+        res.queries += 1
+        rows = await fetch(f"{blocked_query} AND {fld}:({ids})", fld,
+                           (("count", None),), time_from, time_to, len(top))
+    except Exception as e:
+        res.errors.append(f"waf_blocked/{fld}: {str(e)[:300]}")
+        return hits
+    got = {str(r["entity"]): int(r.get("count") or 0) for r in rows
+           if r.get("entity") not in (None, "", EMPTY)}
+    known = {str(r["entity"]) for r in top}
+    out = []
+    for r in hits:
+        ent = str(r["entity"])
+        if ent in known:
+            n = min(got.get(ent, 0), int(r.get("count") or 0))
+            r = {**r, "blocked": n, "passed": int(r.get("count") or 0) - n}
+        out.append(r)
+    return out
 
 
 async def _with_success(fetch, res, hits, fld, time_from, time_to, ok_query):

@@ -52,6 +52,13 @@ class Identity:
         return time.time() >= self.expires_at
 
 
+# Changes on every service start. A login that kept a Graylog identity records it
+# (``BOOT_KEY``); after a restart the identity is gone from memory, so that login is
+# no longer whole and ``authz.session_is_authenticated`` signs it out. Otherwise the
+# user stays "logged in" while every page acting as them asks for Graylog again.
+BOOT_ID = secrets.token_hex(8)
+BOOT_KEY = "gl_boot"
+
 _store: dict[str, dict[str, Identity]] = {}
 _lock = threading.Lock()
 
@@ -123,3 +130,14 @@ def signed_in_servers(session: dict) -> dict[str, str]:
         return {}
     with _lock:
         return {s: i.username for s, i in (_store.get(h) or {}).items() if not i.expired()}
+
+
+def mark_login(session: dict) -> None:
+    """This login kept a Graylog identity in THIS process (see BOOT_ID)."""
+    session[BOOT_KEY] = BOOT_ID
+
+
+def login_lost(session: dict) -> bool:
+    """A Graylog login whose identity was kept by an earlier process."""
+    b = session.get(BOOT_KEY)
+    return bool(b) and b != BOOT_ID

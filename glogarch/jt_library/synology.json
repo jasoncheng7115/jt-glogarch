@@ -1,0 +1,2644 @@
+{
+  "v": "1",
+  "id": "81ef56af-f8b5-50fd-a95b-6d5d76d1f803",
+  "rev": 3,
+  "name": "Synology NAS",
+  "summary": "Synology NAS 檔案操作與連線看板",
+  "description": "Synology NAS 檔案操作與連線看板\n收集方式：Syslog UDP。這個套件不會建立 Input，請自行建立並把來源指向它。\n★ 安裝後必做：把管線接到存放這類記錄的串流。沒有接串流的管線不會處理任何記錄。全新安裝的 Graylog 7 預設先執行管線、後分配串流，這時接在自建串流上的管線不會運作：請到 System → Configurations → Message Processors，把 Stream Rule Processor 移到 Pipeline Processor 前面。\n告警預設不掛通知，事件只會寫進 Graylog；需要通知請自行加上。\n★ 請只把管線接到「只含這種設備記錄」的串流。synology-00-gate 只認領其他套件沒認領的記錄，並寫入 parsed_by=synology；其他套件已認領的記錄不會再處理。\n",
+  "vendor": "Jason Cheng (Jason Tools)",
+  "url": "",
+  "server_version": "7.0.0",
+  "parameters": [],
+  "entities": [
+    {
+      "id": "0056f2c3-6878-5286-9875-61b8c9a070b3",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-00-passthrough"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-00-passthrough\"\nwhen\n    true\nthen\nend"
+        }
+      }
+    },
+    {
+      "id": "6a84e481-f285-54aa-a159-8a87a39e40ae",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-10-fs-event"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-10-fs-event\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"FileStation Event:\")\nthen\n    set_fields(grok(pattern: \"FileStation Event: %{WORD:fs_event},\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "78e812fb-08c1-5ce3-b3e1-e9750da57b37",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-10-fs-path"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-10-fs-path\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"Path:\")\nthen\n    set_fields(grok(pattern: \"Path: %{DATA:fs_path},\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "91a24900-9b59-5b25-8312-f293ae6af3d7",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-10-fs-size"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-10-fs-size\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"Size: \")\nthen\n    set_fields(grok(pattern: \"Size: %{DATA:fs_size},\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "68e721b0-ce28-5919-9b2e-ec169ae0e3a1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-10-fs-user"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-10-fs-user\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"User: \")\nthen\n    set_fields(grok(pattern: \"User: %{DATA:fs_user},\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "e903a95e-b36c-5be2-8d86-2af684331100",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-10-fs-ip"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-10-fs-ip\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"IP: \")\nthen\n    set_fields(grok(pattern: \"IP: %{IPV4:fs_ip}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "2ba16504-801d-59da-8989-b65b050aa2f2",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-10-fs-type"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-10-fs-type\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"File/Folder: \")\nthen\n    set_fields(grok(pattern: \"File/Folder: %{DATA:fs_type},\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "f616a029-58ef-5a11-b11d-36937d937a40",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-10-fs-action"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-10-fs-action\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"Event: \")\nthen\n    set_fields(grok(pattern: \"Event: %{DATA:fs_action},\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "be42f4f6-35c5-537d-b268-a5267a46a976",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-10-conn-user"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-10-conn-user\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"User [\")\nthen\n    set_fields(grok(pattern: \"User \\\\[%{DATA:conn_user}\\\\]\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "30248cb9-a935-5eb5-9c81-433492a50eb4",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-10-conn-from"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-10-conn-from\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"from [\")\nthen\n    set_fields(grok(pattern: \"from \\\\[%{DATA:conn_from}\\\\]\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "2840f304-857e-5459-b691-e774e8236d97",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-10-conn-proto"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-10-conn-proto\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"via [\")\nthen\n    set_fields(grok(pattern: \"via \\\\[%{DATA:conn_proto}\\\\]\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "3e5ec986-b1c1-563f-bb0a-557067f6b71e",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-10-conn-folder"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-10-conn-folder\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"folder [\")\nthen\n    set_fields(grok(pattern: \"folder \\\\[%{DATA:conn_folder}\\\\]\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "6472e4c7-910e-55c9-88d1-2b267f1c898f",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-10-nas-app"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-10-nas-app\"\nwhen\n    has_field(\"message\") && regex(\" .* Event: \", to_string($message.message)).matches == true\nthen\n    set_fields(grok(pattern: \" %{DATA:nas_app} Event: \", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "521ba53d-0603-539a-99aa-81d668be7334",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-10-nas-app-2"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-10-nas-app-2\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"via\")\nthen\n    set_fields(grok(pattern: \" %{DATA:nas_app}: .* via \\\\[\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "1b3db763-c666-59f0-8016-6d0b1a1e745e",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-10-conn-signinto"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-10-conn-signinto\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"sign in to\")\nthen\n    set_fields(grok(pattern: \"sign in to \\\\[%{DATA:conn_signinto}\\\\]\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "dc10545e-ca64-5765-9c3c-13b5aa694334",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-10-conn-signinto2"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-10-conn-signinto2\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"signed in to\")\nthen\n    set_fields(grok(pattern: \"signed in to \\\\[%{DATA:conn_signinto}\\\\]\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "451ea304-d566-5629-b5ff-63900bb26234",
+      "type": {
+        "name": "pipeline",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "Synology NAS - parse"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "pipeline \"Synology NAS - parse\"\nstage -24 match either\nrule \"synology-00-gate\"\nstage 0 match either\nrule \"synology-00-passthrough\"\nrule \"synology-10-fs-event\"\nrule \"synology-10-fs-path\"\nrule \"synology-10-fs-size\"\nrule \"synology-10-fs-user\"\nrule \"synology-10-fs-ip\"\nrule \"synology-10-fs-type\"\nrule \"synology-10-fs-action\"\nrule \"synology-10-conn-user\"\nrule \"synology-10-conn-from\"\nrule \"synology-10-conn-proto\"\nrule \"synology-10-conn-folder\"\nrule \"synology-10-nas-app\"\nrule \"synology-10-nas-app-2\"\nrule \"synology-10-conn-signinto\"\nrule \"synology-10-conn-signinto2\"\nend"
+        },
+        "connected_streams": []
+      }
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "dashboard",
+        "version": "2"
+      },
+      "id": "32064afa-66c3-5e40-84d6-dc3de4e0315e",
+      "data": {
+        "summary": {
+          "@type": "string",
+          "@value": "Synology NAS 檔案操作與連線看板"
+        },
+        "search": {
+          "queries": [
+            {
+              "id": "37e6cff9-a01d-4523-b6ef-131b17308fb7",
+              "timerange": {
+                "from": 300,
+                "type": "relative"
+              },
+              "filters": [],
+              "query": {
+                "type": "elasticsearch",
+                "query_string": "_exists_:nas_app OR _exists_:fs_event OR _exists_:conn_from"
+              },
+              "search_types": [
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "fs_ip"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "ca1e2259-38e4-4426-a00c-e4ab54f355ed",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \"/6.NetworkBackup/Switch/\" AND nas_app:FtpFileTransfer AND fs_action:put"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": false,
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "timeunit",
+                        "timeunit": "10m"
+                      }
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "fa4cec38-d662-45fe-89e9-ba16a0149674",
+                  "filters": [],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "fs_ip"
+                      ],
+                      "limit": 99,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \" Backup] Backup \" AND message: \"failed\""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": false,
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "timeunit",
+                        "timeunit": "30m"
+                      }
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "5a2571b2-3930-431c-a99c-6c0d58143677",
+                  "filters": [],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source"
+                      ],
+                      "limit": 99,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \" Backup] Backup \" AND message: \"failed\""
+                  },
+                  "name": null,
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "7f7f1e2d-0152-4d22-9b3a-d2160e052429",
+                  "limit": 150,
+                  "filters": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:fs_action"
+                  },
+                  "name": null,
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "54eae2f6-1593-4cf5-913c-46a578d581fd",
+                  "limit": 150,
+                  "filters": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "conn_folder"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "119dce6e-7f3f-4bb9-8503-2da81169e5bc",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "fs_path"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "fa14f1a2-de07-4c49-83d8-c9ff608c7c5f",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "conn_user"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "3fef6ebf-2df5-4fea-8922-2e8e65d76cbb",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": false,
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "timeunit",
+                        "timeunit": "15m"
+                      }
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "6039d1a5-f218-4841-91fe-a66cb0788b8a",
+                  "filters": [],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:conn_from AND (message:\"logged in successfully\" OR (message:\"successfully\" AND message:\"signed in to\") )"
+                  },
+                  "name": null,
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "56fdbb53-0d38-4329-8d3a-4a5ca646bfb8",
+                  "limit": 150,
+                  "filters": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_: nas_app"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nas_app"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": true
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "44c18cde-a289-409f-bca0-faa985494eeb",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \"/6.NetworkBackup/Switch/\" AND nas_app:FtpFileTransfer AND fs_action:put"
+                  },
+                  "name": null,
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "23153471-d8f1-478c-8220-427f377a642e",
+                  "limit": 150,
+                  "filters": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "fs_user"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "dc696f74-2ce4-470f-aa05-73609aaaafb7",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "conn_proto"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "77dcfb30-49fe-4e03-b86e-6d570d91ac96",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "fs_action: delete"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "fs_user"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "23c4ccc9-06f8-4a32-9a58-5ae36c6d813a",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_: fs_action"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": false,
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 1
+                      }
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "e8f9e3b5-aa46-4b63-a8be-1650a5a0c74d",
+                  "filters": [],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "fs_action"
+                      ],
+                      "limit": 30,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "conn_from"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "c0087d70-8e8f-4884-88b7-efba335841f2",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nas_app OR _exists_:fs_event OR _exists_:conn_from"
+                  },
+                  "name": null,
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "580c004e-201f-46ad-9c7a-1c51af587aa1",
+                  "limit": 150,
+                  "filters": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "10c8eaef-64e5-4467-a55e-ed30c4924494",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_: fs_action"
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "fs_action"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "5a2ee862-d8c8-48c9-9197-a205210054a6",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "fs_action: delete"
+                  },
+                  "name": null,
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "e763db7e-1b5c-43ef-ba3f-b91104d32e42",
+                  "limit": 150,
+                  "filters": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "message: \"ActiveBackup[\""
+                  },
+                  "name": null,
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "c9fd2c3b-5797-46ee-90b9-39df5533ee90",
+                  "limit": 150,
+                  "filters": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:conn_from AND message:\"authorization failure\""
+                  },
+                  "name": null,
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "da4716da-6a18-4f5f-b3a6-389fe0b26fe9",
+                  "limit": 150,
+                  "filters": []
+                }
+              ]
+            }
+          ],
+          "parameters": [],
+          "requires": {},
+          "owner": "admin",
+          "created_at": "2024-11-25T03:53:29.264Z"
+        },
+        "created_at": "2026-11-01T00:00:00.000Z",
+        "requires": {},
+        "state": {
+          "37e6cff9-a01d-4523-b6ef-131b17308fb7": {
+            "selected_fields": null,
+            "static_message_list_id": null,
+            "titles": {
+              "tab": {
+                "title": "Synology NAS 看板 (1D)"
+              },
+              "widget": {
+                "4a97f231-7146-4b81-a2b8-f7e95c236b9a": "刪檔行為監測",
+                "996bb6be-7af4-403f-ab59-3a97663be006": "登入方式",
+                "3471d5ed-e1ec-437b-8e1a-dd62c582ed7d": "All Messages",
+                "600cfa93-2923-4043-8c0c-dcec86c0c6e8": "檔案存取來源 IP",
+                "78be87ac-1815-4ec5-866e-0ca93cf45809": "登入共用資料夾",
+                "b1ad50e8-5260-4901-8455-a0ec9be8e0dc": "主機",
+                "7ffa1b99-72b8-42fc-a664-67d84bae3f60": "登入失敗",
+                "5fe18e29-b7f2-4d8a-ab36-228e7dbbe8c9": "(暫時) ABB",
+                "8229c2c0-f2a6-4d74-9b08-24d00b66652d": "事件時間趨勢圖",
+                "352ff1ef-d466-4e0d-9b3b-0b7424c1b790": "檔案存取路徑",
+                "cace1ff6-0f20-4bfa-98b3-30b69db3141e": "檔案動作趨勢圖 ",
+                "f99a37ef-ae6a-46b8-8456-af4936237b9d": "行為監測",
+                "42eee4ef-db29-4338-ba65-2dab8d231ae8": "交換器裝置備份事件",
+                "400d2768-768a-4cdf-83e8-641ef392937f": "使用者刪檔排行榜",
+                "b396b892-eff4-4a47-8e8b-3cd1c93fa50b": "備份作業失敗",
+                "6938b22a-2100-42ce-b995-df7d0f8c97c4": "登入來源 IP",
+                "d232f7fa-fe6a-4655-a9bb-4d1bd6522f80": "登入成功",
+                "24989bbb-1ad8-4b44-aed6-0fedd29c854d": "備份作業失敗",
+                "8d622901-8938-473c-a0f6-3531214af6ca": "交換器裝置備份事件",
+                "a466778c-7b01-433f-8897-978e5cb0315c": "檔案動作",
+                "e86238c9-b641-43fb-a040-908ef07ab1f0": "登入使用者",
+                "caab5051-d231-444e-97c9-4ee5f2fe0fa5": "應用程式",
+                "6da95b49-6e86-44f3-b6ee-9f0d875154fd": "檔案使用者",
+                "a0dff3fe-bd5f-4b03-9bf9-e71ec4de8a87": "檔案動作趨勢圖  (copy)"
+              }
+            },
+            "widgets": [
+              {
+                "id": "d232f7fa-fe6a-4655-a9bb-4d1bd6522f80",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:conn_from AND (message:\"logged in successfully\" OR (message:\"successfully\" AND message:\"signed in to\") )"
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "conn_user",
+                    "conn_from",
+                    "conn_proto",
+                    "conn_signinto"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "24989bbb-1ad8-4b44-aed6-0fedd29c854d",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \" Backup] Backup \" AND message: \"failed\""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "bar",
+                  "column_limit": 99,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "timeunit",
+                          "value": 30,
+                          "unit": "minutes"
+                        }
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "source"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 99,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "visualization_config": {
+                    "barmode": "overlay",
+                    "axis_type": "linear"
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "4a97f231-7146-4b81-a2b8-f7e95c236b9a",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "fs_action: delete"
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "fs_user",
+                    "fs_ip",
+                    "fs_path",
+                    "nas_app",
+                    "fs_action"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "6da95b49-6e86-44f3-b6ee-9f0d875154fd",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "fs_user"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "8d622901-8938-473c-a0f6-3531214af6ca",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \"/6.NetworkBackup/Switch/\" AND nas_app:FtpFileTransfer AND fs_action:put"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "bar",
+                  "column_limit": 99,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "timeunit",
+                          "value": 10,
+                          "unit": "minutes"
+                        }
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "fs_ip"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 99,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "visualization_config": {
+                    "barmode": "overlay",
+                    "axis_type": "linear"
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "5fe18e29-b7f2-4d8a-ab36-228e7dbbe8c9",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \"ActiveBackup[\""
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "message"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "600cfa93-2923-4043-8c0c-dcec86c0c6e8",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "fs_ip"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "6938b22a-2100-42ce-b995-df7d0f8c97c4",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "conn_from"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "400d2768-768a-4cdf-83e8-641ef392937f",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "fs_action: delete"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "fs_user"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "78be87ac-1815-4ec5-866e-0ca93cf45809",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "conn_folder"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "996bb6be-7af4-403f-ab59-3a97663be006",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "conn_proto"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "cace1ff6-0f20-4bfa-98b3-30b69db3141e",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_: fs_action"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "bar",
+                  "column_limit": 30,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 1
+                        }
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "fs_action"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 30,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "visualization_config": {
+                    "barmode": "overlay",
+                    "axis_type": "linear"
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "e86238c9-b641-43fb-a040-908ef07ab1f0",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "conn_user"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "7ffa1b99-72b8-42fc-a664-67d84bae3f60",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:conn_from AND message:\"authorization failure\""
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "conn_user",
+                    "conn_from",
+                    "conn_proto",
+                    "conn_signinto"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "a466778c-7b01-433f-8897-978e5cb0315c",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_: fs_action"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "fs_action"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "caab5051-d231-444e-97c9-4ee5f2fe0fa5",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_: nas_app"
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nas_app"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": true
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "b396b892-eff4-4a47-8e8b-3cd1c93fa50b",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \" Backup] Backup \" AND message: \"failed\""
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "message"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "8229c2c0-f2a6-4d74-9b08-24d00b66652d",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "bar",
+                  "column_limit": 15,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "timeunit",
+                          "value": 15,
+                          "unit": "minutes"
+                        }
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "source"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "visualization_config": {
+                    "barmode": "overlay",
+                    "axis_type": "linear"
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "b1ad50e8-5260-4901-8455-a0ec9be8e0dc",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "source"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "352ff1ef-d466-4e0d-9b3b-0b7424c1b790",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "fs_path"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "42eee4ef-db29-4338-ba65-2dab8d231ae8",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "message: \"/6.NetworkBackup/Switch/\" AND nas_app:FtpFileTransfer AND fs_action:put"
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "fs_path",
+                    "fs_ip"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "3471d5ed-e1ec-437b-8e1a-dd62c582ed7d",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nas_app OR _exists_:fs_event OR _exists_:conn_from"
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source"
+                  ],
+                  "show_message_row": true,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "f99a37ef-ae6a-46b8-8456-af4936237b9d",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:fs_action"
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "fs_user",
+                    "fs_ip",
+                    "fs_path",
+                    "nas_app",
+                    "fs_action"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              }
+            ],
+            "widget_mapping": {
+              "4a97f231-7146-4b81-a2b8-f7e95c236b9a": [
+                "e763db7e-1b5c-43ef-ba3f-b91104d32e42"
+              ],
+              "996bb6be-7af4-403f-ab59-3a97663be006": [
+                "77dcfb30-49fe-4e03-b86e-6d570d91ac96"
+              ],
+              "3471d5ed-e1ec-437b-8e1a-dd62c582ed7d": [
+                "580c004e-201f-46ad-9c7a-1c51af587aa1"
+              ],
+              "600cfa93-2923-4043-8c0c-dcec86c0c6e8": [
+                "ca1e2259-38e4-4426-a00c-e4ab54f355ed"
+              ],
+              "78be87ac-1815-4ec5-866e-0ca93cf45809": [
+                "119dce6e-7f3f-4bb9-8503-2da81169e5bc"
+              ],
+              "b1ad50e8-5260-4901-8455-a0ec9be8e0dc": [
+                "10c8eaef-64e5-4467-a55e-ed30c4924494"
+              ],
+              "7ffa1b99-72b8-42fc-a664-67d84bae3f60": [
+                "da4716da-6a18-4f5f-b3a6-389fe0b26fe9"
+              ],
+              "5fe18e29-b7f2-4d8a-ab36-228e7dbbe8c9": [
+                "c9fd2c3b-5797-46ee-90b9-39df5533ee90"
+              ],
+              "8229c2c0-f2a6-4d74-9b08-24d00b66652d": [
+                "6039d1a5-f218-4841-91fe-a66cb0788b8a"
+              ],
+              "352ff1ef-d466-4e0d-9b3b-0b7424c1b790": [
+                "fa14f1a2-de07-4c49-83d8-c9ff608c7c5f"
+              ],
+              "cace1ff6-0f20-4bfa-98b3-30b69db3141e": [
+                "e8f9e3b5-aa46-4b63-a8be-1650a5a0c74d"
+              ],
+              "f99a37ef-ae6a-46b8-8456-af4936237b9d": [
+                "54eae2f6-1593-4cf5-913c-46a578d581fd"
+              ],
+              "42eee4ef-db29-4338-ba65-2dab8d231ae8": [
+                "23153471-d8f1-478c-8220-427f377a642e"
+              ],
+              "400d2768-768a-4cdf-83e8-641ef392937f": [
+                "23c4ccc9-06f8-4a32-9a58-5ae36c6d813a"
+              ],
+              "b396b892-eff4-4a47-8e8b-3cd1c93fa50b": [
+                "7f7f1e2d-0152-4d22-9b3a-d2160e052429"
+              ],
+              "6938b22a-2100-42ce-b995-df7d0f8c97c4": [
+                "c0087d70-8e8f-4884-88b7-efba335841f2"
+              ],
+              "d232f7fa-fe6a-4655-a9bb-4d1bd6522f80": [
+                "56fdbb53-0d38-4329-8d3a-4a5ca646bfb8"
+              ],
+              "24989bbb-1ad8-4b44-aed6-0fedd29c854d": [
+                "5a2571b2-3930-431c-a99c-6c0d58143677"
+              ],
+              "8d622901-8938-473c-a0f6-3531214af6ca": [
+                "fa4cec38-d662-45fe-89e9-ba16a0149674"
+              ],
+              "a466778c-7b01-433f-8897-978e5cb0315c": [
+                "5a2ee862-d8c8-48c9-9197-a205210054a6"
+              ],
+              "e86238c9-b641-43fb-a040-908ef07ab1f0": [
+                "3fef6ebf-2df5-4fea-8922-2e8e65d76cbb"
+              ],
+              "caab5051-d231-444e-97c9-4ee5f2fe0fa5": [
+                "44c18cde-a289-409f-bca0-faa985494eeb"
+              ],
+              "6da95b49-6e86-44f3-b6ee-9f0d875154fd": [
+                "dc696f74-2ce4-470f-aa05-73609aaaafb7"
+              ]
+            },
+            "positions": {
+              "4a97f231-7146-4b81-a2b8-f7e95c236b9a": {
+                "col": 4,
+                "row": 23,
+                "height": 3,
+                "width": 9
+              },
+              "996bb6be-7af4-403f-ab59-3a97663be006": {
+                "col": 10,
+                "row": 17,
+                "height": 3,
+                "width": 3
+              },
+              "3471d5ed-e1ec-437b-8e1a-dd62c582ed7d": {
+                "col": 1,
+                "row": 31,
+                "height": 6,
+                "width": "Infinity"
+              },
+              "600cfa93-2923-4043-8c0c-dcec86c0c6e8": {
+                "col": 1,
+                "row": 17,
+                "height": 3,
+                "width": 3
+              },
+              "78be87ac-1815-4ec5-866e-0ca93cf45809": {
+                "col": 7,
+                "row": 17,
+                "height": 3,
+                "width": 3
+              },
+              "b1ad50e8-5260-4901-8455-a0ec9be8e0dc": {
+                "col": 1,
+                "row": 8,
+                "height": 3,
+                "width": 2
+              },
+              "7ffa1b99-72b8-42fc-a664-67d84bae3f60": {
+                "col": 7,
+                "row": 14,
+                "height": 3,
+                "width": 6
+              },
+              "5fe18e29-b7f2-4d8a-ab36-228e7dbbe8c9": {
+                "col": 1,
+                "row": 37,
+                "height": 5,
+                "width": 6
+              },
+              "8229c2c0-f2a6-4d74-9b08-24d00b66652d": {
+                "col": 5,
+                "row": 8,
+                "height": 3,
+                "width": 8
+              },
+              "352ff1ef-d466-4e0d-9b3b-0b7424c1b790": {
+                "col": 7,
+                "row": 11,
+                "height": 3,
+                "width": 6
+              },
+              "cace1ff6-0f20-4bfa-98b3-30b69db3141e": {
+                "col": 4,
+                "row": 20,
+                "height": 3,
+                "width": 9
+              },
+              "f99a37ef-ae6a-46b8-8456-af4936237b9d": {
+                "col": 1,
+                "row": 26,
+                "height": 5,
+                "width": "Infinity"
+              },
+              "42eee4ef-db29-4338-ba65-2dab8d231ae8": {
+                "col": 6,
+                "row": 4,
+                "height": 4,
+                "width": 7
+              },
+              "400d2768-768a-4cdf-83e8-641ef392937f": {
+                "col": 1,
+                "row": 23,
+                "height": 3,
+                "width": 3
+              },
+              "b396b892-eff4-4a47-8e8b-3cd1c93fa50b": {
+                "col": 6,
+                "row": 1,
+                "height": 3,
+                "width": 7
+              },
+              "6938b22a-2100-42ce-b995-df7d0f8c97c4": {
+                "col": 1,
+                "row": 14,
+                "height": 3,
+                "width": 3
+              },
+              "d232f7fa-fe6a-4655-a9bb-4d1bd6522f80": {
+                "col": 1,
+                "row": 11,
+                "height": 3,
+                "width": 6
+              },
+              "24989bbb-1ad8-4b44-aed6-0fedd29c854d": {
+                "col": 1,
+                "row": 1,
+                "height": 3,
+                "width": 5
+              },
+              "8d622901-8938-473c-a0f6-3531214af6ca": {
+                "col": 1,
+                "row": 4,
+                "height": 4,
+                "width": 5
+              },
+              "a466778c-7b01-433f-8897-978e5cb0315c": {
+                "col": 1,
+                "row": 20,
+                "height": 3,
+                "width": 3
+              },
+              "e86238c9-b641-43fb-a040-908ef07ab1f0": {
+                "col": 4,
+                "row": 14,
+                "height": 3,
+                "width": 3
+              },
+              "caab5051-d231-444e-97c9-4ee5f2fe0fa5": {
+                "col": 3,
+                "row": 8,
+                "height": 3,
+                "width": 2
+              },
+              "6da95b49-6e86-44f3-b6ee-9f0d875154fd": {
+                "col": 4,
+                "row": 17,
+                "height": 3,
+                "width": 3
+              }
+            },
+            "formatting": {
+              "highlighting": []
+            },
+            "display_mode_settings": {
+              "positions": {}
+            }
+          }
+        },
+        "properties": [],
+        "title": {
+          "@type": "string",
+          "@value": "Synology NAS"
+        },
+        "type": "DASHBOARD",
+        "description": {
+          "@type": "string",
+          "@value": "Synology NAS 檔案操作與連線看板"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=6.0.7+4779d72"
+        }
+      ]
+    },
+    {
+      "id": "040919c0-d477-5d15-a35f-56d0c75a3cb5",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "synology-00-gate"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Claims what no other pack claimed (parsed_by): connect this pipeline to a stream of this device only."
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"synology-00-gate\"\nwhen\n    !has_field(\"parsed_by\") OR\n    to_string($message.parsed_by) == \"synology\"\nthen\n    set_field(\"parsed_by\", \"synology\");\nend"
+        }
+      }
+    }
+  ]
+}

@@ -158,6 +158,33 @@ class SystemMonitor:
         }
 
 
+# API export speed on ONE Graylog node is bound by its heap: Graylog 7 keeps
+# every search result 5 minutes (InMemorySearchJobService), about 10-12 KB per
+# exported message, and the export's pacing slows down as that fills the heap.
+# Measured 2026-11-24 on a throwaway Graylog 7.2.2 with real archive data and
+# the shipped pacing: 3 GB heap 622 msg/s, 1.5 GB 281 msg/s (with 2 full GCs
+# and 7 pauses) -> about 200 msg/s per GB. Above ~4 GB the per-search cost
+# (~0.55 s on a site with many fields, ~890 msg/s at 1000/page) is the limit.
+API_EXPORT_MSGS_PER_SEC_PER_GB = 200
+API_EXPORT_HEAP_BOUND_BELOW_GB = 4.0
+
+
+def api_export_estimate(max_heap_bytes: int) -> dict | None:
+    """Roughly how fast an API export can read from a Graylog with this -Xmx.
+    None when the heap is unknown. `heap_bound` = below the size where the heap,
+    not the per-search cost, sets the speed (the UI shows its hint only then)."""
+    gb = (max_heap_bytes or 0) / (1024 ** 3)
+    if gb <= 0:
+        return None
+    per_sec = int(round(gb * API_EXPORT_MSGS_PER_SEC_PER_GB / 10.0)) * 10
+    return {
+        "heap_max_gb": round(gb, 1),
+        "heap_bound": gb < API_EXPORT_HEAP_BOUND_BELOW_GB,
+        "per_sec": per_sec,
+        "per_day": per_sec * 86400,
+    }
+
+
 def heap_advice(max_heap_bytes: int, used_pct: float | None = None) -> dict:
     """Advise on Graylog JVM heap sizing from the current -Xmx. Graylog's
     production guidance is >= 4 GB heap, scaled up for high throughput / heavy

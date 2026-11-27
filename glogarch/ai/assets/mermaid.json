@@ -1,0 +1,9 @@
+{
+  "name": "mermaid",
+  "version": "11.4.1",
+  "license": "MIT",
+  "source": "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js",
+  "file": "mermaid.min.js",
+  "sha256": "a43bc1afd446f9c4cc66ac5dd45d02e8d65e26fc5344ec0ef787f88d6ddb6f9e",
+  "used_for": "Mermaid diagrams in the AI chat preview pane, rendered inside a sandboxed frame"
+}

@@ -9,6 +9,7 @@ function secTab(which) {
     ['overview', 'incidents', 'cases', 'risk', 'sigma'].forEach(k => document.getElementById(`sec-${k}-panel`).classList.toggle('hidden', which !== k));
     if (which === 'overview' && typeof ovLoad === 'function') ovLoad();
     if (which === 'sigma' && typeof sigmaLoad === 'function') sigmaLoad();
+    if (which === 'sigma' && typeof slLoad === 'function') slLoad();
     if (which === 'cases') caseLoadList();
     if (which === 'risk' && typeof riskInit === 'function') riskInit();
 }

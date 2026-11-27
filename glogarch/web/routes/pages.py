@@ -42,6 +42,52 @@ def _is_unconfigured(request: Request) -> bool:
 _VALID_LOGIN_ERRORS = {"auth_failed", "graylog_offline_with_local", "graylog_offline",
                        "role_not_allowed", "role_unknown"}
 
+_NO_RETURN = ("/login", "/logout", "/setup")
+
+
+def _safe_next(nxt) -> str:
+    """A page of this site to go to after the login, or "" (never another host:
+    no scheme, no //, no backslash, printable ASCII only, not login/logout/setup)."""
+    nxt = str(nxt or "")[:500]
+    if (nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt and "://" not in nxt
+            and not nxt.startswith(_NO_RETURN) and all(32 < ord(c) < 127 for c in nxt)):
+        return nxt
+    return ""
+
+
+def _login_url(error: str = "", nxt: str = "") -> str:
+    from urllib.parse import urlencode
+    q = {k: v for k, v in (("error", error), ("next", _safe_next(nxt))) if v}
+    return "/login" + ("?" + urlencode(q) if q else "")
+
+
+def _to_login(request: Request) -> RedirectResponse:
+    """To the login page, carrying the page that was asked for (a link in a
+    notification: /security?incident=12) in the URL. Not in the session: a link
+    clicked in webmail is a cross-site navigation, the SameSite=Strict cookie is
+    not sent, and a session written then would replace the signed-in one."""
+    url = getattr(request, "url", None)
+    nxt = ""
+    if url is not None and getattr(request, "method", "") == "GET":
+        nxt = url.path + ("?" + url.query if url.query else "")
+    return RedirectResponse(url=_login_url(nxt="" if nxt == "/" else nxt), status_code=303)
+
+
+def _after_login(nxt) -> str:
+    """Where a successful login goes: the requested page when it is a page of this site, else /."""
+    return _safe_next(nxt) or "/"
+
+
+def _start_login(request: Request) -> None:
+    """A successful login starts from an empty session: the Graylog identities of
+    whoever used this browser before are dropped and the identity handle is new
+    (a second sign-in kept the first user's identity on servers the second one
+    could not reach, so Alerting and AI chat there ran as the first user)."""
+    from glogarch.web import gl_identity
+    gl_identity.drop_all(request.session)
+    request.session.clear()
+
+
 @router.get("/setup", response_class=HTMLResponse)
 def setup_page(request: Request):
     """First-run setup wizard.
@@ -57,7 +103,7 @@ def setup_page(request: Request):
     if _is_unconfigured(request):
         request.session["setup_mode"] = True
     elif not request.session.get("setup_mode"):
-        return RedirectResponse(url="/login", status_code=303)
+        return _to_login(request)
     return _render("setup.html", request)
 
 
@@ -74,7 +120,8 @@ def login_page(request: Request):
     import secrets
     csrf_token = secrets.token_urlsafe(32)
     request.session["csrf_token"] = csrf_token
-    return _render("login.html", request, {"error": error, "csrf_token": csrf_token})
+    return _render("login.html", request, {"error": error, "csrf_token": csrf_token,
+                                           "next": _safe_next(request.query_params.get("next"))})
 
 
 @router.post("/login")
@@ -82,11 +129,12 @@ async def login_submit(request: Request):
     form = await request.form()
     username = form.get("username", "")
     password = form.get("password", "")
+    nxt = _safe_next(form.get("next"))
 
     # Anti-CSRF: the submitted token must match the one issued on GET /login.
     sess_token = request.session.get("csrf_token", "")
     if not sess_token or form.get("csrf_token", "") != sess_token:
-        return RedirectResponse(url="/login?error=auth_failed", status_code=303)
+        return RedirectResponse(url=_login_url("auth_failed", nxt), status_code=303)
 
     settings = request.app.state.settings
     graylog_ok = False
@@ -101,14 +149,15 @@ async def login_submit(request: Request):
     if username == "localadmin" and settings.web.localadmin_password_hash:
         import hashlib
         if hashlib.sha256(password.encode()).hexdigest() == settings.web.localadmin_password_hash:
+            _start_login(request)
             mark_authenticated(request.session, "localadmin")
             request.session["emergency_mode"] = True
             _audit(request, "login_success", "User: localadmin (local admin)")
-            return RedirectResponse(url="/", status_code=303)
+            return RedirectResponse(url=_after_login(nxt), status_code=303)
         # Wrong password for the reserved local account — never forward it to
         # Graylog (it isn't a Graylog user); reject directly.
         _audit(request, "login_failed", "User: localadmin")
-        return RedirectResponse(url="/login?error=auth_failed", status_code=303)
+        return RedirectResponse(url=_login_url("auth_failed", nxt), status_code=303)
 
     # 2. Try Graylog API authentication against EACH configured server, default
     #    first. With multiple Graylog clusters the account may exist on any of
@@ -151,11 +200,17 @@ async def login_submit(request: Request):
                     display_name = rc.username or username
                     if len(display_name) > 30:
                         display_name = "token-user"
+                    _start_login(request)
                     mark_authenticated(request.session, display_name)
                     request.session["gl_server"] = server.name
                     await _remember_graylog_identity(request, server, username, password)
+                    await _remember_other_servers(request, server, servers, username, password)
+                    from glogarch.web import gl_identity as _gli
+                    if _gli.signed_in_servers(request.session):
+                        # an identity kept on another server only also ends with this process
+                        _gli.mark_login(request.session)
                     _audit(request, "login_success", f"User: {display_name} @ {server.name}")
-                    return RedirectResponse(url="/", status_code=303)
+                    return RedirectResponse(url=_after_login(nxt), status_code=303)
                 # This server responded but rejected the credentials — Graylog is
                 # reachable, so keep trying the other servers before giving up.
                 graylog_ok = True
@@ -165,7 +220,7 @@ async def login_submit(request: Request):
             continue
 
     if denied:
-        return RedirectResponse(url=f"/login?error={denied}", status_code=303)
+        return RedirectResponse(url=_login_url(denied, nxt), status_code=303)
 
     _audit(request, "login_failed", f"User: {username}")
 
@@ -175,7 +230,7 @@ async def login_submit(request: Request):
         error = "graylog_offline_with_local" if has_local else "graylog_offline"
     else:
         error = "auth_failed"
-    return RedirectResponse(url=f"/login?error={error}", status_code=303)
+    return RedirectResponse(url=_login_url(error, nxt), status_code=303)
 
 
 def _audit(request: Request, action: str, detail: str = ""):
@@ -205,6 +260,7 @@ async def _remember_graylog_identity(request: Request, server, username: str, pa
             kind="session", secret=d["session_id"], username=d.get("username") or username,
             server_url=server.url, verify_ssl=server.verify_ssl,
             expires_at=gl_identity.parse_valid_until(d.get("valid_until"))))
+        gl_identity.mark_login(request.session)
         return
     except Exception as e:
         log.info("No Graylog session for this login (token login, or sessions unavailable)",
@@ -214,6 +270,54 @@ async def _remember_graylog_identity(request: Request, server, username: str, pa
         gl_identity.put(request.session, server.name, gl_identity.Identity(
             kind="token", secret=username, username="token-user", server_url=server.url,
             verify_ssl=server.verify_ssl, expires_at=gl_identity.parse_valid_until(None)))
+        gl_identity.mark_login(request.session)
+
+
+async def _remember_other_servers(request: Request, signed, servers, username: str, password: str) -> None:
+    """The same account on the OTHER configured Graylog servers, best effort.
+
+    The AI page and Alerting let the user pick a server; one that already knows
+    this account should not ask for the same password again. A server that
+    refuses it or does not answer within a few seconds is left out (the page
+    asks for that one). The jt-glogarch login itself came from ``signed``.
+    """
+    import asyncio
+    import httpx
+    from glogarch.graylog import alerting as gla
+    from glogarch.web import gl_identity
+    host = request.client.host if request.client else ""
+    others = [s for s in servers if s.name != signed.name]
+
+    async def one(srv):
+        try:
+            if password == "token":  # nosec B105 - Graylog token auth: the password is the literal word "token"
+                async with httpx.AsyncClient(verify=srv.verify_ssl, timeout=5.0) as c:
+                    r = await c.get(srv.url.rstrip("/") + "/api/system", auth=httpx.BasicAuth(username, password),
+                                    headers={"Accept": "application/json"})
+                if r.status_code != 200:
+                    return srv.name, None
+                return srv.name, gl_identity.Identity(
+                    kind="token", secret=username, username="token-user", server_url=srv.url,
+                    verify_ssl=srv.verify_ssl, expires_at=gl_identity.parse_valid_until(None))
+            d = await asyncio.wait_for(gla.create_session(srv.url, username, password, srv.verify_ssl, host), 5.0)
+            return srv.name, gl_identity.Identity(
+                kind="session", secret=d["session_id"], username=d.get("username") or username,
+                server_url=srv.url, verify_ssl=srv.verify_ssl,
+                expires_at=gl_identity.parse_valid_until(d.get("valid_until")))
+        except Exception as e:
+            log.info("This account is not signed in on another Graylog server", server=srv.name, error=str(e))
+            return srv.name, None
+
+    async def bounded(srv):
+        try:
+            return await asyncio.wait_for(one(srv), 8.0)
+        except asyncio.TimeoutError:
+            log.info("This account is not signed in on another Graylog server", server=srv.name, error="timeout")
+            return srv.name, None
+
+    for name, ident in await asyncio.gather(*(bounded(s) for s in others)):
+        if ident:
+            gl_identity.put(request.session, name, ident)
 
 
 @router.get("/logout")
@@ -229,7 +333,7 @@ async def logout(request: Request):
         except Exception as e:
             log.info("Graylog session not closed at logout (it expires on its own)", error=str(e))
     request.session.clear()
-    return RedirectResponse(url="/login", status_code=303)
+    return RedirectResponse(url="/login", status_code=303)   # a logout remembers no page
 
 
 # --- Protected pages ---
@@ -239,14 +343,14 @@ def dashboard(request: Request):
     if _is_unconfigured(request):
         return RedirectResponse(url="/setup", status_code=303)
     if not _is_logged_in(request):
-        return RedirectResponse(url="/login", status_code=303)
+        return _to_login(request)
     return _render("index.html", request, {"page": "dashboard"})
 
 
 @router.get("/archives", response_class=HTMLResponse)
 def archives_page(request: Request):
     if not _is_logged_in(request):
-        return RedirectResponse(url="/login", status_code=303)
+        return _to_login(request)
     return _render("index.html", request, {"page": "archives"})
 
 
@@ -265,21 +369,21 @@ def import_page(request: Request):
 @router.get("/jobs", response_class=HTMLResponse)
 def jobs_page(request: Request):
     if not _is_logged_in(request):
-        return RedirectResponse(url="/login", status_code=303)
+        return _to_login(request)
     return _render("index.html", request, {"page": "jobs"})
 
 
 @router.get("/schedules", response_class=HTMLResponse)
 def schedules_page(request: Request):
     if not _is_logged_in(request):
-        return RedirectResponse(url="/login", status_code=303)
+        return _to_login(request)
     return _render("index.html", request, {"page": "schedules"})
 
 
 @router.get("/notify-settings", response_class=HTMLResponse)
 def notify_settings_page(request: Request):
     if not _is_logged_in(request):
-        return RedirectResponse(url="/login", status_code=303)
+        return _to_login(request)
     return _render("index.html", request, {"page": "notify-settings"})
 
 
@@ -289,7 +393,7 @@ def settings_page(request: Request):
     if _is_unconfigured(request):
         return RedirectResponse(url="/setup", status_code=303)
     if not _is_logged_in(request):
-        return RedirectResponse(url="/login", status_code=303)
+        return _to_login(request)
     return _render("index.html", request, {"page": "settings"})
 
 
@@ -299,14 +403,14 @@ def reports_page(request: Request):
     if _is_unconfigured(request):
         return RedirectResponse(url="/setup", status_code=303)
     if not _is_logged_in(request):
-        return RedirectResponse(url="/login", status_code=303)
+        return _to_login(request)
     return _render("index.html", request, {"page": "reports"})
 
 
 @router.get("/logs", response_class=HTMLResponse)
 def logs_page(request: Request):
     if not _is_logged_in(request):
-        return RedirectResponse(url="/login", status_code=303)
+        return _to_login(request)
     return _render("index.html", request, {"page": "logs"})
 
 
@@ -316,7 +420,7 @@ def packs_page(request: Request):
     if _is_unconfigured(request):
         return RedirectResponse(url="/setup", status_code=303)
     if not _is_logged_in(request):
-        return RedirectResponse(url="/login", status_code=303)
+        return _to_login(request)
     return _render("index.html", request, {"page": "packs"})
 
 
@@ -326,7 +430,7 @@ def alerting_page(request: Request):
     if _is_unconfigured(request):
         return RedirectResponse(url="/setup", status_code=303)
     if not _is_logged_in(request):
-        return RedirectResponse(url="/login", status_code=303)
+        return _to_login(request)
     return _render("index.html", request, {"page": "alerting"})
 
 
@@ -336,7 +440,7 @@ def security_page(request: Request):
     if _is_unconfigured(request):
         return RedirectResponse(url="/setup", status_code=303)
     if not _is_logged_in(request):
-        return RedirectResponse(url="/login", status_code=303)
+        return _to_login(request)
     return _render("index.html", request, {"page": "security"})
 
 
@@ -346,12 +450,12 @@ def ai_chat_page(request: Request):
     if _is_unconfigured(request):
         return RedirectResponse(url="/setup", status_code=303)
     if not _is_logged_in(request):
-        return RedirectResponse(url="/login", status_code=303)
+        return _to_login(request)
     return _render("index.html", request, {"page": "ai-chat"})
 
 
 @router.get("/op-audit", response_class=HTMLResponse)
 def op_audit_page(request: Request):
     if not _is_logged_in(request):
-        return RedirectResponse(url="/login", status_code=303)
+        return _to_login(request)
     return _render("index.html", request, {"page": "op-audit"})

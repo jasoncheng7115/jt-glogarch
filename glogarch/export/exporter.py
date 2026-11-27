@@ -32,9 +32,13 @@ from glogarch.graylog.system import SystemMonitor
 from glogarch.export.health_guard import BackpressureStop, HealthGuard
 from glogarch.ratelimit.limiter import RateLimiter
 from glogarch import __version__
+from glogarch.utils.errtext import exc_text
 from glogarch.utils.logging import get_logger
 
 log = get_logger("export")
+
+# A hole between archives shorter than this is boundary rounding, not a missed chunk.
+GAP_MIN_SECONDS = 60
 
 # Global lock to prevent concurrent exports against the same Graylog server
 _export_lock: dict[str, bool] = {}
@@ -179,6 +183,10 @@ class ExportResult:
         # the count could not be taken.
         self.overflow_windows: list[dict] = []
         self.job_id: str = ""
+        # Holes left by earlier runs (a chunk that failed) that this run was
+        # asked to fill again, and the records it found there.
+        self.gaps_refilled: int = 0
+        self.refill_records: int = 0
         self.original_bytes: int = 0
         self.compressed_bytes: int = 0
         self.duration_seconds: float = 0.0
@@ -249,6 +257,7 @@ class Exporter:
         progress_callback: Callable[[dict], None] | None = None,
         source: str = "",
         job_id: str | None = None,
+        refill_windows: list[tuple[datetime, datetime]] | None = None,
     ) -> ExportResult:
         """Export messages from Graylog for the given time range.
 
@@ -262,6 +271,9 @@ class Exporter:
             progress_callback: Called with progress dict:
                 {phase, chunk_index, total_chunks, messages_done, messages_total, pct}
             job_id: Optional job ID to reuse (from Web UI). If None, generates a new one.
+            refill_windows: Earlier holes (see find_gaps) exported first, in the
+                same job. Each is chunked on its own, so no chunk straddles an
+                archive that already exists.
         """
         import time as _time
         _start_time = _time.time()
@@ -294,8 +306,12 @@ class Exporter:
             if not has_space:
                 raise RuntimeError(f"Insufficient disk space: {avail_mb:.0f} MB available")
 
-            # Build time chunks
-            chunks = self._build_time_chunks(time_from, time_to)
+            # Build time chunks: the holes of earlier runs first, then the new range
+            refill = [(_ensure_naive(a), _ensure_naive(b)) for a, b in (refill_windows or []) if b > a]
+            refill_chunks = [c for a, b in refill for c in self._build_time_chunks(a, b)]
+            chunks = refill_chunks + (self._build_time_chunks(time_from, time_to)
+                                      if time_to > time_from else [])
+            result.gaps_refilled = len(refill)
             total_chunks = len(chunks)
             log.info("Export started", job_id=job_id, chunks=total_chunks,
                      time_from=str(time_from), time_to=str(time_to))
@@ -319,12 +335,13 @@ class Exporter:
                 # Pre-count total records for progress
                 total_records = 0
                 try:
-                    total_records = await search.count_messages(
-                        query=self.export_config.query or "*",
-                        time_from=time_from,
-                        time_to=time_to,
-                        streams=streams,
-                    )
+                    for w_from, w_to in refill + ([(time_from, time_to)] if time_to > time_from else []):
+                        total_records += await search.count_messages(
+                            query=self.export_config.query or "*",
+                            time_from=w_from,
+                            time_to=w_to,
+                            streams=streams,
+                        )
                     self.db.update_job(job_id, messages_total=total_records)
                     log.info("Total records to export", total=total_records,
                              streams=streams, time_from=str(time_from), time_to=str(time_to))
@@ -391,12 +408,14 @@ class Exporter:
                                 )
                                 result.chunks_exported += 1
                                 result.messages_total += msgs_in_chunk
+                                if chunk_idx < len(refill_chunks):
+                                    result.refill_records += msgs_in_chunk
                                 consecutive_failures = 0
 
                             except Exception as e:
                                 if _is_cancellation(e) or isinstance(e, BackpressureStop):
                                     raise   # not a chunk failure — ends the run
-                                err_msg = f"Chunk {chunk_idx+1} failed: {e}"
+                                err_msg = f"Chunk {chunk_idx+1} failed: {exc_text(e)}"
                                 log.error(err_msg, chunk_from=str(chunk_from))
                                 result.errors.append(err_msg)
                                 consecutive_failures += 1
@@ -499,6 +518,10 @@ class Exporter:
                 note_parts.append(
                     f"Skipped {result.chunks_skipped}/"
                     f"{result.chunks_skipped + result.chunks_exported} chunks (already archived)")
+            if result.gaps_refilled:
+                note_parts.append(
+                    f"Refilled {result.gaps_refilled} gap(s) left by earlier runs "
+                    f"({result.refill_records:,} records)")
             if result.errors:
                 sample = "; ".join(result.errors[:3])
                 note_parts.append(
@@ -853,6 +876,62 @@ class Exporter:
             chunks.append((current, chunk_end))
             current = chunk_end
         return chunks
+
+    def plan_scheduled_run(self, window_from: datetime, time_to: datetime,
+                           stream_ids: list[str] | None = None):
+        """Where a schedule's API run starts and which earlier holes it refills.
+
+        THE one rule for both the scheduler and the Schedules page's Run now (each
+        had its own copy of the resume logic, and only one would have refilled).
+        Returns (time_from, refill_windows, resume_point): time_from = the resume
+        point when it is later than the window start; refill = holes behind it
+        within export.gap_refill_hours and the window (empty when off or none).
+        """
+        window_from, time_to = _ensure_naive(window_from), _ensure_naive(time_to)
+        first_stream = stream_ids[0] if stream_ids else None
+        resume = self.get_resume_point(stream_id=first_stream)
+        time_from, refill = window_from, []
+        if resume:
+            resume = _ensure_naive(resume)
+            if resume > time_from:
+                time_from = resume
+            hours = int(getattr(self.export_config, "gap_refill_hours", 0) or 0)
+            if hours > 0:
+                since = max(window_from, time_to - timedelta(hours=hours))
+                try:
+                    refill = self.find_gaps(since, min(time_from, time_to))
+                except Exception as e:
+                    log.warning("Could not look for gaps left by earlier runs", error=str(e))
+                    refill = []
+        return time_from, refill, resume
+
+    def find_gaps(self, since: datetime, until: datetime,
+                  min_seconds: int = GAP_MIN_SECONDS) -> list[tuple[datetime, datetime]]:
+        """Holes between this server's completed archives inside [since, until].
+
+        A scheduled API run starts at the resume point (the newest archive's
+        end), so a chunk that failed in the middle of an earlier run was never
+        tried again although the note said "will retry next run": on .36 the
+        hour 2026-11-21 03:00-04:00Z stayed missing. The scheduler hands these
+        holes back to export() as refill windows.
+
+        Coverage = ANY completed archive of the server, the same rule as the
+        per-chunk cross-mode skip, so a refill never fetches time something
+        already holds. Only holes between two archives count: time before the
+        first archive of the window is not a hole. A hole shorter than
+        min_seconds is ignored (boundary rounding).
+        """
+        from glogarch.core.archive_status import coverage_gaps
+        since, until = _ensure_naive(since), _ensure_naive(until)
+        if until <= since:
+            return []
+        spans = self.db.archive_spans(self.server_config.name, since, until)
+        out = []
+        for a, b in coverage_gaps(spans, min_seconds=min_seconds):
+            a, b = max(a, since), min(b, until)
+            if (b - a).total_seconds() >= min_seconds:
+                out.append((a, b))
+        return out
 
     def get_resume_point(self, stream_id: str | None = None) -> datetime | None:
         """Find the latest exported time_to for resume after interruption.

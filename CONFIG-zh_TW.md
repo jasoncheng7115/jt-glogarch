@@ -69,6 +69,8 @@ export:
   base_path: /data/graylog-archives     # 歸檔存放路徑
   batch_size: 1000                      # API 模式每次查詢筆數
   chunk_duration_minutes: 60            # 每個歸檔檔案涵蓋的時間長度（分鐘）
+  gap_refill_hours: 168                 # API 排程匯出：補匯續傳點之前這幾小時內、先前執行留下的空缺
+                                        # （失敗的區段）；0 = 關閉
   max_file_size_mb: 50                  # 單一檔案超過此大小自動分割
   min_disk_space_mb: 500                # 磁碟空間低於此值停止匯出
   delay_between_requests_ms: 5          # API 請求間隔（毫秒）
@@ -316,7 +318,8 @@ rate_limit:
 
 ```yaml
 notify:
-  language: zh-TW                       # en 或 zh-TW
+  language: zh-TW                       # en、zh-TW 或 ja
+  link_base_url: ""                     # 例如 https://192.0.2.10:8990：資安通知附上各事件的連結（留空＝不附連結）
   on_export_complete: true
   on_import_complete: true
   on_cleanup_complete: false
@@ -418,6 +421,9 @@ security:
   detectors:                  # 每項偵測可設 enabled、min_count、exclude（皆可省略）
     account_multi_host:
       exclude: "user_name:/.*[$]/"   # 預設值：排除電腦帳號（DC1$）
+    waf_scanner:
+      blocked_min_count: 1000        # v1.35.0：被 WAF 擋下的掃描，在分析時間範圍內未達這個筆數就記成「低」
+                                     #   （預設的通知門檻下不會通知）
     account_new_source:              # v1.29.0，預設關閉（記下每組帳號與來源；7 天學習期）
       enabled: false
     volume_anomaly:                  # v1.30.0，預設關閉（每次分析多兩次所有記錄的彙總；
@@ -430,8 +436,17 @@ security:
   ai_auto_min_severity: high  # high、medium 或 low：從這個嚴重程度起的新增或升級事件
   ai_auto_max_per_run: 3      # 1 到 10；每件呼叫一次模型，並對 Graylog 查詢約十次
   ai_notify_verdicts: []      # v1.29.0：例如 [malicious, suspicious]，自動分析後送出一則後續通知
+  field_map: {}               # v1.35.0：內建偵測讀取的資料在本站的哪個欄位（設定 → 欄位對應）；
+                              #   項目 q_auth_failure、q_auth_success、q_ids_passed、q_web_attack（搜尋條件），
+                              #   f_peer、f_waf_peer（逗號分隔）、f_account、f_host、f_ids_signature、
+                              #   f_ids_severity、f_ids_peer、f_uri、f_vhost、f_category；未設定＝GIM 預設
+                              #   （1.35）q_waf_blocked：哪些網站攻擊被 WAF 擋下（在 q_web_attack 之內判斷）；
+                              #   f_status：HTTP 回應碼（事件細節用）
   sigma_field_map: {}         # v1.27.0：Sigma 欄位 -> Graylog 欄位（在 Sigma 分頁編輯）
   sigma_max_rules: 50         # 可啟用的 Sigma 規則數，每條每次分析做一次彙總查詢
+  sigma_library_enabled: false   # v1.33.0：下載 SigmaHQ 規則套組（每天檢查，只連 github.com）
+  sigma_library_package: core    # core | core+ | core++ | emerging_threats | all
+  sigma_library_auto_update: true  # 從規則庫加入的規則隨新版本更新
   ti_enabled: false           # v1.28.0：下載威脅情資清單（不會送出這個站台的任何資料）
   ti_feeds: [spamhaus_drop, tor_exit, feodo]
   ti_refresh_hours: 24        # 1 到 168
@@ -451,31 +466,44 @@ Graylog 連不上算一次失敗，連續三次失敗會送出一則「資安事
 
 ---
 
-## ai — AI 對話與 MCP 端點（v1.21.0，預設關閉）
+## ai — 智慧問答與 MCP 端點（v1.21.0，預設關閉）
 
 ```yaml
 ai:
-  enabled: false              # 「AI 對話」頁面
-  url: ""                     # OpenAI 相容伺服器，例如 http://10.0.0.5:8080/v1
-  model: ""
-  api_key: ""                 # API 回傳時遮罩；儲存時收到遮罩值會保留原本的金鑰
-  timeout_seconds: 300        # 10 到 900
-  allow_external: false       # 內網以外的伺服器預設拒絕，設為 true 才允許（記入稽核）
-  temperature: 0.2
+  enabled: false              # 「智慧問答」頁面
+  llm_servers:                # v1.36.0：一台或多台 LLM 伺服器
+    - name: local             # 顯示在對話時的伺服器選單
+      kind: openai            # openai（llama.cpp、vLLM、LM Studio、Ollama /v1）| anthropic（Claude API）
+      url: http://10.0.0.5:8080/v1   # anthropic：留空 = https://api.anthropic.com
+      model: ""
+      api_key: ""             # API 回傳時遮罩；儲存時收到遮罩值會保留，只限同類型、同網址
+      timeout_seconds: 300    # 10 到 900
+      allow_external: false   # 內網以外的伺服器預設拒絕，設為 true 才允許（記入稽核）；Claude 必須開啟
+      temperature: 0.2        # 只用於 openai（Claude API 不接受取樣參數）
+      context_tokens: 0       # 0 = 詢問伺服器（llama.cpp /props、/v1/models、LM Studio、Ollama、Claude）
+      effort: ""              # 只用於 anthropic：low|medium|high|xhigh|max；"" = 模型預設
+      daily_tokens: 0         # 此伺服器自己的上限；0 = 不限
+      monthly_tokens: 0
+  default_llm: local          # 資安事件分析使用，也是對話的預設
+  url: ""                     # 1.21～1.35 的單一伺服器：載入時成為 llm_servers 第一台；
+  model: ""                   #   儲存時把預設的 OpenAI 相容伺服器寫回這裡，
+  api_key: ""                 #   退回舊版仍找得到
   max_tool_rounds: 6          # 用完後模型必須依現有資料作答
   max_range_hours: 24         # 會拉取記錄的工具最長時間範圍；精確計數可到 31 天
-  daily_tokens: 0             # 0 = 不限；以 UTC 日計算
+  daily_tokens: 0             # 全站（所有使用者與伺服器合計）；0 = 不限；以 UTC 日計算
   monthly_tokens: 0
+  user_daily_tokens: 0        # v1.36.0：每位使用者；0 = 不限
+  user_monthly_tokens: 0
   chat_retention_days: 90     # 0 = 永久保留
   mcp_enabled: false          # 給外部 AI 用戶端的 POST /mcp
   mcp_graylog_tools: []       # 空白 = 預設的唯讀工具組
   analysis_enabled: false     # v1.22.0：「資安事件」頁面的 AI 按鈕
 ```
 
-AI 對話以登入者的身分讀取 Graylog（在頁面上登入 Graylog；密碼會換成 Graylog 工作階段，不會儲存）。
+智慧問答以登入者的身分讀取 Graylog（在頁面上登入 Graylog；密碼會換成 Graylog 工作階段，不會儲存）。
 `/mcp` 接受 `Authorization: Bearer <Graylog API token>`（或 Basic `<token>:token`），依
 `web.allowed_graylog_roles` 檢查 token 的角色，並以 `X-Graylog-Server` 標頭選擇伺服器（未指定則用預設伺服器）；
-每個 token 每分鐘 120 次請求。不論來自 AI 對話或 MCP，每次工具呼叫都以 `ai_tool_call` 記入稽核。
+每個 token 每分鐘 120 次請求。不論來自智慧問答或 MCP，每次工具呼叫都以 `ai_tool_call` 記入稽核。
 對話只保存問題、答案和用到的工具名稱，不保存工具查回的資料。mcp_graylog 的兩個除錯工具、大量匯出工具和內容套件
 詳細資料一律不開放；`find_silent_sources` 最多回溯 31 天。`get_log_statistics`、`analyze_error_patterns` 與
 `get_log_level_analysis` 只有列在 `mcp_graylog_tools` 裡才開放（每次呼叫會拉取記錄長達兩分鐘，在 7.2.2 實測）。
@@ -483,8 +511,15 @@ AI 對話以登入者的身分讀取 Graylog（在頁面上登入 Graylog；密�
 
 資安事件的 AI 分析（`analysis_enabled`）使用偵測所用的伺服器連線讀取 Graylog，以針對該事件的固定查詢（最多該事件
 最後 24 小時）取得：精確計數與前幾名、同一來源或帳號的成功登入、8 筆範例記錄，以及這個對象先前的事件。範例記錄
-會送給模型，但不會保存；計數、模型的回覆與模型名稱會和事件一起保存（事件刪除時一併刪除）。使用與 AI 對話相同的
-LLM 伺服器、逾時與 token 額度。
+會送給模型，但不會保存；計數、模型的回覆與模型名稱會和事件一起保存（事件刪除時一併刪除）。使用與智慧問答相同的
+LLM 伺服器、逾時與 token 額度（1.36 起使用預設的 LLM 伺服器）。
+
+**v1.36.0。** 每次請求依模型的上下文長度（`context_tokens`，或伺服器回報的值）決定回答長度、每個工具結果放多少、
+帶入多少前文、提供哪些工具。放不下的工具結果會在記憶體保留 30 分鐘（只限同一位使用者、同一管道、同一台 Graylog，
+不寫入磁碟），模型以 `read_result` 分頁讀取。`aggregate` 與 `summarize_messages` 在 jt-glogarch 端做計數與樣式歸納：
+`aggregate` 的分組最多 10,000 列、500 個時間區間（OpenSearch 上限為 65,535 個 bucket）；`summarize_messages` 最多讀
+10,000 筆（Graylog 的分頁上限）、最多 60 秒。Claude 伺服器需要 Python 套件 `anthropic`（1.36.0 起為相依套件，只有設定了
+這類伺服器時才載入）。
 
 ---
 

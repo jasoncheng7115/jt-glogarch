@@ -717,6 +717,13 @@ failure.
 - [ ] **Upgrade adds `archives.overflow_ms`** — `upgrade-compat-test.sh`
       (auto-migration; nullable, additive).
 
+### Reports — enable switch (v1.36.0)
+
+- [ ] `tests/test_reports_enabled.py` (4): the switch turns a
+      report off (its job removed from the scheduler) and on (registered again), unknown report 404,
+      a non-boolean refused, a save without `enabled` keeps the stored state. By hand: the switch in
+      the list, its label follows, Generate still works on a disabled report; no BETA tag.
+
 ### Reports — one-off time range (v1.14.9)
 
 - [ ] **"Generate" opens the one-off range dialog** (`ui-sim-test.py`): two
@@ -891,6 +898,41 @@ failure.
 
 `glogarch/web/static/css/refine.css` holds the site-wide scale; colours are tokens at the top of `style.css`. `test_no_select_uses_the_browsers_own_dropdown` keeps native dropdowns out.
 
+- [ ] `tests/test_notify_links.py` (16, v1.34.0): the jt-glogarch address is a bare http(s) origin (no path,
+      query, credentials, spaces; ≤ 200 chars); with it set every incident / AI verdict notification links to
+      `/security?incident=<id>`, without it no link; e-mail makes only our own links clickable, never a URL from a
+      log line; the settings API stores the notification language (sent and dropped before 1.34) and the address,
+      400 for a bad one; the runner passes the incident id; `/security?incident=` opens the incident.
+- [ ] `tests/test_reports_poll.py` (1, v1.34.0): the Reports page polls its two lists through `startJobsPoll` and
+      never redraws under the open report editor.
+- [ ] `tests/test_form_fields.py` (7, v1.34.0): the setup wizard's archive path is accepted (`path` / `base_path`);
+      `auth_type: password` drops a server's old token (an API call without it keeps partial-update behaviour);
+      a schedule goes back to the default server only with `server_default`, an empty server alone keeps it;
+      typed import credentials win over the saved token and ONE helper (`target_credentials`) serves every target
+      endpoint; the security-notification switch is on the form; manual OS export sends "recent N" only when
+      lowered. `tests/test_ai.py`: a masked LLM key with a new URL is dropped.
+- [ ] `tests/test_sigma_library.py` (v1.34.0 additions): `version.txt` read bounded (20 MB of zeros in the zip);
+      YAML aliases refused from the event stream before anything expands (a nine-level alias bomb in under 2 s);
+      tags that are not a list and a 3,000-deep condition do not stop the package; unbalanced `|re` refused,
+      `[(]` / `[]x]` / `[^]x]` accepted; redirects only to port 443; the download's overall deadline.
+- [ ] Review fixes (v1.34.0): `tests/test_datanode.py` (two Connects at once do not freeze, colliding names
+      refused, replaced CA re-issues but hostname mismatch does not, delete refused while connected, vanished
+      block uses the API); `tests/test_threat_intel.py` (junk/huge/private networks skipped, shrink keeps the old
+      list, streamed download with deadline, indexed matching under 1 s for 2,000 lookups on 1,500 networks,
+      refresh scheduled from the last one); `tests/test_security_suppress.py` (canonical / mapped-IPv6
+      entities, mapped networks refused, "/" literal entities, close only a covered incident);
+      `tests/test_security_digest.py` (one fixed-time cron that runs, a bad stored cron does not stop the
+      analysis job, healthy needs analysis on and a good run in the last day).
+- [ ] MCP and Alerting review fixes (v1.34.0): `tests/test_ai.py` (rotating fake tokens stopped before Graylog, batch / body caps,
+      per-message errors, unknown server 400, numbers clamped to the schema); `tests/test_alerting.py` (a flipped
+      state put back once, unknown state skipped before writing, failed rows undoable, duplicate ids dropped).
+      `scripts/e2e-alerting-test.py` ran against the throwaway Graylog 7.2.2 of `datanode-stack/up.sh` (.83 down):
+      ALL PASS 2026-11-21.
+- [ ] **Phone width (1.34)**: `UI_URL=https://<host>:8990 UI_USER=... UI_PASS=... python3 scripts/ui-phone-width-check.py`
+      opens every page at 390 px and must print ALL PASS (no page wider than the screen; wide tables scroll
+      inside their box). `tests/test_phone_layout.py` keeps the phone block last in `refine.css`. From 1.18.0
+      to 1.33 the phone layout was broken (menu labels as vertical text, pages 600–990 px wide).
+
 **By hand, after any style change**
 - [ ] Every page in light and dark at about 1440 px and 1180 px: nothing crosses the page's right padding, and no number is clipped.
 - [ ] Open a dropdown on a form, in a dialog and in the sidebar: the list is not cut off.
@@ -1025,6 +1067,13 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
       disconnect. `bash scripts/datanode-stack/down.sh` removes it. Run it on
       more than one Graylog line (`GL_VERSION=6.3.15 / 7.0.15 / 7.1.11 / 7.2.2`):
       6.3 differs in the certificate request (one `role`) and the status field.
+      Step [6b] (2026-11-27): the Data Node container is stopped -> 4 tries then reported, no new
+      certificate; started again during the wait -> used directly. `tests/test_datanode.py`: an unreachable
+      node is tried after 1, 2 and 5 minutes, the first success ends the wait, a refused certificate is not
+      waited for, manual runs do not wait, the fallback notification says how many tries and minutes.
+- [ ] Dashboard Hardware Sizing card (2026-11-27): one row per resource (this host / recommended /
+      Enough or Not enough), archive disk with a bar of months held vs retention, then only the actions;
+      check an archive-only host and a co-located one, both themes and 390 px.
 
 **By hand (each release that touches it)**
 
@@ -1059,7 +1108,7 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
       events over GELF and must print `RESULT: ALL PASS` (four login detections,
       distinct accounts/hosts counted by Graylog, the second search, an event without
       a peer field counted as coverage). Never against production: it writes events.
-      2026-11-19: ALL PASS on 6.3.15 and 7.2.2.
+      2026-11-19: ALL PASS on 6.3.15 and 7.2.2. 2026-11-21 (1.34.0): ALL PASS on 7.2.2 (29 checks).
 
 **By hand (each release that touches it)**
 
@@ -1081,7 +1130,7 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
       `find_silent_sources`' look-back is capped; a `*` / `*:*` query becomes empty and another leading
       wildcard is refused; the three message-pulling tools are opt-in; the SDK stand-in is used only without the real
       SDK; time ranges parsed or refused, the pull cap and the 31-day cap; unknown tools/arguments
-      refused; exact `top_values` through the aggregation API; results capped at 12,000 chars; LLM
+      refused; exact `top_values` through the aggregation API; results over the budget kept and paged (1.36); LLM
       replies (native tool calls, `<tool_call>` text, `<think>` stripped); private-first URL check,
       metadata addresses always refused; token budgets; the chat loop (tool round, forced answer
       after the last round, empty answer asked again, a `</data>` inside a tool result cannot close
@@ -1091,6 +1140,53 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
       the key when the URL changes, refuse an external URL unless allowed (audited); chat needs a
       Graylog sign-in; another user's conversation is not found; the page's Markdown renderer
       (run in node) escapes before formatting and allows https links only.
+- [ ] `tests/test_ai.py` (v1.33.1 additions): a reply cut at the length limit is continued and joined without
+      repeating the cut line, every request asks for `ANSWER_TOKENS`, one still cut after the continuations is
+      marked `truncated`; **against a real uvicorn** (TestClient reads every response to its end, so it cannot
+      leave a page): an answer goes on after the stream is closed, the list and the conversation say it is
+      running with its progress, a second question to it is 409, the answer is stored with its time; Stop ends
+      one left running ("Stopped", audited); page wiring (copy / edit / answer again, follow, keys).
+- [ ] `tests/test_ai.py` (v1.34.0 additions): each tool call is kept with the answer as a record of the query,
+      the absolute range it ran over and its count / rows, never the rows or log text (and a result cut at
+      the cap still records the arguments); the stored queries come back with a link to the same search in
+      Graylog, per call server, none for a server since removed; conversations are found by title or message
+      text (`%` / `_` literal, another user's never) and renamed (blank / too long 400, another user's 404,
+      audited); a question left unanswered is answered once with `retry` (not stored twice, 409 when the last
+      message is an answer, audited `retry=1`); an old `ai_messages` table gets `calls`; streaming: the client
+      assembles text, tool-call deltas and usage from the chunk shapes measured on the owner's llama.cpp,
+      keeps `<think>` off the page, falls back to plain requests after an HTTP 400 and remembers it, turns a
+      dropped connection into an LLM error, estimates tokens when no usage is sent; the chat loop resets the
+      text when a round turns into tool calls and streams a continuation onto what is shown; **against a real
+      uvicorn** a page that comes back reads the text written so far; number columns are right-aligned (node);
+      the Markdown download (node) escapes `|`, demotes the answer's headings, lists the queries; a tool whose
+      result does not report its range (mcp_graylog) gets it from its arguments and defaults, and a failed call
+      keeps its query; page wiring (incident examples read `incidents`).
+- [ ] `tests/test_login_identity.py` (5, v1.33.1): a Graylog login is signed out after a service restart (its
+      Graylog identity is gone) and signing in again gives it back, `localadmin` is not; a login also signs in
+      on every other configured server that accepts the account and leaves out one that refuses it; the model
+      list (`POST /api/ai/models`) reads the URL in the form, sends the stored key only to the stored URL,
+      reports an LLM error as 502; the model is a list, not a text field.
+- [ ] `tests/test_ai.py` reasoning (4, v1.35.0): `chat_stream` passes `reasoning_content` / `reasoning` / a `<think>` block in content to `on_reasoning` as it grows, throttled, and ALL of it before the first answer text; `run_chat` emits `reasoning` deltas and a reset per request; a page that comes back gets `run.reasoning`; reasoning is never stored. Manual: ask a reasoning model a question with tools and watch the thinking box fill from the first seconds, fold when the answer starts, stay as you set it after a click.
+- [ ] `tests/test_ai_query_syntax.py` (51, v1.35.0): every Graylog query form measured to give a wrong count or an error on Graylog Open 7.2.2 (regex flags, lower-case operators, leading wildcards, unquoted CIDR, a group without an operator, `OR NOT`, Enterprise `$name$` parameters) is refused by `call_tool` before Graylog is asked, with how to write it; every measured right form passes; the system prompt carries the rules and the Open / Enterprise difference.
+- [ ] `tests/test_api_heap_hint.py` (12, v1.35.0): the API export estimate is about 200 records/s per GB of Graylog heap and counts as heap-bound under 4 GB; `GET /api/servers/api-heap` reads the chosen (or default) server's `/api/system/jvm`, caches it, says `available: false` for an unknown server or an unreadable Graylog, and `api_in_use` follows the default export mode and enabled API export schedules of that server; the export / schedule dialogs show the hint only for API mode on a small heap (latest choice wins), the sizing card only when API mode is in use; the text has its placeholders in all three languages.
+- [ ] `tests/test_ai.py` follow-up questions (v1.35.0): `split_followups` takes the questions after the `[[follow-up]]` line (bullets, numbering, quotes stripped; at most 3, ≤ 200 characters, no repeats); while the answer streams the marker or its beginning never shows, and what was streamed equals what is stored; a cut-off answer offers none; they are stored (`ai_messages.followups`, migrated on an old database), returned in the done event and the conversation; the page shows them under the last answer only, escaped, and a click sends the question.
+- [ ] `tests/test_ai.py` model-server wait notice (v1.35.0): no streamed chunk for `llm.SILENT_SEC` (no headers, or headers and no chunk) → `on_silent(True)`, then `on_silent(False)` at the first chunk, before any text; a server that answers at once gives none; a failing notice never fails the request; `run_chat` emits `waiting_model` and then the phase line it was on; the page translates it in all three languages.
+- [ ] `tests/test_export_gap_refill.py` (14, v1.35.0): a chunk that failed in an earlier scheduled API run is
+      exported again. `Exporter.find_gaps` returns holes between archives only (any stream, this server; not
+      time before the first archive; under 60 s ignored; cut at the window); `export(refill_windows=)` exports
+      them FIRST in the same job, pre-counts only the holes and the new range, never fetches archived hours, and
+      runs even when there is nothing new; `_run_export_once` passes the holes behind the resume point within
+      `gap_refill_hours` and the schedule's days, passes nothing when there are none (a healthy site's run is
+      unchanged) or when it is 0; the Schedules page's Run now uses the same plan (`Exporter.plan_scheduled_run`); a timeout is noted as "Chunk N failed: ReadTimeout", not an empty reason.
+      Live: on .36 the 03:00 run after 1.35.0 must refill 2026-11-21 03:00–04:00Z (note "Refilled 1 gap(s)").
+- [ ] `tests/test_archive_status.py` (7, v1.35.0): the `archive_status` tool (chat + `/mcp`, replaces
+      `archive_coverage`) gives per server the archive count, earliest/latest, hours since the latest and the
+      GAPS (overlaps and touching archives merge, holes under an hour are left out, newest first, capped);
+      corrupted/missing/tampered/failed archives; running jobs with an ETA; the last export/verify/cleanup
+      jobs (report cleanup left out) with their notes cut to 300 chars and 7-day counts; schedules with the
+      next run from the same rule as the Schedules page (`scheduler.next_fire_time`); disk free and months
+      left. Manual: ask the chat "how is archiving doing, did last night's export work" and check the answer
+      against Job History and the dashboard.
 - [ ] `scripts/check-mcp-graylog.py` (run by `run-tests.sh`): the vendored file matches its
       manifest and is the published upstream version; a newer upstream fails the release check
       (`--update` takes it in whole).
@@ -1104,14 +1200,95 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
       returned (whether the model picked the right query is printed as WARN), and (step 5) that a
       real detector run opens the password-spraying incident, its AI-analysis evidence matches
       Graylog, and a real model returns a valid verdict naming no address missing from the
-      evidence. 2026-11-19: ALL PASS on Graylog 7.2.2 with Python 3.10 and (in docker) 3.12.
+      evidence. 2026-11-19: ALL PASS on Graylog 7.2.2 with Python 3.10 and (in docker) 3.12;
+      2026-11-20 (1.33.1): ALL PASS on 7.2.2, Python 3.10. 2026-11-21 (1.34.0): ALL PASS on 7.2.2 (28 checks,
+      incl. the streamed text adding up to the stored answer and each query recorded with its range).
 
 **By hand (each release that touches it)**
 
 - [ ] AI Chat page against a test Graylog: sign in to Graylog on the page, ask a question, watch the
       progress line (round, tool), read the answer with its query, model, time, tokens and tools;
       Stop works; conversations list, reopen and delete; Settings: test connection, save, MCP config
-      snippet, mcp_graylog status. en / zh-TW / ja, both themes, ~1436 px.
+      snippet, mcp_graylog status. Ask, go to another page, come back: the list says "Answering…",
+      opening it follows the progress and the answer arrives whole; hover a question / an answer / a table
+      (copy, edit, answer again, copy table); message times; model picked from the list. (1.34) The answer
+      streams in with a caret and the elapsed time counts; leave and come back mid-answer, the text so far is
+      there and grows; "Queries: N" opens each query with range and count, Open in Graylog shows the same
+      search and count; search the list (title and message text), Today / Yesterday groups; rename in the
+      header (Enter / Esc); Download as Markdown; Stop, then "Answer it" answers once (also after a reload);
+      number columns right-aligned.
+      en / zh-TW / ja, both themes, ~1436 px.
+- [ ] **`scripts/ui-ai-chat-test.py` (1.34)** against a jt-glogarch whose AI chat is on: `UI_URL=... UI_USER=<Graylog
+      login or token> UI_PASS=... python3 scripts/ui-ai-chat-test.py` must print ALL PASS (streaming with caret and time,
+      leaving and coming back mid-answer, the Queries panel with Graylog links and copy, rename / search / Markdown
+      download, Stop at once then "Answer it" answered once, deleting the followed conversation frees the page; it
+      deletes what it created). 2026-11-21 on .36 with the owner's LLM: ALL PASS (17 checks).
+
+### mcp_graylog 1.12.0 event tools and Zulip formatting (v1.35.0)
+
+**Automated**
+
+- [ ] `tests/test_ai.py::test_event_tools_are_offered_and_search_events_gets_the_long_range`: the five event
+      tools are offered by default, debug tools never; `search_events` may cover 31 days, message tools 24 h.
+- [ ] `scripts/e2e-ai-test.py` `events_step` (real Graylog): an HTTP notification whose URL holds a token and
+      whose description holds an e-mail, a URL and an IP, bound to an event definition; through /mcp
+      `list_event_definitions` names both, `list_event_notifications` and `get_event_definition` return none of
+      the URL, token, password or addresses, `search_events` over 2 days finds the triggered event and
+      `get_event_source_messages` its messages. 2026-11-22: ALL PASS on 7.2.2 (with the real LLM) and 6.3.15.
+- [ ] `tests/test_notify_zulip.py`: one bold-label line per figure, no code block, list items for errors,
+      rich code spans kept, log text sent as entities (no formatting, mention, stream link, emoji, KaTeX or
+      link); `rich` reaches the Zulip sender from the channel list.
+
+**Manual**
+
+- [ ] A Zulip notification on a phone and a desktop: no sideways scrolling, figures one per line.
+
+### Security notification layout, incident context and WAF blocking (v1.35.0)
+
+**Automated**
+
+- [ ] `tests/test_security_incidents.py`: a scan the WAF blocked (let through < min_count) is low; partly
+      through keeps its severity with blocked / passed; 1,000+ (or the detector's `blocked_min_count`) keeps
+      it; the blocked count failing leaves the incident as before; the blocked query comes from the field map;
+      the runner stores `metrics.context` and notifies with it.
+- [ ] `tests/test_security_context.py`: context = top 3 per field over the incident's own query, site field
+      names, the entity field skipped, nothing for a silent host, a failed field left out, at most 12 findings
+      (highest first).
+- [ ] `tests/test_notify_rich.py`: heading + one labelled line per item (no duplicate labels), reporter / site
+      / paths / responses / WAF line; bold only on our headings and labels (Telegram, Zulip, Slack `*`), a link
+      line and a value with a colon are never labels.
+- [ ] `scripts/e2e-security-test.py` `waf_step` (real Graylog): 30 blocked events -> low, 10 blocked + 20
+      through -> medium with blocked/passed; the context names the reporting host, the site, the responses
+      (mapped `http_status`) and 3 paths.
+
+**Manual**
+
+- [ ] A security notification on Zulip / Telegram, phone and desktop: heading bold, labels bold, no sideways
+      scroll; the Security page shows the context lines and the WAF result under each incident's figures.
+
+### Field mapping for the built-in detections (v1.35.0)
+
+**Automated**
+
+- [ ] `tests/test_security_fieldmap.py` (13): with no map the probes are EXACTLY the old ones (same searches
+      after an upgrade); validation (unknown key, one field, at most 4, `gl2_*` / non-field names, query length,
+      defaults and empty boxes not stored); a broken stored map falls back key by key; the engine counts the
+      mapped fields and stores metrics under GIM names (`card:user_name`), queries name the mapped field, the
+      machine-account exclusion follows the account field; mapped queries for IDS / WAF / silent / volume /
+      success-after-fail / new-source; the detector rows and the AI evidence use the map; `candidates()` picks
+      by value shape and name (not `useragent`, `request_id`, GeoIP-derived fields; destination-like last);
+      `detect()` on a log4-shaped fake: exact shares, events with none of the fields named by input, no
+      sampling when the query matches nothing; API: save (400 on bad, stored only non-defaults, audited),
+      the general settings save never writes the map, detection tries the form as sent.
+- [ ] `scripts/e2e-security-test.py` `fieldmap_step` (real Graylog): non-GIM login events are invisible with
+      the defaults and found once mapped (bruteforce, spray, success-after-fail via `IpAddress`, metrics under
+      GIM names, coverage 65/5), and `detect()` finds `IpAddress` / `TargetUserName` with Graylog's exact
+      `count(field)` (with + without = all). 2026-11-22: ALL PASS on 7.2.2 and 6.3.15.
+
+**Manual**
+
+- [ ] Security → Settings → Field mapping: Find fields on each group shows counts and examples; Use fills the
+      box (a list field puts it first); Save, Export, Import, Back to defaults; both themes at about 1436 px.
 
 ### Rich security notifications (v1.32.1)
 
@@ -1266,6 +1443,31 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
       the query and ATT&CK chips), save (disabled), enable, Test 24 h, field map save reconverts;
       an incident from a rule shows its title. en / zh-TW / ja, both themes, ~1436 px.
 
+### SigmaHQ rule library (v1.33.0)
+
+**Automated**
+
+- [ ] `tests/test_sigma_library.py` (9): a release zip read in memory (`rules*/…/*.yml` only, duplicate ids and
+      files without an id skipped, a rule that does not convert kept with its reason, fields after the field map,
+      keywords → `message`), size limits (zip, expanded size, not a zip, no rules); only https GitHub hosts;
+      refresh: download, then "current" without downloading, a redirect to another host refused and the library
+      kept with the error; rules added from the library follow a new release (enabled / group by / threshold
+      kept, disabled when it no longer converts, auto update off leaves it), a pasted rule with the same id is
+      never replaced; API (off by default, refresh refused while off, unknown package, filters: convertible /
+      fields in Graylog / log source / level / text, add = disabled + `origin=library`, already added, field map
+      reconverts the library, audits); schedule off by default; page wiring and i18n.
+- [ ] `scripts/e2e-security-test.py` `sigma_library_step` (real Graylog, GitHub stand-in): the package is stored,
+      Graylog's field list is read from `/api/system/fields`, a rule on a field Graylog never saw is marked, and
+      the library entry's query counts 45 like the pasted rule. 2026-11-20: ALL PASS on 7.2.2 and 6.3.15.
+- [ ] `scripts/upgrade-compat-test.sh`: `sec_sigma_library`, `sec_sigma_library_meta` and `sec_sigma_rules.origin`
+      exist after an upgrade.
+
+**By hand (each release that touches it)**
+
+- [ ] Sigma tab: Download settings (on, package), Check now downloads (release, counts, Graylog fields shown),
+      filters, a missing field struck through, Add / Add selected (rules appear disabled in Sigma rules with a
+      SigmaHQ link), Download again. en / zh-TW / ja, both themes, ~1436 px.
+
 ### Log source went silent (v1.26.0)
 
 **Automated**
@@ -1336,6 +1538,72 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
 - [ ] Security Incidents page: technique chips under the detection name open MITRE's page; the
       ATT&CK button shows the tactic table with states matching the Coverage table. en / zh-TW /
       ja, both themes, ~1436 px.
+
+### AI chat: statistics, paging, budgets, loops, several LLMs, preview (v1.36.0)
+
+**Automated**
+
+- [ ] `tests/test_ai_136.py` (33): loop guards (an exact repeat and a reworded sentence in the
+      reasoning are caught; tables, HTML and lists of hosts are not; a looping answer is cut to its
+      first copy; the same call whatever the key order); kept results (a big result becomes valid
+      JSON within the budget with a summary of every column; `read_result` where / contains / sort /
+      group / fields; text in pages; another user cannot read it; expiry); `aggregate` (the Graylog
+      request, the hidden count(field) probes, first/last seen as ISO times, time buckets made coarser,
+      more than 10,000 rows refused, a missing metric field noted); `summarize_messages` (pages of 500,
+      patterns merged when they differ in one word); paging past Graylog's 10,000 window refused; model
+      profile (llama.cpp `/props`, `/v1/models`, the setting wins, unknown assumed); a small context
+      gets the core tools only and smaller results; repeated tool calls not run again; a reasoning
+      loop stopped and asked again once, twice = stopped; history keeps the newest turns with their
+      queries and lists older questions; a single-server config becomes the first server and is
+      written back; limits site / server / user; pins capped at 5, listed first, kept by the prune;
+      messages converted to the Claude shape (Claude's own turn unchanged, tool results in one user
+      message); Claude request choices (no temperature, adaptive thinking, `tool_choice: none`,
+      effort, JSON schema, fallback only on the Claude API); a full tool round through the real
+      `anthropic` SDK against a mock transport (request headers and body, thinking blocks sent back
+      with their signature); private keys never reach an OpenAI-compatible server; several servers
+      saved (Claude needs allow_external, keys kept when masked, follow a rename, dropped on a new
+      URL, duplicate names refused, legacy fields written back); unknown LLM refused in the chat; pin
+      409 at 6; the preview's sandbox CSP, `X-Frame-Options: SAMEORIGIN` on the preview only, Chart.js
+      inlined, Mermaid strict and its text cannot close the script, download, another user's message
+      404; the bundled Mermaid matches its manifest.
+
+**By hand (each release that touches it)**
+
+- [ ] Against a throwaway Graylog with the owner's model: a breakdown question uses `aggregate`
+      (numbers match Graylog), "what kinds of messages" uses `summarize_messages`, "make an HTML
+      dashboard" gives a page whose Preview renders its charts; in the preview, `document.cookie`,
+      `fetch('/api/...')` and `parent.document` are all refused (headless Chromium). The progress
+      line shows the model and its context.
+- [ ] Settings → LLM servers: add a Claude API server (allow_external required), test, set the
+      default, rename (the key follows); the chat's server picker switches per question.
+- [ ] Conversation list: fold it, fold a group, pin up to 5 (the 6th is refused); the thinking switch
+      under the box folds or shows the thinking. Preview pane beside / wide / new tab / download.
+      en / zh-TW / ja, both themes, ~1436 px, and with the preview open the box's buttons do not
+      overlap.
+- [ ] While a lookup runs, its own timer counts beside the answer's; each finished lookup stays
+      listed with its time and result; the query list under the answer shows each lookup's time.
+
+**Added 2026-11-27 (still 1.36.0)**
+
+- [ ] `tests/test_ai_136.py` +7: a stopped, unanswered question is marked for the model (and not once it
+      is answered); `stopped_at` stored for questions only; the dashboard follows the page theme (light /
+      dark colours in the prompt, unknown = light, the page sends `getTheme()`); the reply may use a quarter
+      of the reported context (262,144 -> 65,536; unknown -> 8,192); `preview_blocks(partial=True)` counts
+      a block still being written; the live preview serves only the owner's running answer (sandbox CSP,
+      `no-store`, 404 for another user or once done); folding, live preview, splitter and the stopped label
+      on the page. `tests/test_ai.py::test_stop_ends_an_answer_left_running` also checks `stopped_at`.
+- [ ] By hand: Stop a question while the model thinks -> the question shows "Stopped" (also after reopening
+      the conversation); a code block over 15 lines starts folded with "Expand (N lines)"; asking for a
+      dashboard opens the preview by itself while the page is written and keeps it current, the stored
+      page replaces it when the answer is done, closing the pane keeps it closed for that answer; in the
+      light theme the new dashboard is light; drag the pane's left edge (width kept, double-click resets);
+      the finished-lookups list lines up in columns; the LLM server card fields line up at ~1436 and ~1180 px.
+- [ ] `tests/test_ai_136.py` (also): Markdown preview escaped (no script, no javascript: link), table / list /
+      mermaid rendered, theme light / dark, `.md` download; the conversation list's `more` / `limit` (pinned not
+      counted, capped at 1000). By hand: a finished dashboard opens in the pane when the stream ends normally AND
+      when it is cut (headless check routes `/api/ai/chat` to a stream with and without `done`); the preview
+      header is as tall as the conversation's; your bubble is dark with white text; the suggestions are tinted;
+      "Show older conversations" adds 50; login page: the note is a reminder box and both controls are 34 px.
 
 ### AI analysis of security incidents (v1.22.0)
 

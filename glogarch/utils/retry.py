@@ -9,6 +9,7 @@ import functools
 from typing import Any, Callable, TypeVar
 
 from glogarch.utils.logging import get_logger
+from glogarch.utils.errtext import exc_text
 
 log = get_logger("retry")
 
@@ -41,7 +42,7 @@ def retry_async(
                         attempt=attempt + 1,
                         max_retries=max_retries,
                         delay=delay,
-                        error=str(e),
+                        error=exc_text(e),
                     )
                     await asyncio.sleep(delay)
             raise last_exc  # type: ignore[misc]

@@ -385,67 +385,23 @@ async function loadDashboard() {
     }
 
     // ---- Hardware sizing advice (computed from this box's real readings) ----
+    // One row per resource (what this host has / what it needs / enough or not),
+    // then only the actions; the owner found the old paragraphs hard to read.
     try {
         const sz = await fetchJSON(`${API}/sizing`);
         const sec = document.getElementById('sizing-section');
         const el = document.getElementById('sizing-info');
         if (sec && el && sz && sz.recommended) {
-            const cur = sz.current || {}, det = sz.detected || {}, rec = sz.recommended;
-            const W = {
-                swap_in_use: t('sizing_w_swap').replace('{mb}', formatNumber(cur.swap_used_mb || 0)),
-                ram_below_recommended: t('sizing_w_ram'),
-                cores_below_recommended: t('sizing_w_cores'),
-                jvm_heaps_too_large: t('sizing_w_heaps'),
-                graylog_heap_low: t('sizing_w_glheap'),
-                archive_disk_below_retention: t('sizing_w_archdisk'),
-            };
-            const warns = (sz.warnings || []).map(w => W[w]).filter(Boolean);
-            const colour = sz.level === 'critical' ? 'status-failed'
-                         : sz.level === 'warn' ? 'u030' : 'status-completed';
-            let html = `<div>${esc(t('sizing_current')
-                .replace('{ram}', cur.ram_gb != null ? cur.ram_gb : '?')
-                .replace('{cpu}', cur.cpu_count != null ? cur.cpu_count : '?'))}</div>`;
-            html += `<div class="cap-info">${esc(sz.colocated
-                ? t('sizing_detected').replace('{gl}', det.graylog_heap_gb != null ? det.graylog_heap_gb : '?')
-                                      .replace('{os}', det.opensearch_heap_gb != null ? det.opensearch_heap_gb : '?')
-                : t('sizing_detected_none'))}</div>`;
-            let recLine = t('sizing_rec').replace('{ram}', rec.ram_gb).replace('{cpu}', rec.cpu_cores);
-            if (sz.colocated && rec.graylog_heap_gb) {
-                recLine += t('sizing_rec_heaps').replace('{gl}', rec.graylog_heap_gb)
-                                                .replace('{os}', rec.opensearch_heap_gb);
-            }
-            html += `<div class="mt8"><span class="${colour}">${esc(recLine)}</span></div>`;
-            // Archive DISK is the real capacity driver on an archive host — show
-            // what the CONFIGURED retention needs at the measured growth rate.
-            const ad = sz.archive_disk;
-            if (ad && ad.available) {
-                const line = t('sizing_archive_disk')
-                    .replace('{months}', formatNumber(ad.retention_months))
-                    .replace('{days}', formatNumber(ad.retention_days))
-                    .replace('{need}', formatBytes(ad.required_bytes))
-                    .replace('{rate}', formatBytes(ad.bytes_per_month))
-                    .replace('{have}', ad.current_total_bytes ? formatBytes(ad.current_total_bytes) : '?')
-                    .replace('{holds}', ad.months_current_disk_holds != null ? formatNumber(ad.months_current_disk_holds) : '?');
-                const cls = ad.sufficient === false ? 'status-failed' : 'status-completed';
-                html += `<div class="cap-warn"><span class="${cls}">${esc(line)}</span></div>`;
-            }
-            // Import-mode guidance: the two restore paths stress DIFFERENT
-            // components, so a single heap line misleads — GELF loads Graylog
-            // (pipeline/journal/heap), Bulk writes straight to OpenSearch
-            // (heap + page cache). Show both; the operator picks their mode.
-            if (sz.colocated) {
-                html += `<div class="cap-info mt8">${esc(t('sizing_import_hdr'))}<br>` +
-                        `　${esc(t('sizing_import_gelf'))}<br>` +
-                        `　${esc(t('sizing_import_bulk'))}</div>`;
-            }
-            if (warns.length) {
-                html += warns.map(w => `<div class="cap-warn"><span class="${sz.level === 'critical' ? 'status-failed' : 'u030'}">${esc(w)}</span></div>`).join('');
-            } else {
-                html += `<div class="cap-warn"><span class="status-completed">${esc(t('sizing_ok'))}</span></div>`;
-            }
-            html += `<div class="cap-info mt8">${esc(t('sizing_note').replace('{n}', formatNumber(sz.archive_count || 0)))}</div>`;
-            el.innerHTML = html;
-            sec.style.display = '';
+            el.innerHTML = renderSizingCard(sz);
+            // The card starts with class is-hidden (CSS display:none); clearing an
+            // inline style never showed it.
+            sec.classList.remove('is-hidden');
+            try {
+                const ah = await fetchJSON(`${API}/servers/api-heap`);
+                if (ah && ah.available && ah.heap_bound && ah.api_in_use) {
+                    sizingAddAction(el, apiHeapText(ah));
+                }
+            } catch (e) { /* advisory */ }
         }
     } catch (e) { /* sizing is advisory — never block the dashboard */ }
 
@@ -2703,6 +2659,132 @@ function _selectedExportServerIsDN() {
     return !!(srvSel && window._exportServerDN && window._exportServerDN[srvSel.value]);
 }
 
+// Graylog heap -> API export speed (owner 2026-11-24: most customers run ONE
+// Graylog, often with a small heap). Graylog keeps every API search result 5
+// minutes, so on one node the heap sets the speed (~200 msg/s per GB, measured).
+// Shown only for API mode on a heap under 4 GB; anything unreadable shows nothing.
+// ---- Hardware sizing card ----
+function _szRow(label, value, rec, ok, sub, badText) {
+    const tag = ok == null ? ''
+        : `<span class="sz-tag ${ok ? 'ok' : 'bad'}">${icon(ok ? 'check' : 'close', 13)}` +
+          `${esc(ok ? t('sz_enough') : (badText || t('sz_short')))}</span>`;
+    return `<div class="sz-row"><div class="sz-k">${esc(label)}</div><div class="sz-v">` +
+        `<span class="sz-val">${esc(value)}</span>` +
+        (rec ? `<span class="sz-rec">${esc(rec)}</span>` : '') + tag +
+        (sub || '') + `</div></div>`;
+}
+
+function _szHead(n) {
+    const ok = n === 0;
+    return `<div class="sz-head ${ok ? 'ok' : 'bad'}" data-n="${n}">${icon(ok ? 'check' : 'warning', 16)}` +
+        `<span>${esc(ok ? t('sz_all_ok') : t('sz_todo').replace('{n}', n))}</span></div>`;
+}
+
+function renderSizingCard(sz) {
+    const cur = sz.current || {}, det = sz.detected || {}, rec = sz.recommended || {};
+    const W = new Set(sz.warnings || []);
+    const q = v => (v != null ? v : '?');
+    let rows = '';
+    rows += _szRow(t('sz_ram'), `${q(cur.ram_gb)} GB`, t('sz_rec').replace('{v}', `${rec.ram_gb} GB`),
+                   cur.ram_gb != null ? !W.has('ram_below_recommended') : null);
+    rows += _szRow(t('sz_cpu'), t('sz_cores').replace('{n}', q(cur.cpu_count)),
+                   t('sz_rec').replace('{v}', t('sz_cores').replace('{n}', rec.cpu_cores)),
+                   cur.cpu_count != null ? !W.has('cores_below_recommended') : null);
+    if (W.has('swap_in_use')) {
+        rows += _szRow(t('sz_swap'), t('sz_swap_used').replace('{mb}', formatNumber(cur.swap_used_mb || 0)), '', false,
+                       '', t('sz_swap_bad'));
+    }
+    if (sz.colocated) {
+        const heapBad = W.has('jvm_heaps_too_large');
+        if (det.graylog_heap_gb != null) {
+            rows += _szRow(t('sz_gl_heap'), `${det.graylog_heap_gb} GB`,
+                           rec.graylog_heap_gb ? t('sz_rec').replace('{v}', `${rec.graylog_heap_gb} GB`) : '',
+                           !(heapBad || W.has('graylog_heap_low')));
+        }
+        if (det.opensearch_heap_gb != null) {
+            rows += _szRow(t('sz_os_heap'), `${det.opensearch_heap_gb} GB`,
+                           rec.opensearch_heap_gb ? t('sz_rec').replace('{v}', `${rec.opensearch_heap_gb} GB`) : '',
+                           !heapBad, `<div class="sz-sub">${esc(t('sz_xms'))}</div>`);
+        }
+    } else {
+        rows += _szRow(t('sz_colocated'), t('sz_colocated_none'), '', null);
+    }
+    const ad = sz.archive_disk;
+    if (ad && ad.available) {
+        const holds = ad.months_current_disk_holds, months = ad.retention_months;
+        let sub = '';
+        if (holds != null && months) {
+            const w = Math.max(1, Math.min(100, Math.round(holds / months * 100)));
+            sub += `<div class="sz-barwrap"><svg class="sz-bar" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true">` +
+                   `<rect class="sz-bar-bg" width="100" height="6"/>` +
+                   `<rect class="sz-bar-fg ${ad.sufficient === false ? 'bad' : 'ok'}" width="${w}" height="6"/></svg></div>` +
+                   `<div class="sz-sub">${esc(t('sz_disk_holds').replace('{holds}', formatNumber(holds))
+                                                               .replace('{months}', formatNumber(months)))}</div>`;
+        }
+        sub += `<div class="sz-sub">${esc(t('sz_disk_rate').replace('{rate}', formatBytes(ad.bytes_per_month))
+                                                       .replace('{days}', formatNumber(ad.retention_days)))}</div>`;
+        rows += _szRow(t('sz_disk'), ad.current_total_bytes ? formatBytes(ad.current_total_bytes) : '?',
+                       t('sz_disk_need').replace('{need}', formatBytes(ad.required_bytes)),
+                       ad.sufficient == null ? null : ad.sufficient, sub);
+    }
+    // Only what someone has to DO; RAM / CPU shortfalls already show on their rows.
+    const A = {
+        swap_in_use: t('sizing_w_swap').replace('{mb}', formatNumber(cur.swap_used_mb || 0)),
+        jvm_heaps_too_large: t('sizing_w_heaps'),
+        graylog_heap_low: t('sizing_w_glheap'),
+        archive_disk_below_retention: t('sizing_w_archdisk'),
+    };
+    const acts = (sz.warnings || []).map(w => A[w]).filter(Boolean);
+    let html = _szHead((sz.warnings || []).length);
+    html += `<div class="sz-rows">${rows}</div>`;
+    html += `<div class="sz-actions${acts.length ? '' : ' is-hidden'}">` +
+            acts.map(a => `<div class="sz-act">${icon('warning', 15)}<span>${esc(a)}</span></div>`).join('') + `</div>`;
+    if (sz.colocated) {
+        html += `<details class="sz-more"><summary>${esc(t('sz_import'))}</summary>` +
+                `<div>${esc(t('sizing_import_gelf'))}</div><div>${esc(t('sizing_import_bulk'))}</div></details>`;
+    }
+    html += `<div class="sz-basis">${esc(t('sz_basis').replace('{n}', formatNumber(sz.archive_count || 0)))}</div>`;
+    return html;
+}
+
+function sizingAddAction(el, text) {
+    const box = el.querySelector('.sz-actions');
+    if (!box) return;
+    box.insertAdjacentHTML('beforeend', `<div class="sz-act">${icon('warning', 15)}<span>${esc(text)}</span></div>`);
+    box.classList.remove('is-hidden');
+    const head = el.querySelector('.sz-head');
+    if (head) head.outerHTML = _szHead((parseInt(head.dataset.n, 10) || 0) + 1);
+}
+
+function apiHeapText(r) {
+    const day = Math.round((r.per_day || 0) / 100000) * 100000;
+    return t('api_heap_hint').replace('{heap}', r.heap_max_gb)
+        .replace('{rate}', formatNumber(r.per_sec)).replace('{day}', formatNumber(day));
+}
+
+async function showApiHeapHint(elId, server, mode) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const want = `${server}|${mode}`;
+    el.dataset.want = want;             // a slower answer for an earlier choice must not win
+    el.textContent = '';
+    el.style.display = 'none';
+    if (mode !== 'api') return;
+    let r;
+    try {
+        r = await fetchJSON(`${API}/servers/api-heap?server=${encodeURIComponent(server || '')}`);
+    } catch (e) { return; }
+    if (el.dataset.want !== want || !r || !r.available || !r.heap_bound) return;
+    el.textContent = apiHeapText(r);
+    el.style.color = 'var(--warning)';
+    el.style.display = 'block';
+}
+
+function refreshSchedHeapHint() {
+    showApiHeapHint('sched-heap-hint', document.getElementById('sched-server')?.value || '',
+                    document.getElementById('sched-mode')?.value || 'api');
+}
+
 function onExportModeChange() {
     const mode = document.getElementById('export-mode')?.value;
     const streamGroup = document.getElementById('export-stream-group');
@@ -2727,6 +2809,7 @@ function onExportModeChange() {
         hint.textContent = hintText;
         hint.style.color = (dn || mode === 'opensearch') ? 'var(--warning)' : '';
     }
+    showApiHeapHint('export-heap-hint', document.getElementById('export-server')?.value || '', mode);
     // OpenSearch: hide time range selector, show index picker in coverage
     if (rangeGroup) rangeGroup.style.display = mode === 'api' ? 'block' : 'none';
     if (daysGroup) daysGroup.style.display = mode === 'api' ? 'block' : 'none';
@@ -2809,7 +2892,12 @@ async function loadOsCoverage(el) {
         const isetSel = document.getElementById('export-indexset') || document.getElementById('sched-indexset');
         const selectedOpt = isetSel?.selectedOptions?.[0];
         const prefix = selectedOpt?.getAttribute('data-prefix') || '';
-        const qs = prefix ? `?prefix=${encodeURIComponent(prefix)}` : '';
+        // the server chosen in this form (export page or schedule dialog): its own OpenSearch
+        const srvEl = document.getElementById(el.closest('#sched-modal') ? 'sched-server' : 'export-server');
+        const params = new URLSearchParams();
+        if (prefix) params.set('prefix', prefix);
+        if (srvEl && srvEl.value) params.set('server', srvEl.value);
+        const qs = params.toString() ? `?${params}` : '';
         const osData = await fetchJSON(`${API}/opensearch/indices${qs}`);
         if (el.dataset.wantMode !== _want) return;   // mode switched mid-fetch
         if (!osData.indices || osData.indices.length === 0) {
@@ -2877,7 +2965,7 @@ async function loadOsCoverage(el) {
                 <div class="u038">
                     <label class="u088">${icon('archive')} ${t('os_keep_recent')}</label>
                     <input class="u161" type="number" id="os-keep-n" value="${exportable.length}" min="1"
-                       >
+                       data-all="${exportable.length}">
                     <span class="u090"> ${t('os_of_exportable').replace('{n}', exportable.length)}</span>
                 </div>
                 <small class="form-hint u113">${t('os_keep_recent_hint')}</small>
@@ -2924,6 +3012,15 @@ async function startExport() {
         index_set: indexSet || null,
         streams: streams.length > 0 ? streams : null,
     };
+    // "Export recent N indices" (OpenSearch Direct): shown since it existed, never sent until 1.34.
+    // Only a number below "all exportable" is sent, so an untouched form exports what it always did,
+    // and only for one chosen index set: the list it counts is that set's (the exporter applies N
+    // to every set, so with "all index sets" it would not be what the form showed).
+    const keepEl = document.getElementById('os-keep-n');
+    const keep = keepEl ? parseInt(keepEl.value, 10) : NaN;
+    if (mode === 'opensearch' && indexSet && keepEl && keep >= 1 && keep < parseInt(keepEl.dataset.all || '0', 10)) {
+        body.keep_indices = keep;
+    }
 
     // Disable button
     const btn = document.querySelector('[data-act="startExport"]');
@@ -3325,6 +3422,7 @@ async function loadSchedules() {
 function openSchedModal() {
     stopSchedPoll(); // Pause auto-refresh while editing
     _editingSchedule = null;
+    _editingSchedServer = '';
     document.getElementById('sched-name').readOnly = false;
     document.getElementById('sched-name').value = '';
     const titleEl = document.getElementById('sched-modal-title');
@@ -3361,6 +3459,7 @@ function closeSchedModal() {
     document.getElementById('sched-modal').style.display = 'none';
     startSchedPoll(); // Resume auto-refresh
     _editingSchedule = null;
+    _editingSchedServer = '';
     document.getElementById('sched-name').readOnly = false;
 }
 
@@ -3378,6 +3477,7 @@ function onSchedModeChange() {
         hint.textContent = hintText;
         hint.style.color = mode === 'opensearch' ? 'var(--warning)' : '';
     }
+    refreshSchedHeapHint();
     if (streamGroup) streamGroup.style.display = mode === 'api' ? 'block' : 'none';
     if (daysGroup) daysGroup.style.display = mode === 'api' ? 'block' : 'none';
     if (coverage) {
@@ -3441,7 +3541,14 @@ async function addSchedule() {
     await withButton(btn, async () => {
         const body = { name, job_type: type, cron_expr: cron };
         if (type === 'export') {
-            body.server = document.getElementById('sched-server')?.value || '';
+            const srvSel = document.getElementById('sched-server');
+            body.server = srvSel?.value || '';
+            // "Default server" picked from a list that really loaded (an empty list must not
+            // move a schedule to the default server: the 1.15.1 class of bug)
+            // nor may a stored server that is no longer in the list (config.yaml edited by hand)
+            const storedListed = !_editingSchedule || !_editingSchedServer
+                || [...(srvSel?.options || [])].some(o => o.value === _editingSchedServer);
+            if (srvSel && !body.server && srvSel.options.length > 1 && storedListed) body.server_default = true;
             body.mode = document.getElementById('sched-mode')?.value || 'api';
             body.days = parseInt(document.getElementById('sched-days')?.value) || 1095;
             body.index_set = document.getElementById('sched-indexset')?.value || '';
@@ -3456,17 +3563,19 @@ async function addSchedule() {
         } else if (type === 'report_cleanup') {
             body.days = parseInt(document.getElementById('sched-report-days')?.value) || 720;
         }
-        await fetchJSON(`${API}/schedules`, {
+        const r = await fetchJSON(`${API}/schedules`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(body),
         });
+        if (!r || r.error) { showAlert((r && r.error) || t('load_failed')); return; }   // the dialog stays open
         closeSchedModal();
         loadSchedules();
     });
 }
 
 let _editingSchedule = null;
+let _editingSchedServer = '';   // the server stored on the schedule being edited
 
 async function editSchedule(name) {
     stopSchedPoll(); // Pause auto-refresh while editing
@@ -3516,6 +3625,7 @@ async function editSchedule(name) {
     if (sched.job_type === 'export') {
         await loadSchedServers();
         const serverSel = document.getElementById('sched-server');
+        _editingSchedServer = c.server || '';
         if (serverSel && c.server) serverSel.value = c.server;
         const modeSel = document.getElementById('sched-mode');
         if (modeSel) modeSel.value = c.mode || 'api';
@@ -3546,6 +3656,7 @@ async function editSchedule(name) {
 
 function cancelEditSchedule() {
     _editingSchedule = null;
+    _editingSchedServer = '';
     document.getElementById('sched-name').readOnly = false;
     closeSchedModal();
 }
@@ -3850,6 +3961,7 @@ async function loadNotifySettings() {
             {key: 'on_verify_failed', label: t('evt_verify_failed'), ic: 'shield'},
             {key: 'on_sensitive_operation', label: t('evt_sensitive_operation'), ic: 'lock'},
             {key: 'on_audit_alert', label: t('evt_audit_alert'), ic: 'warning'},
+            {key: 'on_security_incident', label: t('evt_security_incident'), ic: 'shield'},
         ];
         eventsEl.innerHTML = events.map(e =>
             `<label class="u042">
@@ -3868,6 +3980,14 @@ async function loadNotifySettings() {
                 <option value="zh-TW" ${data.language === 'zh-TW' ? 'selected' : ''}>繁體中文</option>
                 <option value="ja" ${data.language === 'ja' ? 'selected' : ''}>日本語</option>
             </select>
+        </div>
+        <div class="form-group nf-link-group">
+            <label for="nf-link-base">${esc(t('notify_link_base'))}</label>
+            <div class="nf-link-row">
+                <input type="text" id="nf-link-base" value="${esc(data.link_base_url || '')}" placeholder="https://192.0.2.10:8990" autocomplete="off">
+                <button type="button" class="btn-secondary btn-sm" data-act="nfUseThisAddress">${icon('globe', 14)} ${esc(t('notify_link_use_this'))}</button>
+            </div>
+            <div class="text-muted fs-08">${esc(t('notify_link_base_note'))}</div>
         </div>`;
         initCustomSelects();
     }
@@ -3959,10 +4079,18 @@ async function loadNotifySettings() {
     }
 }
 
+// the address this browser uses: right for links when people reach jt-glogarch the same way
+function nfUseThisAddress() {
+    const el = document.getElementById('nf-link-base');
+    if (el) el.value = window.location.origin;
+}
+
 async function saveNotifySettings(evt) {
     const body = {};
     // Language
     body.language = document.getElementById('nf-language')?.value || 'zh-TW';
+    const link = document.getElementById('nf-link-base');
+    if (link) body.link_base_url = link.value.trim();
     // Events
     document.querySelectorAll('.notify-event').forEach(cb => {
         body[cb.getAttribute('data-key')] = cb.checked;
@@ -4303,7 +4431,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (path === '/logs') { loadRealtimeLog(); loadTable('#audit-table', loadAuditLog); }
     else if (path === '/op-audit') { loadAuditData(1); loadAuditStatus(); loadAuditNginxConfig(); startJobsPoll(loadAuditStatus); }
     else if (path === '/settings') loadSettingsPage();
-    else if (path === '/reports') loadReportsPage();
+    else if (path === '/reports') { loadReportsPage(); startJobsPoll(refreshReportsLists); }
     else if (path === '/alerting') alInit();
 });
 
@@ -5003,6 +5131,7 @@ function _gatherServerBody() {
         url: v('srv-url'),
         verify_ssl: ck('srv-verify-ssl'),
     };
+    body.auth_type = authType === 'token' ? 'token' : 'password';
     if (authType === 'token') {
         body.auth_token = v('srv-token');
         body.username = '';
@@ -5573,6 +5702,16 @@ async function loadReportsPage() {
     applyI18n();
 }
 
+// Every 5 s (startJobsPoll: visible tab, never under an open confirm): a report run
+// by the schedule or another admin shows up without a reload. Lists only.
+async function refreshReportsLists() {
+    const modal = document.getElementById('report-modal');
+    if (modal && !modal.classList.contains('hidden')) return;   // editing: leave the page as it is
+    const [defs, hist] = await Promise.all([fetchJSON(`${API}/reports`), fetchJSON(`${API}/reports/history?limit=30`)]);
+    if (defs && defs.items) renderReportsTable(defs.items);
+    if (hist && hist.items) renderReportHistory(hist.items);
+}
+
 // Show how to install the optional PDF render engine (custom modal, not native).
 function showReportEngineHelp() {
     showConfirm(t('reports_engine_help_title'), t('reports_engine_help_body'), null);
@@ -5581,7 +5720,7 @@ function showReportEngineHelp() {
 function renderReportsTable(items) {
     const tb = document.querySelector('#reports-table tbody');
     if (!tb) return;
-    if (!items.length) { tb.innerHTML = `<tr><td colspan="5" class="text-center text-muted u128">${t('settings_none')}</td></tr>`; return; }
+    if (!items.length) { tb.innerHTML = `<tr><td colspan="4" class="text-center text-muted u128">${t('settings_none')}</td></tr>`; return; }
     tb.innerHTML = items.map(r => {
         const c = r.config || {};
         const bits = [];
@@ -5590,10 +5729,12 @@ function renderReportsTable(items) {
         return `<tr>
             <td>${esc(r.name)}${(c.schedule_cron ? ' <span class="job-badge job-badge-sched">'+esc(c.schedule_cron)+'</span>' : '')}</td>
             <td>${esc(bits.join('、') || '-')}</td>
-            <td>${r.enabled ? t('settings_yes') : t('settings_no')}</td>
             <td class="text-muted fs-085">${r.last_run_at ? esc(formatDT(r.last_run_at)) : '-'}</td>
             <td>
                 <div class="row-actions">
+                    <label class="tgl-switch" title="${esc(t(c.schedule_cron ? 'reports_enabled_tip' : 'reports_enabled_tip_nosched'))}">
+                        <input type="checkbox" role="switch" data-act-change="reportToggleEnabled" data-act-self data-name="${esc(r.name)}" ${r.enabled ? 'checked' : ''}>
+                        <span class="tgl-track" aria-hidden="true"></span><span class="tgl-label">${esc(t(r.enabled ? 'reports_enabled_on' : 'reports_enabled_off'))}</span></label>
                     <button class="btn-sm btn-primary" data-act="generateReport" data-arg="${esc(r.name)}">${icon('play',14)} ${t('reports_generate')}</button>
                     <button class="btn-sm btn-secondary" data-act="openReportModal" data-arg="${esc(r.name)}">${icon('edit',14)} ${t('btn_edit')}</button>
                     <button class="btn-sm btn-info" data-act="duplicateReport" data-arg="${esc(r.name)}">${icon('copy',14)} ${t('reports_duplicate')}</button>
@@ -5601,6 +5742,16 @@ function renderReportsTable(items) {
                 </div>
             </td></tr>`;
     }).join('');
+}
+
+async function reportToggleEnabled(el) {
+    const name = el.dataset.name;
+    const on = el.checked;
+    const d = await fetchJSON(`${API}/reports/${encodeURIComponent(name)}/enabled`, {method: 'POST',
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({enabled: on})});
+    if (!d || d.error) { el.checked = !on; showAlert((d && d.error) || 'Error'); return; }
+    const lab = el.parentNode.querySelector('.tgl-label');
+    if (lab) lab.textContent = t(on ? 'reports_enabled_on' : 'reports_enabled_off');
 }
 
 function renderReportHistory(items) {

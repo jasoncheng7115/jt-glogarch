@@ -73,6 +73,19 @@ def posix_cron_to_apscheduler(cron_expr: str) -> str:
     return f"{minute} {hour} {dom} {month} {new_dow}"
 
 
+def next_fire_time(cron_expr: str, now: datetime | None = None) -> datetime | None:
+    """When a POSIX cron expression fires next, in the scheduler's local
+    timezone (what `apply_schedule` registers). None when it cannot be read.
+    One rule for the Schedules page and the AI archive-status tool."""
+    try:
+        tz = AsyncIOScheduler().timezone
+        trigger = CronTrigger.from_crontab(posix_cron_to_apscheduler(cron_expr), timezone=tz)
+        return trigger.get_next_fire_time(None, now.astimezone(tz) if now else datetime.now(tz))
+    except Exception as e:
+        log.debug("Could not compute the next fire time for a cron expression", cron=cron_expr, error=str(e))
+        return None
+
+
 class ArchiveScheduler:
     """Manages periodic export and cleanup jobs."""
 
@@ -371,7 +384,6 @@ class ArchiveScheduler:
         """Single export attempt."""
         import json as _json
         from datetime import timedelta
-        from glogarch.export.exporter import _ensure_naive
 
         # Read config from DB (may have been edited via Web UI)
         sched_list = self.db.list_schedules()
@@ -415,17 +427,35 @@ class ArchiveScheduler:
             # Graylog API instead of not archiving at all (upgrade principle 3);
             # dedup counts API archives as coverage, so the next OpenSearch run
             # does not fetch the same hours again.
-            from glogarch.graylog.datanode import ensure_working
-            os_config, dn_problem = await ensure_working(self.settings, server_config.name)
+            from glogarch.graylog.datanode import UNREACHABLE_RETRY_SEC, ensure_working
+            dn_stats: dict = {}
+            os_config, dn_problem = await ensure_working(
+                self.settings, server_config.name, retry_delays=UNREACHABLE_RETRY_SEC,
+                stats=dn_stats)
+            if dn_stats.get("waited_sec"):
+                # minutes went by waiting for the Data Node: end the window now
+                time_to = datetime.utcnow()
+                time_from = time_to - timedelta(days=export_days)
+            if os_config is None:
+                # disconnected while this run started: archive it through the Graylog API
+                # (it crashed on os_config.hosts before, found by a review)
+                log.warning("Data Node block gone (disconnected?) — this scheduled run uses the "
+                            "Graylog API", schedule=schedule_name, server=server_config.name)
+                os_config = self.settings.get_opensearch(cfg.get("server"))
+                export_mode = "api"
             if dn_problem:
                 from glogarch.utils.sanitize import sanitize as _san
                 log.error("Data Node OpenSearch unusable — this scheduled run uses the "
                           "Graylog API instead", schedule=schedule_name,
-                          server=server_config.name, problem=_san(dn_problem))
+                          server=server_config.name, problem=_san(dn_problem),
+                          attempts=dn_stats.get("attempts", 1),
+                          waited_sec=dn_stats.get("waited_sec", 0))
                 try:
                     from glogarch.notify.sender import notify_datanode_fallback
                     await notify_datanode_fallback(schedule_name, server_config.name,
-                                                   _san(dn_problem))
+                                                   _san(dn_problem),
+                                                   attempts=dn_stats.get("attempts", 1),
+                                                   waited_sec=dn_stats.get("waited_sec", 0))
                 except Exception as e:
                     log.warning("Could not send the Data Node fallback notification",
                                 error=str(e))
@@ -454,16 +484,15 @@ class ArchiveScheduler:
                 self.settings.rate_limit, self.db, integrity=self.settings.integrity,
             )
 
-            # Pass first stream_id for stream-aware resume point
             first_stream = stream_ids[0] if stream_ids else None
-            resume_point = exporter.get_resume_point(stream_id=first_stream)
+            time_from, refill, resume_point = exporter.plan_scheduled_run(time_from, time_to, stream_ids)
             if resume_point:
-                resume_point = _ensure_naive(resume_point)
                 log.info("Resume point (API)", resume=str(resume_point), stream=first_stream)
-                if resume_point > time_from:
-                    time_from = resume_point
-                # Safety: if resume_point >= time_to, nothing to export
-                if time_from >= time_to:
+                if refill:
+                    log.info("Refilling gaps left by earlier runs", gaps=len(refill),
+                             windows=[f"{a}..{b}" for a, b in refill[:10]])
+                # Safety: if resume_point >= time_to, nothing new to export
+                if time_from >= time_to and not refill:
                     log.info("Resume point is at or beyond time_to, nothing to export",
                              time_from=str(time_from), time_to=str(time_to))
                     return
@@ -473,7 +502,8 @@ class ArchiveScheduler:
             job_id, progress_cb = self._export_progress_sink()
             try:
                 result = await exporter.export(time_from=time_from, time_to=time_to, streams=stream_ids, source=f"scheduled:api:{schedule_name}",
-                                               progress_callback=progress_cb, job_id=job_id)
+                                               progress_callback=progress_cb, job_id=job_id,
+                                               refill_windows=refill or None)
             except Exception as e:
                 if progress_cb:
                     progress_cb({"phase": "error", "error": str(e), "pct": 100})
@@ -1043,8 +1073,12 @@ class ArchiveScheduler:
             self.scheduler.remove_job(self.SECURITY_JOB_ID)
         except Exception as e:  # JobLookupError: nothing registered yet
             log.debug("No security job to remove", error=str(e))
-        self._apply_ti_schedule(cfg)
-        self._apply_digest_schedule(cfg)
+        # each on its own: one that fails (a hand-edited value) must not stop the analysis job
+        for step in (self._apply_ti_schedule, self._apply_sigma_library_schedule, self._apply_digest_schedule):
+            try:
+                step(cfg)
+            except Exception as e:
+                log.warning("A security sub-schedule could not be registered", step=step.__name__, error=str(e))
         if not cfg.enabled:
             return False
         minutes = max(5, min(int(cfg.interval_minutes or 15), 1440))
@@ -1071,14 +1105,56 @@ class ArchiveScheduler:
             log.debug("No security digest job to remove", error=str(e))
         if not getattr(cfg, "digest_enabled", False):
             return
+        from glogarch.security.digest import digest_cron_problem
         cron = (cfg.digest_cron or "0 8 * * 1").strip()
-        try:
-            trigger = CronTrigger.from_crontab(posix_cron_to_apscheduler(cron))
-        except ValueError as e:   # never saved through the API; the default keeps it working
-            log.warning("Invalid security digest cron, using Monday 08:00", cron=cron, error=str(e))
-            trigger = CronTrigger.from_crontab(posix_cron_to_apscheduler("0 8 * * 1"))
+        why = digest_cron_problem(cron)
+        if why:   # never saved through the API (any more); the default keeps it working
+            log.warning("Invalid security digest cron, using Monday 08:00", cron=cron, error=why)
+            cron = "0 8 * * 1"
+        trigger = CronTrigger.from_crontab(posix_cron_to_apscheduler(cron))
         self.scheduler.add_job(self._run_security_digest, trigger=trigger, id=self.DIGEST_JOB_ID,
                                replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=3600)
+
+    SIGMA_LIB_JOB_ID = "internal-sigma-library-refresh"
+
+    def _run_sigma_library_refresh(self) -> None:
+        """Internal job (only while security.sigma_library_enabled): check SigmaHQ's latest release."""
+        from glogarch.security.sigma_library import refresh
+        try:
+            res = asyncio.run(refresh(get_settings(), self.db))
+            log.info("Sigma library checked", result={k: v for k, v in res.items() if k != "updated_rules"},
+                     updated_rules=len(res.get("updated_rules") or []))
+        except Exception as e:
+            log.warning("Sigma library refresh failed", error=str(e))
+
+    @staticmethod
+    def _next_run_after(last_times: list, hours: float):
+        """When an interval job should first run, from when it last ran: in a minute when
+        it never ran or is overdue, else when its interval ends. An IntervalTrigger counts
+        from registration, and every start and settings save re-registers: a site that
+        restarted more often than the interval never refreshed (found by a review)."""
+        from datetime import timedelta as _td, timezone as _tz
+        from glogarch.security.runner import parse_db_ts
+        soon = datetime.now().astimezone() + _td(minutes=1)
+        times = [parse_db_ts(t) if isinstance(t, str) else t for t in last_times]
+        if not times or any(t is None for t in times):
+            return soon
+        due = min(times).replace(tzinfo=_tz.utc) + _td(hours=hours)   # DB times are naive UTC
+        return max(soon, due.astimezone())
+
+    def _apply_sigma_library_schedule(self, cfg) -> None:
+        try:
+            self.scheduler.remove_job(self.SIGMA_LIB_JOB_ID)
+        except Exception as e:  # JobLookupError: nothing registered yet
+            log.debug("No Sigma library job to remove", error=str(e))
+        if not getattr(cfg, "sigma_library_enabled", False):
+            return
+        meta = self.db.sigma_library_meta()
+        last = [meta.get("checked_at")] if meta.get("count") else []   # never downloaded: soon
+        self.scheduler.add_job(
+            self._run_sigma_library_refresh, trigger=IntervalTrigger(hours=24), id=self.SIGMA_LIB_JOB_ID,
+            replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=3600,
+            next_run_time=self._next_run_after(last, 24))
 
     TI_JOB_ID = "internal-threat-intel-refresh"
 
@@ -1099,15 +1175,16 @@ class ArchiveScheduler:
             log.debug("No threat-intel job to remove", error=str(e))
         if not getattr(cfg, "ti_enabled", False):
             return
-        from datetime import timedelta as _td
         hours = max(1, min(int(cfg.ti_refresh_hours or 24), 168))
         status = self.db.ti_status()
-        stale = not any((status.get(f) or {}).get("refreshed_at") for f in cfg.ti_feeds)
+        # the attempt time of each enabled feed (a failed one counts too: it retries on schedule)
+        last = [max(filter(None, ((status.get(f) or {}).get("tried_at"),
+                                  (status.get(f) or {}).get("refreshed_at"))), default=None)
+                for f in cfg.ti_feeds]
         self.scheduler.add_job(
             self._run_ti_refresh, trigger=IntervalTrigger(hours=hours), id=self.TI_JOB_ID,
             replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=3600,
-            # never downloaded yet: the first refresh in a minute, not a day from now
-            **({"next_run_time": datetime.now().astimezone() + _td(minutes=1)} if stale else {}))
+            next_run_time=self._next_run_after(last, hours))
 
     def start(self) -> None:
         """Start the scheduler."""
