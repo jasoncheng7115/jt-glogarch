@@ -299,7 +299,7 @@ def pie_chart(labels, values):
 def sample_report() -> tuple[dict, list[dict]]:
     report = {
         "title": "安全事件週報", "subtitle": "Graylog 記錄分析與封存摘要報告",
-        "kicker": "Graylog Open Archive", "beta": True, "lang": "zh-TW",
+        "kicker": "Graylog Open Archive", "beta": False, "lang": "zh-TW",
         "period": "2026-06-26 ~ 2026-07-02", "generated_at": "2026-07-03 16:20 +08:00",
         "author": "Jason Cheng（Jason Tools）", "server": "graylog-01 (192.168.1.10)",
         "header_text": "安全事件週報 — 機密",

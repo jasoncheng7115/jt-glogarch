@@ -1695,6 +1695,9 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
 
 ### 1.38.0
 
+- [ ] **Real summary PDF (every release touching AI chat, summary PDF or reports):** run `scripts/ai-summary-live-check.py --conversation <id>` on .36 (as the service user; the live DB is only read), fetch the PDF, render every page and read them: cover, findings, dashboard blocks (whole, light, right size, none cut), timelines, charts, recommendations, query list.
+
+
 - [ ] `tests/test_notify_webhook.py`: JSON body, HMAC signature a receiver can recompute, no signature without a secret, TLS verify off, the receiver's error text, missing URL sends nothing, the one channel list, masked URL / secret kept on save, SSRF refused, form fields present. By hand: point it at a request catcher and check the signature.
 - [ ] `tests/test_ui_138.py`: app-audit tiles (24 h counts and trends), loading row in tables, date picker wired and value format kept, report pictures turned light, plain finding cards, plain current-page row, Sigma select-all reports what it left out. `tests/test_halfwidth_slash.py`: no full-width slash.
 - [ ] By hand at ~1436 px, light and dark: sidebar, dashboard, archives (date picker open and set), security incidents (tags), op-audit both tabs (tiles), reports (loading row, Verify button); an AI summary PDF from a conversation with an HTML dashboard (blocks, none cut), and a timeline of events, of counts and of from-to rows.

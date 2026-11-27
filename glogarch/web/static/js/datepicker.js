@@ -8,8 +8,9 @@
     const pad = (n) => String(n).padStart(2, '0');
     const CAL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>';
     const ARROW = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
-    const tr = (k, en) => (typeof t === 'function' ? (t(k) !== k ? t(k) : en) : en);
-    const lang = () => (typeof getLang === 'function' ? getLang() : 'en');
+    // storage can be refused (private mode, a locked-down browser): the picker still works, in English
+    const tr = (k, en) => { try { return typeof t === 'function' && t(k) !== k ? t(k) : en; } catch (e) { return en; } };
+    const lang = () => { try { return typeof getLang === 'function' ? getLang() : 'en'; } catch (e) { return 'en'; } };
 
     function parse(v, withTime) {
         const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(v || '');

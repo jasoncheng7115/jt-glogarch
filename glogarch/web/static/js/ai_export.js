@@ -55,6 +55,10 @@ function aixChartTitle(c) {
     };
     const ms = (c.metrics || ['count']).map(metric).join(sep);
     const gs = (c.group_by || []).map(fieldOf).filter(f => f !== 'timestamp');
+    if (c.kind === 'messages') {
+        const q = (c.query || '').length > 40 ? c.query.slice(0, 39) + '…' : (c.query || '');
+        return q && q !== '*' ? t('ai_ct_records_q').replace('{q}', q) : t('ai_ct_records');
+    }
     if (c.kind === 'number') {
         // a count alone says nothing: name what it counts (same rule as charts.py local_title)
         let q = String(c.query || '').replace(/\s+/g, ' ').trim();
@@ -192,7 +196,9 @@ async function aiSummaryDialog() {
     // the look of an existing report (owner 2026-11-27: logo, watermark ... "參考統計報表那邊的設定")
     _aix.styles = ((rp && rp.items) || []).map(r => ({name: r.name, cfg: r.config || {}}));
     let pick = '';
-    try { pick = localStorage.getItem('jt-ai-sum-style') || ''; } catch (e) { pick = ''; }
+    // the AI look unless the user picked another one before (owner 2026-11-27); a new key, because
+    // older versions stored whatever was showing when the dialog opened, which nobody chose
+    try { pick = localStorage.getItem('jt-ai-sum-style-picked') || ''; } catch (e) { pick = ''; }
     // the look set in the AI settings comes first and is the default
     const aiStyle = ((_ai.status || {}).settings || {}).summary_style || {};
     _aix.styles.unshift({name: '@ai', cfg: aiStyle, label: t('ai_summary_style_ai')});
@@ -216,15 +222,23 @@ async function aiSummaryDialog() {
         <div class="sec-ai-btns" id="aix-btns"><button class="btn-secondary" data-act="aiExportClose">${icon('close', 16)} ${esc(t('btn_cancel'))}</button>
             <button class="btn-primary" id="aix-go" data-act="aiSummaryStart">${icon('page', 16)} ${esc(t('ai_summary_start'))}</button></div>`;
     if (typeof initCustomSelects === 'function') initCustomSelects();
-    aixStyleChange();
+    _aixStyleInfo();
+}
+
+// the user picked a look: remember it for next time (only then: opening the dialog is not a choice)
+function aixStyleChange() {
+    const sel = document.getElementById('aix-style');
+    if (sel) {
+        try { localStorage.setItem('jt-ai-sum-style-picked', sel.value); } catch (e) { /* storage blocked: not remembered */ }
+    }
+    _aixStyleInfo();
 }
 
 // what the picked report's look brings: its cover logo (on the cover's colour) and the watermark
-function aixStyleChange() {
+function _aixStyleInfo() {
     const sel = document.getElementById('aix-style');
     const info = document.getElementById('aix-style-info');
     if (!sel || !info) return;
-    try { localStorage.setItem('jt-ai-sum-style', sel.value); } catch (e) { /* storage blocked: not remembered */ }
     const st = (_aix.styles || []).find(x => x.name === sel.value);
     if (!st) { info.innerHTML = ''; return; }
     const c = st.cfg;
@@ -422,6 +436,17 @@ function _aixFmt(ms, span, timeOnly) {
 }
 
 function aixTimelineSvg(tl) {
+    // from-to rows too short to see on the whole span (connections of a few seconds over hours)
+    // read better as events with their duration, as in the PDF
+    if (tl.kind === 'span') {
+        const lo = Math.min(...tl.rows.map(r => r.start)), hi = Math.max(...tl.rows.map(r => r.end !== null ? r.end : r.start));
+        const span = Math.max(hi - lo, 1000), withEnd = tl.rows.filter(r => r.end !== null);
+        if (withEnd.length && withEnd.filter(r => (r.end - r.start) / span < 0.01).length / withEnd.length >= 0.6) {
+            const dur = ms => { const s = Math.round(ms / 1000); return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s` : `${Math.floor(s / 3600)}h${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}m`; };
+            return _aixEventsSvg(Object.assign({}, tl, {kind: 'events', rows: tl.rows.map(r => Object.assign({}, r,
+                {note: `${r.startText} → ${r.endText}` + (r.end !== null ? ` (${dur(r.end - r.start)})` : '')}))}));
+        }
+    }
     if (tl.kind === 'events') return _aixEventsSvg(tl);
     if (tl.kind === 'series') return _aixSeriesSvg(tl);
     const rows = tl.rows;

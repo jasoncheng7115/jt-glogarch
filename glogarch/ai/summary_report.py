@@ -575,7 +575,7 @@ def report_header(result: dict | None, specs: list[dict], lang: str, *, title: s
 
 
 async def llm_server_label(cfg) -> str:
-    """'llama.cpp · 10.0.0.5:8080', 'Claude API', 'OpenAI-compatible · host'."""
+    """'llama.cpp · 10.0.0.5', 'Claude API', 'OpenAI-compatible · host' (no port: owner 2026-11-27)."""
     from urllib.parse import urlparse
     if getattr(cfg, "kind", "openai") == "anthropic":
         return "Claude API"
@@ -587,7 +587,7 @@ async def llm_server_label(cfg) -> str:
         log.debug("LLM server software not read", error=str(e)[:200])
     engine = next((n for k, n in (("llama.cpp", "llama.cpp"), ("LM Studio", "LM Studio"), ("Ollama", "Ollama"),
                                   ("/v1/models", "vLLM / OpenAI-compatible")) if k in src), "OpenAI-compatible")
-    host = urlparse(getattr(cfg, "url", "") or "").netloc
+    host = urlparse(getattr(cfg, "url", "") or "").hostname or ""
     return f"{engine} · {host}" if host else engine
 
 
@@ -669,7 +669,15 @@ async def make_summary(settings, db, ctx, conv: dict, *, lang: str, cfg, usernam
         progress(total - 1, total)
     problems = unverified(result, _sources_text(tr, data, specs)) if result else []
     made = datetime.now().astimezone()
-    report = report_header(result, specs, lang, title=title, server=getattr(ctx.server, "name", ""),
+    server_line = getattr(ctx.server, "name", "")
+    try:   # "log4 (Graylog 7.2.2)", as on the dashboard reports' cover (owner 2026-11-27)
+        from glogarch.report.graylog_data import get_graylog_version
+        ver = await get_graylog_version(ctx.server) if ctx.server is not None else ""
+        if ver and server_line:
+            server_line = f"{server_line} (Graylog {ver})"
+    except Exception as e:
+        log.debug("Graylog version not read for the summary cover", error=str(e)[:200])
+    report = report_header(result, specs, lang, title=title, server=server_line,
                            author=username, problems=problems, made_at=made, style=style)
     if getattr(getattr(settings, "ai", None), "summary_cover_llm", True) and result is not None:
         # two lines: the model, and the server software with where it runs (owner: the server's name

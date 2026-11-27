@@ -114,8 +114,9 @@ class D:
         s = (f'<text class="{cls}" x="{x}" y="{y}" text-anchor="{anchor}" data-t="{k}"{ww}>{esc(label[0])}</text>')
         (into if into is not None else self.parts).append(s)
 
-    def raw_text(self, x, y, s, cls="sb mono", anchor="middle"):
-        self.parts.append(f'<text class="{cls}" x="{x}" y="{y}" text-anchor="{anchor}">{esc(s)}</text>')
+    def raw_text(self, x, y, s, cls="sb mono", anchor="middle", w=None):
+        ww = f' data-w="{w}"' if w else ""
+        self.parts.append(f'<text class="{cls}" x="{x}" y="{y}" text-anchor="{anchor}"{ww}>{esc(s)}</text>')
 
     def box(self, x, y, w, h, kind, title, sub=None, mono=None, dash=False, rx=10):
         cls = f"n {kind}" + (" dash" if dash else "")
@@ -129,7 +130,7 @@ class D:
             self.text(cx, yy, sub, "sb", w=w - 14)
             yy += 16
         if mono:
-            self.raw_text(cx, yy, mono)
+            self.raw_text(cx, yy, mono, w=w - 14)
 
     def group(self, x, y, w, h, label=None, lx=None, ly=None, anchor="end"):
         self.parts.insert(0, f'<rect class="grp" x="{x}" y="{y}" width="{w}" height="{h}" rx="12"/>')

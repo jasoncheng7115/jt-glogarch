@@ -213,8 +213,31 @@ def _fmt(dt: datetime, span_s: float, time_only: bool) -> str:
     return d.strftime("%m-%d ") + hm if span_s > 86400 and not time_only else hm
 
 
+def _bars_too_short(tl: dict) -> bool:
+    """From-to rows whose durations are invisible on the whole span (nine connections of a few
+    seconds over three hours drew as dots): read better as events with their duration."""
+    rows = tl["rows"]
+    lo = min(r["start"] for r in rows)
+    hi = max(r["end"] or r["start"] for r in rows)
+    span = max((hi - lo).total_seconds(), 1.0)
+    durs = [(r["end"] - r["start"]).total_seconds() for r in rows if r["end"] is not None]
+    return bool(durs) and sum(d / span < 0.01 for d in durs) / len(durs) >= 0.6
+
+
+def _dur(sec: float) -> str:
+    sec = int(round(sec))
+    return f"{sec}s" if sec < 60 else f"{sec // 60}m{sec % 60:02d}s" if sec < 3600 else f"{sec // 3600}h{sec % 3600 // 60:02d}m"
+
+
 def timeline_svg(tl: dict, accent: str = "#6c63ff") -> str:
     kind = tl.get("kind") or ("span" if any(r["end"] is not None for r in tl["rows"]) else "events")
+    if kind == "span" and _bars_too_short(tl):
+        rows = []
+        for r in tl["rows"]:
+            note = f'{r["start_text"]} → {r["end_text"]}' + (f' ({_dur((r["end"] - r["start"]).total_seconds())})' if r["end"] else "")
+            rows.append(dict(r, note=(r.get("note") + " · " if r.get("note") else "") + note))
+        tl = dict(tl, rows=rows, kind="events")
+        kind = "events"
     if kind == "events":
         return _events_svg(tl, accent)
     if kind == "series":

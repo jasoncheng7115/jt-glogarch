@@ -2,6 +2,26 @@
 
 All notable changes to jt-glogarch will be documented in this file.
 
+## [1.38.1] - 2026-11-27
+
+### Fixed (found by generating a real summary PDF)
+
+- **Dashboard blocks in the summary PDF showed at twice their size** (the shot is taken at 2x and was shown at its pixel width): a block is now as wide as it was on the page, scaled down to its card.
+- **From-to rows too short to see on the whole span** (nine connections of a few seconds over three hours) were still drawn as dots: they are drawn as a timeline in time order with each duration, in the chat and the PDF.
+- The date picker keeps working when the browser refuses storage (private mode).
+- **Summary PDF cover:** the source line names the Graylog version ("log4 (Graylog 7.2.2)", as on the dashboard reports); the inference host is shown without its port.
+- **Report covers have no BETA badge any more.**
+- **The light theme previews a dashboard light:** one the model wrote for the dark theme is turned light once it has drawn (the summary PDF's conversion); the dark theme shows it as written.
+- **Record lists go into the summary PDF:** a lookup that listed the records themselves (the answer's "one per line" table) is asked again with the same query, time range and fields and becomes a table, oldest first; before, only counts and breakdowns were in the PDF. Not offered in the Graylog-dashboard dialog (no aggregation widget for it). Covers mcp_graylog's `get_log_sample` / `search_logs_paginated` as well as `sample_messages`.
+- **Pages:** the separate archive host is listed first as the common and recommended deployment; the same-VM layout is marked "not recommended". Text that was wider than its box in a diagram is squeezed into it, and `scripts/pages/check_diagrams.py` now also fails on that.
+- **A pair of narrow cards fills the full width** (two inline-blocks at 48.8% left an empty strip on the right): a section's cards are one flex row.
+- **The summary dialog's look defaults to the AI chat look** until the user picks another one; opening the dialog no longer counts as a choice (older versions stored whatever was showing, so a report picked by default stuck).
+
+### Tests
+
+- Behaviour tests instead of source checks for the 1.38 features: a dark dashboard taken apart in a real browser and turned light, the date picker clicked in a real browser, the loading row in a real browser, timelines (events / columns / bars / too-short bars), block layout through the report builder, the webhook against a real HTTP receiver that checks the HMAC, the operation-audit tiles through the API, Sigma select-all's left-out counts, a readable name for every AI tool in all three languages.
+- `scripts/ai-summary-live-check.py`: a real summary PDF from a real conversation on the running host, against a copy of its database (release check from now on).
+
 ## [1.38.0] - 2026-11-27
 
 ### Added

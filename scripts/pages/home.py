@@ -75,10 +75,22 @@ def hero():
 def modes():
     L = lambda *a: a  # noqa: E731
     figs = []
-    # 1. one VM
-    d = D(360, 340, L("Deployment 1: everything on one VM", "部署方式一：全部在同一台主機", "構成 1：すべて 1 台の VM"), "flowsvg")
+    # 1. a separate archive host: the common and recommended way (owner 2026-11-27)
+    d = D(360, 340, L("Deployment 1 (recommended): a separate archive host", "部署方式一（建議）：獨立的歸檔主機", "構成 1（推奨）：アーカイブ専用ホスト"), "flowsvg")
+    d.group(10, 8, 340, 112, L("Graylog cluster", "Graylog 叢集", "Graylog クラスタ"), lx=167, ly=106, anchor="middle")
+    d.box(26, 24, 140, 50, "svc", L("Graylog", "Graylog", "Graylog"), L("one or more nodes", "一或多個節點", "1 台以上のノード"))
+    d.box(194, 24, 140, 50, "svc", L("OpenSearch", "OpenSearch", "OpenSearch"), L("cluster", "叢集", "クラスタ"))
+    d.group(10, 196, 340, 136, L("archive host (recommended)", "歸檔主機（建議）", "アーカイブ用ホスト（推奨）"))
+    d.box(26, 214, 140, 58, "core", L("jt-glogarch", "jt-glogarch", "jt-glogarch"), L("its own VM", "獨立的 VM", "専用の VM"))
+    d.box(194, 214, 140, 58, "file", L("NAS / NFS", "NAS/NFS", "NAS/NFS"), L("mounted archive path", "掛載的歸檔路徑", "マウントしたアーカイブ先"))
+    d.edge("M70,214 L70,74", label=L("REST API", "REST API", "REST API"), lx=76, ly=150, anchor="start")
+    d.edge("M130,214 L130,160 L264,160 L264,74", label=L("OpenSearch Direct", "OpenSearch Direct", "OpenSearch Direct"), lx=197, ly=154, w=150)
+    d.edge("M166,243 L194,243")
+    figs.append(d.render("fig-m1", zoom=False))
+    # 2. on the Graylog VM: works, but not recommended (shared memory and disk)
+    d = D(360, 340, L("Deployment 2 (not recommended): on the Graylog VM", "部署方式二（不建議）：與 Graylog 同一台", "構成 2（非推奨）：Graylog と同じ VM"), "flowsvg")
     d.box(110, 8, 140, 46, "ext", L("Administrator", "管理者", "管理者"), L("browser, port 8990", "瀏覽器，8990 port", "ブラウザ、8990 番"))
-    d.group(10, 76, 340, 256, L("one VM (the common case)", "同一台主機（最常見）", "1 台の VM（よくある構成）"))
+    d.group(10, 76, 340, 256, L("one VM (not recommended)", "同一台主機（不建議）", "1 台の VM（非推奨）"))
     d.box(26, 96, 150, 58, "core", L("jt-glogarch", "jt-glogarch", "jt-glogarch"), L("web UI · scheduler", "網頁介面・排程", "Web 画面・スケジューラ"))
     d.box(26, 246, 150, 58, "file", L("Archive disk", "歸檔磁碟", "アーカイブ用ディスク"), mono="/data/graylog-archives")
     d.box(206, 96, 130, 44, "svc", L("Graylog", "Graylog", "Graylog"))
@@ -88,18 +100,6 @@ def modes():
     d.edge("M176,118 L206,118", label=L("API", "API", "API"), lx=191, ly=111)
     d.edge("M176,140 L190,140 L190,184 L206,184")
     d.edge("M101,154 L101,246", label=L("streamed write", "邊讀邊寫入", "逐次書き込み"), lx=107, ly=206, anchor="start", w=90)
-    figs.append(d.render("fig-m1", zoom=False))
-    # 2. separate archive host
-    d = D(360, 340, L("Deployment 2: a separate archive host", "部署方式二：獨立的歸檔主機", "構成 2：アーカイブ専用ホスト"), "flowsvg")
-    d.group(10, 8, 340, 112, L("Graylog cluster", "Graylog 叢集", "Graylog クラスタ"), lx=167, ly=106, anchor="middle")
-    d.box(26, 24, 140, 50, "svc", L("Graylog", "Graylog", "Graylog"), L("one or more nodes", "一或多個節點", "1 台以上のノード"))
-    d.box(194, 24, 140, 50, "svc", L("OpenSearch", "OpenSearch", "OpenSearch"), L("cluster", "叢集", "クラスタ"))
-    d.group(10, 196, 340, 136, L("archive host", "歸檔主機", "アーカイブ用ホスト"))
-    d.box(26, 214, 140, 58, "core", L("jt-glogarch", "jt-glogarch", "jt-glogarch"), L("its own VM", "獨立的 VM", "専用の VM"))
-    d.box(194, 214, 140, 58, "file", L("NAS / NFS", "NAS/NFS", "NAS/NFS"), L("mounted archive path", "掛載的歸檔路徑", "マウントしたアーカイブ先"))
-    d.edge("M70,214 L70,74", label=L("REST API", "REST API", "REST API"), lx=76, ly=150, anchor="start")
-    d.edge("M130,214 L130,160 L264,160 L264,74", label=L("OpenSearch Direct", "OpenSearch Direct", "OpenSearch Direct"), lx=197, ly=154, w=150)
-    d.edge("M166,243 L194,243")
     figs.append(d.render("fig-m2", zoom=False))
     # 3. Data Node
     d = D(360, 340, L("Deployment 3: Graylog 7 with a Data Node", "部署方式三：Graylog 7 搭配 Data Node", "構成 3：Graylog 7 と Data Node"), "flowsvg")
@@ -113,19 +113,20 @@ def modes():
     d.edge("M166,259 L194,259")
     figs.append(d.render("fig-m3", zoom=False))
     cards = [
-        ("1", t("Next to Graylog", "與 Graylog 同一台", "Graylog と同じホスト"),
-         t("Most sites run jt-glogarch on the Graylog VM. Exports and imports watch Graylog's heap, journal and buffers and "
-           "this host's free memory, and slow down or pause before the box runs short; the dashboard says what size the VM should be.",
-           "多數站台把 jt-glogarch 裝在 Graylog 那台主機上。匯出與匯入會留意 Graylog 的 heap、journal、buffer 與本機剩餘記憶體，"
-           "在資源吃緊前先放慢或暫停；儀表板會依實測建議主機規格。",
-           "多くのサイトは Graylog の VM に jt-glogarch を置きます。エクスポートとインポートは Graylog のヒープ・ジャーナル・バッファと"
-           "このホストの空きメモリを見て、足りなくなる前に速度を落とすか一時停止します。ダッシュボードが VM の推奨サイズを示します。")),
-        ("2", t("On its own host", "獨立的歸檔主機", "専用ホスト"),
-         t("Run it on a separate VM and point the archive path at NAS or NFS storage. It reads Graylog through the REST API, "
-           "or OpenSearch directly (about five times faster), over the network.",
-           "裝在另一台 VM，把歸檔路徑指向 NAS 或 NFS。透過網路以 Graylog REST API 讀取，或直接讀 OpenSearch（約快五倍）。",
-           "別の VM で動かし、アーカイブ先を NAS や NFS にします。ネットワーク越しに Graylog の REST API、"
-           "または OpenSearch を直接（約 5 倍速）読みます。")),
+        ("1", t("On its own host (recommended)", "獨立的歸檔主機（建議）", "専用ホスト（推奨）"),
+         t("The common and recommended way: jt-glogarch on its own VM, the archive path on NAS or NFS storage. It reads Graylog through the REST API, "
+           "or OpenSearch directly (about five times faster), over the network, and never competes with Graylog for memory or disk.",
+           "最常見、也是建議的方式：jt-glogarch 裝在獨立的 VM，歸檔路徑指向 NAS 或 NFS。透過網路以 Graylog REST API 讀取，或直接讀 OpenSearch（約快五倍），"
+           "不會和 Graylog 搶記憶體與磁碟。",
+           "よくある、推奨の構成です。jt-glogarch を専用の VM に置き、アーカイブ先を NAS や NFS にします。ネットワーク越しに Graylog の REST API、"
+           "または OpenSearch を直接（約 5 倍速）読み、Graylog とメモリやディスクを奪い合いません。")),
+        ("2", t("On the Graylog VM (not recommended)", "與 Graylog 同一台（不建議）", "Graylog と同じ VM（非推奨）"),
+         t("It works, but Graylog, OpenSearch and the archive then share memory and disk: a heavy import or export can push the VM into swap. "
+           "If it must, jt-glogarch watches Graylog's heap, journal and buffers and this host's free memory, slows down or pauses, and the dashboard says what size the VM needs.",
+           "可以運作，但 Graylog、OpenSearch 與歸檔會共用記憶體與磁碟，大量匯入或匯出可能讓主機用到 swap。"
+           "若一定要同一台，jt-glogarch 會留意 Graylog 的 heap、journal、buffer 與本機剩餘記憶體，必要時放慢或暫停，儀表板也會依實測建議主機規格。",
+           "動作はしますが、Graylog・OpenSearch・アーカイブがメモリとディスクを共有し、大量のインポートやエクスポートで VM がスワップに入ることがあります。"
+           "どうしても同居させる場合、jt-glogarch は Graylog のヒープ・ジャーナル・バッファとこのホストの空きメモリを見て減速・一時停止し、ダッシュボードが VM の推奨サイズを示します。")),
         ("3", t("Graylog 7 Data Node (beta)", "Graylog 7 Data Node（beta）", "Graylog 7 Data Node（ベータ）"),
          t("A Data Node accepts only client certificates. <i>Connect Data Node</i> asks Graylog's own CA for one; jt-glogarch "
            "renews it before it expires, so OpenSearch Direct export and Bulk import work as on a plain OpenSearch.",
@@ -137,11 +138,11 @@ def modes():
     cg = "".join(f'<div class="card"><h3><span class="ic">{n}</span>{h}</h3><p>{b}</p></div>' for n, h, b in cards)
     body = f'<div class="grid three modes-figs">{"".join(figs)}</div>\n<div class="grid modes-grid">{cg}</div>'
     return section("modes", t("Three ways to deploy", "三種部署方式", "3 つの構成"),
-                   t("One Python service with its own web interface, scheduler and SQLite database. It needs to reach Graylog, "
+                   t("One Python service with its own web interface, scheduler and SQLite database. Best on its own host; it needs to reach Graylog, "
                      "and OpenSearch for the fast paths; nothing is installed on the Graylog nodes.",
-                     "一個 Python 服務，自帶網頁介面、排程與 SQLite 資料庫。只要連得到 Graylog（快速路徑另需連得到 OpenSearch），"
+                     "一個 Python 服務，自帶網頁介面、排程與 SQLite 資料庫，建議裝在獨立主機。只要連得到 Graylog（快速路徑另需連得到 OpenSearch），"
                      "不必在 Graylog 節點上安裝任何東西。",
-                     "Web 画面・スケジューラ・SQLite データベースを持つ 1 つの Python サービスです。Graylog（高速経路では OpenSearch も）に"
+                     "Web 画面・スケジューラ・SQLite データベースを持つ 1 つの Python サービスで、専用ホストを推奨します。Graylog（高速経路では OpenSearch も）に"
                      "届けばよく、Graylog のノードには何もインストールしません。"), body, alt=True)
 
 

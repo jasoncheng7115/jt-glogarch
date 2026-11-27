@@ -19,7 +19,13 @@ from datetime import datetime, timedelta, timezone
 
 from glogarch.ai import graylog_tools as G
 
-CHARTABLE = ("aggregate", "top_values", "count_messages")
+# the tools whose result is a list of records: ours and mcp_graylog's (re-run through our own
+# sample lookup with the same query, time range and fields)
+MESSAGE_TOOLS = ("sample_messages", "get_log_sample", "search_logs_paginated")
+CHARTABLE = ("aggregate", "top_values", "count_messages") + MESSAGE_TOOLS
+# a list of the records themselves (owner 2026-11-27: the report had the counts but not the
+# record-by-record list the answer showed); never a Graylog dashboard widget
+MESSAGE_LIST_MAX = 50
 MAX_SPECS = 12                 # charts per answer
 SERIES_MAX = 8                 # lines in one time chart; the rest are left out and said so
 BAR_ROWS_MAX = 20
@@ -66,6 +72,13 @@ def spec_from_call(call: dict, index: int) -> dict | None:
             "sort": "", "server": call.get("server") or ""}
     if name == "count_messages":
         spec["kind"] = "number"
+    elif name in MESSAGE_TOOLS:
+        fields = [f for f in _as_list(args.get("fields")) if _FIELD.fullmatch(f) and f not in ("timestamp", "message", "source")][:15]
+        try:
+            lim = max(1, min(int(args.get("limit") or args.get("size") or args.get("page_size") or 10), MESSAGE_LIST_MAX))
+        except (TypeError, ValueError):
+            lim = 10
+        spec.update(kind="messages", fields=fields, limit=lim, metrics=[])
     elif name == "top_values":
         fld = str(args.get("field") or "").strip()
         if not _FIELD.fullmatch(fld):
@@ -110,7 +123,7 @@ def specs_from_calls(calls) -> list[dict]:
         s = spec_from_call(c, i)
         if s is None:
             continue
-        key = (s["tool"], s["query"], tuple(s["group_by"]), tuple(s["metrics"]))
+        key = (s["tool"], s["query"], tuple(s["group_by"]), tuple(s["metrics"]), tuple(s.get("fields") or []))
         out.pop(key, None)
         out[key] = s
     return list(out.values())[:MAX_SPECS]
@@ -118,6 +131,8 @@ def specs_from_calls(calls) -> list[dict]:
 
 def default_title(spec: dict) -> str:
     """A plain, language-neutral title: 'count by user_name, source_ip'."""
+    if spec.get("kind") == "messages":
+        return "messages" + (f" ({', '.join(spec.get('fields') or [])})" if spec.get("fields") else "")
     metrics = ", ".join(G._metric_spec(m)[1] for m in spec.get("metrics") or ["count"])
     groups = [_group_field(g) for g in spec.get("group_by") or []]
     return f"{metrics} by {', '.join(groups)}" if groups else metrics
@@ -129,6 +144,8 @@ def tool_args(spec: dict, rng: dict | None = None) -> tuple[str, dict]:
     base = {"query": spec.get("query") or "*", "range_from": r["from"], "range_to": r["to"]}
     if spec["kind"] == "number":
         return "count_messages", base
+    if spec["kind"] == "messages":
+        return "sample_messages", {**base, "fields": list(spec.get("fields") or []), "limit": spec.get("limit") or 10}
     args = {**base, "group_by": list(spec["group_by"]), "metrics": list(spec["metrics"])}
     if spec.get("sort"):
         args["sort"] = spec["sort"]
@@ -147,6 +164,12 @@ async def run_spec(spec: dict, ctx, rng: dict | None = None) -> dict:
             res = await G._count(args, ctx)
             return {"ok": True, "count": res["count"], "timerange": res["timerange"], "rows": [],
                     "group_by": [], "metrics": ["count"], "notes": []}
+        if tool == "sample_messages":
+            # the same records again: same query, same absolute time range, same fields
+            res = await G._sample(dict(args, limit=min(int(args.get("limit") or 10), MESSAGE_LIST_MAX)), ctx)
+            return {"ok": True, "messages": res.get("messages") or [], "fields": list(args.get("fields") or []),
+                    "total": res.get("total_matching"), "timerange": res["timerange"], "rows": [],
+                    "group_by": [], "metrics": [], "notes": []}
         res = await G._aggregate(args, ctx)
     except Exception as e:     # Graylog refused, timed out, field gone: the chart says so
         return {"ok": False, "error": str(e)[:300] or e.__class__.__name__}
@@ -235,6 +258,7 @@ _WORDS = {
     "last": {"en": "Last seen", "zh-TW": "最後出現", "ja": "最終"},
     "time": {"en": "Time", "zh-TW": "時間", "ja": "時刻"},
     "trend": {"en": "{m} over time", "zh-TW": "{m}趨勢", "ja": "{m}の推移"},
+    "records": {"en": "Records", "zh-TW": "記錄明細", "ja": "レコード明細"},
     "split": {"en": " by {g}", "zh-TW": "（依 {g}）", "ja": "（{g} 別）"},
     "top": {"en": "Top {g} ({m})", "zh-TW": "{g} 排行（{m}）", "ja": "{g} の上位（{m}）"},
     "by": {"en": "{m} by {g}", "zh-TW": "{m}（依 {g}）", "ja": "{m}（{g} 別）"},
@@ -269,6 +293,10 @@ def local_title(spec: dict, lang: str = "en") -> str:
     sep = ", " if lang == "en" else "、"
     ms = sep.join(column_label(G._metric_spec(m)[1], lang) for m in spec.get("metrics") or ["count"])
     gs = [_group_field(g) for g in spec.get("group_by") or [] if _group_field(g) != "timestamp"]
+    if spec["kind"] == "messages":
+        q = short_query(spec.get("query") or "")
+        word = _w("records", lang)
+        return f"{word}（{q}）" if q and lang != "en" else (f"{word} ({q})" if q else word)
     if spec["kind"] == "number":
         # a count alone says nothing ("筆數" four times, owner 2026-11-27): name what it counts
         q = short_query(spec.get("query") or "")
@@ -334,6 +362,8 @@ def report_widget(spec: dict, data: dict, title: str = "", notes_lang: str = "en
     if spec["kind"] == "number":
         return {"kind": "single", "title": title, "value": fmt_number(data.get("count", 0)),
                 "label": spec.get("query") or "*", "compact": True}
+    if spec["kind"] == "messages":
+        return _messages_widget(spec, data, title, notes_lang)
     if not data["rows"]:
         return {"kind": "none", "title": title}
     if spec["kind"] == "timeseries":
@@ -358,6 +388,34 @@ def report_widget(spec: dict, data: dict, title: str = "", notes_lang: str = "en
          "numeric_from": t["numeric_from"], "keep_words": True}
     if t["total"] > len(t["rows"]):
         w["rows_note"] = _more_rows_note(t["total"], len(t["rows"]), notes_lang)
+    return w
+
+
+def _messages_widget(spec: dict, data: dict, title: str, lang: str) -> dict:
+    """The records as a table, oldest first: time (local), the fields asked for, then source and the
+    message when they were not among them."""
+    msgs = sorted(data.get("messages") or [], key=lambda m: str(m.get("timestamp") or ""))
+    if not msgs:
+        return {"kind": "none", "title": title}
+    fields = [f for f in (data.get("fields") or spec.get("fields") or []) if f not in ("timestamp",)]
+    cols = ["timestamp"] + fields + [f for f in ("source", "message") if f not in fields and any(m.get(f) for m in msgs)]
+    rows = []
+    for m in msgs[:MESSAGE_LIST_MAX]:
+        row = []
+        for c in cols:
+            v = m.get(c)
+            if c == "timestamp":
+                dt = _local(v)
+                v = dt.strftime("%m-%d %H:%M:%S") if dt else (v or "")
+            elif isinstance(v, str) and len(v) > 160:
+                v = v[:159] + "…"
+            row.append("" if v is None else str(v))
+        rows.append(row)
+    w = {"kind": "table", "title": title, "columns": [column_label(c, lang) for c in cols], "rows": rows,
+         "col_align": ["" for _ in cols], "keep_words": False}
+    total = data.get("total")
+    if isinstance(total, int) and total > len(rows):
+        w["rows_note"] = _more_rows_note(total, len(rows), lang)
     return w
 
 

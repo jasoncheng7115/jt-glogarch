@@ -698,6 +698,13 @@ def preview_document(kind: str, src: str, theme: str = "light") -> str:
             # Chart.js before the page's own scripts; any <script src=...> stays blocked by the CSP
             doc = re.sub(r"<head[^>]*>", lambda m: m.group(0) + lib, doc, count=1, flags=re.I) \
                 if re.search(r"<head[^>]*>", doc, re.I) else lib + doc
+        if theme == "light":
+            # the light theme shows a light dashboard (owner 2026-11-27): one written for the dark theme
+            # is turned light once it has drawn, the same conversion the summary PDF uses
+            from glogarch.ai.diagrams import LIGHTEN_JS
+            fix = "<script>window.addEventListener('load', () => setTimeout(() => { try { (" + LIGHTEN_JS + ")(); } catch (e) {} }, 60));</script>"
+            doc = re.sub(r"</body>", lambda m: fix + m.group(0), doc, count=1, flags=re.I) \
+                if re.search(r"</body>", doc, re.I) else doc + fix
         return doc
     if kind == "svg":
         return ("<!doctype html><html><head><meta charset=\"utf-8\"><style>body{margin:16px;background:#fff}"
@@ -841,7 +848,8 @@ def ai_message_charts(request: Request, mid: int):
     m = _db(request).ai_get_message(mid, _user(request))
     if not m or m.get("role") != "assistant":
         return JSONResponse({"error": "Message not found"}, status_code=404)
-    return {"charts": _specs_for_message(m), "server": m.get("server") or ""}
+    # a record list cannot be a Graylog aggregation widget: the dashboard dialog does not offer it
+    return {"charts": [c for c in _specs_for_message(m) if c.get("kind") != "messages"], "server": m.get("server") or ""}
 
 
 @router.get("/ai/conversations/{cid}/charts")
@@ -868,7 +876,7 @@ async def ai_graylog_dashboard(request: Request, mid: int):
     if not title:
         return JSONResponse({"error": "Give the dashboard a title"}, status_code=400)
     picks = [p for p in (body.get("widgets") or []) if isinstance(p, dict)][:D.MAX_WIDGETS]
-    specs = _specs_for_message(m)
+    specs = [s for s in _specs_for_message(m) if s.get("kind") != "messages"]
     picked = [s for s in specs if s["id"] in {str(p.get("id")) for p in picks}]
     if not picked:
         return JSONResponse({"error": "Pick at least one chart"}, status_code=400)

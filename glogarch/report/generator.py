@@ -143,7 +143,7 @@ async def generate_report(db, settings, cfg: dict, *, triggered_by: str = "manua
         "kicker": cfg.get("kicker", "Graylog Open Archive"),
         "brand_color": cfg.get("brand_color", "#6c63ff"),
         "brand_dark": cfg.get("brand_dark", "#4b43c4"),
-        "lang": lang, "beta": True,
+        "lang": lang, "beta": False,   # the BETA badge is gone from the cover (owner 2026-11-27)
         "header_text": cfg.get("header_text", ""),
         "logo_data_uri": cfg.get("logo_data_uri", ""),
         "logo_height_px": int(cfg.get("logo_height_px", 72) or 72),
