@@ -65,9 +65,28 @@ def _with_link(request: Request, inc: dict) -> dict:
     return inc
 
 
+_SINCE_DAYS = {"1": 1, "7": 7, "30": 30, "90": 90}
+
+
+def _since(days: str) -> str | None:
+    """'1' / '7' / '30' / '90' days back as a stored timestamp; '' = all time."""
+    from glogarch.core.database import _dt_to_str
+    n = _SINCE_DAYS.get(str(days or ""))
+    return _dt_to_str(datetime.utcnow() - timedelta(days=n)) if n else None
+
+
+@router.get("/security/incidents/detectors")
+def incident_detectors(request: Request):
+    """The detections that have incidents (with their titles), for the list's filter."""
+    out = []
+    for d in _db(request).security_incident_detectors():
+        out.append({**d, "title": ("Sigma: " + d["title"]) if d["title"] else ""})
+    return {"detectors": out}
+
+
 @router.get("/security/incidents")
 def list_incidents(request: Request, status: str = "", severity: str = "", detector: str = "",
-                   limit: int = 100, offset: int = 0):
+                   limit: int = 100, offset: int = 0, q: str = "", days: str = ""):
     if status and status not in _STATUSES:
         return JSONResponse({"error": "Unknown status"}, status_code=400)
     if severity and severity not in SEVERITIES:
@@ -75,7 +94,7 @@ def list_incidents(request: Request, status: str = "", severity: str = "", detec
     db = _db(request)
     rows, total = db.list_security_incidents(
         status=status or None, severity=severity or None, detector=detector or None,
-        limit=max(1, min(int(limit), 500)), offset=max(0, int(offset)))
+        limit=max(1, min(int(limit), 500)), offset=max(0, int(offset)), q=q, since=_since(days))
     verdicts = db.latest_security_verdicts([r["id"] for r in rows])
     cases = db.cases_for_incidents([r["id"] for r in rows])
     assets = db.list_security_assets()
@@ -97,37 +116,180 @@ def csv_cell(v) -> str:
     return "'" + s if s[:1] in ("=", "+", "-", "@", "\t", "\r") else s
 
 
+EXPORT_FORMATS = ("csv", "xlsx", "ods", "json", "md")
+_EXPORT_COLS = ["id", "severity", "detection", "entity", "entity_field", "external", "first_seen_utc",
+                "last_seen_utc", "runs", "peak_count", "status", "status_by", "attack", "ai_verdict", "cases", "query"]
+
+
+def _export_rows(request: Request, status: str, severity: str, detector: str, q: str, days: str) -> list[list]:
+    db = _db(request)
+    rows, _ = db.list_security_incidents(status=status or None, severity=severity or None,
+                                         detector=detector or None, limit=10000, q=q, since=_since(days))
+    verdicts = db.latest_security_verdicts([r["id"] for r in rows])
+    cases = db.cases_for_incidents([r["id"] for r in rows])
+    out = []
+    for r in rows:
+        m = r.get("metrics") or {}
+        title = ("Sigma: " + str(m.get("sigma_title"))) if str(r["detector"]).startswith("sigma:") else r["detector"]
+        out.append([r["id"], r["severity"], title, r["entity"], r["entity_field"],
+                    {1: "yes", 0: "no"}.get(r.get("external"), ""), r["first_seen"], r["last_seen"], r["runs"],
+                    r["peak_count"], r["status"], r.get("status_by") or "",
+                    " ".join(t["id"] for t in techniques_for(r["detector"], r["entity"], m.get("sigma_tags"))),
+                    (verdicts.get(r["id"]) or {}).get("verdict") or "",
+                    " ".join(f"#{c['id']}" for c in cases.get(r["id"], [])), r["query"]])
+    return out
+
+
+def xlsx_bytes(header: list[str], rows: list[list]) -> bytes:
+    """A minimal .xlsx (one sheet, bold header, frozen first row) written with the standard
+    library. Every cell is an inline string or a number: log text can never be a formula."""
+    import io
+    import zipfile
+    from html import escape   # text into XML: & < > (bandit B406 is about parsing, not this)
+
+    def col(i):
+        s_ = ""
+        i += 1
+        while i:
+            i, r = divmod(i - 1, 26)
+            s_ = chr(65 + r) + s_
+        return s_
+
+    def cell(ref, v, style=0):
+        st = f' s="{style}"' if style else ""
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            return f'<c r="{ref}"{st}><v>{v}</v></c>'
+        txt = escape("" if v is None else str(v))
+        txt = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", txt)[:32000]
+        return f'<c r="{ref}" t="inlineStr"{st}><is><t xml:space="preserve">{txt}</t></is></c>'
+    sheet_rows = ['<row r="1">' + "".join(cell(f"{col(i)}1", h, 1) for i, h in enumerate(header)) + "</row>"]
+    for n, r in enumerate(rows, 2):
+        sheet_rows.append(f'<row r="{n}">' + "".join(cell(f"{col(i)}{n}", v) for i, v in enumerate(r)) + "</row>")
+    sheet = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+             '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+             '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" '
+             'state="frozen"/></sheetView></sheetViews><sheetData>' + "".join(sheet_rows) + '</sheetData></worksheet>')
+    files = {
+        "[Content_Types].xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>',
+        "_rels/.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+        "xl/workbook.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="incidents" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        "xl/_rels/workbook.xml.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+            '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
+        "xl/styles.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+            '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>'
+            '<borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+            '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+            '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>'
+            '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>',
+        "xl/worksheets/sheet1.xml": sheet,
+    }
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, body in files.items():
+            z.writestr(name, body)
+    return buf.getvalue()
+
+
+def ods_bytes(header: list[str], rows: list[list]) -> bytes:
+    """A minimal OpenDocument spreadsheet (LibreOffice's own format), standard library only:
+    the uncompressed mimetype first, a bold header row, numbers as floats, the rest as text
+    (log text can never become a formula)."""
+    import io
+    import zipfile
+    from html import escape   # text into XML: & < > (bandit B406 is about parsing, not this)
+
+    def cell(v, head=False):
+        st = ' table:style-name="hd"' if head else ""
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            return f'<table:table-cell{st} office:value-type="float" office:value="{v}"><text:p>{v}</text:p></table:table-cell>'
+        txt = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", escape("" if v is None else str(v)))
+        return f'<table:table-cell{st} office:value-type="string"><text:p>{txt}</text:p></table:table-cell>'
+    body = ['<table:table-row>' + "".join(cell(h, True) for h in header) + '</table:table-row>']
+    body += ['<table:table-row>' + "".join(cell(v) for v in r) + '</table:table-row>' for r in rows]
+    content = ('<?xml version="1.0" encoding="UTF-8"?><office:document-content '
+               'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+               'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" '
+               'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" '
+               'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" '
+               'xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.2">'
+               '<office:automatic-styles><style:style style:name="hd" style:family="table-cell">'
+               '<style:text-properties fo:font-weight="bold"/></style:style></office:automatic-styles>'
+               '<office:body><office:spreadsheet><table:table table:name="incidents">'
+               f'<table:table-column table:number-columns-repeated="{len(header)}"/>'
+               + "".join(body) + '</table:table></office:spreadsheet></office:body></office:document-content>')
+    manifest = ('<?xml version="1.0" encoding="UTF-8"?><manifest:manifest '
+                'xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">'
+                '<manifest:file-entry manifest:full-path="/" manifest:version="1.2" '
+                'manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>'
+                '<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/></manifest:manifest>')
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr(zipfile.ZipInfo("mimetype"), "application/vnd.oasis.opendocument.spreadsheet",
+                   compress_type=zipfile.ZIP_STORED)
+        z.writestr("META-INF/manifest.xml", manifest, compress_type=zipfile.ZIP_DEFLATED)
+        z.writestr("content.xml", content, compress_type=zipfile.ZIP_DEFLATED)
+    return buf.getvalue()
+
+
+def _md_cell(v) -> str:
+    return ("" if v is None else str(v)).replace("|", "\\|").replace("\n", " ").replace("`", "'")
+
+
 @router.get("/security/incidents.csv")
-def incidents_csv(request: Request, status: str = "", severity: str = "", detector: str = ""):
+def incidents_csv(request: Request, status: str = "", severity: str = "", detector: str = "", q: str = "",
+                  days: str = ""):
+    return incidents_export(request, "csv", status, severity, detector, q, days)
+
+
+@router.get("/security/incidents/export")
+def incidents_export(request: Request, format: str = "csv", status: str = "", severity: str = "",
+                     detector: str = "", q: str = "", days: str = ""):
+    """The incidents the list shows (its filters), as CSV, Excel, OpenDocument, JSON or Markdown (owner 2026-11-27:
+    "多支援幾種匯出格式"). Log-derived text is never a formula: CSV cells are prefixed, the Excel
+    cells are inline strings."""
     import csv
     import io
+    import json as _json
     from fastapi.responses import Response
+    if format not in EXPORT_FORMATS:
+        return JSONResponse({"error": "Unknown export format"}, status_code=400)
     if status and status not in _STATUSES:
         return JSONResponse({"error": "Unknown status"}, status_code=400)
     if severity and severity not in SEVERITIES:
         return JSONResponse({"error": "Unknown severity"}, status_code=400)
-    db = _db(request)
-    rows, total = db.list_security_incidents(status=status or None, severity=severity or None,
-                                             detector=detector or None, limit=10000)
-    verdicts = db.latest_security_verdicts([r["id"] for r in rows])
-    cases = db.cases_for_incidents([r["id"] for r in rows])
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["id", "severity", "detection", "entity", "entity_field", "external", "first_seen_utc",
-                "last_seen_utc", "runs", "peak_count", "status", "status_by", "attack", "ai_verdict", "cases", "query"])
-    for r in rows:
-        m = r.get("metrics") or {}
-        title = ("Sigma: " + str(m.get("sigma_title"))) if str(r["detector"]).startswith("sigma:") else r["detector"]
-        w.writerow([csv_cell(x) for x in (
-            r["id"], r["severity"], title, r["entity"], r["entity_field"], {1: "yes", 0: "no"}.get(r.get("external"), ""),
-            r["first_seen"], r["last_seen"], r["runs"], r["peak_count"], r["status"], r.get("status_by") or "",
-            " ".join(t["id"] for t in techniques_for(r["detector"], r["entity"], m.get("sigma_tags"))),
-            (verdicts.get(r["id"]) or {}).get("verdict") or "",
-            " ".join(f"#{c['id']}" for c in cases.get(r["id"], [])), r["query"])])
-    _audit(request, "security_incidents_exported", f"rows={len(rows)} status={status or '*'} severity={severity or '*'}")
-    name = f"jt-glogarch-incidents-{datetime.now().strftime('%Y%m%d-%H%M')}.csv"
-    return Response("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
-                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    rows = _export_rows(request, status, severity, detector, q, days)
+    _audit(request, "security_incidents_exported",
+           f"rows={len(rows)} format={format} status={status or '*'} severity={severity or '*'}"
+           f"{' detector=' + detector if detector else ''}{' q=' + q[:60] if q else ''}{' days=' + days if days else ''}")
+    stem = f"jt-glogarch-incidents-{datetime.now().strftime('%Y%m%d-%H%M')}"
+    if format == "csv":
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(_EXPORT_COLS)
+        for r in rows:
+            w.writerow([csv_cell(x) for x in r])
+        body, mt = "\ufeff" + buf.getvalue(), "text/csv; charset=utf-8"
+    elif format == "xlsx":
+        body, mt = xlsx_bytes(_EXPORT_COLS, rows), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    elif format == "ods":
+        body, mt = ods_bytes(_EXPORT_COLS, rows), "application/vnd.oasis.opendocument.spreadsheet"
+    elif format == "json":
+        body = _json.dumps([dict(zip(_EXPORT_COLS, r)) for r in rows], ensure_ascii=False, indent=1)
+        mt = "application/json; charset=utf-8"
+    else:
+        lines = ["| " + " | ".join(_EXPORT_COLS[:12]) + " |", "|" + "---|" * 12]
+        lines += ["| " + " | ".join(_md_cell(x) for x in r[:12]) + " |" for r in rows]
+        body, mt = "\n".join(lines) + "\n", "text/markdown; charset=utf-8"
+    return Response(body, media_type=mt, headers={"Content-Disposition": f'attachment; filename="{stem}.{format}"'})
 
 
 @router.get("/security/incidents/{incident_id}")

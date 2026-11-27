@@ -21,14 +21,13 @@
 
 <nav class="nav" id="nav">
   <a href="#top" class="brand">
-    <span class="logo-dot"></span>
+    <img class="brand-logo" src="favicon.svg" alt="" width="28" height="28">
     <span>jt-glogarch</span>
   </a>
   <button class="nav-toggle" aria-label="Menu" aria-expanded="false" aria-controls="nav-links">
     <span></span><span></span><span></span>
   </button>
   <div class="links" id="nav-links">
-    <a href="#install">Install</a>
     <a href="#flow">How it works</a>
     <a href="#use-cases">Use cases</a>
     <a href="#features">Features</a>
@@ -38,9 +37,16 @@
     <a href="#record-search">Search</a>
     <a href="#ai-chat">AI Chat</a>
     <a href="#content-packs">Content Packs</a>
+    <a href="#install">Install</a>
     <a href="https://github.com/jasoncheng7115/jt-glogarch" target="_blank" rel="noopener">GitHub</a>
-    <a href="index_zh-TW.html" class="lang">繁體中文</a>
-    <a href="index_ja.html" class="lang">日本語</a>
+    <details class="lang-menu">
+      <summary class="lang" aria-label="Language"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>English<span class="caret" aria-hidden="true"></span></summary>
+      <div class="lang-list">
+        <a href="index.html" lang="en" aria-current="page">English</a>
+        <a href="index_zh-TW.html" lang="zh-Hant">繁體中文</a>
+        <a href="index_ja.html" lang="ja">日本語</a>
+      </div>
+    </details>
   </div>
 </nav>
 
@@ -70,75 +76,6 @@
     <img src="screenshots/1_dashboard_en.png" alt="jt-glogarch dashboard" width="1512" height="1037" fetchpriority="high">
   </button>
 </header>
-
-<section id="install">
-  <div class="install">
-    <div class="tabs" role="tablist">
-      <button class="tab active" data-target="tab-quick" type="button">Quick install</button>
-      <button class="tab" data-target="tab-manual" type="button">Manual</button>
-      <button class="tab" data-target="tab-offline" type="button">Air-gapped</button>
-    </div>
-    <p class="prereq-note">
-      <strong>Prerequisites.</strong>
-      Linux host with <code class="kbd">python3 ≥ 3.10</code>, <code class="kbd">pip</code>, and <code class="kbd">git</code>.
-      The installer creates a system user, sets up systemd, generates a self-signed
-      cert and brings up the Web UI on HTTPS port <code class="kbd">8990</code>.
-    </p>
-    <div class="code-block">
-      <button class="copy-btn" data-copy="quick">copy</button>
-      <pre id="tab-quick"><code id="cmd-quick">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
-sudo bash /opt/jt-glogarch/deploy/install.sh</code></pre>
-    </div>
-    <div class="code-block" hidden id="tab-manual-wrap">
-      <button class="copy-btn" data-copy="manual">copy</button>
-      <pre id="tab-manual"><code id="cmd-manual">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
-cd /opt/jt-glogarch
-sudo pip install --no-build-isolation .
-sudo cp deploy/jt-glogarch.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now jt-glogarch</code></pre>
-    </div>
-    <div class="code-block" hidden id="tab-offline-wrap">
-      <button class="copy-btn" data-copy="offline">Copy</button>
-      <pre id="tab-offline"><code id="cmd-offline"># 1) On any internet-connected Linux (SAME Python minor version + CPU arch as the target)
-curl -L -o src.tar.gz \
-  https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz
-tar xzf src.tar.gz && cd jt-glogarch-main
-bash scripts/build-offline-bundle.sh        # -> dist/jt-glogarch-<ver>-offline.tar.gz
-sha256sum dist/jt-glogarch-*-offline.tar.gz # note it, verify after transfer
-
-# 2) Carry the bundle in (USB / scp), verify the sha256, then on the host:
-tar xzf jt-glogarch-*-offline.tar.gz && cd jt-glogarch-*-offline
-sudo bash upgrade-offline.sh                # pip never touches the network; DB backed up first
-# Bundle (~370 MB) includes Chromium for PDF reports, but NOT its OS libs
-# (libnss3, libatk1.0-0, libgbm1, …) — install those from your own media.</code></pre>
-    </div>
-    <dl class="post-note">
-      <dt>Web UI</dt>
-      <dd><code class="kbd">https://&lt;server-ip&gt;:8990</code> <span class="muted">(login with your Graylog credentials)</span></dd>
-      <dt>Config</dt>
-      <dd><code class="kbd">/opt/jt-glogarch/config.yaml</code></dd>
-      <dt>Logs</dt>
-      <dd><code class="kbd">journalctl -u jt-glogarch -f</code></dd>
-      <dt>Upgrade</dt>
-      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/upgrade.sh</code> <span class="muted">(safe, takes a DB snapshot first)</span></dd>
-      <dt>Upgrade blocked</dt>
-      <dd><span>If it stops with <em>Not possible to fast-forward</em>, the published history was rewritten on 2026-09-13 and installs cloned before that date have diverged. Nothing is changed and the service keeps running. Point the clone at the published history once, then upgrade:</span>
-        <code class="kbd">cd /opt/jt-glogarch &amp;&amp; sudo git fetch origin &amp;&amp; sudo git reset --hard origin/main</code>
-        <span class="muted">(config.yaml, the database, certs/ and reports/ are git-ignored and untouched. v1.14.11 and later recover on their own.)</span></dd>
-      <dt>Air-gapped upgrade</dt>
-      <dd><span class="muted">no-internet hosts — see the "Air-gapped" tab above (build on a connected box &rarr; carry in &rarr; install)</span></dd>
-      <dt>Uninstall</dt>
-      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/uninstall.sh</code> <span class="muted">(prompts before deleting any data)</span></dd>
-    </dl>
-    <p class="install-followup">
-      <strong>Then point it at Graylog.</strong>
-      Edit <code class="kbd">config.yaml</code> with your Graylog API URL and a token
-      (Graylog → System → Users → Edit tokens). Optional: add OpenSearch hosts to
-      enable the ~5× faster Direct mode. Full setup → <a href="https://github.com/jasoncheng7115/jt-glogarch#configuration" target="_blank" rel="noopener">README · Configuration</a>
-    </p>
-  </div>
-</section>
 
 <section id="flow">
   <h2>Two paths in. Two paths out.</h2>
@@ -398,7 +335,94 @@ sudo bash upgrade-offline.sh                # pip never touches the network; DB 
       <div class="label">Dashboard preview<small>Layout, chart types and fields before you install (shapes and numbers are illustrative; no query runs)</small></div>
     </button>
   </div>
-  <p class="subhead"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg> Seven Jason Tools packs ship with jt-glogarch: Apache HTTP Server, Linux SSH and sudo logins, QNAP NAS, SQL Server, Synology NAS, Windows Active Directory and Windows logon events. Other packs are provided by Jason Tools separately and are not part of this repository.</p>
+  <div class="pack-list">
+    <div class="pack-list-head"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg><strong>13 Jason Tools packs ship with jt-glogarch</strong></div>
+    <ul class="pack-chips">
+      <li>Apache HTTP Server</li>
+      <li>FortiADC</li>
+      <li>FortiWAN</li>
+      <li>Linux SSH and sudo logins</li>
+      <li>Microsoft DNS Server</li>
+      <li>NetFlow</li>
+      <li>PCAP packet analysis</li>
+      <li>Proxmox VE</li>
+      <li>QNAP NAS</li>
+      <li>SQL Server</li>
+      <li>Synology NAS</li>
+      <li>Windows Active Directory</li>
+      <li>Windows logon events</li>
+    </ul>
+    <p class="pack-list-note">Other packs are provided by Jason Tools separately and are not part of this repository.</p>
+  </div>
+</section>
+
+<section id="install">
+  <div class="install">
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-target="tab-quick" type="button">Quick install</button>
+      <button class="tab" data-target="tab-manual" type="button">Manual</button>
+      <button class="tab" data-target="tab-offline" type="button">Air-gapped</button>
+    </div>
+    <p class="prereq-note">
+      <strong>Prerequisites.</strong>
+      Linux host with <code class="kbd">python3 ≥ 3.10</code>, <code class="kbd">pip</code>, and <code class="kbd">git</code>.
+      The installer creates a system user, sets up systemd, generates a self-signed
+      cert and brings up the Web UI on HTTPS port <code class="kbd">8990</code>.
+    </p>
+    <div class="code-block">
+      <button class="copy-btn" data-copy="quick">copy</button>
+      <pre id="tab-quick"><code id="cmd-quick">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
+sudo bash /opt/jt-glogarch/deploy/install.sh</code></pre>
+    </div>
+    <div class="code-block" hidden id="tab-manual-wrap">
+      <button class="copy-btn" data-copy="manual">copy</button>
+      <pre id="tab-manual"><code id="cmd-manual">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
+cd /opt/jt-glogarch
+sudo pip install --no-build-isolation .
+sudo cp deploy/jt-glogarch.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now jt-glogarch</code></pre>
+    </div>
+    <div class="code-block" hidden id="tab-offline-wrap">
+      <button class="copy-btn" data-copy="offline">Copy</button>
+      <pre id="tab-offline"><code id="cmd-offline"># 1) On any internet-connected Linux (SAME Python minor version + CPU arch as the target)
+curl -L -o src.tar.gz \
+  https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz
+tar xzf src.tar.gz && cd jt-glogarch-main
+bash scripts/build-offline-bundle.sh        # -> dist/jt-glogarch-<ver>-offline.tar.gz
+sha256sum dist/jt-glogarch-*-offline.tar.gz # note it, verify after transfer
+
+# 2) Carry the bundle in (USB / scp), verify the sha256, then on the host:
+tar xzf jt-glogarch-*-offline.tar.gz && cd jt-glogarch-*-offline
+sudo bash upgrade-offline.sh                # pip never touches the network; DB backed up first
+# Bundle (~370 MB) includes Chromium for PDF reports, but NOT its OS libs
+# (libnss3, libatk1.0-0, libgbm1, …) — install those from your own media.</code></pre>
+    </div>
+    <dl class="post-note">
+      <dt>Web UI</dt>
+      <dd><code class="kbd">https://&lt;server-ip&gt;:8990</code> <span class="muted">(login with your Graylog credentials)</span></dd>
+      <dt>Config</dt>
+      <dd><code class="kbd">/opt/jt-glogarch/config.yaml</code></dd>
+      <dt>Logs</dt>
+      <dd><code class="kbd">journalctl -u jt-glogarch -f</code></dd>
+      <dt>Upgrade</dt>
+      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/upgrade.sh</code> <span class="muted">(safe, takes a DB snapshot first)</span></dd>
+      <dt>Upgrade blocked</dt>
+      <dd><span>If it stops with <em>Not possible to fast-forward</em>, the published history was rewritten on 2026-09-13 and installs cloned before that date have diverged. Nothing is changed and the service keeps running. Point the clone at the published history once, then upgrade:</span>
+        <code class="kbd">cd /opt/jt-glogarch &amp;&amp; sudo git fetch origin &amp;&amp; sudo git reset --hard origin/main</code>
+        <span class="muted">(config.yaml, the database, certs/ and reports/ are git-ignored and untouched. v1.14.11 and later recover on their own.)</span></dd>
+      <dt>Air-gapped upgrade</dt>
+      <dd><span class="muted">no-internet hosts — see the "Air-gapped" tab above (build on a connected box &rarr; carry in &rarr; install)</span></dd>
+      <dt>Uninstall</dt>
+      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/uninstall.sh</code> <span class="muted">(prompts before deleting any data)</span></dd>
+    </dl>
+    <p class="install-followup">
+      <strong>Then point it at Graylog.</strong>
+      Edit <code class="kbd">config.yaml</code> with your Graylog API URL and a token
+      (Graylog → System → Users → Edit tokens). Optional: add OpenSearch hosts to
+      enable the ~5× faster Direct mode. Full setup → <a href="https://github.com/jasoncheng7115/jt-glogarch#configuration" target="_blank" rel="noopener">README · Configuration</a>
+    </p>
+  </div>
 </section>
 
 <footer>
@@ -541,5 +565,14 @@ sudo bash upgrade-offline.sh                # pip never touches the network; DB 
   })();
 </script>
 
+<script>
+(function () {
+  var m = document.querySelector('.lang-menu');
+  if (!m) return;
+  function closeLangMenu(e) { if (m.open && (!e || !m.contains(e.target))) m.open = false; }
+  document.addEventListener('click', closeLangMenu);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeLangMenu(); });
+})();
+</script>
 </body>
 </html>

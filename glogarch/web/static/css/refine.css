@@ -17,8 +17,10 @@
 
 /* ---- Type ---------------------------------------------------------------- */
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Noto Sans TC',
-                 'Microsoft JhengHei', 'Hiragino Sans', 'Noto Sans JP', Roboto, sans-serif;
+    /* Noto Sans CJK = Source Han Sans (思源黑體), what Linux installs: without it a Linux browser fell
+       back to WenQuanYi (owner 2026-11-27: the Pages screenshots' font "不美觀") */
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Noto Sans TC', 'Noto Sans CJK TC',
+                 'Microsoft JhengHei', 'Hiragino Sans', 'Noto Sans JP', 'Noto Sans CJK JP', Roboto, sans-serif;
     font-size: 14.5px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;

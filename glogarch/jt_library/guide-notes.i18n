@@ -132,5 +132,111 @@
         "このリビジョンでは、レコードを取得するゲートルール（parsed_by）を追加しています。先に前のリビジョンをアンインストールしてください。変更したルール（ゲート内のホスト名など）は再度変更が必要です。"
       ]
     }
+  },
+  "b795dbac-6e2c-53db-8131-6b0debd42696": {
+    "summary": {
+      "en": "FortiADC load balancing and DNS dashboard.",
+      "zh-TW": "FortiADC 負載平衡與 DNS 看板",
+      "ja": "FortiADC の負荷分散と DNS のダッシュボードです。"
+    },
+    "collect": {
+      "en": "Raw or Syslog over UDP",
+      "zh-TW": "Raw/Syslog UDP",
+      "ja": "Raw/Syslog UDP"
+    },
+    "notes": {
+      "en": [
+        "Built from an older dashboard and not yet checked against this product's real logs here. If your field names differ, some widgets stay empty."
+      ],
+      "zh-TW": [
+        "這套看板由舊版看板整理而成，尚未用這項產品的真實記錄驗證。如果您的欄位名稱不同，部分 widget 會沒有資料。"
+      ],
+      "ja": [
+        "以前のダッシュボードから作成したもので、この製品の実際のログではまだ検証していません。フィールド名が異なる場合、一部のウィジェットは空のままになります。"
+      ]
+    }
+  },
+  "96e2c84c-e15e-56f5-9633-e46f7f29e70a": {
+    "summary": {
+      "en": "FortiWAN traffic dashboard.",
+      "zh-TW": "FortiWAN 流量看板",
+      "ja": "FortiWAN のトラフィックダッシュボードです。"
+    },
+    "collect": {
+      "en": "Raw UDP",
+      "zh-TW": "Raw UDP",
+      "ja": "Raw UDP"
+    },
+    "notes": {
+      "en": [
+        "Built from an older dashboard and not yet checked against this product's real logs here. If your field names differ, some widgets stay empty."
+      ],
+      "zh-TW": [
+        "這套看板由舊版看板整理而成，尚未用這項產品的真實記錄驗證。如果您的欄位名稱不同，部分 widget 會沒有資料。"
+      ],
+      "ja": [
+        "以前のダッシュボードから作成したもので、この製品の実際のログではまだ検証していません。フィールド名が異なる場合、一部のウィジェットは空のままになります。"
+      ]
+    }
+  },
+  "35964d7b-d2c0-55df-a421-11140867956a": {
+    "summary": {
+      "en": "Windows DNS Server query dashboard.",
+      "zh-TW": "Windows DNS 伺服器查詢看板",
+      "ja": "Windows DNS サーバーのクエリダッシュボードです。"
+    },
+    "collect": {
+      "en": "GELF (Windows event logs)",
+      "zh-TW": "GELF（Windows 事件記錄）",
+      "ja": "GELF（Windows イベントログ）"
+    }
+  },
+  "3b503e57-987e-4fbe-9ccf-86788833dbad": {
+    "summary": {
+      "en": "Traffic dashboard using Graylog's NetFlow fields. No pipelines are involved.",
+      "zh-TW": "使用 Graylog NetFlow 欄位的流量看板，不需要管線。",
+      "ja": "Graylog の NetFlow フィールドを使うトラフィックダッシュボードです。パイプラインは使いません。"
+    },
+    "collect": {
+      "en": "Graylog's NetFlow UDP input",
+      "zh-TW": "Graylog 的 NetFlow UDP Input",
+      "ja": "Graylog の NetFlow UDP Input"
+    },
+    "verify": "_exists_:nf_version",
+    "notes": {
+      "en": [
+        "If nothing arrives, check which interfaces the device exports. OPNsense listening only on an idle WAN sends nothing."
+      ],
+      "zh-TW": [
+        "如果收不到資料，請確認設備匯出的是哪些介面。OPNsense 只監聽沒有流量的 WAN 時不會送出任何資料。"
+      ],
+      "ja": [
+        "データが届かない場合は、機器がエクスポートするインターフェースを確認してください。OPNsense が通信のない WAN だけを監視していると何も送信されません。"
+      ]
+    }
+  },
+  "566a1176-09c9-5786-bdab-923fd33130c6": {
+    "summary": {
+      "en": "Dashboard for analysing imported PCAP files.",
+      "zh-TW": "PCAP 封包檔匯入分析看板",
+      "ja": "インポートした PCAP ファイルの分析ダッシュボードです。"
+    },
+    "collect": {
+      "en": "GELF",
+      "zh-TW": "GELF",
+      "ja": "GELF"
+    }
+  },
+  "930fe3f6-4d14-54fc-8198-386f26083ded": {
+    "summary": {
+      "en": "Proxmox VE pipelines and host dashboard.",
+      "zh-TW": "Proxmox VE 管線與主機看板",
+      "ja": "Proxmox VE のパイプラインとホストのダッシュボードです。"
+    },
+    "collect": {
+      "en": "Syslog over UDP",
+      "zh-TW": "Syslog UDP",
+      "ja": "Syslog UDP"
+    }
   }
 }

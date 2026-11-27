@@ -33,7 +33,7 @@
 html { scroll-behavior: smooth; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", "Noto Sans JP",
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", "Noto Sans CJK TC", "Noto Sans JP", "Noto Sans CJK JP",
                "PingFang TC", "Microsoft JhengHei", Roboto, Helvetica, Arial, sans-serif;
   background: var(--bg);
   color: var(--text);
@@ -913,3 +913,34 @@ footer .row { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap
 .sh-url  { color: #c7b3ff; }
 /* an icon inside a section's note line (content packs) */
 .subhead .icon { width: 16px; height: 16px; vertical-align: -3px; margin-right: 4px; color: var(--muted); }
+
+/* language: one menu, not a button per language (owner 2026-11-27) */
+.nav .lang-menu { position: relative; }
+.nav .lang-menu > summary { list-style: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+  padding-right: 14px; overflow: visible; }
+.nav .lang-menu > summary::-webkit-details-marker { display: none; }
+.nav .lang-menu > summary .icon { width: 16px; height: 16px; }
+.nav .lang-menu > summary .caret { display: inline-block; flex: none; width: 7px; height: 7px; border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
+  transform: rotate(45deg) translateY(-2px); margin-left: 2px; opacity: 0.7; }
+.nav .lang-menu[open] > summary .caret { transform: rotate(-135deg) translateY(-1px); }
+.nav .lang-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 150px; padding: 4px; background: #fff;
+  border: 1px solid #e3e5ee; border-radius: 10px; box-shadow: 0 12px 30px rgba(20, 22, 40, 0.14); display: flex; flex-direction: column; }
+.nav .lang-list a { display: block; padding: 8px 12px !important; border-radius: 6px; color: inherit; white-space: nowrap; }
+.nav .lang-list a[aria-current="page"] { color: var(--brand); font-weight: 600; background: #efeefd; }
+@media (max-width: 860px) {
+  .nav .lang-list { position: static; box-shadow: none; border: 0; padding: 0 0 0 12px; }
+}
+
+/* the packs that ship with jt-glogarch: a small titled card with name chips (owner 2026-11-27: the
+   one-paragraph list "放得不好看") */
+.pack-list { margin: 22px auto 0; max-width: 1060px; padding: 18px 22px; background: #fff; border: 1px solid #e3e5ee;
+  border-radius: 14px; box-shadow: 0 4px 18px rgba(20, 22, 40, 0.05); }
+.pack-list-head { display: flex; align-items: center; gap: 8px; font-size: 15px; color: #1c1e2b; }
+.pack-list-head .icon { width: 18px; height: 18px; color: var(--brand); flex: none; }
+.pack-chips { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.pack-chips li { padding: 5px 12px; border-radius: 999px; background: #f1f0fe; color: #3d36b8; font-size: 13.5px; font-weight: 600;
+  border: 1px solid #e2dffd; white-space: nowrap; }
+.pack-list-note { margin: 12px 0 0; font-size: 13px; color: #6b7080; }
+
+/* the project's logo beside its name (owner 2026-11-27), instead of a dot */
+.nav .brand .brand-logo { width: 28px; height: 28px; border-radius: 7px; flex: none; display: block; }

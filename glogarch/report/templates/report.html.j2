@@ -74,6 +74,10 @@
   table.data th, table.data td { overflow-wrap: anywhere; word-break: break-word; }
   table.data tr:nth-child(even) td { background:#fafafa; }
   table.data th.num, table.data td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  /* AI summary tables: a cell breaks only when the word cannot fit at all, so an address or
+     a number is not split across lines ("147.45.186.19 / 6"); "anywhere" let columns shrink */
+  table.data.keep th, table.data.keep td { overflow-wrap: break-word; word-break: normal; }
+  table.data.keep td.num { white-space: nowrap; }
   /* Wide message tables: shrink font so more columns fit within the page. */
   table.data.wide { font-size: 9px; }
   table.data.wide th, table.data.wide td { padding: 3px 5px; }
@@ -119,6 +123,39 @@
   .shot { width: 100%; border: 1px solid var(--line); border-radius: 6px; margin: 3mm 0 6mm; page-break-inside: avoid; }
   .page-break { page-break-after: always; break-after: page; height: 0; }
   .summary p { font-size: 12px; }
+  .summary p.muted { font-size: 10px; color: var(--muted); }
+  .text-list { font-size: 12px; line-height: 1.7; padding-left: 6mm; margin: 2mm 0; }
+  .text-list li { margin-bottom: 2mm; }
+  .text-body, .text-note { font-size: 12px; line-height: 1.7; margin: 0; white-space: pre-line; }
+  .text-part-title { font-size: 14px; margin: 0 0 2mm; }
+  /* key facts the model marked: a marker-pen band under bold text, readable in print and grey scale */
+  /* findings: brand edge, number badge, airy body */
+  .card.card-finding { border-left: 4px solid var(--brand); padding: 5mm 6mm 5mm 6mm; background: #fcfcff; }
+  .card-finding h2.widget { display: flex; align-items: flex-start; gap: 3mm; font-size: 14px; line-height: 1.45; margin-bottom: 3mm; }
+  .fnum { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 6.5mm; height: 6.5mm;
+          border-radius: 50%; background: var(--brand); color: #fff; font-size: 11px; font-weight: 700; margin-top: 0.3mm; }
+  .card-finding .text-body { font-size: 12px; line-height: 1.85; color: #2b3040; padding-left: 9.5mm; }
+  .card.card-image { page-break-inside: auto; }
+  /* counts side by side, two to a row, instead of a whole card each */
+  .card.card-number { display: inline-block; vertical-align: top; width: 48.8%; margin-right: 0; box-sizing: border-box; }
+  .card-number .single-value .v { font-size: 30px; }
+  .card-number .single-value .l { font-size: 10px; word-break: break-word; }
+  .svg-wrap svg { display: block; width: 100%; height: auto; }
+  /* a drawing from the conversation: its own proportions, centred, never wider than the card */
+  img.pic { display: block; max-width: 100%; height: auto; margin: 1mm auto 0; }
+  /* recommendations: the same number badges */
+  ol.text-list { list-style: none; counter-reset: rec; padding-left: 0; }
+  ol.text-list li { counter-increment: rec; position: relative; padding: 2.2mm 0 2.2mm 10mm; margin: 0;
+                    border-bottom: 1px dashed var(--line); line-height: 1.75; }
+  ol.text-list li:last-child { border-bottom: 0; }
+  ol.text-list li::before { content: counter(rec); position: absolute; left: 0; top: 2.4mm; width: 6.5mm; height: 6.5mm;
+                            border-radius: 50%; background: var(--brand); color: #fff; font-size: 11px; font-weight: 700;
+                            display: flex; align-items: center; justify-content: center; }
+  .text-note { background: #f7f8fb; border-left: 3px solid #c7ccd6; padding: 3mm 4mm; border-radius: 0 6px 6px 0; }
+  .summary p.lead { font-size: 13.5px; line-height: 1.85; }
+  /* key facts: bold in the brand's dark tone, no block behind them (owner 2026-11-27: "不要用這種區塊風格") */
+  strong.hl { font-weight: 700; color: var(--brand-dark); }
+  .text-note-title { margin-top: 7mm; }
   .kpi-row { display:flex; gap: 6mm; margin: 4mm 0; }
   .kpi { flex:1; border:1px solid var(--line); border-radius:8px; padding:5mm; text-align:center; }
   .kpi .v { font-size: 26px; font-weight:800; color: var(--brand); }
@@ -147,11 +184,13 @@
       <div class="cover-title">{{ report.title }}{% if report.beta %}<span class="cover-badge">BETA</span>{% endif %}</div>
       {% if report.subtitle %}<div class="cover-sub">{{ report.subtitle }}</div>{% endif %}
       <div class="cover-meta">
-        {% if report.period %}<div><span class="k">{{ t.period }}:</span><span class="v">{{ report.period }}</span></div>{% endif %}
-        <div><span class="k">{{ t.generated }}:</span><span class="v">{{ report.generated_at }}</span></div>
-        {% if report.author %}<div><span class="k">{{ t.author }}:</span><span class="v">{{ report.author }}</span></div>{% endif %}
-        {% if report.server %}<div><span class="k">{{ t.server }}:</span><span class="v">{{ report.server }}</span></div>{% endif %}
-        {% if report.app_version %}<div><span class="k">{{ t.system }}:</span><span class="v">jt-glogarch v{{ report.app_version }}</span></div>{% endif %}
+        {% if report.period %}<div><span class="k">{{ t.period }}{{ t.colon|default(':') }}</span><span class="v">{{ report.period }}</span></div>{% endif %}
+        <div><span class="k">{{ t.generated }}{{ t.colon|default(':') }}</span><span class="v">{{ report.generated_at }}</span></div>
+        {% if report.author %}<div><span class="k">{{ t.author }}{{ t.colon|default(':') }}</span><span class="v">{{ report.author }}</span></div>{% endif %}
+        {% if report.server %}<div><span class="k">{{ t.server }}{{ t.colon|default(':') }}</span><span class="v">{{ report.server }}</span></div>{% endif %}
+        {% if report.llm %}<div><span class="k">{{ t.model }}{{ t.colon|default(':') }}</span><span class="v">{{ report.llm }}</span></div>{% endif %}
+        {% if report.llm_server %}<div><span class="k">{{ t.llm_server }}{{ t.colon|default(':') }}</span><span class="v">{{ report.llm_server }}</span></div>{% endif %}
+        {% if report.app_version %}<div><span class="k">{{ t.system }}{{ t.colon|default(':') }}</span><span class="v">jt-glogarch v{{ report.app_version }}</span></div>{% endif %}
       </div>
     </div>
   </div>
@@ -187,6 +226,11 @@
         <div class="notice-body">{{ sec.description }}</div>
       </div>
 
+    {% elif sec.type == 'text' %}
+      {% if sec['items'] and sec.items_title %}<h2 class="widget text-part-title">{{ sec.items_title }}</h2>{% endif %}
+      {% if sec['items'] %}<ol class="text-list">{% for it in sec['items'] %}<li>{% if sec.items_html %}{{ sec.items_html[loop.index0]|safe }}{% else %}{{ it }}{% endif %}</li>{% endfor %}</ol>{% endif %}
+      {% if sec.note %}{% if sec.note_title %}<h2 class="widget text-part-title text-note-title">{{ sec.note_title }}</h2>{% endif %}<p class="text-note">{% if sec.note_html %}{{ sec.note_html|safe }}{% else %}{{ sec.note }}{% endif %}</p>{% endif %}
+
     {% elif sec.type == 'image' %}
       {% if sec.img_slices %}
         {% for s in sec.img_slices %}<img class="shot" src="{{ s }}" alt="">{% if not loop.last %}<div class="page-break"></div>{% endif %}{% endfor %}
@@ -194,16 +238,22 @@
 
     {% elif sec.type == 'charts' %}
       {% for w in sec.widgets %}
-      <div class="card">
-        <h2 class="widget">{{ w.title }}</h2>
+      <div class="card{% if w.kind == 'text' %} card-finding{% elif w.kind == 'image' and w.tall %} card-image{% elif w.kind == 'single' and w.compact %} card-number{% endif %}">
+        <h2 class="widget">{% if w.num %}<span class="fnum">{{ w.num }}</span>{% endif %}<span>{{ w.title }}</span></h2>
         {% if w.description %}<div class="desc">{{ w.description }}</div>{% endif %}
         {% if w.kind == 'single' %}
           <div class="single-value"><div class="v">{{ w.value }}</div>{% if w.label %}<div class="l">{{ w.label }}</div>{% endif %}
             {% if w.trend %}<div class="trend trend-{{ w.trend.cls }}">{{ w.trend.arrow }} {{ w.trend.delta }}{% if w.trend.pct %} / {{ w.trend.pct }}{% endif %}</div>{% endif %}</div>
         {% elif w.kind == 'table' %}
-          <table class="data{% if w.columns|length > 6 %} wide{% endif %}"><thead><tr>{% for c in w.columns %}<th{% if w.col_align and w.col_align[loop.index0] == 'num' %} class="num"{% elif w.col_align is not defined and w.numeric_from is defined and loop.index0 >= w.numeric_from %} class="num"{% endif %}>{{ c }}</th>{% endfor %}</tr></thead>
+          <table class="data{% if w.columns|length > 6 %} wide{% endif %}{% if w.keep_words %} keep{% endif %}"><thead><tr>{% for c in w.columns %}<th{% if w.col_align and w.col_align[loop.index0] == 'num' %} class="num"{% elif w.col_align is not defined and w.numeric_from is defined and loop.index0 >= w.numeric_from %} class="num"{% endif %}>{{ c }}</th>{% endfor %}</tr></thead>
           <tbody>{% for row in w.rows %}{% set _cells = row.cells if row is mapping else row %}<tr class="{% if row is mapping and row.group and not loop.first %}grp-start {% endif %}{% if row is mapping and row.preview is defined and row.preview %}has-preview{% endif %}">{% for cell in _cells %}<td{% if w.col_align and w.col_align[loop.index0] == 'num' %} class="num"{% elif w.col_align is not defined and w.numeric_from is defined and loop.index0 >= w.numeric_from %} class="num"{% endif %}>{{ cell }}</td>{% endfor %}</tr>{% if row is mapping and row.preview is defined and row.preview %}<tr class="msg-preview"><td colspan="{{ w.columns|length }}">{{ row.preview }}</td></tr>{% endif %}{% endfor %}</tbody></table>
           {% if w.rows_note %}<div class="rows-note">{{ w.rows_note }}</div>{% endif %}
+        {% elif w.kind == 'text' %}
+          <div class="text-body">{% if w.html %}{{ w.html|safe }}{% else %}{{ w.text }}{% endif %}</div>
+        {% elif w.kind == 'image' %}
+          {% for sl in w.slices %}<img class="pic" src="{{ sl }}" alt="" style="width:{{ [w.img_width, 640]|min }}px">{% if not loop.last %}<div class="page-break"></div>{% endif %}{% endfor %}
+        {% elif w.kind == 'svg' %}
+          <div class="svg-wrap">{{ w.svg | safe }}</div>
         {% elif w.kind == 'map' %}
           <div class="map-wrap">{{ w.svg | safe }}</div>
         {% elif w.kind == 'heatmap' %}

@@ -1,0 +1,838 @@
+{
+  "v": "1",
+  "id": "96e2c84c-e15e-56f5-9633-e46f7f29e70a",
+  "rev": 2,
+  "name": "FortiWAN",
+  "summary": "FortiWAN 流量看板",
+  "description": "FortiWAN 流量看板\n收集方式：Raw UDP。這個套件不會建立 Input，請自行建立並把來源指向它。\n★ 安裝後必做：把管線接到存放這類記錄的串流。沒有接串流的管線不會處理任何記錄。全新安裝的 Graylog 7 預設先執行管線、後分配串流，這時接在自建串流上的管線不會運作：請到 System → Configurations → Message Processors，把 Stream Rule Processor 移到 Pipeline Processor 前面。\n告警預設不掛通知，事件只會寫進 Graylog；需要通知請自行加上。",
+  "vendor": "Jason Cheng (Jason Tools)",
+  "url": "",
+  "server_version": "7.0.0",
+  "parameters": [],
+  "entities": [
+    {
+      "id": "86593df4-4dd8-51a0-b194-9e3f5a864a67",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiwan-00-passthrough"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiwan-00-passthrough\"\nwhen\n    true\nthen\nend"
+        }
+      }
+    },
+    {
+      "id": "1e323b1c-41dd-5ef6-8b41-d2b43d23b631",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiwan-10-srcip"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiwan-10-srcip\"\nwhen\n    has_field(\"message\")\nthen\n    set_fields(grok(pattern: \"SRC=%{IP:SRCIP}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "54ad447b-3f3a-514e-b11f-e1abc5353e7e",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiwan-10-dstip"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiwan-10-dstip\"\nwhen\n    has_field(\"message\")\nthen\n    set_fields(grok(pattern: \"DST=%{IP:DSTIP}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "5eec3c78-855d-5d60-a61c-e119cdb2c021",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiwan-10-totlen"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiwan-10-totlen\"\nwhen\n    has_field(\"message\")\nthen\n    set_fields(grok(pattern: \"TOTLEN=%{INT:TOTLEN}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "cd7cd399-200a-589d-b9c6-09d75fb4f7ea",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiwan-10-proto"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiwan-10-proto\"\nwhen\n    has_field(\"message\")\nthen\n    set_fields(grok(pattern: \"PROTO=%{INT:PROTO}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "4b92a9e3-4433-5334-99b5-84926e874bb2",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiwan-10-action"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiwan-10-action\"\nwhen\n    has_field(\"message\")\nthen\n    set_fields(grok(pattern: \"ACTION=%{WORD:ACTION}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "c5e39499-f2ba-56be-b907-a186cb8fdfe8",
+      "type": {
+        "name": "pipeline",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "FortiWAN - parse"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "pipeline \"FortiWAN - parse\"\nstage 0 match either\nrule \"fortiwan-00-passthrough\"\nrule \"fortiwan-10-srcip\"\nrule \"fortiwan-10-dstip\"\nrule \"fortiwan-10-totlen\"\nrule \"fortiwan-10-proto\"\nrule \"fortiwan-10-action\"\nend"
+        },
+        "connected_streams": []
+      }
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "dashboard",
+        "version": "2"
+      },
+      "id": "a5a44e59-d6b4-5a3f-9ae3-2e6f8b01267f",
+      "data": {
+        "type": "DASHBOARD",
+        "title": {
+          "@type": "string",
+          "@value": "FortiWAN"
+        },
+        "summary": {
+          "@type": "string",
+          "@value": "FortiWAN 流量看板"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "FortiWAN 流量看板"
+        },
+        "search": {
+          "queries": [
+            {
+              "id": "e1e78f1b-0004-403f-8ace-5b155c6b9dd2",
+              "timerange": {
+                "from": 300,
+                "type": "relative"
+              },
+              "filters": [],
+              "query": {
+                "type": "elasticsearch",
+                "query_string": "_exists_:PROTO AND _exists_:SRCIP"
+              },
+              "search_types": [
+                {
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "70e8f6c5-5f16-46b9-a144-dc703b2dc069",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "DSTIP"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "3d528b13-e846-4b05-ab37-0d0fdb6d8d26",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "PROTO"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "01d51597-8968-482c-b4c1-cfdfd80d056e",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "SRCIP"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "07d12b21-488f-45d6-93ca-8a73d8d0ee34",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 1
+                      }
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "3811b058-ba05-4b48-97d2-ba35263b6f91",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "ACTION"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "range": 300,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:PROTO AND _exists_:SRCIP"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "07282a4b-5542-4447-bf70-596b5eecf48c",
+                  "name": null,
+                  "limit": 150,
+                  "offset": 0,
+                  "decorators": [],
+                  "type": "messages",
+                  "filter": null,
+                  "filters": []
+                }
+              ]
+            }
+          ],
+          "parameters": [],
+          "requires": {},
+          "owner": "admin",
+          "created_at": "2021-10-14T03:11:14.996Z"
+        },
+        "properties": [],
+        "requires": {},
+        "state": {
+          "e1e78f1b-0004-403f-8ace-5b155c6b9dd2": {
+            "selected_fields": null,
+            "static_message_list_id": null,
+            "titles": {
+              "tab": {
+                "title": "FortiWAN (24H)"
+              },
+              "widget": {
+                "d0d95245-d396-4e30-8762-63a00206ea03": "事件時間軸",
+                "cff89763-0240-4366-847d-db44535ccf33": "最新事件 (五分鐘內)",
+                "58e3cb47-7efa-4e97-bff6-96c6c5fb4972": "來源 IP 排行榜",
+                "ba55fb04-1399-4510-b4c8-adc597415d43": "目的 IP 排行榜",
+                "e321113e-4d53-45df-833a-45a74e95659c": "通訊協定",
+                "0e68daaa-1ce7-43aa-b8b6-ba5de738356f": "處理動作"
+              }
+            },
+            "widgets": [
+              {
+                "id": "0e68daaa-1ce7-43aa-b8b6-ba5de738356f",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "ACTION"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "pie",
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "column_limit": null
+                }
+              },
+              {
+                "id": "e321113e-4d53-45df-833a-45a74e95659c",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "PROTO"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "pie",
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "column_limit": null
+                }
+              },
+              {
+                "id": "d0d95245-d396-4e30-8762-63a00206ea03",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 1
+                        }
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "bar",
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "column_limit": null
+                }
+              },
+              {
+                "id": "ba55fb04-1399-4510-b4c8-adc597415d43",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "DSTIP"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "table",
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "column_limit": null
+                }
+              },
+              {
+                "id": "cff89763-0240-4366-847d-db44535ccf33",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "range": 300,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:PROTO AND _exists_:SRCIP"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source"
+                  ],
+                  "units": {},
+                  "show_message_row": true,
+                  "show_summary": null,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "58e3cb47-7efa-4e97-bff6-96c6c5fb4972",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "SRCIP"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "table",
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "column_limit": null
+                }
+              }
+            ],
+            "widget_mapping": {
+              "58e3cb47-7efa-4e97-bff6-96c6c5fb4972": [
+                "01d51597-8968-482c-b4c1-cfdfd80d056e"
+              ],
+              "ba55fb04-1399-4510-b4c8-adc597415d43": [
+                "70e8f6c5-5f16-46b9-a144-dc703b2dc069"
+              ],
+              "e321113e-4d53-45df-833a-45a74e95659c": [
+                "3d528b13-e846-4b05-ab37-0d0fdb6d8d26"
+              ],
+              "cff89763-0240-4366-847d-db44535ccf33": [
+                "07282a4b-5542-4447-bf70-596b5eecf48c"
+              ],
+              "d0d95245-d396-4e30-8762-63a00206ea03": [
+                "07d12b21-488f-45d6-93ca-8a73d8d0ee34"
+              ],
+              "0e68daaa-1ce7-43aa-b8b6-ba5de738356f": [
+                "3811b058-ba05-4b48-97d2-ba35263b6f91"
+              ]
+            },
+            "positions": {
+              "58e3cb47-7efa-4e97-bff6-96c6c5fb4972": {
+                "col": 1,
+                "row": 3,
+                "height": 4,
+                "width": 3
+              },
+              "ba55fb04-1399-4510-b4c8-adc597415d43": {
+                "col": 4,
+                "row": 3,
+                "height": 4,
+                "width": 3
+              },
+              "e321113e-4d53-45df-833a-45a74e95659c": {
+                "col": 7,
+                "row": 3,
+                "height": 4,
+                "width": 2
+              },
+              "cff89763-0240-4366-847d-db44535ccf33": {
+                "col": 1,
+                "row": 7,
+                "height": 5,
+                "width": 10
+              },
+              "d0d95245-d396-4e30-8762-63a00206ea03": {
+                "col": 1,
+                "row": 1,
+                "height": 2,
+                "width": 10
+              },
+              "0e68daaa-1ce7-43aa-b8b6-ba5de738356f": {
+                "col": 9,
+                "row": 3,
+                "height": 4,
+                "width": 2
+              }
+            },
+            "formatting": {
+              "highlighting": []
+            },
+            "display_mode_settings": {
+              "positions": {}
+            }
+          }
+        },
+        "created_at": "2026-11-01T00:00:00.000Z"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=6.2.6+23535c4"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,2601 @@
+{
+  "v": "1",
+  "id": "3b503e57-987e-4fbe-9ccf-86788833dbad",
+  "rev": 1,
+  "name": "NetFlow Dashboard",
+  "summary": "NetFlow (Graylog NetFlow UDP input) 流量看板",
+  "description": "NetFlow 看板 by Jason Tools。\n\n純用 Graylog 內建 NetFlow UDP input 解出的 nf_* 原生欄位製作,不需要任何 pipeline rule / extractor / lookup table。\n\n看板欄位:nf_src_address / nf_dst_address / nf_src_port / nf_dst_port / nf_proto_name / nf_bytes (流量) / nf_pkts (封包數) / nf_snmp_input / nf_snmp_output (介面 SNMP ifIndex)。過濾條件 _exists_:nf_version。\n\n★ 匯入前提:Graylog 需建立一個 NetFlow UDP input 並有 NetFlow 資料進來(送 NetFlow v5/v9 的設備指向該 input 的 UDP port)。",
+  "vendor": "Jason Cheng (Jason Tools)",
+  "url": "",
+  "created_at": "2026-06-11T03:02:15.983390+00:00",
+  "server_version": "7.0.0",
+  "parameters": [],
+  "entities": [
+    {
+      "id": "c9212875-b1dd-4ff5-9fdf-d4165ecb7d7a",
+      "type": {
+        "name": "dashboard",
+        "version": "2"
+      },
+      "v": "1",
+      "data": {
+        "type": "DASHBOARD",
+        "title": {
+          "@type": "string",
+          "@value": "! NetFlow 看板 (2H)"
+        },
+        "summary": {
+          "@type": "string",
+          "@value": "NetFlow (Graylog NetFlow UDP input) 流量看板"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "NetFlow 看板 by Jason Tools"
+        },
+        "search": {
+          "queries": [
+            {
+              "id": "2e5cd219-8074-48f2-8b21-6a72fb8f3d8e",
+              "timerange": {
+                "from": 300,
+                "type": "relative"
+              },
+              "filters": [],
+              "query": {
+                "type": "elasticsearch",
+                "query_string": ""
+              },
+              "search_types": [
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "22f1465a-e87e-4f59-9008-7d83d3457522",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_dst_address"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "source": "search_type",
+                    "id": "4e4f0c01-c8ff-4da2-b907-12259011183d",
+                    "offset": "1i",
+                    "type": "offset"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "82867019-671b-41ac-a2e4-018ff32b95d3",
+                  "name": "trend",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "b95b74ad-ddbd-4089-b534-18d76721c9a9",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "Total",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 0.3333333333333333
+                      }
+                    }
+                  ],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_snmp_input"
+                      ],
+                      "limit": 24,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "044dafaa-379b-4cca-85d4-6c7ec76cc7fb",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "Total",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 0.3333333333333333
+                      }
+                    }
+                  ],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_proto_name"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "af18fb2b-0e7a-469b-a8b6-359b714d28fc",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "count()",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_snmp_input"
+                      ],
+                      "limit": 24,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "52c117a7-acc8-4c07-9181-7ff94bcba741",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "Total",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "timeunit",
+                        "timeunit": "10s"
+                      }
+                    }
+                  ],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "7cdae54c-070c-4f4b-b58a-b13523f038f1",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "Total",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 0.3333333333333333
+                      }
+                    }
+                  ],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_snmp_output"
+                      ],
+                      "limit": 24,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "3595260b-5a13-44d1-8069-1c6a0fc82d71",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_src_port"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": true
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "dafe72c5-3693-47b1-b101-1e9dc0b328c9",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "sum",
+                      "id": "sum(nf_pkts)",
+                      "field": "nf_pkts"
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_src_address"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version AND _exists_:nf_snmp_output"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "33b4f675-e136-4d75-ae3f-401a24679794",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "sum",
+                      "id": "sum(nf_bytes)",
+                      "field": "nf_bytes"
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "sum(nf_bytes)",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_snmp_input"
+                      ],
+                      "limit": 24,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "7b72a816-2f49-426a-9c14-aa017758759e",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "sum",
+                      "id": "sum(nf_bytes)",
+                      "field": "nf_bytes"
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "sum(nf_bytes)",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_src_address"
+                      ],
+                      "limit": 7,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version AND _exists_:nf_snmp_output"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "9cd98418-4b34-4181-8c8e-5cdfc885f2f2",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "sum",
+                      "id": "sum(nf_bytes)",
+                      "field": "nf_bytes"
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "sum(nf_bytes)",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_snmp_output"
+                      ],
+                      "limit": 24,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "09cacf0d-9d0e-4b7d-97c1-07259c6fd7c3",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "sum",
+                      "id": "sum(nf_bytes)",
+                      "field": "nf_bytes"
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "sum(nf_bytes)",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_src_address"
+                      ],
+                      "limit": 25,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "63a8a897-6cb2-4a20-afcc-f0dda7511758",
+                  "name": null,
+                  "limit": 150,
+                  "offset": 0,
+                  "decorators": [],
+                  "type": "messages",
+                  "filter": null,
+                  "filters": []
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version AND _exists_:nf_snmp_output"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "b8a04131-6040-41e9-bdd1-27daaa54bd16",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "count()",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_snmp_output"
+                      ],
+                      "limit": 24,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "1e5eea46-eb01-4257-93a0-6f943f7df649",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "sum",
+                      "id": "sum(nf_bytes)",
+                      "field": "nf_bytes"
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "sum(nf_bytes)",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_dst_address"
+                      ],
+                      "limit": 7,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "4e4f0c01-c8ff-4da2-b907-12259011183d",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "aad7bde0-b56e-40b7-ad3e-30e5cd9de2d3",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "sum",
+                      "id": "sum(nf_pkts)",
+                      "field": "nf_pkts"
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_dst_address"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "26febd76-abca-4737-ab3e-165ad3dfebee",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": false,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_dst_address"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_dst_port"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "6c50a421-aff7-4584-b5aa-8708ec0ca6a0",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_src_address"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "a81f045f-5da1-4d08-9e0c-1680f5d22363",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_dst_port"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": true
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "5bc962a2-a69d-4494-9649-aad6395608ed",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "sum",
+                      "id": "sum(nf_bytes)",
+                      "field": "nf_bytes"
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "sum(nf_bytes)",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_dst_address"
+                      ],
+                      "limit": 25,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                },
+                {
+                  "timerange": {
+                    "from": 7200,
+                    "type": "relative"
+                  },
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:nf_version"
+                  },
+                  "streams": [],
+                  "stream_categories": [],
+                  "id": "cd917e72-2f5b-4f04-b3b4-ef414a39a8ee",
+                  "name": "chart",
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "sort": [],
+                  "rollup": true,
+                  "type": "pivot",
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "nf_proto_name"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "column_groups": [],
+                  "filter": null,
+                  "filters": [],
+                  "row_limit": null,
+                  "column_limit": null
+                }
+              ]
+            }
+          ],
+          "parameters": [],
+          "requires": {},
+          "owner": "admin",
+          "created_at": "2026-06-11T02:55:13.129Z"
+        },
+        "properties": [],
+        "requires": {},
+        "state": {
+          "2e5cd219-8074-48f2-8b21-6a72fb8f3d8e": {
+            "selected_fields": null,
+            "static_message_list_id": null,
+            "titles": {
+              "tab": {
+                "title": "NetFlow"
+              },
+              "widget": {
+                "616e0d26-6e76-48a3-b154-2f43e16f1dcf": "事件數 (copy)",
+                "e7602636-e683-4d4b-910a-70960142ddc4": "詳細記錄",
+                "a2c812fd-8a1f-4179-bea7-e9e15a54e032": "來源 IP",
+                "c861bdfc-b1ce-4962-b3a6-e9965678c19d": "來源 Port",
+                "ac248777-ee04-47d8-b230-3ee61125a4bf": "輸出介面流量統計 (Port)",
+                "4d5b9f29-f4af-48ba-9c6c-3eb0d47fc69d": "輸出介面事件趨勢圖",
+                "4c358b1c-5cd3-40f1-8b9f-56ea2e408d6e": "來源 IP 流量統計",
+                "bcf1232d-3922-4658-b79f-b5f22fa50de5": "輸入介面流量統計 (Port)",
+                "51aa7f34-3bea-45c5-a013-1031d50f32cf": "協定",
+                "8ef6bf04-2652-4a8e-9102-4acf7d386427": "目的 Port",
+                "536b5793-d55a-42bd-98e8-d39cbb5a9fae": "輸入介面事件趨勢圖",
+                "2e2fcae6-10cf-45ab-9d53-063844a80296": "輸入介面 (copy)",
+                "26c62bff-38e6-4e06-9d3c-3cb2eccc9805": "目的 IP 流量統計",
+                "8bf195af-afd0-4012-b820-18eb5e63a950": "事件趨勢圖",
+                "8763d51a-41f6-4838-9a69-5644a36a7706": "事件數",
+                "75b755a1-d62d-4b0c-b210-ad20505a53da": "目的 IP",
+                "c730775c-e554-44db-9ff8-ab819169312d": "目的 Port & IP Top15 熱度圖",
+                "3a5dd4da-c5d6-4f4d-806d-9e0bbcefe854": "目的 IP 流量統計",
+                "e0dee47d-22db-4d80-9e2b-4df94c90592f": "來源 IP 封包數 Top",
+                "eae679ef-e9dd-41e5-8cad-5301ef7e5a03": "輸出介面事件數",
+                "0ae818aa-a087-4ab2-a65e-4de42504b46b": "協定事件趨勢圖",
+                "b4a57f9c-6a9c-4e5c-a389-1908ec0c3613": "目的 IP 封包數 Top",
+                "bd70ecc3-6e90-46d5-bff9-97227140967c": "來源 IP 流量統計",
+                "1c132f83-b9bb-4a33-84fb-1b260610b1e8": "輸入介面事件數",
+                "cad990c4-d263-43b7-bc38-82f2203097bc": "TTL"
+              }
+            },
+            "widgets": [
+              {
+                "id": "c861bdfc-b1ce-4962-b3a6-e9965678c19d",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_src_port"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": true
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "table",
+                  "visualization_config": {
+                    "pinned_columns": [],
+                    "show_row_numbers": true
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": 15
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "8763d51a-41f6-4838-9a69-5644a36a7706",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "numeric",
+                  "visualization_config": {
+                    "trend": true,
+                    "trend_preference": "LOWER"
+                  },
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": null
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "ac248777-ee04-47d8-b230-3ee61125a4bf",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version AND _exists_:nf_snmp_output"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_snmp_output"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 24,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "units": {
+                    "nf_bytes": {
+                      "unit_type": "size",
+                      "abbrev": "b"
+                    }
+                  },
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "sum(nf_bytes)"
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "sum(nf_bytes)",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "visualization": "bar",
+                  "visualization_config": {
+                    "barmode": "group",
+                    "axis_type": "linear",
+                    "axis_config": null
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": 24
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "3a5dd4da-c5d6-4f4d-806d-9e0bbcefe854",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_dst_address"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 25,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "units": {
+                    "nf_bytes": {
+                      "unit_type": "size",
+                      "abbrev": "b"
+                    }
+                  },
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "sum(nf_bytes)"
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "sum(nf_bytes)",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "visualization": "table",
+                  "visualization_config": {
+                    "pinned_columns": [],
+                    "show_row_numbers": true
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": 25
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "4c358b1c-5cd3-40f1-8b9f-56ea2e408d6e",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_src_address"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 7,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "units": {
+                    "nf_bytes": {
+                      "unit_type": "size",
+                      "abbrev": "b"
+                    }
+                  },
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "sum(nf_bytes)"
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "sum(nf_bytes)",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "visualization": "bar",
+                  "visualization_config": {
+                    "barmode": "group",
+                    "axis_type": "linear",
+                    "axis_config": null
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": 7
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "8ef6bf04-2652-4a8e-9102-4acf7d386427",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_dst_port"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": true
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "table",
+                  "visualization_config": {
+                    "pinned_columns": [],
+                    "show_row_numbers": true
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": 15
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "1c132f83-b9bb-4a33-84fb-1b260610b1e8",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_snmp_input"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 24
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "count()",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "visualization": "bar",
+                  "visualization_config": {
+                    "barmode": "group",
+                    "axis_type": "linear",
+                    "axis_config": null
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": 24
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "eae679ef-e9dd-41e5-8cad-5301ef7e5a03",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version AND _exists_:nf_snmp_output"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_snmp_output"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 24,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "count()",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "visualization": "bar",
+                  "visualization_config": {
+                    "barmode": "group",
+                    "axis_type": "linear",
+                    "axis_config": null
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": 24
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "b4a57f9c-6a9c-4e5c-a389-1908ec0c3613",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_dst_address"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "sum(nf_pkts)"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "table",
+                  "visualization_config": {
+                    "pinned_columns": [],
+                    "show_row_numbers": true
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": 15
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "4d5b9f29-f4af-48ba-9c6c-3eb0d47fc69d",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 0.3333333333333333
+                        }
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "nf_snmp_output"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 24
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "bar",
+                  "visualization_config": {
+                    "barmode": "overlay",
+                    "axis_type": "linear",
+                    "axis_config": null
+                  },
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "column_limit": 24,
+                  "row_limit": null
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "0ae818aa-a087-4ab2-a65e-4de42504b46b",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 0.3333333333333333
+                        }
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "nf_proto_name"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "bar",
+                  "visualization_config": {
+                    "barmode": "overlay",
+                    "axis_type": "linear",
+                    "axis_config": null
+                  },
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "column_limit": 15,
+                  "row_limit": null
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "bd70ecc3-6e90-46d5-bff9-97227140967c",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_src_address"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 25,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "units": {
+                    "nf_bytes": {
+                      "unit_type": "size",
+                      "abbrev": "b"
+                    }
+                  },
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "sum(nf_bytes)"
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "sum(nf_bytes)",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "visualization": "table",
+                  "visualization_config": {
+                    "pinned_columns": [],
+                    "show_row_numbers": true
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": 25
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "a2c812fd-8a1f-4179-bea7-e9e15a54e032",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_src_address"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "table",
+                  "visualization_config": {
+                    "pinned_columns": [],
+                    "show_row_numbers": true
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": 15
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "bcf1232d-3922-4658-b79f-b5f22fa50de5",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version AND _exists_:nf_snmp_output"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_snmp_input"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 24,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "units": {
+                    "nf_bytes": {
+                      "unit_type": "size",
+                      "abbrev": "b"
+                    }
+                  },
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "sum(nf_bytes)"
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "sum(nf_bytes)",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "visualization": "bar",
+                  "visualization_config": {
+                    "barmode": "group",
+                    "axis_type": "linear",
+                    "axis_config": null
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": 24
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "26c62bff-38e6-4e06-9d3c-3cb2eccc9805",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_dst_address"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 7,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "units": {
+                    "nf_bytes": {
+                      "unit_type": "size",
+                      "abbrev": "b"
+                    }
+                  },
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "sum(nf_bytes)"
+                    }
+                  ],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "sum(nf_bytes)",
+                      "direction": "Descending"
+                    }
+                  ],
+                  "visualization": "bar",
+                  "visualization_config": {
+                    "barmode": "group",
+                    "axis_type": "linear",
+                    "axis_config": null
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": 7
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "c730775c-e554-44db-9ff8-ab819169312d",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_dst_address"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "nf_dst_port"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "heatmap",
+                  "visualization_config": {
+                    "color_scale": "Portland",
+                    "reverse_scale": false,
+                    "auto_scale": true,
+                    "z_min": null,
+                    "z_max": null,
+                    "default_value": null,
+                    "use_smallest_as_default": false
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": 15,
+                  "row_limit": 15
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "e7602636-e683-4d4b-910a-70960142ddc4",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "nf_src_address",
+                    "nf_src_port",
+                    "nf_dst_address",
+                    "nf_dst_port",
+                    "nf_proto_name",
+                    "nf_bytes",
+                    "nf_pkts",
+                    "nf_snmp_input",
+                    "nf_snmp_output"
+                  ],
+                  "units": {},
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "51aa7f34-3bea-45c5-a013-1031d50f32cf",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_proto_name"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "bar",
+                  "visualization_config": {
+                    "barmode": "group",
+                    "axis_type": "linear",
+                    "axis_config": null
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": 15
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "e0dee47d-22db-4d80-9e2b-4df94c90592f",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_src_address"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "sum(nf_pkts)"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "table",
+                  "visualization_config": {
+                    "pinned_columns": [],
+                    "show_row_numbers": true
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": 15
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "75b755a1-d62d-4b0c-b210-ad20505a53da",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "nf_dst_address"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "table",
+                  "visualization_config": {
+                    "pinned_columns": [],
+                    "show_row_numbers": true
+                  },
+                  "formatting_settings": null,
+                  "rollup": false,
+                  "event_annotation": false,
+                  "column_limit": null,
+                  "row_limit": 15
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "8bf195af-afd0-4012-b820-18eb5e63a950",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "timeunit",
+                          "value": 10,
+                          "unit": "seconds"
+                        }
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "source"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "area",
+                  "visualization_config": {
+                    "interpolation": "linear",
+                    "axis_type": "linear",
+                    "axis_config": null
+                  },
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "column_limit": 15,
+                  "row_limit": null
+                },
+                "description": null,
+                "context": null
+              },
+              {
+                "id": "536b5793-d55a-42bd-98e8-d39cbb5a9fae",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 7200,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:nf_version"
+                },
+                "streams": [],
+                "stream_categories": [],
+                "config": {
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 0.3333333333333333
+                        }
+                      }
+                    }
+                  ],
+                  "units": {},
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "nf_snmp_input"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 24
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null,
+                        "thresholds": []
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "sort": [],
+                  "visualization": "bar",
+                  "visualization_config": {
+                    "barmode": "overlay",
+                    "axis_type": "linear",
+                    "axis_config": null
+                  },
+                  "formatting_settings": null,
+                  "rollup": true,
+                  "event_annotation": false,
+                  "column_limit": 24,
+                  "row_limit": null
+                },
+                "description": null,
+                "context": null
+              }
+            ],
+            "widget_mapping": {
+              "e7602636-e683-4d4b-910a-70960142ddc4": [
+                "63a8a897-6cb2-4a20-afcc-f0dda7511758"
+              ],
+              "a2c812fd-8a1f-4179-bea7-e9e15a54e032": [
+                "6c50a421-aff7-4584-b5aa-8708ec0ca6a0"
+              ],
+              "c861bdfc-b1ce-4962-b3a6-e9965678c19d": [
+                "3595260b-5a13-44d1-8069-1c6a0fc82d71"
+              ],
+              "ac248777-ee04-47d8-b230-3ee61125a4bf": [
+                "9cd98418-4b34-4181-8c8e-5cdfc885f2f2"
+              ],
+              "4d5b9f29-f4af-48ba-9c6c-3eb0d47fc69d": [
+                "7cdae54c-070c-4f4b-b58a-b13523f038f1"
+              ],
+              "4c358b1c-5cd3-40f1-8b9f-56ea2e408d6e": [
+                "7b72a816-2f49-426a-9c14-aa017758759e"
+              ],
+              "bcf1232d-3922-4658-b79f-b5f22fa50de5": [
+                "33b4f675-e136-4d75-ae3f-401a24679794"
+              ],
+              "51aa7f34-3bea-45c5-a013-1031d50f32cf": [
+                "cd917e72-2f5b-4f04-b3b4-ef414a39a8ee"
+              ],
+              "8ef6bf04-2652-4a8e-9102-4acf7d386427": [
+                "a81f045f-5da1-4d08-9e0c-1680f5d22363"
+              ],
+              "536b5793-d55a-42bd-98e8-d39cbb5a9fae": [
+                "b95b74ad-ddbd-4089-b534-18d76721c9a9"
+              ],
+              "26c62bff-38e6-4e06-9d3c-3cb2eccc9805": [
+                "1e5eea46-eb01-4257-93a0-6f943f7df649"
+              ],
+              "8bf195af-afd0-4012-b820-18eb5e63a950": [
+                "52c117a7-acc8-4c07-9181-7ff94bcba741"
+              ],
+              "8763d51a-41f6-4838-9a69-5644a36a7706": [
+                "82867019-671b-41ac-a2e4-018ff32b95d3",
+                "4e4f0c01-c8ff-4da2-b907-12259011183d"
+              ],
+              "75b755a1-d62d-4b0c-b210-ad20505a53da": [
+                "22f1465a-e87e-4f59-9008-7d83d3457522"
+              ],
+              "c730775c-e554-44db-9ff8-ab819169312d": [
+                "26febd76-abca-4737-ab3e-165ad3dfebee"
+              ],
+              "3a5dd4da-c5d6-4f4d-806d-9e0bbcefe854": [
+                "5bc962a2-a69d-4494-9649-aad6395608ed"
+              ],
+              "e0dee47d-22db-4d80-9e2b-4df94c90592f": [
+                "dafe72c5-3693-47b1-b101-1e9dc0b328c9"
+              ],
+              "eae679ef-e9dd-41e5-8cad-5301ef7e5a03": [
+                "b8a04131-6040-41e9-bdd1-27daaa54bd16"
+              ],
+              "0ae818aa-a087-4ab2-a65e-4de42504b46b": [
+                "044dafaa-379b-4cca-85d4-6c7ec76cc7fb"
+              ],
+              "b4a57f9c-6a9c-4e5c-a389-1908ec0c3613": [
+                "aad7bde0-b56e-40b7-ad3e-30e5cd9de2d3"
+              ],
+              "bd70ecc3-6e90-46d5-bff9-97227140967c": [
+                "09cacf0d-9d0e-4b7d-97c1-07259c6fd7c3"
+              ],
+              "1c132f83-b9bb-4a33-84fb-1b260610b1e8": [
+                "af18fb2b-0e7a-469b-a8b6-359b714d28fc"
+              ]
+            },
+            "positions": {
+              "e7602636-e683-4d4b-910a-70960142ddc4": {
+                "col": 1,
+                "row": 29,
+                "height": 6,
+                "width": "Infinity"
+              },
+              "a2c812fd-8a1f-4179-bea7-e9e15a54e032": {
+                "col": 3,
+                "row": 25,
+                "height": 4,
+                "width": 2
+              },
+              "c861bdfc-b1ce-4962-b3a6-e9965678c19d": {
+                "col": 5,
+                "row": 25,
+                "height": 4,
+                "width": 2
+              },
+              "ac248777-ee04-47d8-b230-3ee61125a4bf": {
+                "col": 7,
+                "row": 17,
+                "height": 3,
+                "width": 6
+              },
+              "4d5b9f29-f4af-48ba-9c6c-3eb0d47fc69d": {
+                "col": 5,
+                "row": 10,
+                "height": 3,
+                "width": 8
+              },
+              "4c358b1c-5cd3-40f1-8b9f-56ea2e408d6e": {
+                "col": 1,
+                "row": 13,
+                "height": 4,
+                "width": 2
+              },
+              "bcf1232d-3922-4658-b79f-b5f22fa50de5": {
+                "col": 1,
+                "row": 17,
+                "height": 3,
+                "width": 6
+              },
+              "51aa7f34-3bea-45c5-a013-1031d50f32cf": {
+                "col": 1,
+                "row": 4,
+                "height": 3,
+                "width": 4
+              },
+              "8ef6bf04-2652-4a8e-9102-4acf7d386427": {
+                "col": 11,
+                "row": 25,
+                "height": 4,
+                "width": 2
+              },
+              "536b5793-d55a-42bd-98e8-d39cbb5a9fae": {
+                "col": 5,
+                "row": 7,
+                "height": 3,
+                "width": 8
+              },
+              "26c62bff-38e6-4e06-9d3c-3cb2eccc9805": {
+                "col": 7,
+                "row": 13,
+                "height": 4,
+                "width": 2
+              },
+              "8bf195af-afd0-4012-b820-18eb5e63a950": {
+                "col": 5,
+                "row": 1,
+                "height": 3,
+                "width": 8
+              },
+              "8763d51a-41f6-4838-9a69-5644a36a7706": {
+                "col": 1,
+                "row": 1,
+                "height": 3,
+                "width": 4
+              },
+              "75b755a1-d62d-4b0c-b210-ad20505a53da": {
+                "col": 9,
+                "row": 25,
+                "height": 4,
+                "width": 2
+              },
+              "c730775c-e554-44db-9ff8-ab819169312d": {
+                "col": 1,
+                "row": 20,
+                "height": 5,
+                "width": "Infinity"
+              },
+              "3a5dd4da-c5d6-4f4d-806d-9e0bbcefe854": {
+                "col": 9,
+                "row": 13,
+                "height": 4,
+                "width": 4
+              },
+              "e0dee47d-22db-4d80-9e2b-4df94c90592f": {
+                "col": 1,
+                "row": 25,
+                "height": 4,
+                "width": 2
+              },
+              "eae679ef-e9dd-41e5-8cad-5301ef7e5a03": {
+                "col": 1,
+                "row": 10,
+                "height": 3,
+                "width": 4
+              },
+              "0ae818aa-a087-4ab2-a65e-4de42504b46b": {
+                "col": 5,
+                "row": 4,
+                "height": 3,
+                "width": 8
+              },
+              "b4a57f9c-6a9c-4e5c-a389-1908ec0c3613": {
+                "col": 7,
+                "row": 25,
+                "height": 4,
+                "width": 2
+              },
+              "bd70ecc3-6e90-46d5-bff9-97227140967c": {
+                "col": 3,
+                "row": 13,
+                "height": 4,
+                "width": 4
+              },
+              "1c132f83-b9bb-4a33-84fb-1b260610b1e8": {
+                "col": 1,
+                "row": 7,
+                "height": 3,
+                "width": 4
+              }
+            },
+            "formatting": {
+              "highlighting": []
+            },
+            "display_mode_settings": {
+              "positions": {}
+            }
+          }
+        },
+        "owner": "admin",
+        "created_at": "2026-06-11T03:00:00.000Z"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ]
+    }
+  ]
+}

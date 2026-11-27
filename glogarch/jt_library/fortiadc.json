@@ -1,0 +1,2364 @@
+{
+  "v": "1",
+  "id": "b795dbac-6e2c-53db-8131-6b0debd42696",
+  "rev": 2,
+  "name": "FortiADC",
+  "summary": "FortiADC 負載平衡與 DNS 看板",
+  "description": "FortiADC 負載平衡與 DNS 看板\n收集方式：Raw/Syslog UDP。這個套件不會建立 Input，請自行建立並把來源指向它。\n★ 安裝後必做：到 Streams 啟動串流。Graylog 建立的串流都是暫停狀態，啟動前管線和看板都沒有資料。\n告警預設不掛通知，事件只會寫進 Graylog；需要通知請自行加上。",
+  "vendor": "Jason Cheng (Jason Tools)",
+  "url": "",
+  "server_version": "7.0.0",
+  "parameters": [],
+  "entities": [
+    {
+      "id": "0ef397a7-53ac-50b8-8008-dfbf649cbb5e",
+      "type": {
+        "name": "stream",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "FortiADC"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "FortiADC 的記錄（比對訊息內容，不看主機名）"
+        },
+        "disabled": {
+          "@type": "boolean",
+          "@value": false
+        },
+        "matching_type": {
+          "@type": "string",
+          "@value": "AND"
+        },
+        "alert_conditions": [],
+        "alarm_callbacks": [],
+        "outputs": [],
+        "default_stream": {
+          "@type": "boolean",
+          "@value": false
+        },
+        "remove_matches": {
+          "@type": "boolean",
+          "@value": false
+        },
+        "stream_rules": [
+          {
+            "type": {
+              "@type": "string",
+              "@value": "CONTAINS"
+            },
+            "field": {
+              "@type": "string",
+              "@value": "message"
+            },
+            "value": {
+              "@type": "string",
+              "@value": "-ADC-"
+            },
+            "inverted": {
+              "@type": "boolean",
+              "@value": false
+            },
+            "description": {
+              "@type": "string",
+              "@value": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "0584c22d-93a6-50a4-b474-706aded5abc5",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-00-passthrough"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-00-passthrough\"\nwhen\n    true\nthen\nend"
+        }
+      }
+    },
+    {
+      "id": "bab53413-e31f-5051-acdf-87fcaab319f0",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-fortiadc-submod"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-fortiadc-submod\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"-ADC-\")\nthen\n    set_fields(grok(pattern: \" submod=\\\"%{WORD:submod}\\\" \", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "2e68d8e8-91ee-5340-adee-2e3b3a212a19",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-fortiadc-user"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-fortiadc-user\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"-ADC-\")\nthen\n    set_fields(grok(pattern: \" user=\\\"%{WORD:user}\\\" \", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "c75a25d5-0219-592c-8bf7-205c71d5e94a",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-fortiadc-ui"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-fortiadc-ui\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"-ADC-\")\nthen\n    set_fields(grok(pattern: \" ui=\\\"%{WORD:ui}\\\"\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "4dfcabff-ad8f-572c-a508-95d7b7b000ce",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-fortiadc-action"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-fortiadc-action\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"-ADC-\")\nthen\n    set_fields(grok(pattern: \" action=\\\"%{WORD:action}\\\" \", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "73b800b0-0141-5502-abb2-f94b5ea086e7",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-fortiadc-status"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-fortiadc-status\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"-ADC-\")\nthen\n    set_fields(grok(pattern: \" status=\\\"%{WORD:status}\\\" \", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "421e1582-ddff-528a-b1b7-4afe11622889",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-fortiadc-logdesc"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-fortiadc-logdesc\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"-ADC-\")\nthen\n    set_fields(grok(pattern: \" logdesc=\\\"%{DATA:logdesc}\\\" \", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "f0db33a5-3e84-5e83-a040-007809b0e43c",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-fortiadc-cfgpath"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-fortiadc-cfgpath\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"-ADC-\")\nthen\n    set_fields(grok(pattern: \" cfgpath=\\\"%{DATA:cfgpath}\\\"\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "c05859f1-0911-53ed-9eee-a51ed032f462",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-fortiadc-msg"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-fortiadc-msg\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"-ADC-\")\nthen\n    set_fields(grok(pattern: \" msg=\\\"%{GREEDYDATA:msg}\\\"\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "15ee1e59-ef15-5201-95d0-843f5874cc20",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-fortiadc-to-vd"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-fortiadc-to-vd\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"-ADC-\")\nthen\n    set_fields(grok(pattern: \"devname=%{HOSTNAME:devname} device_id=%{WORD:device_id} .* type=%{WORD:type} subtype=%{WORD:subtype} pri=%{WORD:pri} vd=%{WORD:vd} \", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "fa788dfc-b145-5458-ab38-93d9c39d8913",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-fortiadc-source"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-fortiadc-source\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"-ADC-\")\nthen\n    set_fields(grok(pattern: \"devname=%{HOSTNAME:source}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "4ac7f5e1-f068-5bb2-ae42-46909154ef86",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-fortiadc-reason"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-fortiadc-reason\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"-ADC-\")\nthen\n    set_fields(grok(pattern: \"reason=\\\"%{DATA:reason}\\\"\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "c2d58449-598e-5b06-8256-a86fa3db3319",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-fortiadc-cfgattr"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-fortiadc-cfgattr\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"-ADC-\")\nthen\n    set_fields(grok(pattern: \"cfgattr=\\\"%{DATA:cfgattr}\\\"\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "c859ccde-6bc5-5220-942a-b27547a1170e",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-cisco-source-ip"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-cisco-source-ip\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"CONFIG_\")\nthen\n    set_fields(grok(pattern: \"from .* \\\\(%{IPV4:source_ip}\\\\)\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "5b3538e8-bd68-5052-8ee2-94a4944c7922",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-cisco-lineproto-updown"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-cisco-lineproto-updown\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"LINEPROTO-5-UPDOWN\")\nthen\n    set_fields(grok(pattern: \"Interface %{DATA:interface}, changed state to %{WORD:updown}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "2298699d-9224-5ef4-b590-e4f7858322b9",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-cisco-link-updown"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-cisco-link-updown\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"LINK-3-UPDOWN\")\nthen\n    set_fields(grok(pattern: \"Interface %{DATA:interface}, changed state to %{WORD:updown}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "f5342060-fcca-5ff4-bffb-8f9b68b7e219",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-cisco-username"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-cisco-username\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"CONFIG_\")\nthen\n    set_fields(grok(pattern: \" from console by %{USERNAME:username} \", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "483f6824-288b-5251-9fac-faa7322b9136",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-cisco-event-type"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-cisco-event-type\"\nwhen\n    has_field(\"message\") && regex(\"^%\", to_string($message.message)).matches == true\nthen\n    set_fields(grok(pattern: \"\\\\%%{DATA:event_type}\\\\:\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "8bab7f2b-26ad-5cb0-9e8b-32e0b6add9ff",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-cisco-username2"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-cisco-username2\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"SYSTEM\")\nthen\n    set_fields(grok(pattern: \" Authentication failure for %{USERNAME:username} \", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "18fdd256-024a-58e5-a353-f7beb3b126dd",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-cisco-event-type2"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-cisco-event-type2\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \": %\")\nthen\n    set_fields(grok(pattern: \"\\\\%%{DATA:event_type}\\\\:\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "9cd70b89-9ba4-5c9b-b401-6e728876b9bc",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-cisco-source-ip2"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-cisco-source-ip2\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \": %\")\nthen\n    set_fields(grok(pattern: \"from %{IPV4:source_ip} -\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "e2099006-2373-5194-aa7c-3783b56bbf3f",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-cisco-source-ip3"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-cisco-source-ip3\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \": %\")\nthen\n    set_fields(grok(pattern: \" on %{IPV4:source_ip}@\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "f9c457f3-673c-5eda-9f62-18061a67c785",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-cisco-username3"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-cisco-username3\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \": %\")\nthen\n    set_fields(grok(pattern: \"Configured from .* by %{USERNAME:username} \", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "6a9b745d-d640-5fae-9cd9-20b92ee87a52",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-sslvpn-src-dst-user-usr-msg"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-sslvpn-src-dst-user-usr-msg\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"SSLVPN\")\nthen\n    set_fields(grok(pattern: \"src=%{IPV4:src} dst=\\\"%{DATA:dst}\\\" user=\\\"%{DATA:user}\\\" usr=\\\"%{DATA:usr}\\\" msg=\\\"%{DATA:msg}\\\"\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "72dfa3c1-b849-50cb-ae70-ef38799d6b79",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-sslvpn-duration"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-sslvpn-duration\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"SSLVPN\")\nthen\n    set_fields(grok(pattern: \"duration=%{INT:duration}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "99a43c73-96ec-5d8c-99d5-7935ce494628",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-sslvpn-bytes-packets"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-sslvpn-bytes-packets\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"SSLVPN\")\nthen\n    set_fields(grok(pattern: \"bytesIn=%{INT:bytesIn} bytesOut=%{INT:bytesOut} bytesTotal=%{INT:bytesTotal} packetsIn=%{INT:packetsIn} packetsOut=%{INT:packetsOut} packetsTotal=%{INT:packetsTotal}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "7ccdf17e-b393-5d6c-a703-082e26d4f14c",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-sslvpn-throughput"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-sslvpn-throughput\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"SSLVPN\")\nthen\n    set_fields(grok(pattern: \"maxThroughput=%{INT:maxThroughput} avgThroughput=%{INT:avgThroughput}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "209b04a6-e6eb-528c-bb20-3d42b467dcd7",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-sslvpn-active"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-sslvpn-active\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"SSLVPN\")\nthen\n    set_fields(grok(pattern: \"active=%{INT:active}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "88ed6b80-935f-5325-8ff6-44ff282a2bbb",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-sslvpn-agent"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-sslvpn-agent\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"SSLVPN\")\nthen\n    set_fields(grok(pattern: \"agent=\\\"%{DATA:agent}\\\"\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "1fd5207f-4408-5beb-ba69-a552535ef1e3",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-sslvpn-nxclientipaddress"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-sslvpn-nxclientipaddress\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"SSLVPN\")\nthen\n    set_fields(grok(pattern: \"nxClientIPAddress=%{IPV4:nxClientIPAddress}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "be16ee95-3b0a-5bc1-9b62-92a915cd4834",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-sendmail-starttls"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-sendmail-starttls\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"sendmail\")\nthen\n    set_fields(grok(pattern: \"STARTTLS=%{DATA:STARTTLS},\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "2060b85e-e3d4-5e81-ad9b-58635670e14b",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-sendmail-ralay"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-sendmail-ralay\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"sendmail\")\nthen\n    set_fields(grok(pattern: \"relay=%{DATA:relay} \\\\[%{IPV4:relay_ip}\\\\]\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "85d5f02c-a352-5ae0-84de-f0c832ceb6d1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-sendmail-to"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-sendmail-to\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"sendmail\")\nthen\n    set_fields(grok(pattern: \"to=<%{DATA:to}>\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "d133c93e-33a8-543a-b58a-1f97bdf89cf3",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-sendmail-relay"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-sendmail-relay\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"sendmail\")\nthen\n    set_fields(grok(pattern: \"relay=\\\\[%{IPV4:relay}\\\\]\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "c9a50b3d-962b-53a9-ac76-5eb6cc6c4293",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-sendmail-stat"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-sendmail-stat\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"sendmail\")\nthen\n    set_fields(grok(pattern: \"stat=%{DATA:stat} \", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "f06091f3-4165-5459-9583-9a9599becbb2",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-sendmail-result"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-sendmail-result\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"sendmail\")\nthen\n    set_fields(grok(pattern: \"stat.* \\\\(%{DATA:result}\\\\)\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "3de47de9-0d07-5383-89aa-428e63ccf00a",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-sendmail-reject"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-sendmail-reject\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"sendmail\")\nthen\n    set_fields(grok(pattern: \"reject=%{INT:reject} %{DATA:reject_code} %{GREEDYDATA:reject_reason}\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "aa3894b0-8310-5cf5-be42-34a47fb302af",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-10-sendmail-from"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-10-sendmail-from\"\nwhen\n    has_field(\"message\") && contains(to_string($message.message), \"sendmail\")\nthen\n    set_fields(grok(pattern: \"from=<%{DATA:from}>\", value: to_string($message.message), only_named_captures: true));\nend"
+        }
+      }
+    },
+    {
+      "id": "acac8a8b-66e0-58ac-a601-07f5f435e8ee",
+      "type": {
+        "name": "pipeline",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "FortiADC - parse"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "pipeline \"FortiADC - parse\"\nstage -1 match either\nrule \"fortiadc-00-gate\"\nstage 0 match either\nrule \"fortiadc-00-passthrough\"\nrule \"fortiadc-10-fortiadc-submod\"\nrule \"fortiadc-10-fortiadc-user\"\nrule \"fortiadc-10-fortiadc-ui\"\nrule \"fortiadc-10-fortiadc-action\"\nrule \"fortiadc-10-fortiadc-status\"\nrule \"fortiadc-10-fortiadc-logdesc\"\nrule \"fortiadc-10-fortiadc-cfgpath\"\nrule \"fortiadc-10-fortiadc-msg\"\nrule \"fortiadc-10-fortiadc-to-vd\"\nrule \"fortiadc-10-fortiadc-source\"\nrule \"fortiadc-10-fortiadc-reason\"\nrule \"fortiadc-10-fortiadc-cfgattr\"\nrule \"fortiadc-10-cisco-source-ip\"\nrule \"fortiadc-10-cisco-lineproto-updown\"\nrule \"fortiadc-10-cisco-link-updown\"\nrule \"fortiadc-10-cisco-username\"\nrule \"fortiadc-10-cisco-event-type\"\nrule \"fortiadc-10-cisco-username2\"\nrule \"fortiadc-10-cisco-event-type2\"\nrule \"fortiadc-10-cisco-source-ip2\"\nrule \"fortiadc-10-cisco-source-ip3\"\nrule \"fortiadc-10-cisco-username3\"\nrule \"fortiadc-10-sslvpn-src-dst-user-usr-msg\"\nrule \"fortiadc-10-sslvpn-duration\"\nrule \"fortiadc-10-sslvpn-bytes-packets\"\nrule \"fortiadc-10-sslvpn-throughput\"\nrule \"fortiadc-10-sslvpn-active\"\nrule \"fortiadc-10-sslvpn-agent\"\nrule \"fortiadc-10-sslvpn-nxclientipaddress\"\nrule \"fortiadc-10-sendmail-starttls\"\nrule \"fortiadc-10-sendmail-ralay\"\nrule \"fortiadc-10-sendmail-to\"\nrule \"fortiadc-10-sendmail-relay\"\nrule \"fortiadc-10-sendmail-stat\"\nrule \"fortiadc-10-sendmail-result\"\nrule \"fortiadc-10-sendmail-reject\"\nrule \"fortiadc-10-sendmail-from\"\nend"
+        },
+        "connected_streams": [
+          {
+            "@type": "string",
+            "@value": "000000000000000000000001"
+          },
+          {
+            "@type": "string",
+            "@value": "0ef397a7-53ac-50b8-8008-dfbf649cbb5e"
+          }
+        ]
+      }
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "dashboard",
+        "version": "2"
+      },
+      "id": "d7a5cf8b-2cc8-5498-bf01-17ff364420bc",
+      "data": {
+        "summary": {
+          "@type": "string",
+          "@value": "FortiADC 負載平衡與 DNS 看板"
+        },
+        "search": {
+          "queries": [
+            {
+              "id": "777e4d2b-acf1-4ff9-adad-789abc29c06b",
+              "timerange": {
+                "from": 300,
+                "type": "relative"
+              },
+              "filters": [],
+              "query": {
+                "type": "elasticsearch",
+                "query_string": "_exists_:logdesc"
+              },
+              "search_types": [
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "logdesc"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "a1296ae6-3109-466c-9385-58923e4d60ae",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "user"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "a3fbc662-0eea-472e-ac6b-042381e913c6",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [],
+                  "type": "pivot",
+                  "id": "fcea1265-8939-4914-b5eb-842c6361b2fe",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "_exists_:logdesc"
+                  },
+                  "name": null,
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "offset": 0,
+                  "streams": [],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "eb13bdea-d808-4ee1-95ce-f68c615534a1",
+                  "limit": 150,
+                  "filters": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "subtype"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "f4e8ca53-2c0c-419f-b862-37023bd5c413",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "status"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": true
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "ba3a5bcb-e3ec-407f-9063-1653dbe56c0a",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "trend",
+                  "timerange": {
+                    "source": "search_type",
+                    "id": "fcea1265-8939-4914-b5eb-842c6361b2fe",
+                    "offset": "1i",
+                    "type": "offset"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [],
+                  "type": "pivot",
+                  "id": "67726771-4807-46d5-9b9a-a3f91e5745e0",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    },
+                    {
+                      "type": "percentage",
+                      "id": "percentage()",
+                      "strategy": "COUNT",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "submod"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": true
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "23584c23-019b-4bd0-b4a8-8ff1bd64a092",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "cfgpath"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": true
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "6601fb3d-fcc4-47a0-85eb-072d4c1798e0",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "pri"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "5d235dec-5354-4235-8ee0-1dfed383cfdc",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 1
+                      }
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "e529a6c9-b39d-4a99-8d13-bfa252f8533a",
+                  "filters": [],
+                  "column_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "source"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "sort": []
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": ""
+                  },
+                  "name": "chart",
+                  "timerange": {
+                    "from": 86400,
+                    "type": "relative"
+                  },
+                  "column_limit": null,
+                  "streams": [],
+                  "row_limit": null,
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "count()",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "fields": [
+                        "action"
+                      ],
+                      "limit": 15,
+                      "skip_empty_values": false
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "e6377cfa-2c52-4c5c-ba70-b47c3786a425",
+                  "filters": [],
+                  "column_groups": [],
+                  "sort": []
+                }
+              ]
+            }
+          ],
+          "parameters": [],
+          "requires": {},
+          "owner": "admin",
+          "created_at": "2025-03-07T07:30:51.944Z"
+        },
+        "created_at": "2026-11-01T00:00:00.000Z",
+        "requires": {},
+        "state": {
+          "777e4d2b-acf1-4ff9-adad-789abc29c06b": {
+            "selected_fields": null,
+            "static_message_list_id": null,
+            "titles": {
+              "tab": {
+                "title": "FortiADC - DNS (1D)"
+              },
+              "widget": {
+                "ba788fb5-9bdd-43b4-bc67-1a64fd23b672": "Event Total",
+                "240c1467-be8c-40d3-95aa-95ddcc71e18b": "Event Graph",
+                "a819ef1b-f833-476d-993d-f34d6654c274": "User Top 15",
+                "36051801-459e-4a31-861a-1855592ea8e7": "Status",
+                "85910e70-5fad-413f-9b98-a45815cfb832": "Subtype Top 15",
+                "3b8c8a16-4105-4d9d-930d-b2ec71609d3c": "Submod Top 15",
+                "c4d6c28c-be92-429f-bba9-cefb5abedcc6": "Action Top 15",
+                "671d9d88-c10b-48c8-a2d6-59c47716dc7b": "Prioroty Top15",
+                "d57eaeb3-d304-4db1-b048-60c5a8bddaa0": "All Messages"
+              }
+            },
+            "widgets": [
+              {
+                "id": "671d9d88-c10b-48c8-a2d6-59c47716dc7b",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "pri"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "1e01bf39-3716-481c-a63d-32ffad180aff",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "logdesc"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "85910e70-5fad-413f-9b98-a45815cfb832",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "bar",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "subtype"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "barmode": "group",
+                    "axis_type": "linear"
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "c4d6c28c-be92-429f-bba9-cefb5abedcc6",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "bar",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "action"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "barmode": "group",
+                    "axis_type": "linear"
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "3cedda15-0aba-4b0d-8d38-ad30b83348bc",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "cfgpath"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": true
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "240c1467-be8c-40d3-95aa-95ddcc71e18b",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "bar",
+                  "column_limit": 15,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "timestamp"
+                      ],
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 1
+                        }
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [
+                    {
+                      "fields": [
+                        "source"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "visualization_config": {
+                    "barmode": "overlay",
+                    "axis_type": "linear"
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "d57eaeb3-d304-4db1-b048-60c5a8bddaa0",
+                "type": "messages",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "_exists_:logdesc"
+                },
+                "streams": [],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "pri",
+                    "subtype",
+                    "user",
+                    "action",
+                    "logdesc"
+                  ],
+                  "show_message_row": false,
+                  "show_summary": false,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "3b8c8a16-4105-4d9d-930d-b2ec71609d3c",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "submod"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": true
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    },
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "percentage()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "36051801-459e-4a31-861a-1855592ea8e7",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "status"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": true
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "a819ef1b-f833-476d-993d-f34d6654c274",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": 15,
+                  "row_pivots": [
+                    {
+                      "fields": [
+                        "user"
+                      ],
+                      "type": "values",
+                      "config": {
+                        "limit": 15,
+                        "skip_empty_values": false
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": false,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "pinned_columns": []
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "ba788fb5-9bdd-43b4-bc67-1a64fd23b672",
+                "type": "aggregation",
+                "filter": null,
+                "filters": [],
+                "timerange": {
+                  "from": 86400,
+                  "type": "relative"
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": ""
+                },
+                "streams": [],
+                "config": {
+                  "visualization": "numeric",
+                  "column_limit": null,
+                  "event_annotation": false,
+                  "row_limit": null,
+                  "row_pivots": [],
+                  "series": [
+                    {
+                      "config": {
+                        "name": null
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": {
+                    "trend": true,
+                    "trend_preference": "NEUTRAL"
+                  },
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              }
+            ],
+            "widget_mapping": {
+              "1e01bf39-3716-481c-a63d-32ffad180aff": [
+                "a1296ae6-3109-466c-9385-58923e4d60ae"
+              ],
+              "ba788fb5-9bdd-43b4-bc67-1a64fd23b672": [
+                "67726771-4807-46d5-9b9a-a3f91e5745e0",
+                "fcea1265-8939-4914-b5eb-842c6361b2fe"
+              ],
+              "240c1467-be8c-40d3-95aa-95ddcc71e18b": [
+                "e529a6c9-b39d-4a99-8d13-bfa252f8533a"
+              ],
+              "a819ef1b-f833-476d-993d-f34d6654c274": [
+                "a3fbc662-0eea-472e-ac6b-042381e913c6"
+              ],
+              "36051801-459e-4a31-861a-1855592ea8e7": [
+                "ba3a5bcb-e3ec-407f-9063-1653dbe56c0a"
+              ],
+              "85910e70-5fad-413f-9b98-a45815cfb832": [
+                "f4e8ca53-2c0c-419f-b862-37023bd5c413"
+              ],
+              "3cedda15-0aba-4b0d-8d38-ad30b83348bc": [
+                "6601fb3d-fcc4-47a0-85eb-072d4c1798e0"
+              ],
+              "3b8c8a16-4105-4d9d-930d-b2ec71609d3c": [
+                "23584c23-019b-4bd0-b4a8-8ff1bd64a092"
+              ],
+              "c4d6c28c-be92-429f-bba9-cefb5abedcc6": [
+                "e6377cfa-2c52-4c5c-ba70-b47c3786a425"
+              ],
+              "671d9d88-c10b-48c8-a2d6-59c47716dc7b": [
+                "5d235dec-5354-4235-8ee0-1dfed383cfdc"
+              ],
+              "d57eaeb3-d304-4db1-b048-60c5a8bddaa0": [
+                "eb13bdea-d808-4ee1-95ce-f68c615534a1"
+              ]
+            },
+            "positions": {
+              "1e01bf39-3716-481c-a63d-32ffad180aff": {
+                "col": 5,
+                "row": 6,
+                "height": 3,
+                "width": 8
+              },
+              "ba788fb5-9bdd-43b4-bc67-1a64fd23b672": {
+                "col": 1,
+                "row": 1,
+                "height": 2,
+                "width": 2
+              },
+              "240c1467-be8c-40d3-95aa-95ddcc71e18b": {
+                "col": 3,
+                "row": 1,
+                "height": 2,
+                "width": 10
+              },
+              "a819ef1b-f833-476d-993d-f34d6654c274": {
+                "col": 5,
+                "row": 3,
+                "height": 3,
+                "width": 2
+              },
+              "36051801-459e-4a31-861a-1855592ea8e7": {
+                "col": 11,
+                "row": 3,
+                "height": 3,
+                "width": 2
+              },
+              "85910e70-5fad-413f-9b98-a45815cfb832": {
+                "col": 1,
+                "row": 3,
+                "height": 3,
+                "width": 2
+              },
+              "3cedda15-0aba-4b0d-8d38-ad30b83348bc": {
+                "col": 1,
+                "row": 6,
+                "height": 3,
+                "width": 4
+              },
+              "3b8c8a16-4105-4d9d-930d-b2ec71609d3c": {
+                "col": 7,
+                "row": 3,
+                "height": 3,
+                "width": 2
+              },
+              "c4d6c28c-be92-429f-bba9-cefb5abedcc6": {
+                "col": 3,
+                "row": 3,
+                "height": 3,
+                "width": 2
+              },
+              "671d9d88-c10b-48c8-a2d6-59c47716dc7b": {
+                "col": 9,
+                "row": 3,
+                "height": 3,
+                "width": 2
+              },
+              "d57eaeb3-d304-4db1-b048-60c5a8bddaa0": {
+                "col": 1,
+                "row": 9,
+                "height": 6,
+                "width": "Infinity"
+              }
+            },
+            "formatting": {
+              "highlighting": []
+            },
+            "display_mode_settings": {
+              "positions": {}
+            }
+          }
+        },
+        "properties": [],
+        "title": {
+          "@type": "string",
+          "@value": "FortiADC"
+        },
+        "type": "DASHBOARD",
+        "description": {
+          "@type": "string",
+          "@value": "FortiADC 負載平衡與 DNS 看板"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=6.0.7+4779d72"
+        }
+      ]
+    },
+    {
+      "id": "1166cab8-a69a-53ec-9f4e-8f91913a41e4",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "v": "1",
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=7.0.0"
+        }
+      ],
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "fortiadc-00-gate"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Only this pack's records: the same test as its stream rule."
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"fortiadc-00-gate\"\nwhen\n    contains(to_string($message.message), \"-ADC-\")\nthen\nend"
+        }
+      }
+    }
+  ]
+}

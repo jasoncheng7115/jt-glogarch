@@ -4359,8 +4359,10 @@ async function checkRunningJobs() {
             // A paused job must SAY paused even after it has processed records —
             // the counter freezes, so "170,691 / 377,835,339" alone looks stuck.
             const paused = jobPausedLabel(j);
+            // an AI summary's counts are charts; what it does now (waiting for the model ...) says more
+            const aiSum = j.source === 'manual:ai-summary' && detail;
             let statusLine = indet ? (t('job_running') || 'Running…')
-                                   : (detail && !j.messages_done ? esc(detail) : `${msgs} / ${total}`);
+                                   : ((detail && !j.messages_done) || aiSum ? esc(detail) : `${msgs} / ${total}`);
             if (paused) {
                 statusLine = `<span class="job-paused">⏸ ${esc(paused)}</span><br>${statusLine}`;
             }
@@ -5759,7 +5761,7 @@ function renderReportHistory(items) {
     if (!tb) return;
     if (!items.length) { tb.innerHTML = `<tr><td colspan="6" class="text-center text-muted u128">${t('log_no_data')}</td></tr>`; return; }
     tb.innerHTML = items.map(h => `<tr>
-        <td>${esc(h.report_name)} ${h.triggered_by === 'scheduled' ? '<span class="job-badge job-badge-sched">' + t('job_scheduled') + '</span>' : '<span class="job-badge job-badge-manual">' + t('job_manual') + '</span>'}</td>
+        <td>${esc(h.report_name === 'ai-summary' ? t('ai_summary_hist_name') : h.report_name)} ${h.triggered_by === 'scheduled' ? '<span class="job-badge job-badge-sched">' + t('job_scheduled') + '</span>' : '<span class="job-badge job-badge-manual">' + t('job_manual') + '</span>'}${h.title ? `<div class="fs-085 text-muted rp-hist-title">${esc(h.title)}</div>` : ''}</td>
         <td class="text-muted fs-085">${esc(formatDT(h.created_at))}</td>
         <td>${h.status === 'completed' ? statusBadge('completed')
               : statusBadge('failed') + (h.error ? ` <span class="text-danger fs-08">${esc(jobNote(h.error).slice(0, 18))}${jobNote(h.error).length > 18 ? '…' : ''}</span> <span class="link-like fs-08" data-act="showAlert" data-arg="${esc(h.error)}">${t('reports_err_detail')}</span>` : '')}</td>
@@ -6218,3 +6220,52 @@ async function doGenerateReportAdhoc() {
     setTimeout(loadReportsPage, 4000);
     setTimeout(loadReportsPage, 12000);
 }
+
+// ---- Every dialog closes from an × in its title bar (owner 2026-11-27: "所有這類對話窗 右上都要有 X") ----
+// The × used to sit absolutely positioned in the card's corner, where the sticky title covered it
+// once the form scrolled; four dialogs had none. At load each title gets the dialog's own close
+// action as an × inside it; the title's text moves to an inner span that keeps its id / i18n
+// attributes, so code that rewrites the title by id still works.
+const _MODAL_CLOSE = {'sched-modal': ['closeSchedModal'], 'al-action-modal': ['alCloseAction'],
+                      'al-signin-modal': ['alCloseSignin'], 'server-modal': ['closeModalById', 'server-modal']};
+function modalCloseButtons(root) {
+    (root || document).querySelectorAll('.modal-overlay > .modal-card').forEach(card => {
+        let x = card.querySelector(':scope > .u134, :scope > .pk-modal-x');
+        const head = card.querySelector(':scope > .pk-v-head');
+        if (head && x) {          // the pack viewer: its title row already holds the title and revision
+            x.type = 'button';
+            if (!x.textContent.trim()) x.innerHTML = '&times;';
+            x.classList.remove('u134', 'pk-modal-x');
+            x.classList.add('modal-x');
+            head.classList.add('modal-head-x');
+            head.appendChild(x);
+            return;
+        }
+        const h3 = card.querySelector(':scope > h3');
+        if (!h3 || h3.classList.contains('modal-head-x')) return;
+        if (!x) {
+            const def = _MODAL_CLOSE[card.parentElement.id];
+            if (!def) return;
+            x = document.createElement('button');
+            x.dataset.act = def[0];
+            if (def[1]) x.dataset.arg = def[1];
+            x.innerHTML = '&times;';
+        }
+        const span = document.createElement('span');
+        while (h3.firstChild) span.appendChild(h3.firstChild);
+        ['id', 'data-i18n', 'data-icon'].forEach(a => {
+            if (h3.hasAttribute(a)) { span.setAttribute(a, h3.getAttribute(a)); h3.removeAttribute(a); }
+        });
+        h3.appendChild(span);
+        x.type = 'button';
+        if (!x.textContent.trim()) x.innerHTML = '&times;';
+        x.classList.remove('u134', 'pk-modal-x');
+        x.classList.add('modal-x');
+        const label = (typeof t === 'function' && t('btn_close')) || 'Close';
+        x.title = label;
+        x.setAttribute('aria-label', label);
+        h3.appendChild(x);
+        h3.classList.add('modal-head-x');
+    });
+}
+document.addEventListener('DOMContentLoaded', () => modalCloseButtons());

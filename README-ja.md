@@ -1,4 +1,4 @@
-# jt-glogarch v1.36.1
+# jt-glogarch v1.37.0
 
 **Language**: [English](README.md) | [繁體中文](README-zh_TW.md) | **日本語**  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open（6.x / 7.x）向けのログのアーカイブ・リストアツール
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.36.1-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.37.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 > **作者：** Jason Cheng（[Jason Tools](https://github.com/jasoncheng7115)）
@@ -183,7 +183,7 @@ Telegram・Discord・Slack・Microsoft Teams・Nextcloud Talk・Zulip・Email（
 
 **公開パック**：ここには作者が公開したパックのみ掲載します。
 
-- Jason Tools ライブラリに組み込み（v1.18.1 以降）：**Windows Active Directory**、**Linux 登入與 SSH**（Linux の SSH と sudo ログイン）、**Apache HTTP Server**、**QNAP NAS**、**SQL Server**、**Windows 登入事件**（Windows のログオンイベント）、**Synology NAS**（後の 3 つは v1.36.0 以降）。コンテンツパック画面から直接インストールでき、ダウンロードには SOP（.md）が付きます。新規インストール、以前のバージョンからのアップグレード、アンインストールの手順です。
+- Jason Tools ライブラリに組み込み（v1.18.1 以降）：**Windows Active Directory**、**Linux 登入與 SSH**（Linux の SSH と sudo ログイン）、**Apache HTTP Server**、**QNAP NAS**、**SQL Server**、**Windows 登入事件**（Windows のログオンイベント）、**Synology NAS**（この 3 つは v1.36.0 以降）、**FortiADC**、**FortiWAN**、**Proxmox VE**、**Microsoft DNS Server**、**NetFlow**、**PCAP 封包分析**（PCAP パケット分析）（この 6 つは v1.37.0 以降）。コンテンツパック画面から直接インストールでき、ダウンロードには SOP（.md）が付きます。新規インストール、以前のバージョンからのアップグレード、アンインストールの手順です。
 - 個別ダウンロード：[CubeCOS / OpenStack Log Pipeline](https://github.com/jasoncheng7115/it-scripts/blob/master/graylog/cubecos_contentpack_graylog63.json)。CubeCOS、OpenStack、Ceph、Masakari のログ用のパイプライン 1 つとルール 147 個です（パックの表記では Graylog 6.3 以降に対応）。リンク先からダウンロードし、コンテンツパック画面でアップロードしてください。
 
 ### アラート管理（v1.17.0 以降）
@@ -221,6 +221,11 @@ IDS アラート、Web スキャン。読み取るのは件数だけ（Graylog �
 同じツールは `/mcp` で外部の AI クライアント（Claude Desktop、Open WebUI、opencode）にも提供され、各ユーザーの
 Graylog API トークンで認証します。mcp_graylog 1.10.2 では Graylog 自体の状態（クラスターとノードの指標、
 インデックス失敗、システム通知、レコードの送信が止まった送信元）も確認できます。
+
+v1.37.0 以降、回答のクエリから実際の Graylog ダッシュボードを作成できます（ダイアログで名前、期間、グラフと種類を選びます。
+jt-glogarch が作成し、あなた自身の Graylog セッションで作成します。作成のみで、変更や削除はしません）。会話はレポートエンジンで
+要約 PDF にでき（モデルが調査結果を書き、グラフはクエリを再実行した結果です。本文中でデータに見つからない数値やアドレスは
+最初のページに表示します）、開始／終了時刻を含む表はタイムラインとして表示できます。
 
 ### セキュリティ概要（v1.29.0 以降）
 

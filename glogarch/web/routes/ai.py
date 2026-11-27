@@ -151,6 +151,41 @@ def _merge_llms(sent, stored: list[LLMServerConfig]) -> tuple[list[dict], str | 
     return out, None
 
 
+_LOGO_RE = re.compile(r"data:image/(png|jpeg|svg\+xml);base64,[A-Za-z0-9+/=]+")
+SUMMARY_LOGO_MAX = 1_500_000      # characters of one data URI
+
+
+def _clean_summary_style(v) -> tuple[dict, str]:
+    """The summary PDF's own look (owner 2026-11-27: "要設定 報告的 logo 或文字"): the same fields a
+    report has for its cover and watermark, nothing else."""
+    if not isinstance(v, dict):
+        return {}, "summary_style must be an object"
+    out: dict = {}
+    for k in ("logo_data_uri", "header_logo_data_uri"):
+        u = str(v.get(k) or "")
+        if u:
+            if len(u) > SUMMARY_LOGO_MAX or not _LOGO_RE.fullmatch(u):
+                return {}, "A logo must be a PNG, JPEG or SVG image under about 1 MB"
+            out[k] = u
+    for k, n in (("kicker", 80), ("author", 120), ("header_text", 120), ("watermark_text", 120)):
+        if str(v.get(k) or "").strip():
+            out[k] = re.sub(r"[\x00-\x1f\x7f]", " ", str(v[k])).strip()[:n]
+    try:
+        out["logo_height_px"] = max(20, min(int(v.get("logo_height_px") or 72), 200))
+    except (TypeError, ValueError):
+        out["logo_height_px"] = 72
+    col = str(v.get("brand_color") or "").strip()
+    if col:
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", col):
+            return {}, "brand_color: a colour like #6c63ff"
+        out["brand_color"] = col
+    out["watermark_enabled"] = bool(v.get("watermark_enabled"))
+    out["watermark_size"] = v.get("watermark_size") if v.get("watermark_size") in ("small", "medium", "large") else "large"
+    out["watermark_direction"] = v.get("watermark_direction") if v.get("watermark_direction") in ("diagonal", "horizontal") else "diagonal"
+    out["watermark_append"] = [a for a in (v.get("watermark_append") or []) if a in ("server", "ip", "time")]
+    return out, ""
+
+
 @router.post("/ai/settings")
 async def ai_save_settings(request: Request):
     body = await request.json() or {}
@@ -179,6 +214,11 @@ async def ai_save_settings(request: Request):
         merged["llm_servers"] = servers
     merged["mcp_graylog_tools"] = [t for t in (merged.get("mcp_graylog_tools") or [])
                                    if isinstance(t, str) and t not in MCPG_NEVER]
+    if "summary_style" in body:
+        style, err = _clean_summary_style(body.get("summary_style"))
+        if err:
+            return JSONResponse({"error": err}, status_code=400)
+        merged["summary_style"] = style
     try:
         new = AiConfig(**merged)
     except Exception as e:
@@ -779,3 +819,367 @@ async def mcp_post(request: Request):
     if not out:
         return Response(status_code=202, headers=headers)
     return JSONResponse(out if isinstance(payload, list) else out[0], headers=headers)
+
+
+# --- 1.37: charts of an answer -> Graylog dashboard / summary PDF ----------------
+# Owner 2026-11-27. Both read glogarch.ai.charts, so their charts agree. The page
+# lists the specs, the user picks; Graylog is asked again as the signed-in user.
+
+def _specs_for_message(m: dict) -> list[dict]:
+    from glogarch.ai import charts as C
+    return C.specs_from_calls(m.get("calls") or [])
+
+
+def _spec_server(specs: list[dict], fallback: str) -> str | None:
+    """The one Graylog server the picked charts came from (None when several)."""
+    names = {s.get("server") or fallback for s in specs}
+    return names.pop() if len(names) == 1 else None
+
+
+@router.get("/ai/messages/{mid}/charts")
+def ai_message_charts(request: Request, mid: int):
+    m = _db(request).ai_get_message(mid, _user(request))
+    if not m or m.get("role") != "assistant":
+        return JSONResponse({"error": "Message not found"}, status_code=404)
+    return {"charts": _specs_for_message(m), "server": m.get("server") or ""}
+
+
+@router.get("/ai/conversations/{cid}/charts")
+def ai_conversation_charts(request: Request, cid: int):
+    from glogarch.ai import summary_report as SR
+    conv = _db(request).ai_get_conversation(int(cid), _user(request))
+    if not conv:
+        return JSONResponse({"error": "Conversation not found"}, status_code=404)
+    return {"charts": SR.conversation_specs(conv["messages"]), "server": conv.get("server") or ""}
+
+
+@router.post("/ai/messages/{mid}/graylog-dashboard")
+async def ai_graylog_dashboard(request: Request, mid: int):
+    """Creates (never changes or deletes) one Graylog dashboard from the picked
+    charts of this answer, as the signed-in user's Graylog session."""
+    from glogarch.ai import gl_dashboard as D
+    from glogarch.web.routes.alerting import _web_url
+    settings = _settings(request)
+    m = _db(request).ai_get_message(mid, _user(request))
+    if not m or m.get("role") != "assistant":
+        return JSONResponse({"error": "Message not found"}, status_code=404)
+    body = await request.json() or {}
+    title = D.clean_title(body.get("title"))
+    if not title:
+        return JSONResponse({"error": "Give the dashboard a title"}, status_code=400)
+    picks = [p for p in (body.get("widgets") or []) if isinstance(p, dict)][:D.MAX_WIDGETS]
+    specs = _specs_for_message(m)
+    picked = [s for s in specs if s["id"] in {str(p.get("id")) for p in picks}]
+    if not picked:
+        return JSONResponse({"error": "Pick at least one chart"}, status_code=400)
+    try:
+        tr = D.timerange_for(str(body.get("range") or ""), str(body.get("from") or ""), str(body.get("to") or ""))
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    name = _spec_server(picked, m.get("server") or "")
+    if name is None:
+        return JSONResponse({"error": "The picked charts come from different Graylog servers; pick charts of one server"},
+                            status_code=400)
+    srv = next((s for s in settings.servers if s.name == name), None)   # exact name only
+    if srv is None:
+        return JSONResponse({"error": f"Graylog server {name} is no longer configured"}, status_code=400)
+    ident = gl_identity.get(request.session, srv.name)
+    if ident is None:
+        return JSONResponse({"error": "Sign in to Graylog to continue", "need_signin": True,
+                             "server": srv.name}, status_code=403)
+    search, view, notes = D.build(specs, picks, title, tr, str(body.get("description") or ""))
+    try:
+        vid = await D.create(srv, ident.auth, search, view)
+    except Exception as e:
+        log.info("Graylog dashboard from an AI answer failed", server=srv.name, error=str(e)[:300])
+        _audit(request, "ai_graylog_dashboard_failed",
+               f"message={mid} server={srv.name} graylog_user={ident.username} error={sanitize(str(e))[:200]}")
+        return JSONResponse({"error": sanitize(str(e))[:400]}, status_code=502)
+    n = len(view["state"][search["queries"][0]["id"]]["widgets"])
+    _audit(request, "ai_graylog_dashboard_created",
+           f"message={mid} server={srv.name} graylog_user={ident.username} dashboard={vid} widgets={n} "
+           f"range={body.get('range')} title={title[:80]}")
+    return {"id": vid, "url": _web_url(srv.url) + f"/dashboards/{vid}", "widgets": n, "notes": notes}
+
+
+_SUMMARY_RUNNING: dict[int, str] = {}     # conversation id -> job id (one PDF at a time per conversation)
+_SUMMARY_JOBS: dict[str, dict] = {}       # job id -> {user, hist_id, error, done}
+
+
+@router.post("/ai/conversations/{cid}/summary-pdf")
+async def ai_summary_pdf(request: Request, cid: int):
+    """Starts a report job: charts re-run, summary text by the model, PDF by the
+    report engine. The PDF lands in the report history."""
+    import uuid as _uuid
+    from datetime import datetime as _dt
+    from glogarch.core.models import JobRecord, JobStatus, JobType
+    settings = _settings(request)
+    db = _db(request)
+    user = _user(request)
+    if not settings.ai.enabled or settings.ai.llm() is None:
+        return JSONResponse({"error": "AI chat is turned off"}, status_code=400)
+    conv = db.ai_get_conversation(int(cid), user)
+    if not conv:
+        return JSONResponse({"error": "Conversation not found"}, status_code=404)
+    if not any(m.get("role") == "assistant" for m in conv["messages"]):
+        return JSONResponse({"error": "This conversation has no answer yet"}, status_code=400)
+    body = await request.json() or {}
+    want_llm = str(body.get("llm") or "")
+    if want_llm and not any(x.name == want_llm for x in settings.ai.llm_servers):
+        return JSONResponse({"error": f"Unknown LLM server {want_llm}"}, status_code=400)
+    cfg = settings.ai.llm(want_llm or None)
+    why = llm.limits_left(settings.ai, cfg, db, user)
+    if why:
+        return JSONResponse({"error": why}, status_code=429)
+    lang = body.get("lang") if body.get("lang") in _LANGS else "en"
+    title = str(body.get("title") or "").strip()[:120]
+    ids = body.get("charts")
+    ids = [str(x) for x in ids][:50] if isinstance(ids, list) else None
+    titles = {str(k): str(v)[:120] for k, v in (body.get("chart_titles") or {}).items()} \
+        if isinstance(body.get("chart_titles"), dict) else {}
+    style_cfg = None
+    if body.get("style") == "@ai":
+        style_cfg = dict(settings.ai.summary_style or {})      # the look set in the AI settings
+    elif body.get("style"):
+        rec = db.get_report(str(body["style"])[:200])
+        if not rec:
+            return JSONResponse({"error": "Report not found"}, status_code=400)
+        try:
+            style_cfg = json.loads(rec.get("config_json") or "{}")
+        except ValueError:
+            style_cfg = {}
+    from glogarch.ai import summary_report as SR
+    specs = SR.conversation_specs(conv["messages"])
+    if ids is not None:
+        specs = [s for s in specs if s["id"] in set(ids)]
+    name = _spec_server(specs, conv.get("server") or "") if specs else (conv.get("server") or "")
+    if name is None:
+        return JSONResponse({"error": "The picked charts come from different Graylog servers; pick charts of one server"},
+                            status_code=400)
+    srv = next((s for s in settings.servers if s.name == name), None) if name else _server(request, None)
+    if srv is None:
+        return JSONResponse({"error": f"Graylog server {name} is no longer configured"}, status_code=400)
+    ident = gl_identity.get(request.session, srv.name)
+    if ident is None and specs:
+        return JSONResponse({"error": "Sign in to Graylog to continue", "need_signin": True,
+                             "server": srv.name}, status_code=403)
+    running = _SUMMARY_RUNNING.get(int(cid))
+    if running and not (_SUMMARY_JOBS.get(running) or {}).get("done"):
+        return JSONResponse({"error": "A summary of this conversation is already being made", "job_id": running},
+                            status_code=409)
+    job_id = str(_uuid.uuid4())
+    db.create_job(JobRecord(id=job_id, job_type=JobType.REPORT, status=JobStatus.RUNNING,
+                            source="manual:ai-summary", started_at=_dt.utcnow()))
+    _SUMMARY_RUNNING[int(cid)] = job_id
+    _SUMMARY_JOBS[job_id] = {"user": user, "cid": int(cid), "hist_id": None, "error": "", "done": False}
+    while len(_SUMMARY_JOBS) > 200:
+        _SUMMARY_JOBS.pop(next(iter(_SUMMARY_JOBS)))
+    ctx = Ctx(settings=settings, db=db, server=srv, auth=ident.auth if ident else ("", ""),
+              username=(ident.username if ident else "") or user, channel="chat")
+    _audit(request, "ai_summary_pdf", f"conversation={cid} server={srv.name} llm={cfg.name} charts={len(specs)} lang={lang}")
+
+    def _run():
+        from glogarch.web.routes.api import _cancel_flags
+        st = _SUMMARY_JOBS[job_id]
+        try:
+            res = asyncio.run(_make_summary_pdf(settings, db, ctx, conv, job_id, lang=lang, cfg=cfg, user=user,
+                                                title=title, ids=ids, titles=titles, style_cfg=style_cfg,
+                                                cancelled=lambda: bool(_cancel_flags.get(job_id))))
+            st["hist_id"] = res["hist_id"]
+            st["warning"] = res["text_error"]
+            note = f"ai-summary conversation={cid} charts={res['charts']}"
+            if res["text_error"]:
+                note += f" | ⚠ Summary text missing: {res['text_error']}"
+            if res["unverified"]:
+                note += f" | {len(res['unverified'])} value(s) not found in the data"
+            db.update_job(job_id, status=JobStatus.COMPLETED, completed_at=_dt.utcnow(), progress_pct=100.0,
+                          messages_done=res["charts"], messages_total=res["charts"], error_message=note)
+        except Exception as e:
+            cancelled = bool(_cancel_flags.get(job_id))
+            st["error"] = "Cancelled" if cancelled else (sanitize(str(e))[:400] or type(e).__name__)
+            log.warning("AI summary PDF failed", conversation=cid, error=st["error"])
+            try:
+                db.update_job(job_id, status=JobStatus.CANCELLED if cancelled else JobStatus.FAILED,
+                              completed_at=_dt.utcnow(), error_message=st["error"])
+            except Exception as e2:
+                log.warning("AI summary job status write failed", error=str(e2))
+        finally:
+            st["done"] = True
+            _cancel_flags.pop(job_id, None)
+            from glogarch.web.routes.api import _job_progress
+            _job_progress.pop(job_id, None)
+
+    asyncio.get_running_loop().run_in_executor(None, _run)
+    return {"job_id": job_id}
+
+
+def summary_filename(title: str, conv_id: int, when) -> str:
+    """'<title>_<YYYYMMDD-HHMM>.pdf' (owner 2026-11-27: "檔名要含標題"); characters a file system
+    refuses become '-', at most 60 characters of title, 'ai-summary-<id>' without one."""
+    t_ = re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]+', "-", title or "").strip(" .-")
+    t_ = re.sub(r"\s+", " ", t_)[:60].strip(" .-") or f"ai-summary-{conv_id}"
+    return f"{t_}_{when:%Y%m%d-%H%M%S}.pdf"
+
+
+async def _make_summary_pdf(settings, db, ctx, conv, job_id, *, lang, cfg, user, title, ids, titles, cancelled,
+                            style_cfg=None):
+    import hashlib
+    from datetime import datetime as _dt
+    from glogarch.ai import summary_report as SR
+    from glogarch.report import builder, renderer
+    from glogarch.report.generator import _chown_if_root, _reports_dir
+
+    from glogarch.web.routes.api import _job_progress
+    st = _SUMMARY_JOBS.get(job_id) or {}
+    now_phase = {"text": "", "waiting": False, "since": time.monotonic()}
+
+    def publish():
+        """What the job is doing now, for the dialog (summary-jobs) and the sidebar /
+        Job History (the job's live detail). A step that waits for the model carries
+        its elapsed time: the bar cannot move while the model writes."""
+        text = now_phase["text"]
+        if now_phase["waiting"]:
+            secs = int(time.monotonic() - now_phase["since"])
+            took = f"{secs // 60}m{secs % 60:02d}s" if secs >= 60 else f"{secs}s"
+            text = f"{text}; {took} so far"     # "; " = its own segment for the page's translation
+        st["detail"] = text
+        _job_progress.setdefault(job_id, []).append({"phase": "running", "detail": text})
+        del _job_progress[job_id][:-20]
+
+    def phase(text, waiting=False):
+        now_phase.update(text=text, waiting=waiting, since=time.monotonic())
+        publish()
+
+    async def ticker():
+        while True:
+            await asyncio.sleep(5)
+            if now_phase["waiting"]:
+                publish()
+
+    def progress(done, total):
+        try:
+            db.update_job(job_id, progress_pct=min(95.0, done / max(total, 1) * 95.0),
+                          messages_done=done, messages_total=total)
+        except Exception as e:
+            log.debug("AI summary progress write failed", error=str(e))
+
+    from datetime import datetime as _now
+    from urllib.parse import urlparse
+    style = SR.style_from_report(style_cfg, server=getattr(ctx.server, "name", ""),
+                                 host=urlparse(getattr(ctx.server, "url", "") or "").hostname or "",
+                                 made_at=_now.now().astimezone()) if style_cfg else None
+    tick = asyncio.create_task(ticker())
+    try:
+        out = await SR.make_summary(settings, db, ctx, conv, lang=lang, cfg=cfg, username=user, title=title,
+                                    chart_ids=ids, chart_titles=titles, progress=progress, cancelled=cancelled,
+                                    phase=phase, style=style)
+        if cancelled():
+            raise RuntimeError("Cancelled")
+        phase("Rendering the PDF")
+    finally:
+        tick.cancel()
+    rep, sections = out["report"], out["sections"]
+    html = builder.build_html(rep, sections)
+    pdf = await renderer.html_to_pdf(html, report_title=rep["title"], header_text=rep["header_text"],
+                                     header_logo=rep.get("header_logo_data_uri", ""), brand_color=rep["brand_color"],
+                                     watermark=rep.get("watermark"),
+                                     toc_titles=[s.get("title") for s in sections if s.get("title")],
+                                     generated_at=rep["generated_at"], lang=lang)
+    fname = summary_filename(rep.get("title") or "", conv["id"], _dt.now())
+    path = _reports_dir(settings) / fname
+    path.write_bytes(pdf)
+    sha = hashlib.sha256(pdf).hexdigest()
+    try:
+        path.with_name(fname + ".sha256").write_text(f"{sha}  {fname}\n", encoding="utf-8")
+        _chown_if_root(path)
+        _chown_if_root(path.with_name(fname + ".sha256"))
+    except OSError as e:
+        log.warning("AI summary sidecar / ownership", error=str(e))
+    hist_id = db.record_report_history("ai-summary", str(path), fname, len(pdf), "completed",
+                                       triggered_by=f"ai:{user}", sha256=sha, title=rep.get("title") or "")
+    return {"hist_id": hist_id, "charts": len(out["specs"]), "unverified": out["unverified"],
+            "text_error": out["text_error"]}
+
+
+@router.get("/ai/summary-jobs/{job_id}")
+def ai_summary_job(request: Request, job_id: str):
+    st = _SUMMARY_JOBS.get(job_id)
+    if not st or st["user"] != _user(request):
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    job = _db(request).get_job(job_id)
+    return {"done": st["done"], "error": st["error"], "hist_id": st["hist_id"], "warning": st.get("warning", ""),
+            "detail": "" if st["done"] else st.get("detail", ""),
+            "download": f"/api/reports/history/{st['hist_id']}/download" if st["hist_id"] else "",
+            "progress": (job.progress_pct if job else 0) or 0}
+
+
+# --- 1.37: a conversation saved as an investigation case (owner 2026-11-27) ----------
+
+CASE_NOTE_MAX = 60000        # characters of the conversation note
+CASE_BLOCK_MAX = 4000        # a code block longer than this (a whole dashboard page) is left out
+
+
+def conversation_markdown(conv: dict, lang: str) -> str:
+    """Questions, answers and the queries behind them, for a case's timeline. A big code block
+    (an HTML dashboard) is replaced by one line saying so: the note is for reading."""
+    from glogarch.ai.chat import visible_answer
+    words = {"en": ("Question", "Answer", "Queries", "left out: {n} characters of {k}"),
+             "zh-TW": ("問題", "回答", "查詢", "已省略：{k} 共 {n} 字"),
+             "ja": ("質問", "回答", "クエリ", "省略：{k}（{n} 文字）")}.get(lang) or \
+        ("Question", "Answer", "Queries", "left out: {n} characters of {k}")
+
+    def shorten(text: str) -> str:
+        def sub(m):
+            body = m.group(2)
+            if len(body) <= CASE_BLOCK_MAX:
+                return m.group(0)
+            return f"_({words[3].replace('{n}', f'{len(body):,}').replace('{k}', m.group(1) or 'code')})_"
+        return re.sub(r"```([\w-]*)\n(.*?)\n```", sub, text, flags=re.S)
+
+    # the case timeline shows notes as plain text: labels in 【】, no markdown marks
+    plain = lambda t_: re.sub(r"\*\*(.+?)\*\*", r"\1", t_)
+    out = []
+    for m in conv.get("messages") or []:
+        if m.get("role") == "user":
+            out.append(f"【{words[0]}】\n{str(m.get('content') or '').strip()}")
+        elif m.get("role") == "assistant":
+            out.append(f"【{words[1]}】\n{plain(shorten(visible_answer(str(m.get('content') or '')).strip()))}")
+            qs = [c for c in (m.get("calls") or []) if c.get("ok") and c.get("query") is not None]
+            if qs:
+                from glogarch.ai.summary_report import localize_times
+                lines = [f"- {c.get('name')}: {str(c.get('query') or '*')[:300]}"
+                         + (" (" + localize_times(f"{(c.get('range') or {}).get('from', '')}–{(c.get('range') or {}).get('to', '')}") + ")"
+                            if c.get("range") else "") for c in qs[:20]]
+                out.append(f"【{words[2]}】\n" + "\n".join(lines))
+    text = "\n\n".join(out)
+    return text if len(text) <= CASE_NOTE_MAX else text[:CASE_NOTE_MAX] + "\n\n…"
+
+
+@router.post("/ai/conversations/{cid}/to-case")
+async def ai_conversation_to_case(request: Request, cid: int):
+    """Owner 2026-11-27: "智慧問答 ... 多一個按鈕 轉存為 調查案件". A new case whose timeline holds
+    the conversation (questions, answers, queries); audited like a case made on its page."""
+    from glogarch.security.detectors import SEVERITIES
+    db = _db(request)
+    user = _user(request)
+    conv = db.ai_get_conversation(int(cid), user)
+    if not conv:
+        return JSONResponse({"error": "Conversation not found"}, status_code=404)
+    if not conv["messages"]:
+        return JSONResponse({"error": "This conversation has no answer yet"}, status_code=400)
+    body = await request.json() or {}
+    title = re.sub(r"[\x00-\x1f\x7f]", " ", str(body.get("title") or conv.get("title") or "")).strip()[:200]
+    if not title:
+        return JSONResponse({"error": "A case needs a title"}, status_code=400)
+    sev = body.get("severity") or "medium"
+    if sev not in SEVERITIES:
+        return JSONResponse({"error": "Unknown severity"}, status_code=400)
+    lang = body.get("lang") if body.get("lang") in _LANGS else "en"
+    intro = {"en": "Saved from AI chat conversation #{c} (Graylog server {s}).",
+             "zh-TW": "由智慧問答對話 #{c} 轉存（Graylog 伺服器 {s}）。",
+             "ja": "AI チャットの会話 #{c} から保存しました（Graylog サーバー {s}）。"}[lang]
+    case_id = db.create_security_case(title, sev, intro.replace("{c}", str(cid)).replace("{s}", conv.get("server") or "-"),
+                                      user, [])
+    db.add_security_case_note(case_id, conversation_markdown(conv, lang), user)
+    _audit(request, "ai_conversation_to_case", f"conversation={cid} case={case_id} title={title[:120]}")
+    return {"id": case_id, "url": f"/security?case={case_id}"}

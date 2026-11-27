@@ -150,6 +150,7 @@ CREATE TABLE IF NOT EXISTS report_history (
     error        TEXT,
     triggered_by TEXT NOT NULL DEFAULT 'manual',
     sha256       TEXT NOT NULL DEFAULT '',
+    title        TEXT NOT NULL DEFAULT '',
     created_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_report_hist ON report_history (report_id, created_at);
@@ -644,6 +645,8 @@ class ArchiveDB:
                 conn.execute("ALTER TABLE report_history ADD COLUMN triggered_by TEXT NOT NULL DEFAULT 'manual'")
             if existing_rh and "sha256" not in existing_rh:
                 conn.execute("ALTER TABLE report_history ADD COLUMN sha256 TEXT NOT NULL DEFAULT ''")
+            if existing_rh and "title" not in existing_rh:
+                conn.execute("ALTER TABLE report_history ADD COLUMN title TEXT NOT NULL DEFAULT ''")   # 1.37: AI summary titles
         except Exception as e:
             log.warning("Schema migration failed (report_history.triggered_by) — history inserts may break", error=str(e))
 
@@ -1600,15 +1603,16 @@ class ArchiveDB:
     def record_report_history(self, report_name: str, file_path: str, filename: str,
                               size_bytes: int, status: str = "completed",
                               error: str | None = None, triggered_by: str = "manual",
-                              sha256: str = "") -> int:
+                              sha256: str = "", title: str = "") -> int:
         with self._lock:
             try:
                 cur = self.conn.execute(
                     """INSERT INTO report_history
-                       (report_name, file_path, filename, size_bytes, status, error, triggered_by, sha256, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       (report_name, file_path, filename, size_bytes, status, error, triggered_by, sha256, title,
+                        created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (report_name, file_path, filename, size_bytes, status, error, triggered_by, sha256,
-                     _dt_to_str(datetime.utcnow())),
+                     (title or "")[:200], _dt_to_str(datetime.utcnow())),
                 )
                 self.conn.commit()
                 return cur.lastrowid  # type: ignore[return-value]
@@ -1767,7 +1771,10 @@ class ArchiveDB:
 
     def list_security_incidents(self, *, server: str | None = None, status: str | None = None,
                                 severity: str | None = None, detector: str | None = None,
-                                limit: int = 100, offset: int = 0) -> tuple[list[dict], int]:
+                                limit: int = 100, offset: int = 0, q: str = "",
+                                since: str | None = None) -> tuple[list[dict], int]:
+        """`q`: text in the entity, the detection or a Sigma rule's title (case-insensitive for
+        ASCII, % and _ literal); `since`: last seen at or after this stored timestamp."""
         import json as _json
         where, args = [], []
         for col, val in (("server", server), ("status", status), ("severity", severity),
@@ -1775,6 +1782,14 @@ class ArchiveDB:
             if val:
                 where.append(f"{col} = ?")
                 args.append(val)
+        q = (q or "").strip()[:200]
+        if q:
+            like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            where.append("(entity LIKE ? ESCAPE '\\' OR detector LIKE ? ESCAPE '\\' OR metrics LIKE ? ESCAPE '\\')")
+            args += [like, like, like]
+        if since:
+            where.append("last_seen >= ?")
+            args.append(since)
         w = (" WHERE " + " AND ".join(where)) if where else ""
         total = self.conn.execute(f"SELECT COUNT(*) FROM sec_incidents{w}", args).fetchone()[0]  # nosec B608 - fixed column names, bound values
         rows = self.conn.execute(
@@ -1786,6 +1801,21 @@ class ArchiveDB:
             d["metrics"] = _json.loads(d.get("metrics") or "{}")
             out.append(d)
         return out, total
+
+    def security_incident_detectors(self) -> list[dict]:
+        """Every detection that has incidents, with a Sigma rule's title, for the filter."""
+        import json as _json
+        out = []
+        for det, n, m in self.conn.execute(
+                "SELECT detector, COUNT(*), MAX(metrics) FROM sec_incidents GROUP BY detector ORDER BY COUNT(*) DESC"):
+            title = ""
+            if str(det).startswith("sigma:"):
+                try:
+                    title = (_json.loads(m or "{}") or {}).get("sigma_title") or ""
+                except ValueError:
+                    title = ""
+            out.append({"detector": det, "count": n, "title": title})
+        return out
 
     def get_security_incident(self, incident_id: int) -> dict | None:
         import json as _json
@@ -2527,11 +2557,19 @@ class ArchiveDB:
 
     def ai_get_message(self, message_id: int, username: str) -> dict | None:
         """One message, only when its conversation is the user's."""
+        import json as _json
         r = self.conn.execute(
-            "SELECT m.id, m.role, m.content, m.conversation_id FROM ai_messages m "
+            "SELECT m.id, m.role, m.content, m.conversation_id, m.calls, c.server FROM ai_messages m "
             "JOIN ai_conversations c ON c.id = m.conversation_id WHERE m.id = ? AND c.username = ?",
             (message_id, username)).fetchone()
-        return dict(r) if r else None
+        if not r:
+            return None
+        d = dict(r)
+        try:
+            d["calls"] = _json.loads(d.get("calls") or "[]")
+        except ValueError:
+            d["calls"] = []
+        return d
 
     def ai_list_conversations(self, username: str, limit: int = 50, q: str = "") -> list[dict]:
         """Newest first. `q` matches the title or any message, case-insensitive

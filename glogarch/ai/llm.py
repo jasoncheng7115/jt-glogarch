@@ -235,7 +235,7 @@ def _estimate_tokens(messages: list[dict], out: str) -> int:
 
 async def chat_stream(cfg, messages: list[dict], tools: list[dict] | None = None,
                       max_tokens: int = 2048, on_text=None, on_reasoning=None, on_silent=None,
-                      no_tools: bool = False) -> Reply:
+                      no_tools: bool = False, response_format: dict | None = None) -> Reply:
     """chat() with the reply streamed: on_text(text) is awaited with the text so far
     (live_text) as it grows, on_reasoning(text) with the model's reasoning so far
     (reasoning_content / reasoning, or an unfinished <think> block) - owner
@@ -252,15 +252,18 @@ async def chat_stream(cfg, messages: list[dict], tools: list[dict] | None = None
     if is_claude(cfg):
         from glogarch.ai import claude_api
         return await claude_api.chat(cfg, messages, tools, max_tokens, no_tools=no_tools,
-                                     on_text=on_text, on_reasoning=on_reasoning, on_silent=on_silent)
+                                     on_text=on_text, on_reasoning=on_reasoning, on_silent=on_silent,
+                                     response_format=response_format)
     if no_tools:
         tools = None
     if on_text is None or cfg.url in _NO_STREAM:
-        return await chat(cfg, messages, tools, max_tokens=max_tokens)
+        return await chat(cfg, messages, tools, max_tokens=max_tokens, response_format=response_format)
     body = {"model": cfg.model, "messages": plain_messages(messages), "temperature": float(cfg.temperature),
             "max_tokens": int(max_tokens), "stream": True, "stream_options": {"include_usage": True}}
     if tools:
         body["tools"] = tools
+    if response_format:
+        body["response_format"] = response_format     # the summary report's JSON (1.37)
     url = cfg.url.rstrip("/") + "/chat/completions"
     hdrs = {**_headers(cfg), "Accept": "text/event-stream"}
     quiet = {"got": False, "fired": False}
@@ -302,7 +305,8 @@ async def _stream_attempts(cfg, messages, url, hdrs, body, tools, max_tokens,
                         # the same request plain: if that is accepted, streaming was the problem and
                         # this server gets plain requests from now on; if not (e.g. the context is too
                         # long), its own error is raised and streaming stays on
-                        rep_plain = await chat(cfg, messages, tools, max_tokens=max_tokens)
+                        rep_plain = await chat(cfg, messages, tools, max_tokens=max_tokens,
+                                               response_format=body.get("response_format"))
                         log.info("LLM server refused a streamed request; using plain requests",
                                  error=_scrub(text[:200], cfg))
                         _NO_STREAM.add(cfg.url)

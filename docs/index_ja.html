@@ -21,14 +21,13 @@
 
 <nav class="nav" id="nav">
   <a href="#top" class="brand">
-    <span class="logo-dot"></span>
+    <img class="brand-logo" src="favicon.svg" alt="" width="28" height="28">
     <span>jt-glogarch</span>
   </a>
   <button class="nav-toggle" aria-label="メニュー" aria-expanded="false" aria-controls="nav-links">
     <span></span><span></span><span></span>
   </button>
   <div class="links" id="nav-links">
-    <a href="#install">インストール</a>
     <a href="#flow">仕組み</a>
     <a href="#use-cases">活用例</a>
     <a href="#features">機能</a>
@@ -38,9 +37,16 @@
     <a href="#record-search">検索</a>
     <a href="#ai-chat">AI チャット</a>
     <a href="#content-packs">コンテンツパック</a>
+    <a href="#install">インストール</a>
     <a href="https://github.com/jasoncheng7115/jt-glogarch" target="_blank" rel="noopener">GitHub</a>
-    <a href="index.html" class="lang">English</a>
-    <a href="index_zh-TW.html" class="lang">繁體中文</a>
+    <details class="lang-menu">
+      <summary class="lang" aria-label="言語"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>日本語<span class="caret" aria-hidden="true"></span></summary>
+      <div class="lang-list">
+        <a href="index.html" lang="en">English</a>
+        <a href="index_zh-TW.html" lang="zh-Hant">繁體中文</a>
+        <a href="index_ja.html" lang="ja" aria-current="page">日本語</a>
+      </div>
+    </details>
   </div>
 </nav>
 
@@ -70,75 +76,6 @@
     <img src="screenshots/1_dashboard_ja.png" alt="jt-glogarch のダッシュボード画面" width="1512" height="1037" fetchpriority="high">
   </button>
 </header>
-
-<section id="install">
-  <div class="install">
-    <div class="tabs" role="tablist">
-      <button class="tab active" data-target="tab-quick" type="button">クイックインストール</button>
-      <button class="tab" data-target="tab-manual" type="button">手動</button>
-      <button class="tab" data-target="tab-offline" type="button">オフライン（閉域）</button>
-    </div>
-    <p class="prereq-note">
-      <strong>前提条件：</strong>
-      <code class="kbd">python3 ≥ 3.10</code>、<code class="kbd">pip</code>、<code class="kbd">git</code> が使える Linux ホスト。
-      インストーラーはシステムユーザーを作成し、systemd を設定し、自己署名証明書を生成して、
-      HTTPS ポート <code class="kbd">8990</code> で Web UI を起動します。
-    </p>
-    <div class="code-block">
-      <button class="copy-btn" data-copy="quick">コピー</button>
-      <pre id="tab-quick"><code id="cmd-quick">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
-sudo bash /opt/jt-glogarch/deploy/install.sh</code></pre>
-    </div>
-    <div class="code-block" hidden id="tab-manual-wrap">
-      <button class="copy-btn" data-copy="manual">コピー</button>
-      <pre id="tab-manual"><code id="cmd-manual">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
-cd /opt/jt-glogarch
-sudo pip install --no-build-isolation .
-sudo cp deploy/jt-glogarch.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now jt-glogarch</code></pre>
-    </div>
-    <div class="code-block" hidden id="tab-offline-wrap">
-      <button class="copy-btn" data-copy="offline">コピー</button>
-      <pre id="tab-offline"><code id="cmd-offline"># 1) インターネットに接続できる Linux 上で（対象ホストと同じ Python マイナーバージョン・CPU アーキテクチャ）
-curl -L -o src.tar.gz \
-  https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz
-tar xzf src.tar.gz && cd jt-glogarch-main
-bash scripts/build-offline-bundle.sh        # -> dist/jt-glogarch-<ver>-offline.tar.gz
-sha256sum dist/jt-glogarch-*-offline.tar.gz # 値を控え、搬入後に照合
-
-# 2) バンドルを搬入（USB / scp）し、sha256 を照合してから対象ホストで：
-tar xzf jt-glogarch-*-offline.tar.gz && cd jt-glogarch-*-offline
-sudo bash upgrade-offline.sh                # pip はネットワークに接続しません。先に DB をバックアップ
-# バンドル（約 370 MB）には PDF レポート用の Chromium が含まれますが、OS ライブラリ
-# （libnss3、libatk1.0-0、libgbm1 など）は含まれません。自社のメディアからインストールしてください。</code></pre>
-    </div>
-    <dl class="post-note">
-      <dt>Web UI</dt>
-      <dd><code class="kbd">https://&lt;server-ip&gt;:8990</code> <span class="muted">（Graylog のアカウントでログイン）</span></dd>
-      <dt>設定ファイル</dt>
-      <dd><code class="kbd">/opt/jt-glogarch/config.yaml</code></dd>
-      <dt>ログ</dt>
-      <dd><code class="kbd">journalctl -u jt-glogarch -f</code></dd>
-      <dt>アップグレード</dt>
-      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/upgrade.sh</code> <span class="muted">（安全です。先に DB のスナップショットを取得します）</span></dd>
-      <dt>アップグレードが止まる場合</dt>
-      <dd><span><em>Not possible to fast-forward</em> で止まる場合、公開履歴が 2026-09-13 に書き換えられたため、それ以前にクローンしたインストールの履歴が分岐しています。何も変更されず、サービスは動き続けます。一度だけクローンを公開履歴に合わせてから、アップグレードしてください：</span>
-        <code class="kbd">cd /opt/jt-glogarch &amp;&amp; sudo git fetch origin &amp;&amp; sudo git reset --hard origin/main</code>
-        <span class="muted">（config.yaml、データベース、certs/、reports/ は git-ignore 対象のため影響を受けません。v1.14.11 以降は自動で復旧します。）</span></dd>
-      <dt>オフラインでのアップグレード</dt>
-      <dd><span class="muted">インターネットに接続できないホストは、上の「オフライン（閉域）」タブを参照してください（接続できる環境でビルド &rarr; 搬入 &rarr; インストール）</span></dd>
-      <dt>アンインストール</dt>
-      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/uninstall.sh</code> <span class="muted">（データを削除する前に確認があります）</span></dd>
-    </dl>
-    <p class="install-followup">
-      <strong>次に Graylog へ接続します。</strong>
-      <code class="kbd">config.yaml</code> に Graylog API の URL とトークンを設定します
-      （Graylog → System → Users → Edit tokens）。任意で OpenSearch のホストを追加すると、
-      約 5 倍高速な直接モードが使えます。詳しい設定 → <a href="https://github.com/jasoncheng7115/jt-glogarch/blob/main/README-ja.md" target="_blank" rel="noopener">日本語 README</a>
-    </p>
-  </div>
-</section>
 
 <section id="flow">
   <h2>取り出す経路は 2 つ、戻す経路も 2 つ。</h2>
@@ -397,7 +334,94 @@ sudo bash upgrade-offline.sh                # pip はネットワークに接続
       <div class="label">ダッシュボードのプレビュー<small>インストール前にレイアウト、グラフの種類、フィールドを確認（図形と数値は例示で、クエリは実行しません）</small></div>
     </button>
   </div>
-  <p class="subhead"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg> jt-glogarch には Jason Tools のパックが 7 つ付属します：Apache HTTP Server、Linux の SSH と sudo ログイン、QNAP NAS、SQL Server、Synology NAS、Windows Active Directory、Windows ログオンイベント。その他のパックは Jason Tools が別途提供し、このリポジトリには含まれません。</p>
+  <div class="pack-list">
+    <div class="pack-list-head"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg><strong>jt-glogarch に付属する Jason Tools のパック（13 個）</strong></div>
+    <ul class="pack-chips">
+      <li>Apache HTTP Server</li>
+      <li>FortiADC</li>
+      <li>FortiWAN</li>
+      <li>Linux の SSH と sudo ログイン</li>
+      <li>Microsoft DNS Server</li>
+      <li>NetFlow</li>
+      <li>PCAP パケット分析</li>
+      <li>Proxmox VE</li>
+      <li>QNAP NAS</li>
+      <li>SQL Server</li>
+      <li>Synology NAS</li>
+      <li>Windows Active Directory</li>
+      <li>Windows ログオンイベント</li>
+    </ul>
+    <p class="pack-list-note">その他のパックは Jason Tools が別途提供し、このリポジトリには含まれません。</p>
+  </div>
+</section>
+
+<section id="install">
+  <div class="install">
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-target="tab-quick" type="button">クイックインストール</button>
+      <button class="tab" data-target="tab-manual" type="button">手動</button>
+      <button class="tab" data-target="tab-offline" type="button">オフライン（閉域）</button>
+    </div>
+    <p class="prereq-note">
+      <strong>前提条件：</strong>
+      <code class="kbd">python3 ≥ 3.10</code>、<code class="kbd">pip</code>、<code class="kbd">git</code> が使える Linux ホスト。
+      インストーラーはシステムユーザーを作成し、systemd を設定し、自己署名証明書を生成して、
+      HTTPS ポート <code class="kbd">8990</code> で Web UI を起動します。
+    </p>
+    <div class="code-block">
+      <button class="copy-btn" data-copy="quick">コピー</button>
+      <pre id="tab-quick"><code id="cmd-quick">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
+sudo bash /opt/jt-glogarch/deploy/install.sh</code></pre>
+    </div>
+    <div class="code-block" hidden id="tab-manual-wrap">
+      <button class="copy-btn" data-copy="manual">コピー</button>
+      <pre id="tab-manual"><code id="cmd-manual">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
+cd /opt/jt-glogarch
+sudo pip install --no-build-isolation .
+sudo cp deploy/jt-glogarch.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now jt-glogarch</code></pre>
+    </div>
+    <div class="code-block" hidden id="tab-offline-wrap">
+      <button class="copy-btn" data-copy="offline">コピー</button>
+      <pre id="tab-offline"><code id="cmd-offline"># 1) インターネットに接続できる Linux 上で（対象ホストと同じ Python マイナーバージョン・CPU アーキテクチャ）
+curl -L -o src.tar.gz \
+  https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz
+tar xzf src.tar.gz && cd jt-glogarch-main
+bash scripts/build-offline-bundle.sh        # -> dist/jt-glogarch-<ver>-offline.tar.gz
+sha256sum dist/jt-glogarch-*-offline.tar.gz # 値を控え、搬入後に照合
+
+# 2) バンドルを搬入（USB / scp）し、sha256 を照合してから対象ホストで：
+tar xzf jt-glogarch-*-offline.tar.gz && cd jt-glogarch-*-offline
+sudo bash upgrade-offline.sh                # pip はネットワークに接続しません。先に DB をバックアップ
+# バンドル（約 370 MB）には PDF レポート用の Chromium が含まれますが、OS ライブラリ
+# （libnss3、libatk1.0-0、libgbm1 など）は含まれません。自社のメディアからインストールしてください。</code></pre>
+    </div>
+    <dl class="post-note">
+      <dt>Web UI</dt>
+      <dd><code class="kbd">https://&lt;server-ip&gt;:8990</code> <span class="muted">（Graylog のアカウントでログイン）</span></dd>
+      <dt>設定ファイル</dt>
+      <dd><code class="kbd">/opt/jt-glogarch/config.yaml</code></dd>
+      <dt>ログ</dt>
+      <dd><code class="kbd">journalctl -u jt-glogarch -f</code></dd>
+      <dt>アップグレード</dt>
+      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/upgrade.sh</code> <span class="muted">（安全です。先に DB のスナップショットを取得します）</span></dd>
+      <dt>アップグレードが止まる場合</dt>
+      <dd><span><em>Not possible to fast-forward</em> で止まる場合、公開履歴が 2026-09-13 に書き換えられたため、それ以前にクローンしたインストールの履歴が分岐しています。何も変更されず、サービスは動き続けます。一度だけクローンを公開履歴に合わせてから、アップグレードしてください：</span>
+        <code class="kbd">cd /opt/jt-glogarch &amp;&amp; sudo git fetch origin &amp;&amp; sudo git reset --hard origin/main</code>
+        <span class="muted">（config.yaml、データベース、certs/、reports/ は git-ignore 対象のため影響を受けません。v1.14.11 以降は自動で復旧します。）</span></dd>
+      <dt>オフラインでのアップグレード</dt>
+      <dd><span class="muted">インターネットに接続できないホストは、上の「オフライン（閉域）」タブを参照してください（接続できる環境でビルド &rarr; 搬入 &rarr; インストール）</span></dd>
+      <dt>アンインストール</dt>
+      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/uninstall.sh</code> <span class="muted">（データを削除する前に確認があります）</span></dd>
+    </dl>
+    <p class="install-followup">
+      <strong>次に Graylog へ接続します。</strong>
+      <code class="kbd">config.yaml</code> に Graylog API の URL とトークンを設定します
+      （Graylog → System → Users → Edit tokens）。任意で OpenSearch のホストを追加すると、
+      約 5 倍高速な直接モードが使えます。詳しい設定 → <a href="https://github.com/jasoncheng7115/jt-glogarch/blob/main/README-ja.md" target="_blank" rel="noopener">日本語 README</a>
+    </p>
+  </div>
 </section>
 
 <footer>
@@ -540,5 +564,14 @@ sudo bash upgrade-offline.sh                # pip はネットワークに接続
   })();
 </script>
 
+<script>
+(function () {
+  var m = document.querySelector('.lang-menu');
+  if (!m) return;
+  function closeLangMenu(e) { if (m.open && (!e || !m.contains(e.target))) m.open = false; }
+  document.addEventListener('click', closeLangMenu);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeLangMenu(); });
+})();
+</script>
 </body>
 </html>

@@ -1809,6 +1809,9 @@ button:disabled:hover, .btn-primary:disabled:hover, .btn-danger:disabled:hover {
     font-size: 0.85em;
     white-space: nowrap;
 }
+/* The sidebar is dark in BOTH themes: the light theme's muted ink (#5e6277) vanished on it
+   (owner 2026-11-27, "字太深了 看不清"). Use the sidebar job line's own amber, a little softer. */
+.sidebar-job-status .job-eta { color: inherit; opacity: 0.8; }
 
 /* Initial hidden state for elements JS reveals later.
    A literal style="display:none" in the template is blocked by our OWN
@@ -2360,7 +2363,7 @@ td.al-loading { text-align: center; padding: 34px 12px; color: var(--text-muted)
 .ai-status { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .ai-sep { width: 1px; height: 22px; background: var(--border); }
 .ai-gl-label { color: var(--text-muted); }
-.ai-gl .custom-select-trigger { min-height: 28px; padding: 3px 10px; border-radius: 14px; }
+.ai-gl .custom-select-trigger { min-height: 28px; padding: 3px 10px; border-radius: 6px; }   /* square-ish like the other fields (owner) */
 .ai-status-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .ai-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: 14px; font-size: 0.82em; color: var(--text); background: var(--input-bg); white-space: nowrap; max-width: 100%; }
 .ai-chip svg { flex-shrink: 0; color: var(--text-muted); }
@@ -2716,7 +2719,9 @@ button.ov-tile-link:hover { border-color: var(--accent); background: var(--card-
 .ai-layout > .card, .card.ai-bar-card { border-color: var(--ai-line); }
 .ai-layout .ai-head, .ai-layout .ai-usage { border-color: var(--ai-line); }
 .ai-layout .ai-conv:hover { background: var(--ai-well); }
-.ai-layout .ai-conv.ai-conv-current { background: var(--ai-head); }   /* no accent bar: owner 2026-11-23 */
+/* no accent bar (owner 2026-11-23); a tint of the accent, so it never matches the grey group bands (owner 2026-11-27) */
+.ai-layout .ai-conv.ai-conv-current { background: var(--tint-accent); }
+.ai-layout .ai-conv.ai-conv-current .ai-conv-title { color: var(--accent-text); }
 .ai-layout .ai-conv-search, .ai-layout .ai-compose-box { border-color: var(--ai-line); }
 .ai-layout .ai-user { background: var(--ai-well); border-color: var(--ai-line); }
 .ai-layout .ai-bot .ai-table { border: 1px solid var(--ai-line); border-collapse: separate; border-spacing: 0; overflow: hidden; }
@@ -2964,18 +2969,47 @@ button.ov-tile-link:hover { border-color: var(--accent); background: var(--card-
 .sec-inc-table col.c-ent { width: 196px; }
 .sec-inc-table col.c-dt { width: 96px; }
 .sec-inc-table col.c-st { width: 76px; }
-.sec-inc-table col.c-act { width: 164px; }
+.sec-inc-table col.c-act { width: 176px; }
 .sec-inc-table td { vertical-align: top; }
 .sec-inc-table td.sec-sev-cell { text-align: center; }
 .sec-inc-table td.sec-det, .sec-inc-table td.sec-entity { overflow-wrap: anywhere; }
 .sec-dt { display: flex; flex-direction: column; line-height: 1.45; font-variant-numeric: tabular-nums; }
 .sec-dt > span + span { color: var(--text-muted); font-size: 0.92em; }
-.sec-acts { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
-.sec-ics, .sec-tbs { display: inline-flex; gap: 4px; }
+/* actions: one block of a fixed width - four icon buttons in equal cells over the two word buttons in
+   equal halves, both rows exactly as wide (owner 2026-11-27: "右邊每一列按鈕區排列的不好看") */
+.sec-acts { display: grid; grid-template-rows: auto auto; gap: 6px; width: 100%; }
+.sec-ics { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; }   /* 3 or 4 buttons, equal */
+.sec-tbs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.sec-tbs.sec-tbs-1 { grid-template-columns: 1fr; }
 .sec-actions .sec-ic, .sec-actions .sec-tb { margin-left: 0; }
-.sec-ic { position: relative; width: 30px; min-width: 30px; height: 30px; padding: 0 !important; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
-.sec-ic-gap { display: inline-block; width: 30px; }
-.sec-tb { min-width: 72px; justify-content: center; }
+.sec-ic { position: relative; width: 100%; min-width: 0; height: 30px; padding: 0 !important; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+.sec-ic-gap { display: block; }
+.sec-tb { width: 100%; min-width: 0; height: 30px; padding: 0 6px !important; display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }
+/* colour: a severity edge per row, status as a tinted pill, the detection in bold (owner: "顏色幾乎單調") */
+.sec-inc-table thead th { background: var(--hover-solid, var(--input-bg)); }
+.sec-inc-table tr.sec-row-high > td:first-child { box-shadow: inset 4px 0 0 var(--danger); }
+.sec-inc-table tr.sec-row-medium > td:first-child { box-shadow: inset 4px 0 0 var(--warning); }
+.sec-inc-table tr.sec-row-low > td:first-child { box-shadow: inset 4px 0 0 var(--border); }
+.sec-inc-table tr.sec-row:hover > td { background: var(--hover-bg); }
+.sec-det-name { display: block; font-weight: 600; color: var(--text); }
+.sec-inc-table td.sec-entity code { color: var(--accent-text); font-weight: 600; }
+.sec-st { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.85em; font-weight: 600; white-space: nowrap; }
+.sec-st-open { background: var(--tint-warning); color: var(--warning); }
+.sec-st-acknowledged { background: var(--tint-accent); color: var(--accent-text); }
+.sec-st-closed { background: var(--hover-bg); color: var(--text-muted); }
+/* filters on one line with the export menu at the end, every control one height */
+.sec-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sec-f-q { flex: 1 1 220px; min-width: 180px; max-width: 340px; height: var(--h-control, 36px); box-sizing: border-box; }
+.sec-total { white-space: nowrap; }
+.sec-export { position: relative; margin-left: auto; }
+.sec-export-btn { height: var(--h-control, 36px); display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; }
+.sec-export-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 40; min-width: 170px; padding: 4px;
+    display: flex; flex-direction: column; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16); }
+.sec-export-menu.hidden { display: none; }
+.sec-export-menu button { text-align: left; background: none; border: 0; padding: 8px 12px; border-radius: 6px; color: var(--text);
+    font: inherit; font-size: 0.9em; cursor: pointer; }
+.sec-export-menu button:hover, .sec-export-menu button:focus-visible { background: var(--hover-bg); }
 .sec-ic-dot { position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border-radius: 50%; background: currentColor; border: 1.5px solid var(--card-bg); }
 .sec-ic-dot.sec-verdict-malicious { background: var(--danger); }
 .sec-ic-dot.sec-verdict-suspicious { background: var(--warning); }
@@ -3027,3 +3061,81 @@ button.ov-tile-link:hover { border-color: var(--accent); background: var(--card-
 .sec-panel-head h3 { margin: 0; flex: 1 1 auto; }
 .al-bar-right .btn-secondary.is-on { background: var(--tint-accent); border-color: var(--accent); color: var(--accent-text); }
 .al-bar-right .btn-secondary.is-on svg { color: var(--accent-text); }
+
+/* AI chat 1.37: Graylog dashboard / summary PDF dialogs, timeline from a table */
+.aix-card { width: min(780px, calc(100vw - 32px)); }
+.aix-help { display: flex; gap: 8px; align-items: flex-start; padding: 8px 12px; margin-bottom: 12px; border-radius: 8px;
+    background: var(--tint-accent); color: var(--text); font-size: 0.86em; line-height: 1.5; }
+.aix-help svg { flex: none; margin-top: 2px; color: var(--accent-text); }
+.aix-form { margin-bottom: 4px; }
+.aix-custom { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 6px 10px; align-items: center; }
+.aix-custom label { margin: 0; }
+.aix-h { margin: 14px 0 6px; font-size: 0.92em; }
+.aix-charts { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow-y: auto; padding-right: 2px; }
+.aix-chart { display: grid; grid-template-columns: auto minmax(0, 1fr) 150px; gap: 10px; align-items: center;
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.aix-pick { margin: 0; }
+.aix-chart-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.aix-chart-meta { display: flex; gap: 8px; align-items: center; min-width: 0; font-size: 0.8em; }
+.aix-kind { flex: none; padding: 1px 8px; border-radius: 999px; background: var(--hover-bg); color: var(--text-muted); }
+.aix-q { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aix-done { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-right: auto; }
+/* the dialog's button row: a status line next to a button sits on the button's middle, not its top edge */
+#aix-btns { align-items: center; }
+.aix-running { display: inline-flex; align-items: center; gap: 8px; line-height: 1.2; }
+.aix-bg { flex: 1 1 260px; min-width: 0; line-height: 1.4; }
+.aix-running::before { flex: none; margin-right: 0; }
+.aix-running-box { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.ai-block-tl { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; }
+.ai-block-tl[aria-pressed="true"] { color: var(--accent-text); border-color: var(--accent); }
+/* an answer is shrink-wrapped to its widest child (align-self: flex-start), so 100% would be the table's width:
+   size the timeline from the chat column instead (.ai-main is a size container) */
+.aix-tl { display: block; box-sizing: border-box; width: min(820px, calc(100cqw - 48px)); margin: 6px 0 12px; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--card-bg); }
+.aix-tl-legend { display: flex; gap: 4px; align-items: center; margin-bottom: 4px; }
+.aix-tl-svg { display: block; width: 100%; height: auto; }
+.aix-tl-grid { stroke: var(--border); stroke-width: 1; }
+.aix-tl-tick { fill: var(--text-muted); font-size: 11px; }
+.aix-tl-label { fill: var(--text); font-size: 11px; }
+.aix-tl-bar { fill: var(--accent); }
+.aix-tl-dot { fill: var(--accent); stroke: var(--card-bg); stroke-width: 2; }
+.aix-tl-row:hover .aix-tl-bar, .aix-tl-row:hover .aix-tl-dot { fill: var(--accent-hover); }
+@media (max-width: 640px) {
+    .aix-chart { grid-template-columns: auto minmax(0, 1fr); }
+    .aix-chart > .custom-select, .aix-chart > select { grid-column: 2; }
+    .aix-custom { grid-template-columns: auto minmax(0, 1fr); }
+}
+
+/* A dialog whose sticky title carries its own close button (it stays with the title when the form scrolls) */
+.modal-card h3.modal-head-x { display: flex; align-items: center; gap: 8px; }
+.modal-card h3.modal-head-x > span:first-child { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px; }
+.modal-x { flex: none; background: none; border: 0; cursor: pointer; color: var(--text-muted); font-size: 1.35em;
+    line-height: 1; padding: 2px 6px; border-radius: 6px; }
+.modal-x:hover { color: var(--text); background: var(--hover-bg); }
+.aix-style-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.aix-style-row > .custom-select, .aix-style-row > select { min-width: 220px; flex: 0 1 320px; }
+.aix-style-info { display: inline-flex; align-items: center; gap: 10px; }
+.aix-logo { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 6px; }
+.aix-logo img { height: 22px; width: auto; display: block; }
+.aix-wm { display: inline-flex; align-items: center; gap: 4px; font-size: 0.8em; color: var(--text-muted); }
+/* AI settings: every card folds from its title */
+.ai-set-fold { display: flex; align-items: center; gap: 8px; width: 100%; padding: 0; margin: 0; background: none; border: 0;
+    cursor: pointer; text-align: left; color: var(--text); }
+.ai-set-fold .ai-sub { margin: 0; font-size: 1em; font-weight: 600; color: var(--text); }
+.ai-set-chev { display: inline-flex; color: var(--text-muted); transition: transform 0.15s; }
+.ai-set-folded .ai-set-chev { transform: rotate(-90deg); }
+.ai-set-body { margin-top: 12px; }
+.ai-set-folded .ai-set-body { display: none; }
+
+/* Chip / label text centred on its icon by the glyphs themselves (owner 2026-11-27, Mac: "label 的文字 沒有跟icon
+   垂直置中 沒改好"). A measured shift cannot fit every label: mixed Latin + CJK ink differs per text. text-box trims
+   the line box to cap height .. baseline, so the flex centring lines up the letters, not the font's padding.
+   Browsers without text-box (before Chrome 133 / Safari 18.2) keep the measured --glyph-shift. */
+@supports (text-box: trim-both cap alphabetic) {
+    .ai-chip .glyph-centre, .ai-gl-label.glyph-centre, .ai-switch-label.glyph-centre, .ai-chip-text {
+        /* measured (Noto Sans CJK, 12 px): the trimmed text still sat 0.5-1 px above the icons' ink */
+        transform: translateY(0.05em); text-box: trim-both cap alphabetic;
+    }
+}
+.pk-v-head.modal-head-x { display: flex; align-items: center; gap: 8px; }
+.pk-v-head.modal-head-x > .modal-x { margin-left: auto; }

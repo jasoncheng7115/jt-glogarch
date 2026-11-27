@@ -1646,6 +1646,53 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
 
 ---
 
+### AI chat: Graylog dashboard, summary PDF, timeline (v1.37.0)
+
+**Automated**
+
+- [ ] `tests/test_ai_137.py` (51): recorded calls keep `group_by` / `metrics` as lists, older str() records
+      still make charts and a cut one makes none; the chart kind follows the groupings (time first =
+      over time, one field and one metric = top values, else a table); only successful aggregate /
+      top_values / count calls with a range become charts, the same question twice is one; the re-run
+      uses the recorded query and absolute range through the chat tool's own code, and a Graylog
+      refusal is said, not raised; report widgets (lines per value capped with a note, bars, tables
+      capped with a note, numbers, ISO times shown local); Graylog JSON (metrics -> series incl.
+      percentile, widgets mapped to search types, titles, positions, "*" as the empty query, the
+      dashboard's range choices, nothing picked refused); summary JSON validated and unknown chart ids
+      dropped; numbers and addresses missing from the conversation, the re-run data and the query
+      parameters are listed; findings carry their charts in one section, recommendations and limits
+      together, the query appendix puts each query on its own line; the model's text escaped on the
+      page; text sections in the report template escaped; the timeline parses its time formats,
+      escapes labels, draws bars and points without style attributes; dialog titles follow the language.
+- [ ] **`scripts/e2e-ai-dashboard-test.py`** against a throwaway Graylog (`scripts/datanode-stack/up.sh`):
+      seeds GELF, re-runs every chart (count 100 / 300), creates the dashboard through the product code,
+      reads it back (five widgets each mapped to its search type, chart types and titles kept), executes
+      its search (no errors, every widget has rows, the number widget equals the re-run), removes only its
+      own dashboard, and a broken view is refused with Graylog's reason. Must print `RESULT: ALL PASS` on
+      7.2.2 and 6.3.15.
+
+**By hand (each release that touches it)**
+
+- [ ] On an answer with queries: the dashboard button opens the dialog (title, range, charts with
+      title and type); Create gives "Open in Graylog", and the dashboard opens there with every widget
+      drawn; a custom range with the end before the start is refused; signed out of Graylog -> the
+      sign-in box. An answer with no chartable query shows no button.
+- [ ] Summary report: the header button lists the conversation's charts; Make the PDF shows progress,
+      then Download; the PDF has the cover, contents, summary (with "check before use" when a value is
+      not in the data), findings with their charts, recommendations and limits, the query appendix;
+      it is in Reports → history. With an LLM that fails, the PDF still comes with charts and the
+      dialog says the text is missing. Cancel from Job History stops it.
+- [ ] A table with start / end times shows "Timeline"; it draws below the table at the chat's width
+      with round time steps. en / zh-TW / ja, both themes, ~1436 px and 390 px (no sideways scroll).
+
+- [ ] Summary PDF review items (owner 2026-11-27): Mermaid / HTML dashboard / SVG / timeline pictures in the PDF (`tests/test_ai_137.py::test_pictures_are_drawn_offline` runs a real headless Chromium and proves the page's fetch and image never reach a local listener); model chart titles; highlighted key facts (`marked` is the only markup); ISO/UTC -> short local times (`localize_times`); formal section names; "Look" from a report (logo, watermark); cover model row (AI settings); progress phases and the streamed request; empty time buckets filled. By hand: a real conversation with a sequence diagram and an HTML dashboard -> PDF in both a light report look and none.
+- [ ] AI settings cards fold and each Save works; the open conversation is tinted; the report editor's close button stays in its title bar when the form scrolls.
+
+- [ ] Save as an investigation case: the case opens from the link, its timeline holds the conversation in plain text (no `###` / `**`), a big HTML block is replaced by a line; audit row. Summary look card in AI settings: logo upload / clear, colour, watermark; the PDF cover shows them and the model + server lines; history lists the title. Every dialog (archives, schedules, audit, reports, security x4, AI, packs x5, alerting x3, settings) has its × in the title bar, still there after scrolling, and it closes the dialog (`scratchpad` check: `modalx.py`). Chip text centred on the icons (pixel check in headless Chromium with Noto Sans CJK).
+
+- [ ] `tests/test_security_export.py`: text / detection / time filters (a % is literal, a Sigma title is searched), the detection list, every export format (CSV prefixes formula-looking cells; XLSX and ODS are well-formed, hold no formula, ODS starts with its uncompressed mimetype; JSON and Markdown follow the filters), an unknown format refused, the old `.csv` link kept, the format audited. By hand: open the .xlsx in Excel and the .ods in LibreOffice; incidents list at ~1436 px in both themes (edges, pills, the action block within its column).
+- [ ] Library: 13 published packs (`tests/test_packs.py::PUBLISHED`, `test_contentpack_guard.py::PUBLISHED_PACKS`); each installs from the Content Packs page and its download carries the guide.
+
 ## Upgrade Compatibility Test (mandatory)
 
     REPO=/path/to/git-clone bash scripts/upgrade-compat-test.sh [version ...]

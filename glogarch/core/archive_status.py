@@ -42,6 +42,10 @@ def job_eta_seconds(d: dict) -> float | None:
     """
     if d.get("status") != "running" or d.get("completed_at"):
         return None
+    if d.get("source") == "manual:ai-summary":
+        # its last steps are the model writing and the PDF: their length has nothing to do
+        # with how fast the charts went ("about 25 s left" sat there for minutes, 1.37)
+        return None
     done = int(d.get("messages_done") or 0)
     total = int(d.get("messages_total") or 0)
     started = d.get("started_at")

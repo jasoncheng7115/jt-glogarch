@@ -79,6 +79,13 @@ async function secInit() {
 
 // /security?incident=<id> (the link in a notification): open that incident
 async function secOpenFromLink() {
+    // /security?case=<id> (a case saved from the AI chat, 1.37): the cases tab with that case open
+    const cs = new URLSearchParams(window.location.search).get("case");
+    if (cs && /^\d+$/.test(cs) && typeof secTab === 'function' && typeof caseOpen === 'function') {
+        secTab('cases');
+        caseOpen(Number(cs));
+        return;
+    }
     const id = new URLSearchParams(window.location.search).get('incident');
     if (!id || !/^\d+$/.test(id)) return;
     const d = await fetchJSON(`${API}/security/incidents/${encodeURIComponent(id)}`);
@@ -122,9 +129,8 @@ async function secLoadOverview() {
 async function secLoad(page) {
     if (typeof page === 'number') _sec.offset = Math.max(0, page) * _sec.limit;
     else _sec.offset = 0;
-    const st = document.getElementById('sec-f-status').value;
-    const sv = document.getElementById('sec-f-severity').value;
-    const q = new URLSearchParams({status: st, severity: sv, limit: _sec.limit, offset: _sec.offset});
+    const q = new URLSearchParams({..._secFilters(), limit: _sec.limit, offset: _sec.offset});
+    secLoadDetectors();
     const d = await fetchJSON(`${API}/security/incidents?${q}`);
     const tb = document.getElementById('sec-tbody');
     if (!d || d.error) { tb.innerHTML = `<tr><td colspan="8">${esc(d && d.error || '')}</td></tr>`; return; }
@@ -168,15 +174,15 @@ function secRow(i) {
     if (i.status !== 'closed') words.push(tb([i.id, 'closed'], 'close', 'sec_btn_close'));
     else words.push(tb([i.id, 'open'], 'refresh', 'sec_btn_reopen'));
     const by = i.status_by ? `<div class="text-muted fs-08">${esc(i.status_by)}</div>` : '';
-    return `<tr>
+    return `<tr class="sec-row sec-row-${esc(i.severity)}">
         <td class="sec-sev-cell">${secSevBadge(i.severity)}</td>
-        <td class="sec-det">${esc(secDetTitle(i.detector, i.detector_title))}${secAttackChips(i.attack)}</td>
+        <td class="sec-det"><span class="sec-det-name">${esc(secDetTitle(i.detector, i.detector_title))}</span>${secAttackChips(i.attack)}</td>
         <td class="sec-entity"><code>${esc(i.entity)}</code>${ext}${isNew}${assetTag(i.asset)}${tiTags(i.threat_intel)}<div class="text-muted fs-08">${esc(i.entity_field)}</div>${(i.cases || []).map(c => `<button type="button" class="case-badge" data-act="caseOpen" data-args="${esc(JSON.stringify([c.id]))}" title="${esc(c.title)}">${icon('log', 12)} #${esc(String(c.id))} ${esc(t('case_st_' + c.status))}</button>`).join('')}</td>
         <td>${secStats(i.metrics)}<div class="text-muted fs-08">${esc(t('sec_peak').replace('{n}', formatNumber(i.peak_count)))} · ${esc(t('sec_runs').replace('{n}', formatNumber(i.runs)))}</div></td>
         <td>${secDT(i.first_seen)}</td>
         <td>${secDT(i.last_seen)}</td>
-        <td class="sec-status">${esc(t('sec_st_' + i.status))}${by}</td>
-        <td class="sec-actions"><div class="sec-acts"><span class="sec-ics">${acts.join('')}</span><span class="sec-tbs">${words.join('')}</span></div></td>
+        <td class="sec-status"><span class="sec-st sec-st-${esc(i.status)}">${esc(t('sec_st_' + i.status))}</span>${by}</td>
+        <td class="sec-actions"><div class="sec-acts"><span class="sec-ics">${acts.join('')}</span><span class="sec-tbs sec-tbs-${words.length}">${words.join('')}</span></div></td>
     </tr>`;
 }
 
@@ -190,12 +196,52 @@ function secRenderPager() {
         + `<button ${cur >= pages - 1 ? 'disabled' : ''} data-act="secLoad" data-args="[${cur + 1}]">&raquo;</button>`;
 }
 
-function secExportCsv() {
-    // a plain navigation: the session cookie goes along and the browser saves the attachment
-    const q = new URLSearchParams({status: document.getElementById('sec-f-status').value,
-                                   severity: document.getElementById('sec-f-severity').value});
-    window.location.href = `${API}/security/incidents.csv?${q}`;
+// the list's filters (status, severity, detection, time range, text): the same for the list and every export
+function _secFilters() {
+    const v = id => (document.getElementById(id) || {}).value || '';
+    return {status: v('sec-f-status'), severity: v('sec-f-severity'), detector: v('sec-f-detector'),
+            days: v('sec-f-days'), q: v('sec-f-q').trim()};
 }
+
+function secSearch() {
+    clearTimeout(_sec.searchTimer);
+    _sec.searchTimer = setTimeout(() => secLoad(), 300);
+}
+
+// detections that have incidents, for the filter (kept when the list reloads)
+async function secLoadDetectors() {
+    const sel = document.getElementById('sec-f-detector');
+    if (!sel || (_sec.detLoadedAt && Date.now() - _sec.detLoadedAt < 60000)) return;
+    _sec.detLoadedAt = Date.now();
+    const d = await fetchJSON(`${API}/security/incidents/detectors`);
+    if (!d || d.error) return;
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">${esc(t('sec_f_det_all'))}</option>` + (d.detectors || []).map(x =>
+        `<option value="${esc(x.detector)}"${x.detector === cur ? ' selected' : ''}>${esc(secDetTitle(x.detector, x.title))} (${formatNumber(x.count)})</option>`).join('');
+}
+
+function secExportMenu(e) {
+    const m = document.getElementById('sec-export-menu');
+    const btn = document.querySelector('.sec-export-btn');
+    if (!m) return;
+    const open = m.classList.toggle('hidden') === false;
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+        setTimeout(() => document.addEventListener('click', function off(ev) {
+            if (!ev.target.closest('.sec-export')) { m.classList.add('hidden'); if (btn) btn.setAttribute('aria-expanded', 'false'); }
+            document.removeEventListener('click', off);
+        }), 0);
+    }
+}
+
+function secExport(fmt) {
+    // a plain navigation: the session cookie goes along and the browser saves the attachment
+    document.getElementById('sec-export-menu').classList.add('hidden');
+    const q = new URLSearchParams({format: fmt, ..._secFilters()});
+    window.location.href = `${API}/security/incidents/export?${q}`;
+}
+
+function secExportCsv() { secExport('csv'); }
 
 async function secSetStatus(id, status) {
     const d = await fetchJSON(`${API}/security/incidents/${encodeURIComponent(id)}/status`, {

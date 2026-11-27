@@ -26,14 +26,13 @@
 
 <nav class="nav" id="nav">
   <a href="#top" class="brand">
-    <span class="logo-dot"></span>
+    <img class="brand-logo" src="favicon.svg" alt="" width="28" height="28">
     <span>jt-glogarch</span>
   </a>
   <button class="nav-toggle" aria-label="選單" aria-expanded="false" aria-controls="nav-links">
     <span></span><span></span><span></span>
   </button>
   <div class="links" id="nav-links">
-    <a href="#install">安裝</a>
     <a href="#flow">運作方式</a>
     <a href="#use-cases">使用情境</a>
     <a href="#features">功能</a>
@@ -43,9 +42,16 @@
     <a href="#record-search">記錄搜尋</a>
     <a href="#ai-chat">智慧問答</a>
     <a href="#content-packs">內容套件</a>
+    <a href="#install">安裝</a>
     <a href="https://github.com/jasoncheng7115/jt-glogarch" target="_blank" rel="noopener">GitHub</a>
-    <a href="index.html" class="lang">English</a>
-    <a href="index_ja.html" class="lang">日本語</a>
+    <details class="lang-menu">
+      <summary class="lang" aria-label="語言"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>繁體中文<span class="caret" aria-hidden="true"></span></summary>
+      <div class="lang-list">
+        <a href="index.html" lang="en">English</a>
+        <a href="index_zh-TW.html" lang="zh-Hant" aria-current="page">繁體中文</a>
+        <a href="index_ja.html" lang="ja">日本語</a>
+      </div>
+    </details>
   </div>
 </nav>
 
@@ -73,74 +79,6 @@
     <img src="screenshots/1_dashboard_zhtw.png" alt="jt-glogarch 儀表板畫面" width="1512" height="1037" fetchpriority="high">
   </button>
 </header>
-
-<section id="install">
-  <div class="install">
-    <div class="tabs" role="tablist">
-      <button class="tab active" data-target="tab-quick" type="button">快速安裝</button>
-      <button class="tab" data-target="tab-manual" type="button">手動</button>
-      <button class="tab" data-target="tab-offline" type="button">離線升級</button>
-    </div>
-    <p class="prereq-note">
-      <strong>前置條件。</strong>
-      Linux 主機需有 <code class="kbd">python3 ≥ 3.10</code>、<code class="kbd">pip</code>、<code class="kbd">git</code>。
-      安裝指令稿會自行建立系統使用者、設好 systemd、產生自簽 SSL 憑證，並啟動 HTTPS Web UI 於
-      <code class="kbd">8990</code> port。
-    </p>
-    <div class="code-block">
-      <button class="copy-btn" data-copy="quick">複製</button>
-      <pre id="tab-quick"><code id="cmd-quick">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
-sudo bash /opt/jt-glogarch/deploy/install.sh</code></pre>
-    </div>
-    <div class="code-block" hidden id="tab-manual-wrap">
-      <button class="copy-btn" data-copy="manual">複製</button>
-      <pre id="tab-manual"><code id="cmd-manual">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
-cd /opt/jt-glogarch
-sudo pip install --no-build-isolation .
-sudo cp deploy/jt-glogarch.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now jt-glogarch</code></pre>
-    </div>
-    <div class="code-block" hidden id="tab-offline-wrap">
-      <button class="copy-btn" data-copy="offline">複製</button>
-      <pre id="tab-offline"><code id="cmd-offline"># ① 在任一台可上網的 Linux（Python 次要版本與 CPU 架構需與目標主機相同）
-curl -L -o src.tar.gz \
-  https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz
-tar xzf src.tar.gz && cd jt-glogarch-main
-bash scripts/build-offline-bundle.sh        # → dist/jt-glogarch-<版本>-offline.tar.gz
-sha256sum dist/jt-glogarch-*-offline.tar.gz # 記下校驗值
-
-# ② 以 USB／scp 把離線包帶進無外網主機，核對 sha256 後：
-tar xzf jt-glogarch-*-offline.tar.gz && cd jt-glogarch-*-offline
-sudo bash upgrade-offline.sh                # pip 全程不連網；會先自動備份 DB
-# 離線包（約 370 MB）已含 PDF 報表用的 Chromium，但不含它需要的系統函式庫
-# （libnss3、libatk1.0-0、libgbm1…），請自行從貴站台的安裝媒體安裝。</code></pre>
-    </div>
-    <dl class="post-note">
-      <dt>Web UI</dt>
-      <dd><code class="kbd">https://&lt;伺服器 IP&gt;:8990</code> <span class="muted">（用您的 Graylog 帳密登入）</span></dd>
-      <dt>設定檔</dt>
-      <dd><code class="kbd">/opt/jt-glogarch/config.yaml</code></dd>
-      <dt>記錄檢視</dt>
-      <dd><code class="kbd">journalctl -u jt-glogarch -f</code></dd>
-      <dt>升級</dt>
-      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/upgrade.sh</code> <span class="muted">（會先快照備份 DB，不會破壞資料）</span></dd>
-      <dt>升級停住</dt>
-      <dd><span>若停在 <em>Not possible to fast-forward</em>，表示已發布的歷史在 2026-09-13 改寫過，在那之前 clone 的安裝會與遠端分岔。此時不會動到任何東西，服務照常執行。把 clone 指回已發布的歷史一次，再升級即可：</span>
-        <code class="kbd">cd /opt/jt-glogarch &amp;&amp; sudo git fetch origin &amp;&amp; sudo git reset --hard origin/main</code>
-        <span class="muted">（config.yaml、資料庫、certs/、reports/ 都已被 gitignore，不受影響。v1.14.11 之後會自動復原。）</span></dd>
-      <dt>離線升級</dt>
-      <dd><span class="muted">無外網主機——見上方「離線升級」分頁（可上網機器打包 → USB 帶入 → 主機安裝）</span></dd>
-      <dt>移除</dt>
-      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/uninstall.sh</code> <span class="muted">（每個刪除動作都會逐一詢問）</span></dd>
-    </dl>
-    <p class="install-followup">
-      <strong>接著指向 Graylog。</strong>
-      編輯 <code class="kbd">config.yaml</code> 填入 Graylog API URL 與 token
-      （Graylog → System → Users → Edit tokens 產生）。可選：加上 OpenSearch 主機以啟用約 5 倍速的 Direct 模式。完整設定 → <a href="https://github.com/jasoncheng7115/jt-glogarch/blob/main/README-zh_TW.md#%E8%A8%AD%E5%AE%9A" target="_blank" rel="noopener">README · 設定</a>
-    </p>
-  </div>
-</section>
 
 <section id="flow">
   <h2>兩種匯出、兩種匯入。</h2>
@@ -397,7 +335,93 @@ sudo bash upgrade-offline.sh                # pip 全程不連網；會先自動
       <div class="label">看板預覽<small>安裝前先看版面、圖表類型與欄位（圖形與數字只是示意，不執行查詢）</small></div>
     </button>
   </div>
-  <p class="subhead"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg> jt-glogarch 隨附 7 個 Jason Tools 套件：Apache HTTP Server、Linux 登入與 SSH、QNAP NAS、SQL Server、Synology NAS、Windows Active Directory、Windows 登入事件。其他套件由 Jason Tools 另行提供，不隨本專案原始碼發布。</p>
+  <div class="pack-list">
+    <div class="pack-list-head"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg><strong>jt-glogarch 隨附 13 個 Jason Tools 套件</strong></div>
+    <ul class="pack-chips">
+      <li>Apache HTTP Server</li>
+      <li>FortiADC</li>
+      <li>FortiWAN</li>
+      <li>Linux 登入與 SSH</li>
+      <li>Microsoft DNS Server</li>
+      <li>NetFlow</li>
+      <li>PCAP 封包分析</li>
+      <li>Proxmox VE</li>
+      <li>QNAP NAS</li>
+      <li>SQL Server</li>
+      <li>Synology NAS</li>
+      <li>Windows Active Directory</li>
+      <li>Windows 登入事件</li>
+    </ul>
+    <p class="pack-list-note">其他套件由 Jason Tools 另行提供，不隨本專案原始碼發布。</p>
+  </div>
+</section>
+
+<section id="install">
+  <div class="install">
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-target="tab-quick" type="button">快速安裝</button>
+      <button class="tab" data-target="tab-manual" type="button">手動</button>
+      <button class="tab" data-target="tab-offline" type="button">離線升級</button>
+    </div>
+    <p class="prereq-note">
+      <strong>前置條件。</strong>
+      Linux 主機需有 <code class="kbd">python3 ≥ 3.10</code>、<code class="kbd">pip</code>、<code class="kbd">git</code>。
+      安裝指令稿會自行建立系統使用者、設好 systemd、產生自簽 SSL 憑證，並啟動 HTTPS Web UI 於
+      <code class="kbd">8990</code> port。
+    </p>
+    <div class="code-block">
+      <button class="copy-btn" data-copy="quick">複製</button>
+      <pre id="tab-quick"><code id="cmd-quick">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
+sudo bash /opt/jt-glogarch/deploy/install.sh</code></pre>
+    </div>
+    <div class="code-block" hidden id="tab-manual-wrap">
+      <button class="copy-btn" data-copy="manual">複製</button>
+      <pre id="tab-manual"><code id="cmd-manual">sudo git clone https://github.com/jasoncheng7115/jt-glogarch.git /opt/jt-glogarch
+cd /opt/jt-glogarch
+sudo pip install --no-build-isolation .
+sudo cp deploy/jt-glogarch.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now jt-glogarch</code></pre>
+    </div>
+    <div class="code-block" hidden id="tab-offline-wrap">
+      <button class="copy-btn" data-copy="offline">複製</button>
+      <pre id="tab-offline"><code id="cmd-offline"># ① 在任一台可上網的 Linux（Python 次要版本與 CPU 架構需與目標主機相同）
+curl -L -o src.tar.gz \
+  https://github.com/jasoncheng7115/jt-glogarch/archive/refs/heads/main.tar.gz
+tar xzf src.tar.gz && cd jt-glogarch-main
+bash scripts/build-offline-bundle.sh        # → dist/jt-glogarch-<版本>-offline.tar.gz
+sha256sum dist/jt-glogarch-*-offline.tar.gz # 記下校驗值
+
+# ② 以 USB／scp 把離線包帶進無外網主機，核對 sha256 後：
+tar xzf jt-glogarch-*-offline.tar.gz && cd jt-glogarch-*-offline
+sudo bash upgrade-offline.sh                # pip 全程不連網；會先自動備份 DB
+# 離線包（約 370 MB）已含 PDF 報表用的 Chromium，但不含它需要的系統函式庫
+# （libnss3、libatk1.0-0、libgbm1…），請自行從貴站台的安裝媒體安裝。</code></pre>
+    </div>
+    <dl class="post-note">
+      <dt>Web UI</dt>
+      <dd><code class="kbd">https://&lt;伺服器 IP&gt;:8990</code> <span class="muted">（用您的 Graylog 帳密登入）</span></dd>
+      <dt>設定檔</dt>
+      <dd><code class="kbd">/opt/jt-glogarch/config.yaml</code></dd>
+      <dt>記錄檢視</dt>
+      <dd><code class="kbd">journalctl -u jt-glogarch -f</code></dd>
+      <dt>升級</dt>
+      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/upgrade.sh</code> <span class="muted">（會先快照備份 DB，不會破壞資料）</span></dd>
+      <dt>升級停住</dt>
+      <dd><span>若停在 <em>Not possible to fast-forward</em>，表示已發布的歷史在 2026-09-13 改寫過，在那之前 clone 的安裝會與遠端分岔。此時不會動到任何東西，服務照常執行。把 clone 指回已發布的歷史一次，再升級即可：</span>
+        <code class="kbd">cd /opt/jt-glogarch &amp;&amp; sudo git fetch origin &amp;&amp; sudo git reset --hard origin/main</code>
+        <span class="muted">（config.yaml、資料庫、certs/、reports/ 都已被 gitignore，不受影響。v1.14.11 之後會自動復原。）</span></dd>
+      <dt>離線升級</dt>
+      <dd><span class="muted">無外網主機——見上方「離線升級」分頁（可上網機器打包 → USB 帶入 → 主機安裝）</span></dd>
+      <dt>移除</dt>
+      <dd><code class="kbd">sudo bash /opt/jt-glogarch/deploy/uninstall.sh</code> <span class="muted">（每個刪除動作都會逐一詢問）</span></dd>
+    </dl>
+    <p class="install-followup">
+      <strong>接著指向 Graylog。</strong>
+      編輯 <code class="kbd">config.yaml</code> 填入 Graylog API URL 與 token
+      （Graylog → System → Users → Edit tokens 產生）。可選：加上 OpenSearch 主機以啟用約 5 倍速的 Direct 模式。完整設定 → <a href="https://github.com/jasoncheng7115/jt-glogarch/blob/main/README-zh_TW.md#%E8%A8%AD%E5%AE%9A" target="_blank" rel="noopener">README · 設定</a>
+    </p>
+  </div>
 </section>
 
 <footer>
@@ -537,5 +561,14 @@ sudo bash upgrade-offline.sh                # pip 全程不連網；會先自動
   })();
 </script>
 
+<script>
+(function () {
+  var m = document.querySelector('.lang-menu');
+  if (!m) return;
+  function closeLangMenu(e) { if (m.open && (!e || !m.contains(e.target))) m.open = false; }
+  document.addEventListener('click', closeLangMenu);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeLangMenu(); });
+})();
+</script>
 </body>
 </html>

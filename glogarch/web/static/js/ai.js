@@ -148,8 +148,8 @@ async function aiLoadStatus() {
     const s = d.settings;
     // left: what answers (state, model, where the LLM is); right: whose Graylog it reads
     const left = [s.enabled
-        ? `<span class="ai-chip ai-chip-on"><span class="ai-dot"></span>${esc(t('ai_on'))}</span>`
-        : `<span class="ai-chip"><span class="ai-dot ai-dot-off"></span>${esc(t('ai_off'))}</span>`];
+        ? `<span class="ai-chip ai-chip-on"><span class="ai-dot"></span><span class="glyph-centre">${esc(t('ai_on'))}</span></span>`
+        : `<span class="ai-chip"><span class="ai-dot ai-dot-off"></span><span class="glyph-centre">${esc(t('ai_off'))}</span></span>`];
     // which LLM server answers: a picker when there are several (1.36), remembered per browser
     const llms = d.llms || [];
     if (!llms.some(x => x.name === _ai.llm)) _ai.llm = (llms.find(x => x.default) || llms[0] || {}).name || '';
@@ -161,14 +161,14 @@ async function aiLoadStatus() {
         left.push(`<span class="ai-chip ai-chip-model" title="${esc(t('ai_model'))}${esc(t('sec_colon'))}${esc(label(cur))}">${icon('chat', 14)}<span class="ai-chip-text">${esc(cur.model || cur.name)}</span></span>`);
     }
     if (cur) left.push(cur.private === false
-        ? `<span class="ai-chip ai-chip-ext">${icon('warning', 14)} ${esc(t(cur.kind === 'anthropic' ? 'ai_llm_claude' : 'ai_llm_external'))}</span>`
-        : `<span class="ai-chip ai-chip-int" title="${esc(t('ai_llm_private_tip'))}">${icon('lock', 14)} ${esc(t('ai_llm_private'))}</span>`);
+        ? `<span class="ai-chip ai-chip-ext">${icon('warning', 14)}<span class="glyph-centre">${esc(t(cur.kind === 'anthropic' ? 'ai_llm_claude' : 'ai_llm_external'))}</span></span>`
+        : `<span class="ai-chip ai-chip-int" title="${esc(t('ai_llm_private_tip'))}">${icon('lock', 14)}<span class="glyph-centre">${esc(t('ai_llm_private'))}</span></span>`);
     const sel = d.servers.length > 1
         ? `<select id="ai-server" data-act-change="aiServerChange">${d.servers.map(n => `<option value="${esc(n)}" ${n === d.server ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`
         : `<strong>${esc(d.server)}</strong>`;
-    const who = [`<span class="ai-gl"><span class="ai-gl-label">${esc(t('al_server'))}</span>${sel}</span>`,
+    const who = [`<span class="ai-gl"><span class="ai-gl-label glyph-centre">${esc(t('al_server'))}</span>${sel}</span>`,
         d.signed_in
-            ? `<span class="ai-chip" title="${esc(t('ai_gl_user'))}">${icon('user', 14)} ${esc(d.graylog_user)}</span>`
+            ? `<span class="ai-chip" title="${esc(t('ai_gl_user'))}">${icon('user', 14)}<span class="glyph-centre">${esc(d.graylog_user)}</span></span>`
             : `<button class="btn-secondary btn-sm" data-act="aiShowSignin">${icon('login', 14)} ${esc(t('ai_signin_btn'))}</button>`];
     // one row: what answers | whose Graylog it reads; token use sits under the conversation
     // list (owner 2026-11-23: on a 1436 px window it wrapped to a second line of the bar)
@@ -360,7 +360,7 @@ function aiRenderHead() {
            <button type="button" class="btn-secondary btn-sm" data-act="aiRenameCancel">${esc(t('btn_cancel'))}</button>`
         : `<span class="ai-head-title" title="${esc(c.title || '')}">${esc(c.title || '—')}</span>
            ${c.server ? `<span class="ai-head-server" title="${esc(t('al_server'))}">${icon('server', 12)}${esc(c.server)}</span>` : ''}
-           <span class="ai-head-acts">${b('aiRenameStart', 'edit', 'ai_rename')}${b('aiExportConv', 'download', 'ai_export')}</span>`;
+           <span class="ai-head-acts">${b('aiRenameStart', 'edit', 'ai_rename')}${b('aiExportConv', 'download', 'ai_export')}${(c.messages || []).some(m => m.role === 'assistant' && m.id) ? b('aiSummaryDialog', 'page', 'ai_summary_btn') + b('aiCaseDialog', 'log', 'ai_case_btn') : ''}</span>`;
     el.classList.remove('hidden');
     const inp = document.getElementById('ai-rename');
     if (inp) {
@@ -626,7 +626,8 @@ function _aiActions(i, m) {
     const b = (act, ic, key) => `<button type="button" class="ai-act" data-act="${act}" data-act-event data-arg="${i}" title="${esc(t(key))}" aria-label="${esc(t(key))}">${icon(ic, 14)}</button>`;
     return `<span class="ai-actions">${m.role === 'user'
         ? b('aiCopyMsg', 'copy', 'ai_act_copy') + b('aiEditMsg', 'edit', 'ai_act_edit')
-        : b('aiCopyMsg', 'copy', 'ai_act_copy') + b('aiRetryMsg', 'refresh', 'ai_act_retry')}</span>`;
+        : b('aiCopyMsg', 'copy', 'ai_act_copy') + b('aiRetryMsg', 'refresh', 'ai_act_retry')
+          + (m.id && typeof aixChartable === 'function' && aixChartable(m) ? b('aiDashboardDialog', 'view_grid', 'ai_act_dashboard') : '')}</span>`;
 }
 
 // the last question has no answer and nothing is working on it (a restart, a failure)
@@ -683,6 +684,7 @@ function aiRenderThread() {
         + (_aiUnanswered() ? `<div class="ai-unanswered">${icon('warning', 16)}<span>${esc(t(stopped(msgs.length - 1) ? 'ai_unanswered_stopped' : 'ai_unanswered'))}</span>
             <button type="button" class="btn-primary btn-sm" data-act="aiAnswerAgain">${icon('refresh', 14)} ${esc(t('ai_answer_now'))}</button></div>` : '');
     _aiDecorateBlocks(el);
+    if (typeof aiTimelineDecorate === 'function') aiTimelineDecorate(el);
     el.scrollTop = el.scrollHeight;
     if (_ai.busy && (_ai.partial || _ai.reasoning)) _aiDrawPartial();
 }
@@ -1393,17 +1395,21 @@ function aiRenderSettings(keepEdit) {
     document.getElementById('ai-settings').innerHTML = `
         <div class="ai-set-head"><h3>${esc(t('ai_set_title'))}</h3>
             <button type="button" class="ai-act" data-act="aiToggleSettings" title="${esc(t('btn_collapse'))}" aria-label="${esc(t('btn_collapse'))}">${icon('close', 14)}</button></div>
-        <section class="ai-set-sec">
+        ${_aiSetSec('general', t('ai_set_general'), `
         <div class="sec-form">
             <div class="sec-wide">${chk('ai-s-enabled', kv('ai-s-enabled', s.enabled), t('ai_s_enabled'))}</div>
             <div class="sec-wide">${chk('ai-s-analysis', kv('ai-s-analysis', s.analysis_enabled), t('ai_s_analysis'))}
                 <div class="text-muted fs-08">${esc(t('ai_s_analysis_note'))}</div></div>
+            <div class="sec-wide">${chk('ai-s-sumllm', kv('ai-s-sumllm', s.summary_cover_llm !== false), t('ai_s_sum_llm'))}
+                <div class="text-muted fs-08">${esc(t('ai_s_sum_llm_note'))}</div></div>
         </div>
-        <h3 class="ai-sub">${esc(t('ai_llm_title'))}</h3>
+        <div class="sec-save-row ai-btns"><button class="btn-primary" data-act="aiSaveSettings">${icon('check', 16)} ${esc(t('btn_save'))}</button></div>`)}
+        ${_aiSetSec('llm', t('ai_llm_title'), `
         <p class="text-muted fs-085">${esc(t('ai_llm_help'))}</p>
         <div class="ai-llms">${_ai.llmEdit.length ? _ai.llmEdit.map(_aiLlmCard).join('') : `<div class="text-muted fs-085">${esc(t('ai_llm_none'))}</div>`}</div>
         <button type="button" class="btn-secondary btn-sm" data-act="aiAddLlm">${icon('plus', 14)} ${esc(t('ai_llm_add'))}</button>
-        <h3 class="ai-sub">${esc(t('ai_limits_title'))}</h3>
+        <div class="sec-save-row ai-btns"><button class="btn-primary" data-act="aiSaveSettings">${icon('check', 16)} ${esc(t('btn_save'))}</button></div>`)}
+        ${_aiSetSec('limits', t('ai_limits_title'), `
         <div class="sec-form ai-llm-form">
             <div class="ai-f2"><label>${esc(t('ai_s_rounds'))}</label>${num('ai-s-rounds', kv('ai-s-rounds', s.max_tool_rounds), 1, 10)}</div>
             <div class="ai-f2"><label>${esc(t('ai_s_range'))}</label>${num('ai-s-range', kv('ai-s-range', s.max_range_hours), 1, 168)}</div>
@@ -1419,29 +1425,87 @@ function aiRenderSettings(keepEdit) {
                 <div class="ai-llm-hint">${esc(t('ai_llm_limit_hint'))}</div></div>
         </div>
         <div class="text-muted fs-08">${esc(t('ai_limits_note'))}</div>
-        <div class="sec-save-row ai-btns">
-            <button class="btn-primary" data-act="aiSaveSettings">${icon('check', 16)} ${esc(t('btn_save'))}</button>
-        </div>
-        </section>
-        <section class="ai-set-sec">
-        <h3 class="ai-sub">${esc(t('ai_mcp_title'))}</h3>
+        <div class="sec-save-row ai-btns"><button class="btn-primary" data-act="aiSaveSettings">${icon('check', 16)} ${esc(t('btn_save'))}</button></div>`)}
+        ${_aiSetSec('report', t('ai_set_report'), _aiReportStyleForm(s.summary_style || {}) + `
+        <div class="sec-save-row ai-btns"><button class="btn-primary" data-act="aiSaveSettings">${icon('check', 16)} ${esc(t('btn_save'))}</button></div>`)}
+        ${_aiSetSec('mcp', t('ai_mcp_title'), `
         <p class="text-muted fs-085">${esc(t('ai_mcp_help'))}</p>
         <div>${chk('ai-s-mcp', kv('ai-s-mcp', s.mcp_enabled), t('ai_s_mcp'))}</div>
         <pre class="ai-code"><code>${esc(mcpCfg)}</code></pre>
-        </section>
-        <section class="ai-set-sec">
-        <h3 class="ai-sub">mcp_graylog ${esc(mg.version)}</h3>
+        <div class="sec-save-row ai-btns"><button class="btn-primary" data-act="aiSaveSettings">${icon('check', 16)} ${esc(t('btn_save'))}</button></div>`)}
+        ${_aiSetSec('mcpg', 'mcp_graylog ' + mg.version, `
         <p class="fs-085 ${mg.available ? 'pk-ok' : 'pk-err'}">${esc(mg.available ? t('ai_mg_ok') : t('ai_mg_unavailable') + ' ' + mg.error)}</p>
         <div class="ai-tools">${toolBoxes}</div>
         <p class="text-muted fs-08">${esc(t('ai_mg_note'))}</p>
-        <div class="sec-save-row"><button class="btn-primary" data-act="aiSaveSettings">${icon('check', 16)} ${esc(t('btn_save'))}</button></div>
-        </section>`;
+        <div class="sec-save-row ai-btns"><button class="btn-primary" data-act="aiSaveSettings">${icon('check', 16)} ${esc(t('btn_save'))}</button></div>`)}`;
     if (typeof initCustomSelects === 'function') initCustomSelects();
     _ai.llmEdit.forEach((x, i) => {
         const u = document.getElementById(`ai-l${i}-url`);
         if (u) u.addEventListener('change', () => aiLoadModels(i));
         if (x.url || x.kind === 'anthropic') aiLoadModels(i);
     });
+}
+
+// Each settings card folds from its title (owner 2026-11-27: "每一區卡片要可以收折"); which ones
+// are folded is kept per browser. Folded fields stay in the page, so Save still sends them.
+// The summary PDF's own look: the report editor's cover / logo / watermark fields (owner 2026-11-27:
+// "要設定 報告的 logo 或文字"), the same logo controls (reportLogoPick / reportLogoClear by prefix).
+function _aiReportStyleForm(st) {
+    const opt = (v, cur, key) => `<option value="${v}"${v === cur ? ' selected' : ''}>${esc(t(key))}</option>`;
+    const ap = st.watermark_append || [];
+    return `<p class="text-muted fs-085">${esc(t('ai_set_report_help'))}</p>
+        <div class="ai-report-style">
+        ${_reportLogoField('ai-r-logo', st.logo_data_uri, 'logo-preview-cover', 'reports_f_logo', 'reports_logo_hint')}
+        <div class="form-group"><label>${esc(t('reports_f_logo_size'))}</label><input type="number" id="ai-r-logo-size" min="20" max="200" step="2" value="${esc(String(st.logo_height_px || 72))}" class="mw120"> <span class="text-muted fs-08">px</span></div>
+        ${_reportLogoField('ai-r-hlogo', st.header_logo_data_uri, 'logo-preview-dark', 'reports_f_hlogo_dark', 'reports_hlogo_dark_hint')}
+        <div class="sec-form ai-llm-form">
+            <div class="ai-f2"><label>${esc(t('ai_r_kicker'))}</label><input type="text" id="ai-r-kicker" maxlength="80" value="${esc(st.kicker || '')}" placeholder="jt-glogarch"></div>
+            <div class="ai-f2"><label>${esc(t('reports_f_author'))}</label><input type="text" id="ai-r-author" maxlength="120" value="${esc(st.author || '')}" placeholder="${esc(t('ai_r_author_ph'))}"></div>
+            <div class="ai-f2"><label>${esc(t('ai_r_color'))}</label><input type="text" id="ai-r-color" maxlength="7" value="${esc(st.brand_color || '')}" placeholder="#6c63ff"></div>
+            <div class="ai-f2 ai-row-start"><label>${esc(t('reports_f_header'))}</label><input type="text" id="ai-r-header" maxlength="120" value="${esc(st.header_text || '')}" placeholder="${esc(t('ai_r_header_ph'))}"></div>
+        </div>
+        <div class="form-group"><label class="inline-check"><input type="checkbox" id="ai-r-wm" ${st.watermark_enabled ? 'checked' : ''}> ${esc(t('reports_f_wm'))}</label></div>
+        <div class="sec-form ai-llm-form">
+            <div class="ai-f2"><label>${esc(t('reports_f_wm_text'))}</label><input type="text" id="ai-r-wm-text" maxlength="120" value="${esc(st.watermark_text || '')}" placeholder="${esc(t('reports_wm_text_ph'))}"></div>
+            <div class="ai-f2"><label>${esc(t('reports_f_wm_size'))}</label><select id="ai-r-wm-size">${opt('small', st.watermark_size, 'reports_wm_small')}${opt('medium', st.watermark_size, 'reports_wm_medium')}${opt('large', st.watermark_size || 'large', 'reports_wm_large')}</select></div>
+            <div class="ai-f2"><label>${esc(t('reports_f_wm_dir'))}</label><select id="ai-r-wm-dir">${opt('diagonal', st.watermark_direction || 'diagonal', 'reports_wm_diagonal')}${opt('horizontal', st.watermark_direction, 'reports_wm_horizontal')}</select></div>
+        </div>
+        <div class="form-group"><label>${esc(t('reports_f_wm_append'))}</label><div class="wm-append">
+            ${['server', 'ip', 'time'].map(k => `<label class="inline-check"><input type="checkbox" class="ai-r-wm-ap" value="${k}" ${ap.includes(k) ? 'checked' : ''}> ${esc(t('reports_wm_ap_' + k))}</label>`).join('')}</div></div>
+        </div>`;
+}
+
+function _aiReportStyleBody() {
+    const v = id => (document.getElementById(id) || {}).value || '';
+    if (!document.getElementById('ai-r-logo')) return undefined;
+    return {logo_data_uri: v('ai-r-logo'), header_logo_data_uri: v('ai-r-hlogo'),
+            logo_height_px: Number(v('ai-r-logo-size') || 72), kicker: v('ai-r-kicker'), author: v('ai-r-author'),
+            header_text: v('ai-r-header'),
+            brand_color: v('ai-r-color').trim(), watermark_enabled: !!(document.getElementById('ai-r-wm') || {}).checked,
+            watermark_text: v('ai-r-wm-text'), watermark_size: v('ai-r-wm-size'), watermark_direction: v('ai-r-wm-dir'),
+            watermark_append: [...document.querySelectorAll('.ai-r-wm-ap:checked')].map(x => x.value)};
+}
+
+function _aiSetFolded() {
+    try { return JSON.parse(localStorage.getItem('jt-ai-set-fold') || '[]'); } catch (e) { return []; }
+}
+
+function _aiSetSec(key, title, body) {
+    const folded = _aiSetFolded().includes(key);
+    return `<section class="ai-set-sec${folded ? ' ai-set-folded' : ''}" data-fold="${esc(key)}">
+        <button type="button" class="ai-set-fold" data-act="aiFoldSet" data-arg="${esc(key)}" aria-expanded="${folded ? 'false' : 'true'}">
+            <span class="ai-set-chev" aria-hidden="true">${icon('chevron_down', 14)}</span><span class="ai-sub">${esc(title)}</span></button>
+        <div class="ai-set-body">${body}</div></section>`;
+}
+
+function aiFoldSet(key) {
+    const sec = document.querySelector(`.ai-set-sec[data-fold="${CSS.escape(String(key))}"]`);
+    if (!sec) return;
+    const folded = sec.classList.toggle('ai-set-folded');
+    sec.querySelector('.ai-set-fold').setAttribute('aria-expanded', folded ? 'false' : 'true');
+    const keep = new Set(_aiSetFolded());
+    if (folded) keep.add(key); else keep.delete(key);
+    try { localStorage.setItem('jt-ai-set-fold', JSON.stringify([...keep])); } catch (e) { /* not remembered */ }
 }
 
 function aiAddLlm() {
@@ -1529,13 +1593,13 @@ function _aiSettingsBody() {
     const c = id => document.getElementById(id).checked;
     const llms = _aiCaptureLlms();
     return {
-        enabled: c('ai-s-enabled'), analysis_enabled: c('ai-s-analysis'),
+        enabled: c('ai-s-enabled'), analysis_enabled: c('ai-s-analysis'), summary_cover_llm: c('ai-s-sumllm'),
         llm_servers: llms, default_llm: _ai.llmDefault || (llms[0] || {}).name || '',
         max_tool_rounds: Number(v('ai-s-rounds')), max_range_hours: Number(v('ai-s-range')),
         daily_tokens: Number(v('ai-s-daily')), monthly_tokens: Number(v('ai-s-monthly')),
         user_daily_tokens: Number(v('ai-s-udaily')), user_monthly_tokens: Number(v('ai-s-umonthly')),
         chat_retention_days: Number(v('ai-s-retention')),
-        mcp_enabled: c('ai-s-mcp'),
+        mcp_enabled: c('ai-s-mcp'), summary_style: _aiReportStyleBody(),
         mcp_graylog_tools: [...document.querySelectorAll('.ai-mg-tool:checked')].map(x => x.value),
     };
 }

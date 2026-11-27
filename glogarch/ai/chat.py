@@ -73,7 +73,8 @@ single ```html block: inline CSS and JavaScript only, no external URLs, no fetch
 preview); for charts use Chart.js (`new Chart(...)`, the preview provides it); put the numbers from the tool \
 results into the page. The user's screen uses a {theme} theme: give the page {theme_colours}. For a diagram \
 (flow, sequence, timeline) a ```mermaid block works too, and a document the user wants to read formatted \
-(a report, a write-up) can be a ```markdown block. The page shows these in a preview pane.
+(a report, a write-up) can be a ```markdown block. The page shows these in a preview pane. Events in time order (connections, logins, sessions with a start and an end): give them as a Markdown table with a start time column (and an end time column) as YYYY-MM-DD HH:MM:SS in the user's local time ({tz}, convert the tools' UTC); \
+the page draws such a table as a timeline.
 10. After the answer, write a line holding only [[follow-up]] and under it 2 or 3 short questions the user could \
 ask next, one per line, in {language}: ones that follow from this answer (narrow it down, another time range, \
 the accounts or hosts behind a number) and that the tools can answer. Nothing after them.
@@ -135,13 +136,26 @@ THEME_COLOURS = {
 }
 
 
+def local_tz_label() -> str:
+    """'Asia/Taipei, UTC+08:00': the zone's name, not its abbreviation (CST is also China's
+    and the US Central's), from TZ or /etc/localtime."""
+    import os
+    off = datetime.now().astimezone().strftime("%z")
+    name = os.environ.get("TZ", "").lstrip(":")
+    if not name:
+        real = os.path.realpath("/etc/localtime")
+        name = real.split("zoneinfo/", 1)[1] if "zoneinfo/" in real else (datetime.now().astimezone().tzname() or "")
+    return f"{name}, UTC{off[:3]}:{off[3:]}" if name else f"UTC{off[:3]}:{off[3:]}"
+
+
 def system_prompt(server: str, lang: str, now: datetime | None = None, theme: str = "light") -> str:
     now = now or datetime.now(timezone.utc)
     theme = theme if theme in THEME_COLOURS else "light"
     # GUIDE is appended, not formatted: it holds { } of range syntax
     return SYSTEM.format(server=server, now=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
                          language=LANG_NAMES.get(lang, LANG_NAMES["en"]), theme=theme,
-                         theme_colours=THEME_COLOURS[theme]) + "\n\n" + GUIDE
+                         theme_colours=THEME_COLOURS[theme],
+                         tz=local_tz_label()) + "\n\n" + GUIDE
 
 
 def _args(raw) -> tuple[dict | None, str]:
@@ -472,6 +486,9 @@ def call_record(name: str, args, res: dict, ms: int, scope: dict | None = None) 
     count the number. No log text: a result's rows are not stored."""
     rec: dict = {"name": name, "ok": bool(res.get("ok")), "ms": ms, "args": {}}
     for k, v in (args or {}).items() if isinstance(args, dict) else ():
+        if isinstance(v, list) and len(v) <= 10 and all(isinstance(x, str) and len(x) <= 100 for x in v):
+            rec["args"][str(k)[:60]] = list(v)   # group_by / metrics: kept as a list (charts.py reads them)
+            continue
         v = v if isinstance(v, (int, float, bool)) or v is None else str(v)
         rec["args"][str(k)[:60]] = v[:_ARG_CHARS] if isinstance(v, str) else v
     if not rec["ok"]:

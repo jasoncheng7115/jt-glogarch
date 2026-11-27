@@ -375,6 +375,8 @@ class AiConfig(BaseModel):
     mcp_enabled: bool = False        # /mcp for external AI clients (Graylog token auth)
     mcp_graylog_tools: list[str] = Field(default_factory=list)  # empty = the default set
     analysis_enabled: bool = False   # AI analysis of security incidents (added 1.22)
+    summary_cover_llm: bool = True   # summary PDF cover names the LLM server and model (1.37, owner)
+    summary_style: dict = Field(default_factory=dict)   # summary PDF look: logos, kicker, author, colour, watermark (1.37)
 
     def model_post_init(self, __context: Any) -> None:
         if not self.llm_servers and self.url:

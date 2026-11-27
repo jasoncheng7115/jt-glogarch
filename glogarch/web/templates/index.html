@@ -1042,7 +1042,8 @@
 
         <div id="report-modal" class="modal-overlay hidden">
             <div class="modal-card modal-wide">
-                <h3 id="report-modal-title" data-i18n="reports_add">New Report</h3>
+                <h3 class="modal-head-x"><span id="report-modal-title" data-i18n="reports_add">New Report</span>
+                    <button type="button" class="modal-x" data-act="closeReportModal" data-i18n-title="btn_close" title="Close" aria-label="Close">&times;</button></h3>
                 <div id="report-modal-form"></div>
                 <div class="u048">
                     <button class="btn-primary" data-act="saveReport" data-i18n="btn_save" data-icon="shield">Save</button>
@@ -1105,8 +1106,28 @@
                     <option value="medium" data-i18n-opt="sec_sev_medium">Medium</option>
                     <option value="low" data-i18n-opt="sec_sev_low">Low</option>
                 </select>
-                <span class="u028" id="sec-total"></span>
-                <button class="btn-secondary btn-sm sec-c-new" data-act="secExportCsv" data-i18n="sec_btn_csv" data-icon="download">Export CSV</button>
+                <select id="sec-f-detector" data-act-change="secLoad">
+                    <option value="" data-i18n-opt="sec_f_det_all">All detections</option>
+                </select>
+                <select id="sec-f-days" data-act-change="secLoad">
+                    <option value="" data-i18n-opt="sec_f_days_all">Any time</option>
+                    <option value="1" data-i18n-opt="sec_f_days_1">Last 24 hours</option>
+                    <option value="7" data-i18n-opt="sec_f_days_7">Last 7 days</option>
+                    <option value="30" data-i18n-opt="sec_f_days_30">Last 30 days</option>
+                    <option value="90" data-i18n-opt="sec_f_days_90">Last 90 days</option>
+                </select>
+                <input type="search" id="sec-f-q" class="sec-f-q" maxlength="200" data-act-input="secSearch" data-i18n-placeholder="sec_f_q_ph" placeholder="Source, target or detection" autocomplete="off">
+                <span class="u028 sec-total" id="sec-total"></span>
+                <div class="sec-export">
+                    <button type="button" class="btn-secondary sec-export-btn" data-act="secExportMenu" aria-haspopup="true" aria-expanded="false"><span class="glyph-centre" data-i18n="sec_btn_export" data-icon="download">Export</span></button>
+                    <div class="sec-export-menu hidden" id="sec-export-menu" role="menu">
+                        <button type="button" role="menuitem" data-act="secExport" data-arg="csv">CSV (.csv)</button>
+                        <button type="button" role="menuitem" data-act="secExport" data-arg="xlsx">Excel (.xlsx)</button>
+                        <button type="button" role="menuitem" data-act="secExport" data-arg="ods">OpenDocument (.ods)</button>
+                        <button type="button" role="menuitem" data-act="secExport" data-arg="json">JSON (.json)</button>
+                        <button type="button" role="menuitem" data-act="secExport" data-arg="md">Markdown (.md)</button>
+                    </div>
+                </div>
             </div>
             <div class="table-wrap">
             <table class="sec-table sec-inc-table">
@@ -1351,6 +1372,13 @@
                 </div>
             </div>
             <div class="card ai-preview hidden" id="ai-preview" aria-label="Preview"></div>
+        </div>
+        <div id="ai-export-modal" class="modal-overlay u066">
+            <div class="modal-card sec-ai-card aix-card">
+                <button class="u134" data-act="aiExportClose" title="Close">&times;</button>
+                <h3 id="ai-export-title"></h3>
+                <div id="ai-export-content"></div>
+            </div>
         </div>
 
         {% elif page == 'packs' %}
@@ -1755,5 +1783,6 @@ sudo bash upgrade-offline.sh</pre>
     <script src="/static/js/suppress.js?v={{ version }}"></script>
     <script src="/static/js/fieldmap.js?v={{ version }}"></script>
     <script src="/static/js/ai.js?v={{ version }}"></script>
+    <script src="/static/js/ai_export.js?v={{ version }}"></script>
 </body>
 </html>
