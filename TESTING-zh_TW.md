@@ -1285,6 +1285,13 @@ UI 測試用的 jt-glogarch 也必須指向那台測試 Graylog（在任何主�
 - [ ] `tests/test_security_export.py`：關鍵字／偵測項目／時間篩選（% 為字面、會搜尋 Sigma 標題）、偵測項目清單、每種匯出格式（CSV 對像公式的儲存格加前綴；XLSX 與 ODS 格式正確、沒有公式，ODS 以未壓縮的 mimetype 開頭；JSON 與 Markdown 套用篩選）、未知格式會被拒絕、舊的 `.csv` 連結仍可用、稽核紀錄含格式。手動：.xlsx 用 Excel、.ods 用 LibreOffice 開啟；資安事件清單在約 1436 px、兩種主題下檢查（邊條、標籤、按鈕區不超出欄位）。
 - [ ] 套件庫：13 個公開套件（`tests/test_packs.py::PUBLISHED`、`test_contentpack_guard.py::PUBLISHED_PACKS`）；每個都能從內容套件頁安裝，下載時附說明。
 
+### 1.38.0
+
+- [ ] `tests/test_notify_webhook.py`：JSON 內容、接收端可重算的 HMAC 簽章、沒有金鑰時不附簽章、關閉 TLS 驗證、接收端的錯誤訊息、沒有網址時不送出、同一份管道清單、遮蔽的網址與金鑰儲存時保留、SSRF 被拒、表單欄位存在。手動：指向請求接收工具並核對簽章。
+- [ ] `tests/test_ui_138.py`：jt-glogarch 操作的四格統計（24 小時計數與趨勢）、表格載入中列、日期選擇器接上且值格式不變、報告圖片轉為淺色、一般樣式的重點發現卡片、低調的目前頁面列、Sigma 全選說明排除的項目。`tests/test_halfwidth_slash.py`：沒有全形斜線。
+- [ ] 手動，約 1436 px、淺色與深色：左側選單、儀表板、歸檔清單（開啟並設定日期選擇器）、資安事件（標籤）、行為稽核兩個分頁（統計卡片）、統計報表（載入中、驗證按鈕）；從含 HTML 看板的對話產生 AI 摘要 PDF（拆成區塊、沒有被切頁），以及事件、計數、起訖三種時間軸。
+- [ ] Pages：`python3 scripts/pages/build.py` 沒有 LINT；三種語言的標籤壓線檢查都乾淨。
+
 ## 升級相容性測試（必要）
 
     REPO=/path/to/git-clone bash scripts/upgrade-compat-test.sh [版本 ...]

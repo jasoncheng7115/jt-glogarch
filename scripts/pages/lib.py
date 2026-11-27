@@ -261,7 +261,7 @@ def lint():
     """zh: full-width punctuation next to CJK; Taiwan terms; ja: no Traditional-only glyphs."""
     probs = []
     cjk = r"[㐀-鿿぀-ヿ]"
-    bad_terms = ["日誌", "高亮", "默認", "缺省", "刷新", "優先級", "腳本", "推薦", "前綴", "併發", "去重", "自適應", "過濾", "損壞"]
+    bad_terms = ["日誌", "高亮", "默認", "缺省", "刷新", "優先級", "腳本", "推薦", "前綴", "併發", "去重", "自適應", "過濾", "損壞", "甜甜圈", "\uff0f", "絕不", "永遠不"]
     trad_only = "錄檔們這說對點關體處應實與從讓將當來檢區產變數據圖顯"
     for k, (en, zh, ja) in TR.items():
         plain = re.sub(r"<[^>]+>", "", zh)

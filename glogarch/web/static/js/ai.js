@@ -580,7 +580,7 @@ function _aiCalls(i, m) {
             ? `<a class="btn-secondary btn-sm ai-call-open" href="${esc(x.graylog_url)}" target="_blank" rel="noopener noreferrer">${icon('search', 13)}<span>${esc(t('ai_call_open'))}</span></a>` : '';
         const res = _aiCallResult(x);
         return `<li class="ai-call ${x.ok ? '' : 'ai-call-err'}">
-            <div class="ai-call-line"><span class="ai-call-n">${k + 1}</span><code class="ai-call-tool">${esc(x.name)}</code>
+            <div class="ai-call-line"><span class="ai-call-n">${k + 1}</span>${aiToolName(x.name)} <code class="ai-call-tool">${esc(x.name)}</code>
                 ${res ? `<span class="ai-call-res">${x.ok ? '' : icon('warning', 12)}${esc(res)}</span>` : ''}
                 ${typeof x.ms === 'number' ? `<span class="ai-call-ms" title="${esc(t('ai_tool_elapsed_tip'))}">${icon('clock', 12)}${esc(_aiSecs(x.ms))}</span>` : ''}
                 ${_aiRange(x.range)}${link}</div>
@@ -957,6 +957,15 @@ function _aiToolElapsed() {
     return _ai.toolStart ? _aiSecs(Date.now() - _ai.toolStart) : '';
 }
 
+// a tool by a name people read, the tool's own name and where it gets its data in the tooltip
+// (owner 2026-11-27 asked whether these were Graylog API calls or our own tools)
+const AI_OWN_TOOLS = new Set(["aggregate", "count_messages", "top_values", "sample_messages", "summarize_messages", "read_result", "archive_status", "list_security_incidents", "get_security_incident", "list_security_cases", "get_security_case", "security_risk_ranking"]);
+function aiToolName(name) {
+    const k = 'ai_tn_' + name, label = t(k) !== k ? t(k) : name;
+    const src = t(AI_OWN_TOOLS.has(name) ? 'ai_tool_src_own' : 'ai_tool_src_mcpg');
+    return `<span class="ai-tool-name" title="${esc(name + ' · ' + src)}">${esc(label)}</span>`;
+}
+
 // the lookups of this answer so far, each with its time ("aggregate 1.2 s · count_messages 0.3 s")
 function _aiDrawToolsDone() {
     const el = document.getElementById('ai-tools-done');
@@ -966,7 +975,7 @@ function _aiDrawToolsDone() {
         const res = typeof d.count === 'number' ? t('ai_call_count').replace('{n}', formatNumber(d.count))
             : typeof d.rows === 'number' ? t('ai_call_rows').replace('{n}', formatNumber(d.rows)) : '';
         // one grid row per lookup: icon | tool | time | result, so the columns line up
-        return `<span class="ai-tool-done${d.ok ? '' : ' ai-tool-err'}">${icon(d.ok ? 'check' : 'warning', 12)}<code>${esc(d.name)}</code>`
+        return `<span class="ai-tool-done${d.ok ? '' : ' ai-tool-err'}">${icon(d.ok ? 'check' : 'warning', 12)}${aiToolName(d.name)}`
             + `<span class="ai-td-ms" title="${esc(t('ai_tool_took').replace('{s}', _aiSecs(d.ms || 0)))}">${esc(_aiSecs(d.ms || 0))}</span><span class="ai-td-res">${esc(res)}</span></span>`;
     }).join('') : '';
 }

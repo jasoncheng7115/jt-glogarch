@@ -215,6 +215,15 @@ class ZulipConfig(BaseModel):
     topic: str = "jt-glogarch"
 
 
+class WebhookConfig(BaseModel):
+    """A standard webhook (1.38): JSON POSTed to any URL. With a secret, every request carries
+    X-JT-Timestamp and X-JT-Signature = "sha256=" + HMAC-SHA256(secret, "<timestamp>." + body)."""
+    enabled: bool = False
+    webhook_url: str = ""
+    secret: str = ""
+    verify_ssl: bool = True
+
+
 class EmailConfig(BaseModel):
     enabled: bool = False
     smtp_host: str = ""
@@ -246,6 +255,7 @@ class NotifyConfig(BaseModel):
     teams: TeamsConfig = Field(default_factory=TeamsConfig)
     nextcloud_talk: NextcloudTalkConfig = Field(default_factory=NextcloudTalkConfig)
     zulip: ZulipConfig = Field(default_factory=ZulipConfig)
+    webhook: WebhookConfig = Field(default_factory=WebhookConfig)
     email: EmailConfig = Field(default_factory=EmailConfig)
 
 

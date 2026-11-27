@@ -2458,8 +2458,25 @@ function auditTab(which) {
     if (isApp) loadAppAudit(1);
 }
 
+async function loadAppAuditStats() {
+    let st;
+    try { st = await fetchJSON(`${API}/logs/audit/stats`); } catch (e) { return; }
+    if (!st || st.error) return;
+    const sp = st.sparkline || {};
+    [['alog-stat-total', st.total, sp.ops, '#6c63ff'], ['alog-stat-users', st.unique_users, sp.users, '#4caf50'],
+     ['alog-stat-loginfail', st.login_failures, sp.login_failures, '#ff9800'], ['alog-stat-important', st.important, sp.important, '#f44336']]
+        .forEach(([id, v, series, colour]) => {
+            const card = document.getElementById(id);
+            if (!card) return;
+            card.querySelector('.card-value').textContent = formatNumber(v || 0);
+            card.querySelectorAll('.sparkline-svg').forEach(x => x.remove());
+            if (series) card.insertAdjacentHTML('beforeend', buildSparkSVG(series, colour, 'number'));
+        });
+}
+
 async function loadAppAudit(page) {
     _alogPage = Math.max(1, Number(page) || 1);
+    loadAppAuditStats();
     const q = new URLSearchParams({
         limit: ALOG_PAGE_SIZE, offset: (_alogPage - 1) * ALOG_PAGE_SIZE
     });
@@ -4006,6 +4023,7 @@ async function loadNotifySettings() {
         };
         // An older backend (or a config written before Zulip existed) has no block.
         const zl = data.zulip || {};
+        const wh = data.webhook || {};
         const _chk = (id, en) => `<label class="u041"><input type="checkbox" id="${id}" ${en ? 'checked' : ''} data-act-change="toggleChannelFields" data-act-self> ${t('notify_enabled')}</label>`;
         const _vis = (en) => en ? '' : 'data-collapsed="1"';
         // Secret field: password input + eye toggle button
@@ -4063,6 +4081,16 @@ async function loadNotifySettings() {
             </div>
         </div>
         <div class="channel-card">
+            <h4>${icon('link', 20)} ${t('notify_webhook')}</h4>
+            ${_chk('nf-webhook-enabled', wh.enabled)}
+            <div class="channel-fields" ${_vis(wh.enabled)}>
+                <p class="form-hint">${t('notify_webhook_hint')}</p>
+                <div class="form-group"><label>${t('notify_webhook_url')}</label>${_secret('nf-webhook-url', wh.webhook_url || '')}</div>
+                <div class="form-group"><label>${t('notify_webhook_secret')}</label>${_secret('nf-webhook-secret', wh.secret || '')}</div>
+                <div class="form-group"><label class="u033"><input type="checkbox" id="nf-webhook-verify" ${wh.verify_ssl === false ? '' : 'checked'}> ${t('notify_webhook_verify')}</label></div>
+            </div>
+        </div>
+        <div class="channel-card">
             <h4>${chLogos.email} Email (SMTP)</h4>
             ${_chk('nf-email-enabled', data.email.enabled)}
             <div class="channel-fields" ${_vis(data.email.enabled)}>
@@ -4101,6 +4129,7 @@ async function saveNotifySettings(evt) {
     body.slack = {enabled: !!document.getElementById('nf-slack-enabled')?.checked, webhook_url: document.getElementById('nf-slack-url')?.value || ''};
     body.teams = {enabled: !!document.getElementById('nf-teams-enabled')?.checked, webhook_url: document.getElementById('nf-teams-url')?.value || ''};
     body.nextcloud_talk = {enabled: !!document.getElementById('nf-nc-enabled')?.checked, server_url: document.getElementById('nf-nc-server')?.value || '', token: document.getElementById('nf-nc-token')?.value || '', username: document.getElementById('nf-nc-user')?.value || '', password: document.getElementById('nf-nc-pass')?.value || ''};
+    body.webhook = {enabled: !!document.getElementById('nf-webhook-enabled')?.checked, webhook_url: (document.getElementById('nf-webhook-url')?.value || '').trim(), secret: document.getElementById('nf-webhook-secret')?.value || '', verify_ssl: !!document.getElementById('nf-webhook-verify')?.checked};
     body.zulip = {enabled: !!document.getElementById('nf-zulip-enabled')?.checked, server_url: (document.getElementById('nf-zulip-server')?.value || '').trim(), bot_email: (document.getElementById('nf-zulip-email')?.value || '').trim(), api_key: document.getElementById('nf-zulip-key')?.value || '', stream: (document.getElementById('nf-zulip-stream')?.value || '').trim(), topic: (document.getElementById('nf-zulip-topic')?.value || '').trim() || 'jt-glogarch'};
     const toAddrs = (document.getElementById('nf-email-to')?.value || '').split('\n').map(s => s.trim()).filter(s => s);
     body.email = {enabled: !!document.getElementById('nf-email-enabled')?.checked, smtp_host: document.getElementById('nf-email-host')?.value || '', smtp_port: parseInt(document.getElementById('nf-email-port')?.value) || 587, smtp_tls: !!document.getElementById('nf-email-tls')?.checked, smtp_user: document.getElementById('nf-email-user')?.value || '', smtp_password: document.getElementById('nf-email-pass')?.value || '', from_addr: document.getElementById('nf-email-from')?.value || '', to_addrs: toAddrs, subject_prefix: document.getElementById('nf-email-prefix')?.value || '[jt-glogarch]'};
@@ -5766,7 +5795,7 @@ function renderReportHistory(items) {
         <td>${h.status === 'completed' ? statusBadge('completed')
               : statusBadge('failed') + (h.error ? ` <span class="text-danger fs-08">${esc(jobNote(h.error).slice(0, 18))}${jobNote(h.error).length > 18 ? '…' : ''}</span> <span class="link-like fs-08" data-act="showAlert" data-arg="${esc(h.error)}">${t('reports_err_detail')}</span>` : '')}</td>
         <td>${h.size_bytes ? formatBytes(h.size_bytes) : '-'}</td>
-        <td>${h.sha256 ? `<code class="fp-hash" title="SHA-256: ${esc(h.sha256)}">${esc(h.sha256.slice(0,12))}…</code> <span class="link-like fs-08" data-act="showReportFingerprint" data-arg="${esc(h.sha256)}|${esc(h.filename||'')}">${t('reports_verify')}</span>` : '-'}</td>
+        <td>${h.sha256 ? `<code class="fp-hash" title="SHA-256: ${esc(h.sha256)}">${esc(h.sha256.slice(0,12))}…</code> <button type="button" class="btn-sm btn-secondary fp-verify" data-act="showReportFingerprint" data-arg="${esc(h.sha256)}|${esc(h.filename||'')}">${icon('shield', 13)} ${esc(t('reports_verify'))}</button>` : '-'}</td>
         <td>${h.status === 'completed' && h.file_path ? `<a class="btn-sm btn-secondary" href="${API}/reports/history/${h.id}/download">${icon('download',14)} PDF</a>` : '-'}</td>
     </tr>`).join('');
 }
@@ -6269,3 +6298,19 @@ function modalCloseButtons(root) {
     });
 }
 document.addEventListener('DOMContentLoaded', () => modalCloseButtons());
+
+// A table whose rows are still on their way shows "Loading" with a spinner, not an empty frame
+// (owner 2026-11-27: an empty table on arrival "會以為資料都不見了"). Every loader replaces the
+// tbody, which removes the row; one nobody fills says "No data" after 30 s instead of spinning on.
+function markLoadingTables(root) {
+    (root || document).querySelectorAll('table tbody').forEach(tb => {
+        if (tb.children.length || tb.dataset.noLoading !== undefined || tb.closest('.modal, dialog, .is-hidden, .hidden')) return;
+        const cols = Math.max(1, (tb.closest('table').querySelector('thead tr') || {children: [1]}).children.length);
+        tb.innerHTML = `<tr class="loading-row"><td colspan="${cols}" class="text-center text-muted"><span class="spinner-text">${esc(t('loading'))}</span></td></tr>`;
+        setTimeout(() => {
+            const row = tb.querySelector('tr.loading-row');
+            if (row && tb.children.length === 1) row.firstElementChild.textContent = t('no_data');
+        }, 30000);
+    });
+}
+document.addEventListener('DOMContentLoaded', () => markLoadingTables());

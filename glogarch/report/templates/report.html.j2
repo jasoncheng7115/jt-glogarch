@@ -129,13 +129,19 @@
   .text-body, .text-note { font-size: 12px; line-height: 1.7; margin: 0; white-space: pre-line; }
   .text-part-title { font-size: 14px; margin: 0 0 2mm; }
   /* key facts the model marked: a marker-pen band under bold text, readable in print and grey scale */
-  /* findings: brand edge, number badge, airy body */
-  .card.card-finding { border-left: 4px solid var(--brand); padding: 5mm 6mm 5mm 6mm; background: #fcfcff; }
-  .card-finding h2.widget { display: flex; align-items: flex-start; gap: 3mm; font-size: 14px; line-height: 1.45; margin-bottom: 3mm; }
-  .fnum { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 6.5mm; height: 6.5mm;
-          border-radius: 50%; background: var(--brand); color: #fff; font-size: 11px; font-weight: 700; margin-top: 0.3mm; }
-  .card-finding .text-body { font-size: 12px; line-height: 1.85; color: #2b3040; padding-left: 9.5mm; }
+  /* findings read like a document: a plain white card, the number as "1." before the title; no coloured
+     edge, tint or round badge (owner 2026-11-27: that card style "ai味很重") */
+  .card.card-finding { border: 1px solid #e3e6ee; padding: 5mm 6mm; background: #fff; box-shadow: none; }
+  .card-finding h2.widget { display: flex; align-items: baseline; gap: 2mm; font-size: 14px; line-height: 1.45; margin-bottom: 2.5mm; }
+  .fnum { flex: none; color: #1c1e2b; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .fnum::after { content: "."; }
+  .card-finding .text-body { font-size: 12px; line-height: 1.85; color: #2b3040; }
   .card.card-image { page-break-inside: auto; }
+  /* a dashboard taken apart: each block a card of its own, never split across pages; a block taller
+     than a page is shrunk to fit; narrow blocks two to a row */
+  .card.card-block { page-break-inside: avoid; break-inside: avoid; padding: 3mm; }
+  .card.card-block img.pic { display: block; max-width: 100%; max-height: 228mm; width: auto !important; height: auto; margin: 0 auto; }
+  .card.card-half { display: inline-block; vertical-align: top; width: 48.8%; box-sizing: border-box; }
   /* counts side by side, two to a row, instead of a whole card each */
   .card.card-number { display: inline-block; vertical-align: top; width: 48.8%; margin-right: 0; box-sizing: border-box; }
   .card-number .single-value .v { font-size: 30px; }
@@ -238,8 +244,8 @@
 
     {% elif sec.type == 'charts' %}
       {% for w in sec.widgets %}
-      <div class="card{% if w.kind == 'text' %} card-finding{% elif w.kind == 'image' and w.tall %} card-image{% elif w.kind == 'single' and w.compact %} card-number{% endif %}">
-        <h2 class="widget">{% if w.num %}<span class="fnum">{{ w.num }}</span>{% endif %}<span>{{ w.title }}</span></h2>
+      <div class="card{% if w.kind == 'text' %} card-finding{% elif w.kind == 'image' and w.block %} card-block{% if w.half %} card-half{% endif %}{% elif w.kind == 'image' and w.tall %} card-image{% elif w.kind == 'single' and w.compact %} card-number{% endif %}">
+        {% if w.title or w.num %}<h2 class="widget">{% if w.num %}<span class="fnum">{{ w.num }}</span>{% endif %}<span>{{ w.title }}</span></h2>{% endif %}
         {% if w.description %}<div class="desc">{{ w.description }}</div>{% endif %}
         {% if w.kind == 'single' %}
           <div class="single-value"><div class="v">{{ w.value }}</div>{% if w.label %}<div class="l">{{ w.label }}</div>{% endif %}

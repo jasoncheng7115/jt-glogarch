@@ -735,8 +735,11 @@ def sigma_library(request: Request, q: str = "", product: str = "", level: str =
     hits = [e for e in entries if keep(e)]
     if ids_only:
         # "select every rule this filter matches" (owner 2026-11-27): the ids that can still be added
+        # and say what was left out, so 56 of "64" does not read as a miss (owner 2026-11-27)
         return {"ids": [e["sigma_id"] for e in hits if e.get("query") and e["sigma_id"] not in added],
-                "total": len(hits)}
+                "total": len(hits),
+                "already_added": sum(1 for e in hits if e["sigma_id"] in added),
+                "not_convertible": sum(1 for e in hits if not e.get("query") and e["sigma_id"] not in added)}
     offset, limit = max(0, int(offset)), max(1, min(int(limit), 200))
     pub = {k: v for k, v in meta.items() if k != "graylog_fields"}
     pub["graylog_field_count"] = len(gl_fields) if gl_fields is not None else None

@@ -54,6 +54,7 @@ def _has_any_channel(config: NotifyConfig) -> bool:
         config.teams.enabled,
         config.nextcloud_talk.enabled,
         config.zulip.enabled,
+        config.webhook.enabled,
         config.email.enabled,
     ])
 
@@ -129,6 +130,10 @@ async def deliver_to_channels(config: NotifyConfig, title: str, message: str,
 
         if config.zulip.enabled:
             results.append(await _send_zulip(client, config.zulip, title, message, timestamp, rich=rich))
+
+    if config.webhook.enabled:
+        # its own client: verify_ssl is per channel
+        results.append(await _send_webhook(config.webhook, title, message, timestamp))
 
     if config.email.enabled:
         results.append(await _send_email(config.email, title, message, timestamp, rich=rich))
@@ -374,6 +379,46 @@ async def _send_zulip(client: httpx.AsyncClient, cfg, title: str, message: str, 
         return {"channel": "zulip", "success": True}
     except Exception as e:
         return {"channel": "zulip", "success": False, "error": str(e)}
+
+
+# --- Standard webhook ---
+
+def webhook_body(title: str, message: str, ts: str) -> bytes:
+    """The JSON a webhook receives. Plain text fields: the receiver formats them."""
+    import json
+    import socket
+    return json.dumps({"source": "jt-glogarch", "host": socket.gethostname(), "title": title,
+                       "message": message, "time": ts}, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def webhook_signature(secret: str, stamp: str, body: bytes) -> str:
+    """"sha256=" + HMAC-SHA256(secret, "<timestamp>." + body): the timestamp is signed too, so a
+    captured request cannot be replayed with a new time."""
+    import hashlib
+    import hmac
+    return "sha256=" + hmac.new(secret.encode("utf-8"), stamp.encode("ascii") + b"." + body, hashlib.sha256).hexdigest()
+
+
+async def _send_webhook(cfg, title: str, message: str, ts: str) -> dict:
+    import time
+    from glogarch import __version__
+    try:
+        if not cfg.webhook_url:
+            raise RuntimeError("Webhook URL not set")
+        body = webhook_body(title, message, ts)
+        headers = {"Content-Type": "application/json; charset=utf-8", "User-Agent": f"jt-glogarch/{__version__}"}
+        if cfg.secret:
+            stamp = str(int(time.time()))
+            headers["X-JT-Timestamp"] = stamp
+            headers["X-JT-Signature"] = webhook_signature(cfg.secret, stamp, body)
+        async with httpx.AsyncClient(timeout=TIMEOUT, verify=bool(cfg.verify_ssl)) as client:  # nosec B501 - operator's choice per channel
+            resp = await client.post(cfg.webhook_url, content=body, headers=headers)
+        if resp.status_code >= 400:
+            detail = resp.text[:200].strip()
+            raise RuntimeError(f"HTTP {resp.status_code}: {detail}" if detail else f"HTTP {resp.status_code}")
+        return {"channel": "webhook", "success": True}
+    except Exception as e:
+        return {"channel": "webhook", "success": False, "error": str(e)}
 
 
 # --- Email (SMTP) ---
@@ -663,7 +708,7 @@ _MSG = {
         "sec_m_new_sources": "新來源",
         "sec_m_baseline": "筆（停止前 24 小時）",
         "sec_det_volume_anomaly": "記錄量異常",
-        "sec_m_rate": "筆／小時（目前）", "sec_m_usual": "筆／小時（這個時段平常）",
+        "sec_m_rate": "筆/小時（目前）", "sec_m_usual": "筆/小時（這個時段平常）",
         "sec_m_ratio": "倍",
         "datanode_fallback_title": "⚠️ Data Node 無法使用，已改用 Graylog API 歸檔",
         "datanode_fallback_body": ("排程：{schedule}\n伺服器：{server}\n"
@@ -783,7 +828,7 @@ _MSG = {
         "sec_m_new_sources": "新しい送信元",
         "sec_m_baseline": "件（停止前の 24 時間）",
         "sec_det_volume_anomaly": "レコード量の異常",
-        "sec_m_rate": "件／時（現在）", "sec_m_usual": "件／時（この時間帯の通常）",
+        "sec_m_rate": "件/時（現在）", "sec_m_usual": "件/時（この時間帯の通常）",
         "sec_m_ratio": "倍（通常比）",
         "datanode_fallback_title": "⚠️ Data Node が使用できないため、Graylog API でアーカイブしました",
         "datanode_fallback_body": ("スケジュール：{schedule}\nサーバー：{server}\n"

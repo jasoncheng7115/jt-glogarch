@@ -343,6 +343,118 @@ select:not(.custom-done) {
 .login-card input { height: 40px; padding: 0 12px; }
 :root .login-card button[type="submit"] { height: 40px; padding: 0; font-size: 1em; }
 
+/* ---- jt-waf-mgr look (owner 2026-11-27: "我們的使用 ui 樣式不夠美觀 你可以參考 jt-waf-mgr 的風格調整")
+   Light theme only, structure unchanged: a light sidebar with a tinted active row, the page on a
+   blue-grey ground, white cards with a hairline border and a soft two-layer shadow, table heads on a
+   pale band, quiet outlined buttons beside one solid primary. Dark theme keeps its own palette. */
+[data-theme="light"] {
+    --bg: #eef2f8;
+    --bg-subtle: #f6f8fc;
+    --line: #e9eef5;
+    --border: #e1e7f0;
+    --border-strong: #cfd8e3;
+    --text: #0f172a;
+    --text-primary: #0f172a;
+    --text-label: #334155;
+    --text-muted: #64748b;
+    --thead-bg: #f6f8fc;
+    --hover-bg: #f6f8fc;
+    --hover-solid: #f1f4f9;
+    --sidebar-bg: #ffffff;
+    --sidebar-line: #e6ebf2;
+    --sidebar-text: #334155;
+    --sidebar-hover-bg: #f3f5f9;
+    --sidebar-active-bg: #e9edf3;
+    --sidebar-active-icon: #5b52e0;
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, .04), 0 4px 16px rgba(15, 23, 42, .05);
+}
+[data-theme="light"] .sidebar { border-right: 1px solid var(--sidebar-line); box-shadow: 1px 0 0 rgba(15, 23, 42, .02); }
+[data-theme="light"] .sidebar-header { border-bottom-color: var(--sidebar-line); }
+[data-theme="light"] .sidebar-header h2 { color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: -0.02em; }
+[data-theme="light"] .sidebar-header small { color: var(--text-muted); opacity: 1; }
+[data-theme="light"] .sidebar-footer { border-top-color: var(--sidebar-line); }
+[data-theme="light"] .sidebar-toggle { background: var(--bg-subtle); color: var(--text-muted); border: 1px solid var(--border); }
+[data-theme="light"] .sidebar-toggle:hover { background: var(--sidebar-hover-bg); color: var(--accent); }
+[data-theme="light"] .nav-links li a { color: var(--sidebar-text); }
+[data-theme="light"] .nav-links li a svg { color: #7a8299; opacity: 1; }
+/* the current page: a plain grey row with bold dark text, the icon in the brand colour; no coloured
+   bar or tinted pill (owner 2026-11-27: "已選擇的框 不要用這種ai味很重的框") */
+[data-theme="light"] .nav-links li a { border-radius: 6px; }
+[data-theme="light"] .nav-links li a:hover { background: #f3f5f9; color: var(--text); }
+[data-theme="light"] .nav-links li a.active { background: #e9edf3; color: var(--text); font-weight: 650; box-shadow: none; }
+[data-theme="light"] .nav-links li a.active svg { color: var(--accent); }
+[data-theme="light"] .sidebar-footer .version-info { color: var(--text-muted); opacity: 1; }
+[data-theme="light"] .logout-link { color: var(--text-muted); }
+[data-theme="light"] .lang-switcher select, [data-theme="light"] .sidebar-footer .custom-select-trigger {
+    background: #fff; background-color: #fff; border-color: var(--border-strong); color: var(--text-label); }
+[data-theme="light"] .theme-toggle, :root[data-theme="light"] .theme-toggle { background: #fff; border-color: var(--border-strong); color: var(--text-muted); }
+[data-theme="light"] .theme-toggle:hover, :root[data-theme="light"] .theme-toggle:hover { background: var(--sidebar-hover-bg); border-color: var(--accent); color: var(--accent); }
+[data-theme="light"] .sidebar-job-status { color: #8a5300; background: #fff7e6; border-top-color: #f5dfb3; }
+[data-theme="light"] .sidebar-job-status .sb-job + .sb-job { border-top-color: #f2d9a6; }
+/* page title: big and bold, like jt-waf-mgr's */
+[data-theme="light"] .content h1 { font-size: 1.62em; font-weight: 700; color: var(--text); }
+[data-theme="light"] .content > h2, [data-theme="light"] .section > h2 { color: var(--text); font-weight: 680; }
+/* cards and tables */
+[data-theme="light"] .card, [data-theme="light"] .form-card, [data-theme="light"] .table-container,
+[data-theme="light"] .stat-card {
+    background: #fff; border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-sm); }
+[data-theme="light"] thead { background: var(--thead-bg); }
+[data-theme="light"] th { color: #475569; font-weight: 650; font-size: 0.92em; border-bottom: 1px solid var(--border); }
+[data-theme="light"] td { border-bottom-color: var(--line); }
+[data-theme="light"] tbody tr:hover { background: #f8faff; }
+/* controls */
+[data-theme="light"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+[data-theme="light"] select, [data-theme="light"] textarea, [data-theme="light"] .custom-select-trigger {
+    border-color: var(--border-strong); border-radius: 7px; background-color: #fff; }
+[data-theme="light"] input:focus, [data-theme="light"] select:focus, [data-theme="light"] textarea:focus {
+    border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91, 82, 224, .14); outline: none; }
+:root[data-theme="light"] .btn-secondary { background: #fff; border: 1px solid var(--border-strong); color: var(--text-label); }
+:root[data-theme="light"] .btn-secondary:hover { border-color: var(--accent); color: var(--accent-text); background: #fff; }
+:root[data-theme="light"] .btn-primary { box-shadow: 0 2px 8px rgba(91, 82, 224, .28); }
+:root[data-theme="light"] td .btn-primary { box-shadow: none; }
+/* tabs: an underline in the brand colour */
+[data-theme="light"] .arch-tabs { border-bottom-color: var(--border); }
+
+/* ---- Date picker (datepicker.js; owner 2026-11-27: the browser's picker "不好看") ---- */
+.dp-wrap { display: block; position: relative; min-width: 0; }
+input.dp-native { display: none !important; }
+.dp-trigger { display: flex; align-items: center; gap: 8px; width: 100%; height: var(--h-control); padding: 0 10px; border: 1px solid var(--border-strong);
+    border-radius: 7px; background: var(--field-bg); color: var(--text); font: inherit; font-size: 0.95em; cursor: pointer; text-align: left; white-space: nowrap; }
+:root .dp-trigger:hover { border-color: var(--accent); background: var(--field-bg); }
+.dp-trigger[aria-expanded="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+.dp-trigger:disabled { opacity: 0.6; cursor: not-allowed; }
+.dp-ic { display: inline-flex; color: var(--text-muted); flex: none; }
+.dp-ic svg { width: 16px; height: 16px; }
+.dp-text { overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.dp-placeholder { color: var(--text-dim); }
+.dp-pop { position: absolute; z-index: 3000; width: 292px; padding: 12px; background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: var(--shadow-lg); color: var(--text); font-size: 14px; }
+.dp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.dp-month { font-weight: 650; }
+:root .dp-nav { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--card-bg); color: var(--text-muted); cursor: pointer; padding: 0; }
+:root .dp-nav:hover { border-color: var(--accent); color: var(--accent); background: var(--card-bg); }
+.dp-nav svg { width: 16px; height: 16px; }
+.dp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.dp-wd { text-align: center; font-size: 12px; color: var(--text-muted); padding: 4px 0; }
+:root .dp-day { display: flex; align-items: center; justify-content: center; text-align: center; height: 34px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font: inherit; font-size: 13.5px;
+    cursor: pointer; font-variant-numeric: tabular-nums; padding: 0; }
+:root .dp-day:hover { background: var(--hover-solid); }
+:root .dp-day.dp-out { color: var(--text-dim); }
+:root .dp-day.dp-today { box-shadow: inset 0 0 0 1px var(--accent); }
+:root .dp-day.dp-sel, :root .dp-day.dp-sel:hover { background: var(--accent); color: #fff; font-weight: 650; box-shadow: none; }
+.dp-time { display: flex; align-items: center; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.dp-time-label { color: var(--text-muted); font-size: 13px; margin-right: auto; }
+:root .dp-time input { width: 46px; height: 32px; text-align: center; padding: 0; border: 1px solid var(--border-strong); border-radius: 7px;
+    background: var(--field-bg); color: var(--text); font: inherit; font-variant-numeric: tabular-nums; }
+.dp-colon { color: var(--text-muted); font-weight: 650; }
+.dp-foot { display: flex; gap: 6px; margin-top: 10px; }
+:root .dp-btn { height: 30px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--card-bg); color: var(--text-label);
+    font: inherit; font-size: 13px; cursor: pointer; }
+:root .dp-btn:hover { border-color: var(--accent); color: var(--accent-text); background: var(--card-bg); }
+:root .dp-btn.dp-done { margin-left: auto; background: var(--accent); border-color: var(--accent); color: #fff; }
+:root .dp-btn.dp-done:hover { background: var(--accent-hover); color: #fff; }
+
 /* ---- Phone width ---------------------------------------------------------
    style.css has a phone layout (icon-only 54px sidebar), but the rules above
    re-set the nav links' size and padding and the content padding after it, so
@@ -356,6 +468,7 @@ select:not(.custom-done) {
     .nav-links li a svg { width: 20px; height: 20px; }
     .sidebar.collapsed .nav-links { padding: 8px 4px; }
     .sidebar-header h2 { font-size: 0; gap: 0; justify-content: center; }
+    .sidebar-header small { display: none; }
     .ai-sep { display: none; }
     h1 { font-size: 1.3em; }
     .card { padding: 14px; }

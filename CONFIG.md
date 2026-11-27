@@ -380,6 +380,12 @@ notify:
     stream: ""           # stream (channel) the bot is subscribed to
     topic: "jt-glogarch"
 
+  webhook:              # v1.38.0: JSON POST {source, host, title, message, time}
+    enabled: false
+    webhook_url: ""
+    secret: ""           # signing secret: X-JT-Signature = sha256=HMAC-SHA256(secret, X-JT-Timestamp + "." + body)
+    verify_ssl: true
+
   email:
     enabled: false
     smtp_host: ""

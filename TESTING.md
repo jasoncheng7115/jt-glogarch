@@ -1693,6 +1693,13 @@ Graylog too (a scratch config on any box; `.36` points at production log4).
 - [ ] `tests/test_security_export.py`: text / detection / time filters (a % is literal, a Sigma title is searched), the detection list, every export format (CSV prefixes formula-looking cells; XLSX and ODS are well-formed, hold no formula, ODS starts with its uncompressed mimetype; JSON and Markdown follow the filters), an unknown format refused, the old `.csv` link kept, the format audited. By hand: open the .xlsx in Excel and the .ods in LibreOffice; incidents list at ~1436 px in both themes (edges, pills, the action block within its column).
 - [ ] Library: 13 published packs (`tests/test_packs.py::PUBLISHED`, `test_contentpack_guard.py::PUBLISHED_PACKS`); each installs from the Content Packs page and its download carries the guide.
 
+### 1.38.0
+
+- [ ] `tests/test_notify_webhook.py`: JSON body, HMAC signature a receiver can recompute, no signature without a secret, TLS verify off, the receiver's error text, missing URL sends nothing, the one channel list, masked URL / secret kept on save, SSRF refused, form fields present. By hand: point it at a request catcher and check the signature.
+- [ ] `tests/test_ui_138.py`: app-audit tiles (24 h counts and trends), loading row in tables, date picker wired and value format kept, report pictures turned light, plain finding cards, plain current-page row, Sigma select-all reports what it left out. `tests/test_halfwidth_slash.py`: no full-width slash.
+- [ ] By hand at ~1436 px, light and dark: sidebar, dashboard, archives (date picker open and set), security incidents (tags), op-audit both tabs (tiles), reports (loading row, Verify button); an AI summary PDF from a conversation with an HTML dashboard (blocks, none cut), and a timeline of events, of counts and of from-to rows.
+- [ ] Pages: `python3 scripts/pages/build.py` prints no LINT; the label/line overlap check is clean in all three languages.
+
 ## Upgrade Compatibility Test (mandatory)
 
     REPO=/path/to/git-clone bash scripts/upgrade-compat-test.sh [version ...]

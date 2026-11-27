@@ -3139,3 +3139,16 @@ button.ov-tile-link:hover { border-color: var(--accent); background: var(--card-
 }
 .pk-v-head.modal-head-x { display: flex; align-items: center; gap: 8px; }
 .pk-v-head.modal-head-x > .modal-x { margin-left: auto; }
+.sl-legend { margin: 6px 0 10px; line-height: 1.9; }
+.sl-legend .sl-field { margin-right: 4px; }
+/* every incident tag one box: same height, centred content, on the same line as the address
+   (owner 2026-11-27: "外部" and "TI" differed in height and position) */
+.sec-tag { display: inline-flex; align-items: center; gap: 3px; height: 20px; line-height: 1; vertical-align: middle;
+    padding: 0 6px; box-sizing: border-box; position: relative; top: -1px; }
+.sec-tag svg { width: 11px; height: 11px; flex: none; }
+.sec-entity > code { vertical-align: middle; }
+.aix-tl-spine { stroke: var(--border-strong); stroke-width: 2; }
+.aix-tl-strong { font-weight: 600; font-size: 12px; }
+/* report history: the fingerprint, then a real Verify button beside it (owner 2026-11-27) */
+td .fp-verify { margin-left: 6px; vertical-align: middle; white-space: nowrap; }
+.ai-tool-done .ai-tool-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

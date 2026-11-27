@@ -1,4 +1,4 @@
-# jt-glogarch v1.37.0
+# jt-glogarch v1.38.0
 
 **Language**: [English](README.md) | [繁體中文](README-zh_TW.md) | **日本語**  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open（6.x / 7.x）向けのログのアーカイブ・リストアツール
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.37.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.38.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 > **作者：** Jason Cheng（[Jason Tools](https://github.com/jasoncheng7115)）
@@ -167,7 +167,7 @@ jt-glogarch 自身で行った操作（アーカイブ削除、設定変更、�
 
 ### 通知
 
-Telegram・Discord・Slack・Microsoft Teams・Nextcloud Talk・Zulip・Email（SMTP）の 7 チャネルに対応しています。
+Telegram・Discord・Slack・Microsoft Teams・Nextcloud Talk・Zulip・標準 Webhook（HMAC）・Email（SMTP）の 8 チャネルに対応しています。
 通知の言語は English / 繁體中文 / 日本語 から選択できます。
 
 ### Web UI
@@ -188,9 +188,9 @@ Telegram・Discord・Slack・Microsoft Teams・Nextcloud Talk・Zulip・Email（
 
 ### アラート管理（v1.17.0 以降）
 
-Graylog のイベント定義と通知を一括で管理します。クイックフィルター、タイトルのタグ（`[ベンダー]`／`製品 - `）、
+Graylog のイベント定義と通知を一括で管理します。クイックフィルター、タイトルのタグ（`[ベンダー]`/`製品 - `）、
 複数キーワード検索（`checkpoint -notif:Zulip`）、Shift クリックでの範囲選択と「一致するものをすべて選択」のあと、
-数百件の定義に通知をまとめて追加・削除・置き換えできます。変更は必ずプレビューしてから適用し、各定義の有効／無効は
+数百件の定義に通知をまとめて追加・削除・置き換えできます。変更は必ずプレビューしてから適用し、各定義の有効/無効は
 そのまま保たれ、プレビュー後に Graylog で変更された定義はスキップされます。タスクログのジョブとして実行され、
 「変更履歴」から元に戻せます。ヘルスチェックでは、有効なのに誰にも通知されない定義、削除済み・未使用の通知、
 一度も（または長期間）一致していない定義を一覧にします。変更はログインしたユーザー自身の Graylog アカウントで
@@ -225,7 +225,7 @@ Graylog API トークンで認証します。mcp_graylog 1.10.2 では Graylog �
 v1.37.0 以降、回答のクエリから実際の Graylog ダッシュボードを作成できます（ダイアログで名前、期間、グラフと種類を選びます。
 jt-glogarch が作成し、あなた自身の Graylog セッションで作成します。作成のみで、変更や削除はしません）。会話はレポートエンジンで
 要約 PDF にでき（モデルが調査結果を書き、グラフはクエリを再実行した結果です。本文中でデータに見つからない数値やアドレスは
-最初のページに表示します）、開始／終了時刻を含む表はタイムラインとして表示できます。
+最初のページに表示します）、開始/終了時刻を含む表はタイムラインとして表示できます。
 
 ### セキュリティ概要（v1.29.0 以降）
 
@@ -284,7 +284,7 @@ AI の判定、抑制ルール、そして何より分析が実際に実行さ�
 ### 資産とリスクランキング（v1.25.0 以降）
 
 重要なアドレス、ネットワーク、ホスト、アカウントを重要度とともに登録します。それらに関わるインシデントには印が付き、
-AI 分析にも伝わります。リスクランキングは未対応のインシデントから送信元／対象を順位付けし、すべての点数の内訳
+AI 分析にも伝わります。リスクランキングは未対応のインシデントから送信元/対象を順位付けし、すべての点数の内訳
 （重大度、外部の送信元、資産の重要度、AI 判定）を表示します。
 
 ### 調査ケース（v1.24.0 以降）
@@ -369,7 +369,7 @@ Bulk インポートを使用できます。接続するまでは、Graylog API 
 - Python 3.10 以上
 - Graylog 6.x または 7.x（Open 版）
 - OpenSearch 2.x（任意、OpenSearch 直接モード・Bulk インポートを使う場合）
-- Linux（Ubuntu 22.04 / Debian 12 / RHEL 9 で動作確認）
+- Linux：Ubuntu 24.04 以降、Debian 12 以降（RHEL 9 でも動作確認）
 
 ---
 
@@ -757,7 +757,7 @@ sudo -u jt-glogarch glogarch -c /opt/jt-glogarch/config.yaml import \
 ### 通知
 
 - **チャネル：** Telegram（Bot トークン、Chat ID）、Discord / Slack / Microsoft Teams（Webhook URL）、
-  Nextcloud Talk（サーバー URL、トークン、ユーザー名、パスワード）、Zulip（サーバー URL、ボットのメールアドレス、API キー、ストリーム、トピック）、Email（SMTP ホスト、ポート、TLS、
+  Nextcloud Talk（サーバー URL、トークン、ユーザー名、パスワード）、Zulip（サーバー URL、ボットのメールアドレス、API キー、ストリーム、トピック）、標準 Webhook（URL、署名用シークレット（任意）、TLS 検証。JSON `{source, host, title, message, time}`、シークレット設定時は `X-JT-Signature: sha256=<HMAC-SHA256(シークレット、X-JT-Timestamp + "." + 本文)>`）、Email（SMTP ホスト、ポート、TLS、
   ユーザー、パスワード、送信元、宛先）。
 - **言語：** English / 繁體中文 / 日本語。テスト通知を含むすべての通知に適用されます。
 - **トリガー：** エクスポート完了、インポート完了、クリーンアップ完了、エラー、検証失敗、重要操作

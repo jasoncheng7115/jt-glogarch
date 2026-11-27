@@ -369,3 +369,11 @@ section#flow figure.fig, section#ai figure.fig, section#audit figure.fig { margi
 ol.flow + .two, ol.flow + .reccard, ol.flow + h3 { margin-top: 30px; }
 ol.flow li code { overflow-wrap: anywhere; word-break: break-all; }
 @media (max-width: 560px) { .home-top { display: none; } header.top .wrap { gap: 10px; } }
+/* two step strips side by side (export modes): one set of row heights for both, so the cards line up
+   across the columns (owner 2026-11-27: "兩邊的卡片 高度要對齊") */
+@media (min-width: 861px) {
+  .steps-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto auto auto auto; column-gap: 36px; row-gap: 0; }
+  .steps-pair > div { display: grid; grid-row: span 4; grid-template-rows: subgrid; row-gap: 12px; }
+  .steps-pair > div > h3 { margin: 0 0 0; align-self: end; }
+  .steps-pair > div > ol.flow { grid-row: span 3; grid-template-rows: subgrid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

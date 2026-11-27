@@ -420,6 +420,18 @@ def pair_tiles(widgets: list[dict]) -> list[dict]:
     return widgets
 
 
+def _pair_halves(ws: list[dict]) -> None:
+    """A narrow block shares a row only with the narrow block next to it; a lone one is full width."""
+    run = []
+    for w in ws + [{"half": False}]:
+        if w.get("half"):
+            run.append(w)
+            continue
+        if len(run) % 2:
+            run[-1]["half"] = False
+        run = []
+
+
 def build_sections(result: dict | None, specs: list[dict], data: dict, lang: str,
                    titles: dict | None = None) -> list[dict]:
     from glogarch.ai import diagrams as DG
@@ -431,6 +443,14 @@ def build_sections(result: dict | None, specs: list[dict], data: dict, lang: str
             w = DG.report_widget(s, titles.get(s["id"], ""), d)
             if w["kind"] == "none":
                 w["description"] = t("draw_failed", lang).replace("{e}", str(w.get("description") or ""))
+            if w["kind"] == "blocks":
+                # one card per block of the dashboard; narrow blocks two to a row (like widgets)
+                ws = [{"kind": "image", "title": w["title"] if n == 0 else "", "slices": [b["img"]],
+                       "img_width": min(b["width"], DG.CAPTURE_WIDTH), "block": True,
+                       "half": b["half"]} for n, b in enumerate(w["blocks"])]
+                _pair_halves(ws)
+                widgets[s["id"]] = ws
+                continue
             widgets[s["id"]] = w
             continue
         widgets[s["id"]] = C.report_widget(s, d, titles.get(s["id"], ""), lang)
@@ -446,10 +466,15 @@ def build_sections(result: dict | None, specs: list[dict], data: dict, lang: str
         for n, f in enumerate(result["findings"], 1):
             ws.append({"kind": "text", "num": n, "title": f["title"], "text": unmarked(f["detail"]),
                        "html": marked(f["detail"])})
-            ws += [widgets[i] for i in f["charts"] if i in widgets and i not in used]
+            for i in f["charts"]:
+                if i in widgets and i not in used:
+                    ws += widgets[i] if isinstance(widgets[i], list) else [widgets[i]]
             used.update(f["charts"])
         sections.append({"type": "charts", "title": t("findings", lang), "widgets": ws})
-    rest = [widgets[s["id"]] for s in specs if s["id"] not in used]
+    rest = []
+    for s in specs:
+        if s["id"] not in used:
+            rest += widgets[s["id"]] if isinstance(widgets[s["id"]], list) else [widgets[s["id"]]]
     if rest:
         sections.append({"type": "charts", "title": t("charts", lang), "widgets": rest})
     recs = result["recommendations"] if result else []

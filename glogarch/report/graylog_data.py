@@ -794,9 +794,9 @@ async def rebuild_dashboard_sections(server, dashboard_id: str, *,
                                 merged.setdefault(st_state, {}).setdefault(
                                     "search_types", {})[stid] = r
                                 widget_notes.setdefault(stid, {
-                                    "zh-TW": "此圖表的統計（平均值／不重複計數／百分位數）無法分段合併，"
+                                    "zh-TW": "此圖表的統計（平均值/不重複計數/百分位數）無法分段合併，"
                                              "已改以單次完整範圍查詢執行。",
-                                    "ja": "このグラフの集計（平均／ユニーク数／パーセンタイル）は分割した"
+                                    "ja": "このグラフの集計（平均/ユニーク数/パーセンタイル）は分割した"
                                           "結果を合算できないため、期間全体を 1 回のクエリで実行しました。",
                                 }.get(lang, "This widget's aggregation (avg / cardinality / "
                                             "percentile) cannot be merged from slices; it ran "
@@ -2161,7 +2161,7 @@ def archive_summary_sections(db, lang: str = "zh-TW") -> tuple[dict, list[dict]]
             "kpi_arch": "封存份數", "kpi_msgs": "記錄總數", "kpi_size": "壓縮後大小", "kpi_orig": "原始大小",
             "sec_trend": "封存趨勢（近 30 天）", "trend_desc": "每日新增封存的記錄數。",
             "chart_msgs": "每日封存記錄數", "sec_jobs": "作業概況", "chart_jobs": "作業結果分布",
-            "jobs_desc": "近期匯出／匯入／清除／驗證作業的結果。", "sec_audit": "操作稽核",
+            "jobs_desc": "近期匯出/匯入/清除/驗證作業的結果。", "sec_audit": "操作稽核",
             "audit_desc": "近 7 天 Graylog 操作稽核統計。", "chart_ops": "每日操作次數",
             "ok": "成功", "failed": "失敗", "running": "執行中", "cancelled": "已取消"},
          "en": {
@@ -2175,7 +2175,7 @@ def archive_summary_sections(db, lang: str = "zh-TW") -> tuple[dict, list[dict]]
             "kpi_arch": "アーカイブ数", "kpi_msgs": "レコード総数", "kpi_size": "圧縮後サイズ", "kpi_orig": "元のサイズ",
             "sec_trend": "アーカイブ推移（直近 30 日）", "trend_desc": "1 日あたりに新しくアーカイブされたレコード数。",
             "chart_msgs": "1 日あたりのアーカイブレコード数", "sec_jobs": "ジョブ概況", "chart_jobs": "ジョブ結果の内訳",
-            "jobs_desc": "最近のエクスポート／インポート／クリーンアップ／検証ジョブの結果。", "sec_audit": "操作監査",
+            "jobs_desc": "最近のエクスポート/インポート/クリーンアップ/検証ジョブの結果。", "sec_audit": "操作監査",
             "audit_desc": "直近 7 日間の Graylog 操作監査の統計。", "chart_ops": "1 日あたりの操作数",
             "ok": "成功", "failed": "失敗", "running": "実行中", "cancelled": "キャンセル"}}
     t = L.get(lang, L["zh-TW"])

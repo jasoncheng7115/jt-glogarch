@@ -358,6 +358,12 @@ notify:
     stream: ""           # bot 已加入的串流（頻道）
     topic: "jt-glogarch"
 
+  webhook:              # v1.38.0: JSON POST {source, host, title, message, time}
+    enabled: false
+    webhook_url: ""
+    secret: ""           # 簽章金鑰：X-JT-Signature = sha256=HMAC-SHA256(金鑰，X-JT-Timestamp + "." + 內容)
+    verify_ssl: true
+
   email:
     enabled: false
     smtp_host: ""

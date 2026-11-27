@@ -924,6 +924,17 @@
         </div>
 
         <div id="audit-app-pane" class="is-hidden">
+          <div class="u078" data-i18n="audit_stats_window">Statistics for the last 24 hours</div>
+          <div class="u059" id="alog-stats">
+            <div class="card stat-card u127" id="alog-stat-total" data-i18n-title="alog_tip_ops">
+                <h3 class="u086" data-i18n="alog_stat_ops" data-icon="log">Actions</h3><div class="card-value u092">-</div></div>
+            <div class="card stat-card u127" id="alog-stat-users" data-i18n-title="alog_tip_users">
+                <h3 class="u086" data-i18n="audit_unique_users" data-icon="user">Users</h3><div class="card-value u094">-</div></div>
+            <div class="card stat-card u127" id="alog-stat-loginfail" data-i18n-title="alog_tip_login_fail">
+                <h3 class="u086" data-i18n="audit_login_failures" data-icon="lock">Login Fail</h3><div class="card-value u095">-</div></div>
+            <div class="card stat-card u127" id="alog-stat-important" data-i18n-title="alog_tip_important">
+                <h3 class="u086" data-i18n="alog_stat_important" data-icon="warning">Important changes</h3><div class="card-value u093">-</div></div>
+          </div>
           <div class="card mb15">
             <div class="audit-filters u054">
               <input type="datetime-local" id="alog-from" data-i18n-title="th_from">
@@ -1279,6 +1290,7 @@
                         <button class="btn-primary btn-sm sl-add-sel" id="sl-add-sel" data-act="slAddSelected" disabled></button>
                     </div>
                     <div class="sl-selbar hidden" id="sl-selbar"></div>
+                    <p class="sl-legend form-hint"><code class="sl-field sl-field-ok">field</code> <span data-i18n="sl_legend_ok">Graylog has this field.</span> <code class="sl-field sl-field-miss">field</code> <span data-i18n="sl_legend_miss">Graylog has never seen this field: conditions on it cannot match your data, so the rule may never fire until the field is parsed or mapped.</span></p>
                     <div class="table-wrap">
                     <table class="sec-table sl-table">
                         <thead><tr>
@@ -1771,6 +1783,7 @@ sudo bash upgrade-offline.sh</pre>
     </main>
 
     <script src="/static/js/i18n.js?v={{ version }}"></script>
+    <script src="/static/js/datepicker.js?v={{ version }}"></script>
     <script src="/static/js/app.js?v={{ version }}"></script>
     <script src="/static/js/alerting.js?v={{ version }}"></script>
     <script src="/static/js/packs.js?v={{ version }}"></script>

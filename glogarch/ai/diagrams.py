@@ -154,8 +154,32 @@ def timeline_of(head: list[str], rows: list[list[str]]) -> dict | None:
                     "start_text": r[a], "end_text": r[b] if b is not None and b < len(r) else ""})
     if len(out) < 2:
         return None
-    return {"rows": out, "start_name": head[a], "end_name": head[b] if b is not None else "",
+    # what kind of picture fits (owner 2026-11-27: start-only rows drawn as dots read as a scatter
+    # plot): from-to rows are bars; a number per time is a series (columns); named events with a
+    # time are a real timeline, in time order
+    kind = "span" if any(r["end"] is not None for r in out) else "events"
+    if kind == "events":
+        nums = [_number(r["label"]) for r in out]
+        if sum(n is not None for n in nums) / len(nums) >= 0.8:
+            kind = "series"
+            for r, n in zip(out, nums):
+                r["value"] = n or 0.0
+        else:
+            extra = [k for k in range(len(head)) if k not in tcols and k != label_col][:2]
+            src = [r for r in rows[:TIMELINE_MAX_ROWS] if a < len(r) and parse_time(r[a]) is not None]
+            for r, raw in zip(out, src):
+                r["note"] = " · ".join(f"{head[k]} {raw[k]}" for k in extra if k < len(raw) and raw[k])
+    return {"rows": out, "kind": kind, "start_name": head[a], "end_name": head[b] if b is not None else "",
+            "label_name": head[label_col] if label_col is not None else "",
             "more": max(0, len(rows) - TIMELINE_MAX_ROWS)}
+
+
+def _number(v: str):
+    v = (v or "").strip().replace(",", "")
+    try:
+        return float(v) if re.fullmatch(r"-?\d+(\.\d+)?", v) else None
+    except ValueError:
+        return None
 
 
 def extract(message_id, text: str) -> list[dict]:
@@ -190,6 +214,83 @@ def _fmt(dt: datetime, span_s: float, time_only: bool) -> str:
 
 
 def timeline_svg(tl: dict, accent: str = "#6c63ff") -> str:
+    kind = tl.get("kind") or ("span" if any(r["end"] is not None for r in tl["rows"]) else "events")
+    if kind == "events":
+        return _events_svg(tl, accent)
+    if kind == "series":
+        return _series_svg(tl, accent)
+    return _span_svg(tl, accent)
+
+
+def _events_svg(tl: dict, accent: str) -> str:
+    """A real timeline: events in time order down a line, the time on the left, what happened on the right."""
+    rows = sorted(tl["rows"], key=lambda r: r["start"])
+    span = max((rows[-1]["start"] - rows[0]["start"]).total_seconds(), 1.0)
+    time_only = rows[0]["start"].tzinfo is timezone.utc and rows[0]["start"].date() == _DAY0.date()
+    esc = lambda v: html.escape(str(v), quote=True)
+    W, TX, LX, NX, top = 760, 150, 172, 192, 14
+    parts, ys, y, last_day = [], [], top, None
+    for r in rows:
+        d = r["start"] if time_only else r["start"].astimezone()
+        day = d.strftime("%m-%d")
+        tlabel = d.strftime("%H:%M") + (d.strftime(":%S") if span < 3600 else "")
+        if not time_only and span > 86400 and day != last_day:
+            tlabel = f"{day} {tlabel}"
+        last_day = day
+        h = 46 if r.get("note") else 32
+        cy = y + 12
+        ys.append(cy)
+        label = r["label"] if len(r["label"]) <= 60 else r["label"][:59] + "…"
+        parts.append(f'<text x="{TX}" y="{cy + 4.5}" text-anchor="end" font-size="13" fill="#6b7280">{esc(tlabel)}</text>'
+                     f'<circle cx="{LX}" cy="{cy}" r="6" fill="{accent}" stroke="#ffffff" stroke-width="2.5"/>'
+                     f'<text x="{NX}" y="{cy + 4.5}" font-size="13.5" font-weight="600" fill="#1f2430">{esc(label)}</text>')
+        if r.get("note"):
+            note = r["note"] if len(r["note"]) <= 90 else r["note"][:89] + "…"
+            parts.append(f'<text x="{NX}" y="{cy + 22}" font-size="12" fill="#6b7280">{esc(note)}</text>')
+        y += h
+    line = f'<line x1="{LX}" x2="{LX}" y1="{ys[0]}" y2="{ys[-1]}" stroke="#d6d9e6" stroke-width="2"/>'
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {y + 4}" width="100%" role="img">'
+            + line + "".join(parts) + "</svg>")
+
+
+def _series_svg(tl: dict, accent: str) -> str:
+    """A number per time: columns in time order on a value axis."""
+    rows = sorted(tl["rows"], key=lambda r: r["start"])
+    span = max((rows[-1]["start"] - rows[0]["start"]).total_seconds(), 1.0)
+    time_only = rows[0]["start"].tzinfo is timezone.utc and rows[0]["start"].date() == _DAY0.date()
+    esc = lambda v: html.escape(str(v), quote=True)
+    W, L, R, top, H = 760, 56, 16, 18, 280
+    base = H - 36
+    vmax = max((r["value"] for r in rows), default=0) or 1
+    mag = 10 ** max(0, len(str(int(vmax))) - 1)
+    nice = next(m * mag for m in (1, 2, 2.5, 5, 10) if m * mag >= vmax)
+    parts = []
+    for i in range(5):
+        v = nice * i / 4
+        y = base - (base - top) * i / 4
+        txt = f"{v:,.0f}" if v == int(v) else f"{v:,.1f}"
+        parts.append(f'<line x1="{L}" x2="{W - R}" y1="{y:.1f}" y2="{y:.1f}" stroke="#e5e7eb"/>'
+                     f'<text x="{L - 8}" y="{y + 4:.1f}" text-anchor="end" font-size="12" fill="#6b7280">{txt}</text>')
+    n = len(rows)
+    slot = (W - L - R) / n
+    bw = max(4.0, min(48.0, slot * 0.62))
+    every = max(1, -(-n // 12))
+    for i, r in enumerate(rows):
+        cx = L + slot * (i + 0.5)
+        hgt = (base - top) * r["value"] / nice
+        parts.append(f'<rect x="{cx - bw / 2:.1f}" y="{base - hgt:.1f}" width="{bw:.1f}" height="{max(hgt, 0.5):.1f}" rx="3" fill="{accent}"/>')
+        if n <= 24 and r["value"]:
+            v = r["value"]
+            parts.append(f'<text x="{cx:.1f}" y="{base - hgt - 5:.1f}" text-anchor="middle" font-size="11.5" fill="#374151">'
+                         f'{(f"{v:,.0f}" if v == int(v) else f"{v:,.1f}")}</text>')
+        if i % every == 0:
+            parts.append(f'<text x="{cx:.1f}" y="{base + 20}" text-anchor="middle" font-size="12" fill="#6b7280">'
+                         f'{esc(_fmt(r["start"], span, time_only))}</text>')
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="100%" role="img">'
+            + "".join(parts) + "</svg>")
+
+
+def _span_svg(tl: dict, accent: str) -> str:
     """Bars from start to end, points without an end, round time steps; every text escaped."""
     rows = tl["rows"]
     lo = min(r["start"] for r in rows)
@@ -244,7 +345,7 @@ async def capture(specs: list[dict]) -> dict:
         browser = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage",
                                                 "--font-render-hinting=none"])
         try:
-            ctx = await browser.new_context(viewport={"width": CAPTURE_WIDTH, "height": 800},
+            ctx = await browser.new_context(viewport={"width": CAPTURE_WIDTH, "height": 800}, color_scheme="light",
                                             device_scale_factor=2, offline=True, java_script_enabled=True)
             await ctx.route("**/*", lambda route: route.abort())     # nothing leaves this page
             for s in todo:
@@ -268,12 +369,30 @@ async def capture(specs: list[dict]) -> dict:
                         out[s["id"]] = {"ok": True, "slices": [png_to_data_uri(png)],
                                         "width": int(box.get("width") or CAPTURE_WIDTH)}
                         continue
+                    # a report page is light: a dashboard the model wrote for the dark chat theme is
+                    # turned light before the shot (owner 2026-11-27: "報告放的看板必須是淺色/白色主題")
+                    await page.evaluate(LIGHTEN_JS)
+                    await page.wait_for_timeout(100)
                     # measure with a short viewport: scrollHeight is never less than the viewport
                     await page.set_viewport_size({"width": CAPTURE_WIDTH, "height": 100})
                     await page.wait_for_timeout(300)
                     h = await page.evaluate("Math.min(document.documentElement.scrollHeight, %d)" % CAPTURE_MAX_HEIGHT)
                     await page.set_viewport_size({"width": CAPTURE_WIDTH, "height": max(120, int(h))})
                     await page.wait_for_timeout(400)          # charts redraw at the new size
+                    # the dashboard's own blocks, one picture each, so the report can lay them out like
+                    # widgets and never cut one at a page end (owner 2026-11-27: "一個一個拆過來放組合")
+                    rects = await page.evaluate(BLOCKS_JS)
+                    blocks = []
+                    for r in rects or []:
+                        clip = {"x": max(0, r["x"] - 2), "y": max(0, r["y"] - 2),
+                                "width": min(CAPTURE_WIDTH, r["w"] + 4), "height": min(CAPTURE_MAX_HEIGHT, r["h"] + 4)}
+                        if clip["width"] < 20 or clip["height"] < 16:
+                            continue
+                        blocks.append({"img": png_to_data_uri(await page.screenshot(clip=clip)),
+                                       "width": int(clip["width"]), "height": int(clip["height"]), "half": bool(r["half"])})
+                    if len(blocks) >= 2:
+                        out[s["id"]] = {"ok": True, "blocks": blocks, "width": CAPTURE_WIDTH}
+                        continue
                     png = await page.screenshot(full_page=False)
                     slices = slice_tall_png(png) if h > 1400 else [png_to_data_uri(png)]
                     out[s["id"]] = {"ok": True, "slices": slices, "width": CAPTURE_WIDTH}
@@ -286,12 +405,89 @@ async def capture(specs: list[dict]) -> dict:
     return out
 
 
+# Dark page -> light page for the PDF: invert, turn the hues back, and invert photos again so they
+# look as they were. Colours keep their hue (a red bar stays red), dark backgrounds become white.
+LIGHTEN_JS = r"""() => {
+  const rgb = (c) => { const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?/.exec(c || '');
+    return m && (m[4] === undefined || +m[4] > 0.5) ? [+m[1], +m[2], +m[3]] : null; };
+  const lum = (c) => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+  const root = document.documentElement, body = document.body;
+  let bg = rgb(getComputedStyle(body).backgroundColor) || rgb(getComputedStyle(root).backgroundColor);
+  if (!bg) {                       // a page whose colour sits on its first full-width block
+    const big = [...body.children].find((e) => e.getBoundingClientRect().width >= innerWidth * 0.9);
+    bg = big && rgb(getComputedStyle(big).backgroundColor);
+  }
+  if (!bg || lum(bg) >= 0.45) return false;
+  // the page's own dark ground turns pure white (its inverse would be a pale tint)
+  root.style.background = '#000';
+  if (rgb(getComputedStyle(body).backgroundColor)) body.style.backgroundColor = '#000';
+  root.style.filter = 'invert(1) hue-rotate(180deg)';
+  const st = document.createElement('style');
+  st.textContent = 'img, video, picture, [style*="background-image"] { filter: invert(1) hue-rotate(180deg); }';
+  document.head.appendChild(st);
+  return true;
+}"""
+
+
+# The blocks of a model-written dashboard: boxed panels (cards, charts, tables), a row of small tiles
+# as one block, and the loose text between them (headings, notes) as bands. Page coordinates.
+BLOCKS_JS = r"""() => {
+  const W = document.documentElement.clientWidth, MAXH = 1250;
+  const pageBg = getComputedStyle(document.body).backgroundColor;
+  const clear = (c) => !c || /rgba\(0, 0, 0, 0\)/.test(c) || c === 'transparent';
+  const boxed = (el) => { const cs = getComputedStyle(el);
+    const bg = cs.backgroundColor, hasBg = !clear(bg) && bg !== pageBg;
+    const border = ['Top', 'Right', 'Bottom', 'Left'].some((d) => parseFloat(cs['border' + d + 'Width']) > 0 && cs['border' + d + 'Style'] !== 'none');
+    return hasBg || border || (cs.boxShadow && cs.boxShadow !== 'none'); };
+  const rect = (el) => { const b = el.getBoundingClientRect(); return {x: b.left + scrollX, y: b.top + scrollY, w: b.width, h: b.height}; };
+  const blocks = [];
+  const visit = (el) => {
+    for (const c of el.children) {
+      if (['SCRIPT', 'STYLE', 'TEMPLATE'].includes(c.tagName)) continue;
+      const r = c.getBoundingClientRect();
+      if (r.width < 10 || r.height < 10) continue;
+      const kids = [...c.children].filter((k) => { const b = k.getBoundingClientRect(); return b.width > 40 && b.height > 28; });
+      const tiles = kids.length >= 2 && kids.every((k) => boxed(k) && k.getBoundingClientRect().width < W * 0.3)
+                    && kids.every((k) => Math.abs(k.getBoundingClientRect().top - kids[0].getBoundingClientRect().top) < r.height);
+      if (r.width >= W * 0.45 && tiles && r.height <= MAXH) { blocks.push(c); continue; }
+      if (r.width >= W * 0.28 && r.height >= 50 && boxed(c) && (r.height <= MAXH || !c.querySelector('*'))) {
+        // a wrapper around the whole page is not a block: look inside it
+        const inner = [...c.querySelectorAll('*')].filter((k) => boxed(k) && k.getBoundingClientRect().width >= W * 0.28 && k.getBoundingClientRect().height >= 50);
+        if (r.width >= W * 0.9 && inner.length >= 2 && r.height > 600) { visit(c); continue; }
+        blocks.push(c); continue;
+      }
+      visit(c);
+    }
+  };
+  visit(document.body);
+  const rs = blocks.map((b) => Object.assign(rect(b), {half: b.getBoundingClientRect().width < W * 0.6}));
+  // loose text outside every block: headings and notes, merged into full-width bands
+  const inBlock = (el) => blocks.some((b) => b.contains(el));
+  const bands = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const n = walker.currentNode, p = n.parentElement;
+    if (!n.textContent.trim() || !p || inBlock(p) || ['SCRIPT', 'STYLE'].includes(p.tagName)) continue;
+    const r = rect(p);
+    if (r.h < 4) continue;
+    const hit = bands.find((b) => r.y < b.y + b.h + 10 && r.y + r.h > b.y - 10);
+    if (hit) { const top = Math.min(hit.y, r.y), bot = Math.max(hit.y + hit.h, r.y + r.h); hit.y = top; hit.h = bot - top;
+               hit.x = Math.min(hit.x, r.x); hit.w = Math.max(hit.x + hit.w, r.x + r.w) - hit.x; }
+    else bands.push({x: r.x, y: r.y, w: r.w, h: r.h, half: false});
+  }
+  return rs.concat(bands.filter((b) => !rs.some((r) => b.y >= r.y && b.y + b.h <= r.y + r.h)))
+           .sort((a, b) => (a.y - b.y) || (a.x - b.x));
+}"""
+
+
 def report_widget(spec: dict, title: str = "", shot: dict | None = None) -> dict:
     title = title or spec.get("title") or ""
     if spec["kind"] in ("html", "svg", "mermaid"):
         shot = shot or {}
         if not shot.get("ok"):
             return {"kind": "none", "title": title, "description": shot.get("error") or ""}
+        if shot.get("blocks"):
+            return {"kind": "blocks", "title": title, "blocks": shot["blocks"]}
         # drawn at 2x: CSS width = what it measured on the page, never wider than the card
         return {"kind": "image", "title": title, "slices": shot["slices"],
                 "img_width": min(int(shot.get("width") or CAPTURE_WIDTH), CAPTURE_WIDTH), "tall": len(shot["slices"]) > 1}

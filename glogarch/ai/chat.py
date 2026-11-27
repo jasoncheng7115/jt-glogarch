@@ -39,7 +39,7 @@ CONTINUE = ("Your answer was cut off by the length limit. Continue exactly where
             "without repeating anything and without any preface.")
 LANG_NAMES = {"en": "English", "zh-TW": "Traditional Chinese as used in Taiwan (繁體中文，台灣用語：記錄而非日誌、"
                                          "身分而非身份、資訊而非信息、伺服器而非服務器、預設而非默認)",
-              "ja": "Japanese (日本語、です／ます調)"}
+              "ja": "Japanese (日本語、です/ます調)"}
 
 SYSTEM = """You are the security analyst assistant inside jt-glogarch, a security center for Graylog Open. \
 You answer questions about the logs in the Graylog server "{server}" and about the security incidents \

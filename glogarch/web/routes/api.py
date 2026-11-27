@@ -2241,6 +2241,8 @@ def notify_status(request: Request):
         channels.append({"name": "nextcloud_talk", "enabled": True})
     if n.zulip.enabled:
         channels.append({"name": "zulip", "enabled": True})
+    if n.webhook.enabled:
+        channels.append({"name": "webhook", "enabled": True})
     if n.email.enabled:
         channels.append({"name": "email", "enabled": True})
     return {
@@ -2453,6 +2455,11 @@ def get_operation_history(request: Request, limit: int = 100):
     return {"items": [_job_to_dict(j) for j in jobs]}
 
 
+@router.get("/logs/audit/stats")
+def get_app_audit_stats(request: Request):
+    return _db(request).get_app_audit_stats(hours=24)
+
+
 @router.get("/logs/audit")
 def get_audit_log(request: Request, limit: int = 100, offset: int = 0,
                   username: str | None = None, action: str | None = None,
@@ -2510,6 +2517,8 @@ def get_notify_config(request: Request):
         "zulip": {"enabled": n.zulip.enabled, "server_url": n.zulip.server_url,
                   "bot_email": n.zulip.bot_email, "api_key": _mask(n.zulip.api_key),
                   "stream": n.zulip.stream, "topic": n.zulip.topic},
+        "webhook": {"enabled": n.webhook.enabled, "webhook_url": _mask(n.webhook.webhook_url),
+                    "secret": _mask(n.webhook.secret), "verify_ssl": n.webhook.verify_ssl},
         "email": {"enabled": n.email.enabled, "smtp_host": n.email.smtp_host, "smtp_port": n.email.smtp_port,
                   "smtp_tls": n.email.smtp_tls, "smtp_user": n.email.smtp_user,
                   "smtp_password": _mask(n.email.smtp_password),
@@ -2543,10 +2552,10 @@ async def save_notify_config(request: Request):
     channel_map = {
         "telegram": n.telegram, "discord": n.discord, "slack": n.slack,
         "teams": n.teams, "nextcloud_talk": n.nextcloud_talk, "zulip": n.zulip,
-        "email": n.email,
+        "webhook": n.webhook, "email": n.email,
     }
     # Secret fields that are masked in GET responses — skip if unchanged
-    _SECRET_FIELDS = {"bot_token", "webhook_url", "token", "password", "smtp_password", "api_key"}
+    _SECRET_FIELDS = {"bot_token", "webhook_url", "token", "password", "smtp_password", "api_key", "secret"}
     # Outbound URLs must pass the same SSRF check as every other URL the UI
     # accepts (server test, OpenSearch test, import target, flush). This endpoint
     # was the one place that skipped it, so a notification channel could be

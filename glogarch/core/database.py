@@ -3080,6 +3080,36 @@ class ArchiveDB:
             "sparkline": sparkline,
         }
 
+    # actions in jt-glogarch's own log that change or remove something (the "important" tile)
+    APP_AUDIT_IMPORTANT = ("%delete%", "%remove%", "%clear%", "%password%", "%uninstall%", "%disconnect%",
+                           "%_saved", "%toggle%", "%restore%")
+
+    def get_app_audit_stats(self, hours: int = 24) -> dict:
+        """The four tiles above jt-glogarch's own operations (owner 2026-11-27: the Graylog tab had
+        them, this one did not): actions, users, failed logins, important changes, each with an
+        hourly trend over the last 24 hours."""
+        imp = " OR ".join(["action LIKE ?"] * len(self.APP_AUDIT_IMPORTANT))
+        now = datetime.utcnow()
+        cutoff = _dt_to_str(now - timedelta(hours=hours))
+        q = self.conn.execute
+        total = q("SELECT COUNT(*) FROM audit_log WHERE timestamp >= ?", (cutoff,)).fetchone()[0]
+        users = q("SELECT COUNT(DISTINCT username) FROM audit_log WHERE timestamp >= ? AND username IS NOT NULL AND username != ''",
+                  (cutoff,)).fetchone()[0]
+        fails = q("SELECT COUNT(*) FROM audit_log WHERE timestamp >= ? AND action = 'login_failed'", (cutoff,)).fetchone()[0]
+        important = q(f"SELECT COUNT(*) FROM audit_log WHERE timestamp >= ? AND ({imp})",  # nosec B608 - imp is a fixed run of 'action LIKE ?'; values bound
+                      (cutoff, *self.APP_AUDIT_IMPORTANT)).fetchone()[0]
+        spark = {"ops": [], "users": [], "login_failures": [], "important": []}
+        for i in range(23, -1, -1):
+            a, b = _dt_to_str(now - timedelta(hours=i + 1)), _dt_to_str(now - timedelta(hours=i))
+            label = (now - timedelta(hours=i)).strftime("%H:00")
+            row = q(f"SELECT COUNT(*), COUNT(DISTINCT NULLIF(username, '')), SUM(action = 'login_failed'), SUM({imp}) "  # nosec B608 - imp fixed; values bound
+                    "FROM audit_log WHERE timestamp >= ? AND timestamp < ?", (*self.APP_AUDIT_IMPORTANT, a, b)).fetchone()
+            spark["ops"].append({"day": label, "count": row[0] or 0})
+            spark["users"].append({"day": label, "count": row[1] or 0})
+            spark["login_failures"].append({"day": label, "count": row[2] or 0})
+            spark["important"].append({"day": label, "count": row[3] or 0})
+        return {"total": total, "unique_users": users, "login_failures": fails, "important": important, "sparkline": spark}
+
     def cleanup_api_audit(self, retention_days: int) -> int:
         cutoff = _dt_to_str(datetime.utcnow() - timedelta(days=retention_days))
         with self._lock:

@@ -32,7 +32,7 @@ PALETTE = ["#636efa", "#EF553B", "#00cc96", "#ab63fa", "#FFA15A", "#19d3f3",
 _I18N = {
     # cover labels: at least four characters, full-width colon (owner 2026-11-27)
     "zh-TW": {"period": "資料期間", "generated": "產製時間", "author": "產製單位", "server": "產製來源",
-              "model": "產製模型", "llm_server": "模型伺服器", "colon": "：",
+              "model": "產製模型", "llm_server": "推論主機", "colon": "：",
               "toc": "目錄", "summary": "執行摘要", "no_capture": "（無法擷取儀表板畫面）",
               "no_data": "（無資料）", "heat_truncated": "僅顯示數值最高的列與欄", "system": "產製系統"},
     "en": {"period": "Period", "generated": "Generated", "author": "Issued by", "server": "Source",

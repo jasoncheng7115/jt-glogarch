@@ -340,7 +340,76 @@ function aixTimelineRows(table) {
                 startText: r[a], endText: b !== undefined ? r[b] : ''};
     }).filter(r => r.start !== null);
     if (rows.length < 2) return null;
-    return {rows, startName: head[a], endName: b !== undefined ? head[b] : '', more: Math.max(0, body.length - AIX_TL_MAX)};
+    // the picture that fits (owner 2026-11-27: start-only rows as dots read as a scatter plot):
+    // from-to rows are bars, a number per time is columns, named events are a real timeline
+    let kind = rows.some(r => r.end !== null) ? 'span' : 'events';
+    if (kind === 'events') {
+        const num = v => { const x = String(v || '').replace(/,/g, '').trim(); return /^-?\d+(\.\d+)?$/.test(x) ? Number(x) : null; };
+        const nums = rows.map(r => num(r.label));
+        if (nums.filter(n => n !== null).length / nums.length >= 0.8) {
+            kind = 'series';
+            rows.forEach((r, k) => { r.value = nums[k] || 0; });
+        } else {
+            const extra = head.map((_, k) => k).filter(k => !timeCols.includes(k) && k !== labelCol).slice(0, 2);
+            const src = body.slice(0, AIX_TL_MAX).filter(r => aixParseTime(r[a]) !== null);
+            rows.forEach((r, k) => { r.note = extra.map(c => (src[k] || [])[c] ? `${head[c]} ${src[k][c]}` : '').filter(Boolean).join(' · '); });
+        }
+    }
+    return {rows, kind, startName: head[a], endName: b !== undefined ? head[b] : '', more: Math.max(0, body.length - AIX_TL_MAX)};
+}
+
+function _aixEventsSvg(tl) {
+    const rows = [...tl.rows].sort((p, q) => p.start - q.start);
+    const span = Math.max(rows[rows.length - 1].start - rows[0].start, 1000);
+    const timeOnly = rows[0].start < Date.UTC(2000, 0, 3) && rows[0].start >= Date.UTC(2000, 0, 1);
+    const W = 760, TX = 140, LX = 160, NX = 178, top = 12;
+    let y = top, lastDay = '';
+    const ys = [], parts = [];
+    rows.forEach(r => {
+        let tl2 = _aixFmt(r.start, Math.min(span, 86399000), timeOnly);
+        const day = _aixFmt(r.start, 86400001, timeOnly).slice(0, 5);
+        if (!timeOnly && span > 86400000 && day !== lastDay) tl2 = `${day} ${tl2}`;
+        lastDay = day;
+        const cy = y + 11;
+        ys.push(cy);
+        const label = r.label.length > 60 ? r.label.slice(0, 59) + '…' : r.label;
+        parts.push(`<g class="aix-tl-row"><title>${esc(r.label + ' · ' + r.startText)}</title>`
+            + `<text class="aix-tl-tick" x="${TX}" y="${cy + 4}" text-anchor="end">${esc(tl2)}</text>`
+            + `<circle class="aix-tl-dot" cx="${LX}" cy="${cy}" r="5"/>`
+            + `<text class="aix-tl-label aix-tl-strong" x="${NX}" y="${cy + 4}">${esc(label)}</text>`
+            + (r.note ? `<text class="aix-tl-tick" x="${NX}" y="${cy + 21}">${esc(r.note.length > 90 ? r.note.slice(0, 89) + '…' : r.note)}</text>` : '')
+            + '</g>');
+        y += r.note ? 42 : 28;
+    });
+    return `<svg class="aix-tl-svg" viewBox="0 0 ${W} ${y + 2}" role="img" aria-label="${esc(t('ai_timeline'))}">`
+        + `<line class="aix-tl-spine" x1="${LX}" x2="${LX}" y1="${ys[0]}" y2="${ys[ys.length - 1]}"/>${parts.join('')}</svg>`;
+}
+
+function _aixSeriesSvg(tl) {
+    const rows = [...tl.rows].sort((p, q) => p.start - q.start);
+    const span = Math.max(rows[rows.length - 1].start - rows[0].start, 1000);
+    const timeOnly = rows[0].start < Date.UTC(2000, 0, 3) && rows[0].start >= Date.UTC(2000, 0, 1);
+    const W = 760, L = 52, R = 14, top = 16, H = 260, base = H - 32;
+    const vmax = Math.max(...rows.map(r => r.value), 0) || 1;
+    const mag = Math.pow(10, Math.max(0, String(Math.floor(vmax)).length - 1));
+    const nice = [1, 2, 2.5, 5, 10].map(m => m * mag).find(v => v >= vmax);
+    const fmtV = v => Number.isInteger(v) ? formatNumber(v) : v.toFixed(1);
+    const parts = [];
+    for (let i = 0; i <= 4; i++) {
+        const v = nice * i / 4, yy = base - (base - top) * i / 4;
+        parts.push(`<line class="aix-tl-grid" x1="${L}" x2="${W - R}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}"/>`
+            + `<text class="aix-tl-tick" x="${L - 6}" y="${(yy + 4).toFixed(1)}" text-anchor="end">${esc(fmtV(v))}</text>`);
+    }
+    const n = rows.length, slot = (W - L - R) / n, bw = Math.max(4, Math.min(46, slot * 0.62)), every = Math.max(1, Math.ceil(n / 12));
+    rows.forEach((r, i) => {
+        const cx = L + slot * (i + 0.5), h = (base - top) * r.value / nice;
+        parts.push(`<g class="aix-tl-row"><title>${esc(r.startText + ' · ' + r.label)}</title>`
+            + `<rect class="aix-tl-bar" x="${(cx - bw / 2).toFixed(1)}" y="${(base - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(h, 0.5).toFixed(1)}" rx="3"/>`
+            + (n <= 24 && r.value ? `<text class="aix-tl-label" x="${cx.toFixed(1)}" y="${(base - h - 5).toFixed(1)}" text-anchor="middle">${esc(fmtV(r.value))}</text>` : '')
+            + (i % every === 0 ? `<text class="aix-tl-tick" x="${cx.toFixed(1)}" y="${base + 18}" text-anchor="middle">${esc(_aixFmt(r.start, span, timeOnly))}</text>` : '')
+            + '</g>');
+    });
+    return `<svg class="aix-tl-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t('ai_timeline'))}">${parts.join('')}</svg>`;
 }
 
 function _aixFmt(ms, span, timeOnly) {
@@ -353,6 +422,8 @@ function _aixFmt(ms, span, timeOnly) {
 }
 
 function aixTimelineSvg(tl) {
+    if (tl.kind === 'events') return _aixEventsSvg(tl);
+    if (tl.kind === 'series') return _aixSeriesSvg(tl);
     const rows = tl.rows;
     const lo = Math.min(...rows.map(r => r.start));
     const hi = Math.max(...rows.map(r => r.end !== null ? r.end : r.start));

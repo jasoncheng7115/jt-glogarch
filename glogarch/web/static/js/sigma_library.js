@@ -127,7 +127,12 @@ function _slSelBar() {
     const pageAll = page.length > 0 && page.every(i => _sl.sel.has(i));
     let html = '';
     if (_sl.selAll) {
-        html = `<span>${esc(t('sl_sel_all_done').replace('{n}', formatNumber(_sl.sel.size)))}</span>
+        const left = _sl.selLeft || {added: 0, bad: 0};
+        const parts = [];
+        if (left.added) parts.push(t('sl_sel_left_added').replace('{n}', formatNumber(left.added)));
+        if (left.bad) parts.push(t('sl_sel_left_bad').replace('{n}', formatNumber(left.bad)));
+        const extra = parts.length ? ' ' + t('sl_sel_left').replace('{list}', parts.join(t('list_sep'))) : '';
+        html = `<span>${esc(t('sl_sel_all_done').replace('{n}', formatNumber(_sl.sel.size)) + extra)}</span>
             <button type="button" class="btn-link" data-act="slSelectNone">${esc(t('sl_sel_clear'))}</button>`;
     } else if (pageAll && _sl.total > page.length) {
         html = `<span>${esc(t('sl_sel_page_done').replace('{n}', formatNumber(page.length)))}</span>
@@ -154,6 +159,7 @@ async function slSelectAllMatching() {
     if (!d || d.error) { secMsg(d && d.error, 'err'); return; }
     (d.ids || []).forEach(i => _sl.sel.add(i));
     _sl.selAll = true;
+    _sl.selLeft = {added: d.already_added || 0, bad: d.not_convertible || 0};
     slRenderRows();
 }
 

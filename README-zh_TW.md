@@ -1,4 +1,4 @@
-# jt-glogarch v1.37.0
+# jt-glogarch v1.38.0
 
 **語言**： [English](README.md) | **繁體中文** | [日本語](README-ja.md)  
 **網站**： <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Graylog Open (6.x / 7.x) 的記錄歸檔與還原工具
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.37.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.38.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open 版本不支援 Enterprise 版的 Archive 功能。
@@ -133,9 +133,9 @@ sudo -u jt-glogarch glogarch verify              # 會回報 TAMPERED（HMAC 不
 sudo -u jt-glogarch glogarch integrity-manifest -o /機器外/manifest.json   # 把雜湊清單存到主機以外
 ```
 
-- **金鑰優先序：** 環境變數 `JT_HMAC_KEY`（base64／hex）> `hmac_key_file`（權限 0600）。
-- **防 root 模式：** 不要把金鑰檔留在機器上——僅在封存／驗證時以 `JT_HMAC_KEY` 提供，並把
-  manifest 存到機器外；如此即使 root／服務帳號把檔案與 DB 全改了，也能拿機外副本揪出。
+- **金鑰優先序：** 環境變數 `JT_HMAC_KEY`（base64/hex）> `hmac_key_file`（權限 0600）。
+- **防 root 模式：** 不要把金鑰檔留在機器上——僅在封存/驗證時以 `JT_HMAC_KEY` 提供，並把
+  manifest 存到機器外；如此即使 root/服務帳號把檔案與 DB 全改了，也能拿機外副本揪出。
 - **`verify`**（與排程驗證）會把「已封存但 HMAC 不再相符」的歸檔標為 **`TAMPERED`**
   （紅色徽章 + 🚨 通知），與 `CORRUPTED`（SHA256）區分。
 - **誠實界線：** 對已被竄改的舊檔補封，只能證明「從現在起」未被動，無法回溯證明過去；
@@ -179,7 +179,7 @@ GELF 模式還有：
   - **公開的套件：**這裡只列出作者已公開的套件。
     - 內建在 Jason Tools 套件庫（v1.18.1 起）：**Windows Active Directory**、**Linux 登入與 SSH**、**Apache HTTP Server**、**QNAP NAS**、**SQL Server**、**Windows 登入事件**、**Synology NAS**（這三個 v1.36.0 起）、**FortiADC**、**FortiWAN**、**Proxmox VE**、**Microsoft DNS Server**、**NetFlow**、**PCAP 封包分析**（這六個 v1.37.0 起）。在內容套件頁面直接安裝，下載時附 SOP（.md），涵蓋新安裝、舊版升級與解除安裝。
     - 另外下載：[CubeCOS / OpenStack Log Pipeline](https://github.com/jasoncheng7115/it-scripts/blob/master/graylog/cubecos_contentpack_graylog63.json)，CubeCOS、OpenStack、Ceph、Masakari 記錄用的 1 條管線與 147 條規則（套件標示適用 Graylog 6.3 以上）。請從該連結下載，再到內容套件頁面上傳。
-- **告警管理（v1.17.0 起）** — 批次管理 Graylog 的事件定義與通知方式：快速篩選、依標題標籤（`[廠商]`／`產品 - `）點選、多關鍵字搜尋（`checkpoint -notif:Zulip`）、Shift 點選範圍與全選符合的結果，再對數百個定義一次加入／移除／替換通知方式。每次變更都先預覽，每個定義維持原本的啟用／停用狀態；預覽之後被人在 Graylog 改過的定義會略過；以作業執行並記錄在作業歷程，可在「變更紀錄」復原。健檢會列出啟用中卻沒有人會收到通知的定義、已刪除或沒人使用的通知方式，以及從未或已久未觸發的定義。所有變更都以登入者自己的 Graylog 帳號執行（套用該帳號的權限）；登入時密碼會換成 Graylog 工作階段，不會儲存。
+- **告警管理（v1.17.0 起）** — 批次管理 Graylog 的事件定義與通知方式：快速篩選、依標題標籤（`[廠商]`/`產品 - `）點選、多關鍵字搜尋（`checkpoint -notif:Zulip`）、Shift 點選範圍與全選符合的結果，再對數百個定義一次加入/移除/替換通知方式。每次變更都先預覽，每個定義維持原本的啟用/停用狀態；預覽之後被人在 Graylog 改過的定義會略過；以作業執行並記錄在作業歷程，可在「變更紀錄」復原。健檢會列出啟用中卻沒有人會收到通知的定義、已刪除或沒人使用的通知方式，以及從未或已久未觸發的定義。所有變更都以登入者自己的 Graylog 帳號執行（套用該帳號的權限）；登入時密碼會換成 Graylog 工作階段，不會儲存。
 - **資安事件（v1.20.0 起，預設關閉）** — 定時統計 Graylog 裡的資安相關記錄（登入失敗、未被阻擋的 IDS 告警、WAF 記錄），彙整成資安事件：同一來源的暴力破解、密碼噴灑（同一來源嘗試多個帳號）、同一來源或同一帳號在多台主機登入失敗、多次失敗後登入成功、IDS 告警未被阻擋、網站掃描。只讀取筆數（Graylog 的彙總 API，每次 6 到 7 次查詢），不讀取記錄內容；Graylog 記憶體吃緊時會略過該次分析。每件事件記錄首次與最後發現時間、「首次出現」標記（90 天內沒出現過），並可直接連到 Graylog 搜尋查看這些記錄；持續中的事件只通知一次，不會每次分析都通知。「涵蓋狀況」表會列出每項偵測在此站台的記錄裡有沒有需要的欄位，無法運作的偵測會直接標示出來，而不是顯示 0 件。欄位名稱依 GIM 慣例（`event_category`、`event_outcome`、`source_ip`、`user_name`），每項偵測也會嘗試常見的替代欄位（`client_ip`），並可依站台調整門檻或排除條件。
 - **資安總覽（v1.29.0 起）** — 「資安事件」頁先開啟總覽：未處理事件、進行中的調查、監看中的 ATT&CK 技術、最近 14 天依嚴重程度的每日新增事件圖表、最常見的偵測與技術，以及風險最高的對象。
 - **威脅情資（v1.28.0 起，預設關閉）** — 每天下載公開的惡意位址清單（Spamhaus DROP、Tor 出口節點、abuse.ch Feodo Tracker）；事件來源在清單上時會標示、提高風險分數，並告訴 AI 分析。
@@ -191,21 +191,21 @@ GELF 模式還有：
 - **記錄量異常（v1.30.0 起，預設關閉）** — 某台主機或某個事件類別的記錄量，遠高於這個時段平常的量（至少是最近 14 天同一時段中位數的 5 倍，而且超出平常的波動範圍）時開出事件；要先累積 7 天的紀錄。
 - **帳號從新的來源登入（v1.29.0 起，預設關閉）** — 帳號從 30 天內沒用過的來源登入成功時開出事件（ATT&CK T1078）；每個帳號先有 7 天學習期。
 - **記錄來源停止傳送（v1.26.0 起，預設關閉）** — 前一天有送記錄、最近 2 小時卻完全沒有的主機會開出事件（ATT&CK T1562）：記錄停止傳送，可能是攻擊者在隱藏行蹤，也可能是轉送程式壞了。
-- **資產與風險排名（v1.25.0 起）** — 標記重要的位址、網段、主機與帳號及其重要性；與它們有關的事件會標示出來，AI 分析也會得知；風險排名依未結案事件為各來源／對象排序，每一分都看得到來源（嚴重程度、外部來源、資產重要性、AI 判斷）。
+- **資產與風險排名（v1.25.0 起）** — 標記重要的位址、網段、主機與帳號及其重要性；與它們有關的事件會標示出來，AI 分析也會得知；風險排名依未結案事件為各來源/對象排序，每一分都看得到來源（嚴重程度、外部來源、資產重要性、AI 判斷）。
 - **調查案件（v1.24.0 起）** — 把多件資安事件歸到同一個案件，設定負責人、狀態與結論；只增不改的時間軸記錄筆記和每一次變更，案件可下載成 Markdown 交接報告。加入案件的事件會作為證據保留，不受保留期限影響；每一次變更都記入稽核。
 - **MITRE ATT&CK 對應（v1.23.0 起）** — 每件資安事件會標示它可作為哪些 ATT&CK 技術的證據（IDS 告警依簽章關鍵字對應）；ATT&CK 檢視依戰術列出各項偵測涵蓋的技術，以及在這個站台是否真的有在監看（偵測已開啟，且記錄有它需要的欄位）。
 - **資安事件 AI 分析（v1.22.0 起，預設關閉）** — 每件資安事件旁的 AI 按鈕會請模型給出判斷（惡意、可疑、無害或無法判斷）、把握程度、重點發現、建議處置，以及在什麼情況下可能無害。證據來自針對這件事件的固定查詢（事件時間範圍內的精確計數與前幾名、同一來源或帳號的成功登入、幾筆範例記錄、這個對象先前的事件），模型不自行決定查詢；每次分析約對 Graylog 查詢十次。範例記錄會送給模型，但不會保存。回覆會經過驗證；回覆提到證據裡沒有的位址時，頁面會標示出來。也可以設定在每次分析後，自動分析新增或升級的事件（每次最多 3 件，在通知送出後才執行）。只提供建議，不會變更任何設定。按「到智慧問答詢問」可以在智慧問答繼續追查。
-- **智慧問答與 MCP 伺服器（v1.21.0 起，預設關閉）** — 在「智慧問答」頁面用自然語言詢問記錄和資安事件：模型以唯讀工具查詢（透過 Graylog 彙總 API 的精確計數與前幾名、資安事件、歸檔涵蓋範圍，以及原封不動收進來的 [mcp_graylog](https://github.com/jasoncheng7115/jasontools-mcp/tree/main/mcp_graylog) 工具），回答時附上它用的查詢。每個回答下方都可以展開它實際執行的查詢、時間範圍和結果，並在 Graylog 開啟同樣的搜尋；回答會邊寫邊顯示。查詢使用你自己的 Graylog 帳號，套用 Graylog 權限，每一次查詢都會記入稽核。任何 OpenAI 相容的 LLM 伺服器都能用（llama.cpp、vLLM、LM Studio、Ollama 的 `/v1`）；內網以外的伺服器預設拒絕，除非你允許，因為工具查回的記錄資料會送到那台伺服器。同一組工具也透過 `/mcp` 提供給外部 AI 用戶端（Claude Desktop、Open WebUI、opencode），以各使用者的 Graylog API token 驗證。mcp_graylog 1.10.2 也能查看 Graylog 本身的狀況：叢集與節點指標、索引失敗、系統通知，以及停止傳送記錄的來源。**v1.37.0 起**，回答中的查詢可以建立成真正的 Graylog 看板（在對話框選名稱、時間範圍、圖表與圖表類型；由 jt-glogarch 產生，以你自己的 Graylog 工作階段建立，只會新增）；整段對話可以用報表引擎產製摘要 PDF（模型寫發現，圖表是重新查詢的結果，內文中資料裡找不到的數字或位址會標示在第一頁）；有開始／結束時間的表格可以畫成時間軸。
-- 深色/淺色主題、English／繁體中文／日本語 三種介面語言
+- **智慧問答與 MCP 伺服器（v1.21.0 起，預設關閉）** — 在「智慧問答」頁面用自然語言詢問記錄和資安事件：模型以唯讀工具查詢（透過 Graylog 彙總 API 的精確計數與前幾名、資安事件、歸檔涵蓋範圍，以及原封不動收進來的 [mcp_graylog](https://github.com/jasoncheng7115/jasontools-mcp/tree/main/mcp_graylog) 工具），回答時附上它用的查詢。每個回答下方都可以展開它實際執行的查詢、時間範圍和結果，並在 Graylog 開啟同樣的搜尋；回答會邊寫邊顯示。查詢使用你自己的 Graylog 帳號，套用 Graylog 權限，每一次查詢都會記入稽核。任何 OpenAI 相容的 LLM 伺服器都能用（llama.cpp、vLLM、LM Studio、Ollama 的 `/v1`）；內網以外的伺服器預設拒絕，除非你允許，因為工具查回的記錄資料會送到那台伺服器。同一組工具也透過 `/mcp` 提供給外部 AI 用戶端（Claude Desktop、Open WebUI、opencode），以各使用者的 Graylog API token 驗證。mcp_graylog 1.10.2 也能查看 Graylog 本身的狀況：叢集與節點指標、索引失敗、系統通知，以及停止傳送記錄的來源。**v1.37.0 起**，回答中的查詢可以建立成真正的 Graylog 看板（在對話框選名稱、時間範圍、圖表與圖表類型；由 jt-glogarch 產生，以你自己的 Graylog 工作階段建立，只會新增）；整段對話可以用報表引擎產製摘要 PDF（模型寫發現，圖表是重新查詢的結果，內文中資料裡找不到的數字或位址會標示在第一頁）；有開始/結束時間的表格可以畫成時間軸。
+- 深色/淺色主題、English/繁體中文/日本語 三種介面語言
 - 可收摺側邊欄、HTTPS、Session 認證
 
 
 ### 通知
 
-Telegram • Discord • Slack • Microsoft Teams • Nextcloud Talk • Zulip • Email (SMTP)
+Telegram • Discord • Slack • Microsoft Teams • Nextcloud Talk • Zulip • 標準 webhook（HMAC）• Email (SMTP)
 
 觸發事件：匯出完成、匯入完成、清理完成、錯誤、驗證失敗、敏感操作、稽核警報。
-訊息語言（English／繁體中文／日本語）。
+訊息語言（English/繁體中文/日本語）。
 
 
 ### 排程作業 (APScheduler)
@@ -385,7 +385,7 @@ OpenSearch 只保留最近的資料供搜尋。
 - Python 3.10+
 - Graylog 6.x 或 7.x (Open 版）
 - OpenSearch 2.x （選用，Direct 模式需要）
-- Linux （已測試 Ubuntu 22.04 / Debian 12 / RHEL 9)
+- Linux：Ubuntu 24.04 以上、Debian 12 以上（亦測試過 RHEL 9）
 
 
 ### 安裝(5 分鐘)
@@ -632,7 +632,7 @@ sudo bash /opt/jt-glogarch/deploy/upgrade.sh
 
 也可以，但**第一次**執行時跑的是你主機上的**舊**指令碼：
 
-- 若目前版本 **< 1.10.4**：建議改用上方 `curl | sudo bash`，因為舊指令碼的 git stash 步驟可能動到未追蹤檔案。自 1.10.4 起，指令碼會在任何 git 操作前先忽略 `config.yaml`／`certs/`／DB。
+- 若目前版本 **< 1.10.4**：建議改用上方 `curl | sudo bash`，因為舊指令碼的 git stash 步驟可能動到未追蹤檔案。自 1.10.4 起，指令碼會在任何 git 操作前先忽略 `config.yaml`/`certs/`/DB。
 - 若目前版本 **< 1.10.0**：請再執行**第二次**，讓已更新的指令碼安裝 PDF 報表相依（出現 `=== PDF Reports runtime deps (Chromium + CJK font) ===` 即成功）。1.10.x 之間互升則一次到位。
 
 </details>
@@ -640,9 +640,9 @@ sudo bash /opt/jt-glogarch/deploy/upgrade.sh
 > - DB schema 會在服務啟動時自動升級（`_migrate()`）
 > - 建議升級後檢查 [CHANGELOG](CHANGELOG-zh_TW.md) 確認是否有需要注意的變更
 
-#### 2. 離線／封閉網路升級（主機無法連外網）
+#### 2. 離線/封閉網路升級（主機無法連外網）
 
-適用於**無法連外網**的客戶站台。做法是在任一台可連外網的機器上打包成**自帶所有相依套件的離線包**，用實體方式帶進去（USB／內部檔案分享／scp），在目標主機本機執行 —— pip 全程不連網路（`--no-index`）。
+適用於**無法連外網**的客戶站台。做法是在任一台可連外網的機器上打包成**自帶所有相依套件的離線包**，用實體方式帶進去（USB/內部檔案分享/scp），在目標主機本機執行 —— pip 全程不連網路（`--no-index`）。
 
 **步驟 1 —— 在可連外網的機器上**（Python 的**主要與次要版本**及 CPU 架構都必須與目標主機相同，例如 CPython 3.10 ＋ linux x86_64）：
 
@@ -694,7 +694,7 @@ Playwright 版本相符的 Chromium（約 277 MB）以及中日韓字型，`upgr
 `playwright install-deps` 取得，那需要套件管理程式與網路；封閉網路的主機必須改由貴
 站台自己的安裝媒體安裝。少了它們，報表會在實際產生時才失敗。
 
-**v1.14.5 起，安裝程式會替你檢查這件事。** 所有安裝／升級路徑都會執行
+**v1.14.5 起，安裝程式會替你檢查這件事。** 所有安裝/升級路徑都會執行
 `verify_report_engine`：以 `jt-glogarch` 身分啟動 Chromium 並實際產出一份 PDF。若無法
 啟動，指令碼會（透過 `ldd`）指出缺少哪些共用函式庫，結尾摘要也會明講這台主機的 PDF
 報表無法運作，同時說明封存、還原與 Web UI 都不受影響。舊版本會印出「完成」，而失敗
@@ -870,7 +870,7 @@ Web UI 是**主要操作介面**，CLI 用於自動化和指令碼。
 這種一次性的查證——把整段時間匯回去要花好幾十分鐘，這裡幾秒到幾分鐘就有答案。
 
 **時間範圍是必填的**，而且刻意如此：歸檔沒有索引，範圍就是唯一能先篩掉大部分檔案的
-依據。在上方的歸檔時間軸拖曳，或直接填起始／結束。
+依據。在上方的歸檔時間軸拖曳，或直接填起始/結束。
 
 **兩個輸入框，各做各的事：**
 
@@ -892,7 +892,7 @@ Web UI 是**主要操作介面**，CLI 用於自動化和指令碼。
 這一頁**，並直接串流寫入磁碟，不論幾百筆或上百萬筆，記憶體用量都一樣。
 
 > **這不是查詢引擎。** 沒有儀表板、圖表、統計聚合，也沒有查詢語言；不支援萬用字元、
-> 正規表示式、OR／NOT、依欄位排序。需要完整分析時，請把該時段的歸檔匯回 Graylog，
+> 正規表示式、OR/NOT、依欄位排序。需要完整分析時，請把該時段的歸檔匯回 Graylog，
 > 用它原本的搜尋功能。
 >
 > 搜尋會**讓路給歸檔**：偵測到匯出或匯入正在執行時，會在每份歸檔之間放慢，
@@ -998,6 +998,7 @@ OpenSearch 模式可選擇**保留最近 N 份 index**。下方的「可用 indi
 | Microsoft Teams | Webhook URL |
 | Nextcloud Talk | Server URL、Token、Username、Password |
 | Zulip | 伺服器 URL、Bot 電子郵件、Bot API 金鑰、串流（主題選填，預設 `jt-glogarch`） |
+| 標準 webhook（v1.38.0） | 網址、簽章金鑰（選填）、驗證 TLS。內容為 JSON `{source, host, title, message, time}`；設定金鑰時附 `X-JT-Signature: sha256=<HMAC-SHA256(金鑰，X-JT-Timestamp + "." + 內容)>` |
 | Email (SMTP) | Host、Port、TLS、User、Password、From、To |
 
 點**傳送測試通知**驗證所有已啟用的管道。測試訊息會以設定的語言發送。
@@ -1231,13 +1232,13 @@ API Token:        你的_TOKEN          ← 用 Token...
 
 最常見的部署方式，是把 jt-glogarch 與目標 Graylog + OpenSearch（＋MongoDB）放在**同一台 VM**。此時**記憶體是關鍵瓶頸**：兩個 JVM 加上 OpenSearch 所依賴的檔案快取，很容易超出一台小主機的容量；一旦執行大量匯入，就會落入**使用 swap**（匯入變得極慢）或被 **OOM killer** 終止（工作顯示為「Interrupted by service restart」）。
 
-**jt-glogarch 會直接為您這台主機算出建議規格**——請見儀表板的**硬體規格建議**卡片（或 `GET /api/sizing`）。它會讀取 `/proc/meminfo`、CPU 核心數，以及執行中的 Graylog／OpenSearch `-Xmx`，並依您的歸檔份數估算。概略對照：
+**jt-glogarch 會直接為您這台主機算出建議規格**——請見儀表板的**硬體規格建議**卡片（或 `GET /api/sizing`）。它會讀取 `/proc/meminfo`、CPU 核心數，以及執行中的 Graylog/OpenSearch `-Xmx`，並依您的歸檔份數估算。概略對照：
 
 | 部署型態 | 記憶體 | 核心數 |
 |---|---|---|
-| 純歸檔主機（Graylog／OpenSearch 在其他機器） | 4 GB | 4 |
+| 純歸檔主機（Graylog/OpenSearch 在其他機器） | 4 GB | 4 |
 | 單機共置，輕量（< 10K 份歸檔） | 16 GB | 8 |
-| 單機共置，大量（≥ 10K 份歸檔／大批匯入） | **32 GB** | **16 以上** |
+| 單機共置，大量（≥ 10K 份歸檔/大批匯入） | **32 GB** | **16 以上** |
 
 比表格更重要的原則：
 
@@ -1416,7 +1417,7 @@ sudo bash /opt/jt-glogarch/deploy/install.sh
 `--ignore-installed` 重試。）
 
 
-### 連不到 Graylog — 怎麼登入／設定管理員密碼？
+### 連不到 Graylog — 怎麼登入/設定管理員密碼？
 
 初次啟動、尚未設定任何伺服器時，開啟 Web UI 會導向**初次設定精靈**。精靈順序為
 ① Graylog 伺服器 → ② OpenSearch（選填）→ ③ 封存路徑 → ④ **備用管理帳號** → ⑤ 完成；

@@ -91,12 +91,12 @@ def modes():
     figs.append(d.render("fig-m1", zoom=False))
     # 2. separate archive host
     d = D(360, 340, L("Deployment 2: a separate archive host", "部署方式二：獨立的歸檔主機", "構成 2：アーカイブ専用ホスト"), "flowsvg")
-    d.group(10, 8, 340, 112, L("Graylog cluster", "Graylog 叢集", "Graylog クラスタ"), ly=112)
+    d.group(10, 8, 340, 112, L("Graylog cluster", "Graylog 叢集", "Graylog クラスタ"), lx=167, ly=106, anchor="middle")
     d.box(26, 24, 140, 50, "svc", L("Graylog", "Graylog", "Graylog"), L("one or more nodes", "一或多個節點", "1 台以上のノード"))
     d.box(194, 24, 140, 50, "svc", L("OpenSearch", "OpenSearch", "OpenSearch"), L("cluster", "叢集", "クラスタ"))
     d.group(10, 196, 340, 136, L("archive host", "歸檔主機", "アーカイブ用ホスト"))
     d.box(26, 214, 140, 58, "core", L("jt-glogarch", "jt-glogarch", "jt-glogarch"), L("its own VM", "獨立的 VM", "専用の VM"))
-    d.box(194, 214, 140, 58, "file", L("NAS / NFS", "NAS／NFS", "NAS／NFS"), L("mounted archive path", "掛載的歸檔路徑", "マウントしたアーカイブ先"))
+    d.box(194, 214, 140, 58, "file", L("NAS / NFS", "NAS/NFS", "NAS/NFS"), L("mounted archive path", "掛載的歸檔路徑", "マウントしたアーカイブ先"))
     d.edge("M70,214 L70,74", label=L("REST API", "REST API", "REST API"), lx=76, ly=150, anchor="start")
     d.edge("M130,214 L130,160 L264,160 L264,74", label=L("OpenSearch Direct", "OpenSearch Direct", "OpenSearch Direct"), lx=197, ly=154, w=150)
     d.edge("M166,243 L194,243")
@@ -147,8 +147,8 @@ def modes():
 
 def fit():
     yes = [t("Graylog Open 6.x or 7.x that must keep logs longer than its hot indices do (regulation, forensics, contracts)",
-             "Graylog Open 6.x／7.x，記錄必須保留得比熱索引更久（法規、鑑識、合約）",
-             "Graylog Open 6.x／7.x で、ホットインデックスより長くログを保管する必要がある（法令、フォレンジック、契約）"),
+             "Graylog Open 6.x/7.x，記錄必須保留得比熱索引更久（法規、鑑識、合約）",
+             "Graylog Open 6.x/7.x で、ホットインデックスより長くログを保管する必要がある（法令、フォレンジック、契約）"),
            t("Old logs must go back into a Graylog to be searched again, with Graylog's own processing or exactly as they were",
              "舊記錄要能匯回 Graylog 再查，可以重新經過 Graylog 處理，也可以原樣寫回",
              "古いログを Graylog に戻して再検索したい（Graylog の処理を通すか、元のまま書き戻す）"),
@@ -257,19 +257,19 @@ def features():
         ("⌕", ("Record search", "記錄搜尋", "記録検索"),
          ("Find records inside archives without restoring them: keyword and field conditions, hits highlighted, CSV or JSON Lines download.",
           "不必還原，直接在歸檔裡找記錄：關鍵字與欄位條件、命中處醒目提示、可下載 CSV 或 JSON Lines。",
-          "リストアせずにアーカイブ内のレコードを探せます。キーワードとフィールド条件、一致箇所の強調、CSV／JSON Lines でダウンロード。")),
+          "リストアせずにアーカイブ内のレコードを探せます。キーワードとフィールド条件、一致箇所の強調、CSV/JSON Lines でダウンロード。")),
         ("⚑", ("Alerting in bulk", "告警批次管理", "アラートの一括管理"),
          ("Attach or detach notifications on many Graylog event definitions at once, as the signed-in user, with a preview and undo.",
           "一次替多個 Graylog 事件定義加上或移除通知，以登入者身分執行，先預覽、可復原。",
           "多数の Graylog イベント定義に通知をまとめて付け外しします。サインインしたユーザーとして実行し、プレビューと取り消しがあります。")),
-        ("✉", ("Seven notification channels", "七種通知管道", "7 つの通知チャネル"),
-         ("Telegram, Discord, Slack, Microsoft Teams, Nextcloud Talk, Zulip and e-mail, in English, Traditional Chinese or Japanese.",
-          "Telegram、Discord、Slack、Microsoft Teams、Nextcloud Talk、Zulip 與 Email，可用英文、繁體中文或日文。",
-          "Telegram、Discord、Slack、Microsoft Teams、Nextcloud Talk、Zulip、メールに、英語・繁体字中国語・日本語で。")),
+        ("✉", ("Eight notification channels", "八種通知管道", "8 つの通知チャネル"),
+         ("Telegram, Discord, Slack, Microsoft Teams, Nextcloud Talk, Zulip, e-mail and a standard webhook signed with HMAC, in English, Traditional Chinese or Japanese.",
+          "Telegram、Discord、Slack、Microsoft Teams、Nextcloud Talk、Zulip、Email，以及以 HMAC 簽章的標準 webhook，可用英文、繁體中文或日文。",
+          "Telegram、Discord、Slack、Microsoft Teams、Nextcloud Talk、Zulip、メール、HMAC 署名付きの標準 Webhook に、英語・繁体字中国語・日本語で。")),
         ("▣", ("Web UI and CLI", "網頁介面與 CLI", "Web 画面と CLI"),
          ("Light and dark themes in three languages, plus the <code>glogarch</code> command for scripts; both use the same database.",
           "三種語言、淺色與深色主題，另有 <code>glogarch</code> 指令可寫指令碼；兩者共用同一個資料庫。",
-          "3 言語・ライト／ダークテーマ、スクリプト用の <code>glogarch</code> コマンド。どちらも同じデータベースを使います。")),
+          "3 言語・ライト/ダークテーマ、スクリプト用の <code>glogarch</code> コマンド。どちらも同じデータベースを使います。")),
         ("◎", ("Sized from this host", "依本機實測給規格建議", "このホストから推奨サイズ"),
          ("Reads the Graylog and OpenSearch JVMs running here, their heaps and swap in use, and says how much RAM and how many cores the VM needs.",
           "讀取本機上 Graylog 與 OpenSearch 的 JVM、heap 與正在使用的 swap，建議主機需要多少記憶體與核心。",
@@ -298,7 +298,7 @@ def flow():
     d.box(570, 290, 200, 70, "core", L("Preflight", "匯入預檢", "事前チェック"), L("capacity, retention, mapping conflicts", "容量、保留期、mapping 衝突", "容量、保持期間、マッピング衝突"))
     d.box(290, 268, 200, 48, "svc", L("GELF input", "GELF input", "GELF 入力"), L("full Graylog processing", "完整經過 Graylog 處理", "Graylog の処理をすべて通す"))
     d.box(290, 332, 200, 48, "svc", L("OpenSearch Bulk", "OpenSearch Bulk", "OpenSearch Bulk"), L("exactly as archived, 5–10× faster", "原樣寫回，快 5～10 倍", "元のまま、5〜10 倍速"))
-    d.box(20, 290, 190, 70, "ext", L("Target Graylog", "目標 Graylog", "戻し先の Graylog"), L("any Graylog 6 / 7", "任何 Graylog 6／7", "任意の Graylog 6／7"))
+    d.box(20, 290, 190, 70, "ext", L("Target Graylog", "目標 Graylog", "戻し先の Graylog"), L("any Graylog 6 / 7", "任何 Graylog 6/7", "任意の Graylog 6/7"))
     d.edge("M210,75 L290,75", "main", L("records", "記錄", "レコード"), 250, 67)
     d.edge("M490,75 L570,75", "main", L("write", "寫入", "書き込み"), 530, 67)
     d.edge("M770,75 L830,75", label=L("check", "檢查", "確認"), lx=800, ly=67)
@@ -367,8 +367,8 @@ def security():
         t("Field names follow your parsing: a field map, with a button that finds the fields in your data",
           "欄位名稱依您的解析而定：可設定欄位對照，並有按鈕從實際資料找出欄位",
           "フィールド名は解析に合わせます。フィールド対応表と、実データからフィールドを探すボタンがあります"),
-        t("Sigma rules are converted to Graylog queries; a rule that cannot be converted exactly is refused, never approximated",
-          "Sigma 規則轉成 Graylog 查詢；無法精確轉換的規則會被拒絕，絕不近似",
+        t("Sigma rules are converted to Graylog queries; a rule that cannot be converted exactly is refused rather than approximated",
+          "Sigma 規則轉成 Graylog 查詢；無法精確轉換的規則會被拒絕，不做近似轉換",
           "Sigma ルールは Graylog クエリに変換し、正確に変換できないルールは近似せず拒否します"),
         t("The SigmaHQ rule library can be downloaded and kept up to date, with the fields each rule needs checked against your Graylog",
           "可下載並自動更新 SigmaHQ 規則庫，並對照您的 Graylog 檢查每條規則需要的欄位",
@@ -385,25 +385,26 @@ def security():
 
 def ai():
     L = lambda *a: a  # noqa: E731
-    d = D(1000, 330, L("AI chat: who asks what", "智慧問答：誰向誰問了什麼", "AI チャット：誰が何を問い合わせるか"))
+    d = D(1000, 320, L("AI chat: who asks what", "智慧問答：誰向誰問了什麼", "AI チャット：誰が何を問い合わせるか"))
     d.box(20, 130, 160, 64, "ext", L("You", "您", "あなた"), L("a question in any language", "用任何語言發問", "どの言語でも質問"))
+    d.box(255, 18, 210, 64, "svc", L("LLM server", "LLM 伺服器", "LLM サーバー"), L("OpenAI-compatible or Claude API", "OpenAI 相容或 Claude API", "OpenAI 互換または Claude API"))
     d.box(260, 126, 200, 72, "core", L("AI chat", "智慧問答", "AI チャット"), L("budgets · loop guard · paging", "用量控制・防止重複・分頁", "予算・ループ防止・ページング"))
-    d.box(540, 30, 210, 64, "svc", L("LLM server", "LLM 伺服器", "LLM サーバー"), L("OpenAI-compatible or Claude API", "OpenAI 相容或 Claude API", "OpenAI 互換または Claude API"))
-    d.box(540, 230, 210, 64, "core", L("Read-only tools", "唯讀工具", "読み取り専用ツール"), L("as your own Graylog account", "以您自己的 Graylog 帳號", "あなた自身の Graylog アカウントで"))
-    d.box(820, 230, 160, 64, "ext", L("Graylog", "Graylog", "Graylog"), L("aggregations, counts, messages", "聚合、計數、訊息", "集計・件数・メッセージ"))
-    d.box(820, 126, 160, 72, "ext", L("External AI", "外部 AI", "外部の AI"), L("MCP client, Graylog token", "MCP 用戶端、Graylog token", "MCP クライアント、Graylog トークン"))
-    d.box(260, 250, 200, 56, "file", L("Answer and its queries", "答案與它用的查詢", "回答と使ったクエリ"), L("dashboard · PDF · case", "看板・PDF・調查案件", "ダッシュボード・PDF・ケース"))
-    d.edge("M180,162 L260,162", "main", L("question", "問題", "質問"), 220, 154)
-    d.edge("M460,140 L500,140 L500,62 L540,62", "main", L("prompt", "提示", "プロンプト"), 506, 100, anchor="start")
-    d.edge("M540,80 L430,80 L430,126", "", L("tool calls", "工具呼叫", "ツール呼び出し"), 424, 74, anchor="end")
-    d.edge("M460,184 L500,184 L500,262 L540,262", label=L("audited", "記入稽核", "監査に記録"), lx=506, ly=230, anchor="start")
-    d.edge("M750,262 L820,262", "main", L("read only", "唯讀", "読み取りのみ"), 785, 254)
-    d.edge("M900,198 L900,215 L700,215 L700,230", label=L("/mcp", "/mcp", "/mcp"), lx=800, ly=209)
-    d.edge("M360,198 L360,250")
+    d.box(260, 246, 200, 56, "file", L("Answer and its queries", "答案與它用的查詢", "回答と使ったクエリ"), L("dashboard · PDF · case", "看板・PDF・調查案件", "ダッシュボード・PDF・ケース"))
+    d.box(560, 126, 200, 72, "core", L("Read-only tools", "唯讀工具", "読み取り専用ツール"), L("as your own Graylog account", "以您自己的 Graylog 帳號", "あなた自身の Graylog アカウントで"))
+    d.box(830, 126, 150, 72, "ext", L("Graylog", "Graylog", "Graylog"), L("aggregations, counts, messages", "聚合、計數、訊息", "集計・件数・メッセージ"))
+    d.box(830, 240, 150, 62, "ext", L("External AI", "外部 AI", "外部の AI"), L("MCP client, Graylog token", "MCP 用戶端、Graylog token", "MCP クライアント、Graylog トークン"))
+    # every line runs on its own path and every label sits beside its line, never on it
+    d.edge("M180,162 L260,162", "main", L("question", "問題", "質問"), 220, 152)
+    d.edge("M330,126 L330,82", "main", L("prompt", "提示", "プロンプト"), 322, 109, anchor="end")
+    d.edge("M390,82 L390,126", "", L("tool calls", "工具呼叫", "ツール呼び出し"), 398, 109, anchor="start")
+    d.edge("M460,162 L560,162", "", L("audited", "記入稽核", "監査に記録"), 510, 152)
+    d.edge("M760,162 L830,162", "main", L("read only", "唯讀", "読み取りのみ"), 795, 152, w=62)
+    d.edge("M830,271 L660,271 L660,198", "", L("/mcp", "/mcp", "/mcp"), 745, 263)
+    d.edge("M360,198 L360,246")
     fig = d.render("fig-ai")
     left = ticks([
-        t("Counts, breakdowns, time buckets and message patterns are computed by Graylog first; a result too big for the model is kept and read page by page, never cut",
-          "計數、分組、時間分布與訊息樣式由 Graylog 先算好；放不下的結果保留下來分頁讀取，絕不截斷",
+        t("Counts, breakdowns, time buckets and message patterns are computed by Graylog first; a result too big for the model is kept and read page by page instead of being cut",
+          "計數、分組、時間分布與訊息樣式由 Graylog 先算好；放不下的結果保留下來分頁讀取，不會截斷",
           "件数・内訳・時間分布・メッセージの型は先に Graylog が計算し、大きすぎる結果は保持してページごとに読み、切り捨てません"),
         t("Under every answer: each query, its time range, how many records and how long it took, with a link that opens it in Graylog",
           "每則答案下方列出每次查詢、時間範圍、筆數與花費時間，並可在 Graylog 以同樣條件開啟",
@@ -430,19 +431,20 @@ def ai():
 
 def audit():
     L = lambda *a: a  # noqa: E731
-    d = D(960, 250, L("Operation audit: an independent trail", "行為稽核：獨立的操作軌跡", "操作監査：独立した記録"))
-    d.box(20, 96, 170, 60, "ext", L("Graylog users", "Graylog 使用者", "Graylog ユーザー"), L("browser · API token", "瀏覽器・API token", "ブラウザ・API トークン"))
-    d.box(270, 96, 170, 60, "svc", L("nginx", "nginx", "nginx"), L("in front of Graylog", "擋在 Graylog 前面", "Graylog の前段"))
-    d.box(520, 20, 180, 60, "ext", L("Graylog", "Graylog", "Graylog"))
-    d.box(520, 170, 180, 60, "core", L("Audit listener", "稽核接收器", "監査リスナー"), mono="UDP 8991")
-    d.box(780, 170, 160, 60, "file", L("Audit records", "稽核紀錄", "監査記録"), L("own retention (180 days)", "獨立保留期（180 天）", "独自の保持期間（180 日）"))
-    d.box(780, 20, 160, 60, "svc", L("Alerts", "即時告警", "即時アラート"), L("sensitive operations", "敏感操作", "重要操作"))
-    d.edge("M190,126 L270,126", "main", L("every request", "每個請求", "すべての要求"), 230, 118)
-    d.edge("M440,110 L480,110 L480,50 L520,50", "main", L("proxied", "轉送", "転送"), 486, 80, anchor="start")
-    d.edge("M440,142 L480,142 L480,200 L520,200", label=L("access log via syslog", "以 syslog 送出存取記錄", "syslog でアクセスログ"), lx=486, ly=176, anchor="start", w=120)
-    d.edge("M700,200 L780,200", label=L("classified", "分類後寫入", "分類して保存"), lx=740, ly=192)
-    d.edge("M700,186 L740,186 L740,50 L780,50", label=L("notify", "通知", "通知"), lx=746, ly=120, anchor="start")
-    d.edge("M610,170 L610,80", "dash", L("user and resource names", "解析使用者與資源名稱", "ユーザー名・リソース名を解決"), 616, 130, anchor="start", w=150)
+    d = D(960, 270, L("Operation audit: an independent trail", "行為稽核：獨立的操作軌跡", "操作監査：独立した記録"))
+    d.box(20, 100, 170, 60, "ext", L("Graylog users", "Graylog 使用者", "Graylog ユーザー"), L("browser · API token", "瀏覽器・API token", "ブラウザ・API トークン"))
+    d.box(270, 100, 170, 60, "svc", L("nginx", "nginx", "nginx"), L("in front of Graylog", "擋在 Graylog 前面", "Graylog の前段"))
+    d.box(540, 20, 170, 60, "ext", L("Graylog", "Graylog", "Graylog"))
+    d.box(540, 190, 170, 60, "core", L("Audit listener", "稽核接收器", "監査リスナー"), mono="UDP 8991")
+    d.box(810, 20, 140, 60, "svc", L("Alerts", "即時告警", "即時アラート"), L("sensitive operations", "敏感操作", "重要操作"))
+    d.box(810, 190, 140, 60, "file", L("Audit records", "稽核紀錄", "監査記録"), L("own retention (180 days)", "獨立保留期（180 天）", "独自の保持期間（180 日）"))
+    # every line on its own path, every label beside its line
+    d.edge("M190,130 L270,130", "main", L("every request", "每個請求", "すべての要求"), 230, 120, w=72)
+    d.edge("M440,115 L490,115 L490,50 L540,50", "main", L("proxied", "轉送", "転送"), 496, 92, anchor="start", w=40)
+    d.edge("M355,160 L355,220 L540,220", "", L("access log via syslog", "以 syslog 送出存取記錄", "syslog でアクセスログ"), 447, 210, w=170)
+    d.edge("M625,190 L625,80", "dash", L("user and resource names", "解析使用者與資源名稱", "ユーザー名・リソース名を解決"), 633, 140, anchor="start", w=120)
+    d.edge("M710,205 L770,205 L770,50 L810,50", "", L("notify", "通知", "通知"), 776, 120, anchor="start", w=30)
+    d.edge("M710,235 L810,235", "", L("classified", "分類後寫入", "分類して保存"), 760, 227, w=90)
     fig = d.render("fig-audit")
     left = ticks([
         t("Basic auth, API tokens, browser sessions and cookies are all resolved back to the real Graylog user name",
@@ -468,7 +470,7 @@ def audit():
 def reports():
     left = ticks([
         t("<b>Rebuild</b>: each widget becomes a native chart (world map, donut, trends, heatmaps), long windows sliced and merged exactly",
-          "<b>重現版</b>：每個小工具重建為原生圖表（世界地圖、甜甜圈、趨勢、熱度圖），長時間範圍分段查詢後精確合併",
+          "<b>重現版</b>：每個小工具重建為原生圖表（世界地圖、環形圖、趨勢圖、熱度圖），長時間範圍分段查詢後精確合併",
           "<b>再構成</b>：各ウィジェットをネイティブなグラフ（世界地図、ドーナツ、推移、ヒートマップ）にし、長い期間は分割して正確に結合"),
         t("<b>Screenshot</b>: a real browser captures every dashboard tab, cut between widget rows",
           "<b>截圖版</b>：以真正的瀏覽器擷取每個看板分頁，在小工具列之間分頁",
@@ -525,11 +527,11 @@ def packs():
 
 
 def notify_integrate():
-    chips = "".join(f'<span class="chip">{c}</span>' for c in ("Telegram", "Discord", "Slack", "Microsoft Teams", "Nextcloud Talk", "Zulip", "E-mail"))
+    chips = "".join(f'<span class="chip">{c}</span>' for c in ("Telegram", "Discord", "Slack", "Microsoft Teams", "Nextcloud Talk", "Zulip", "E-mail", "Webhook (HMAC)"))
     n = ticks([
         t("Each event can be switched on or off: export, import, cleanup, verify, errors, disk outlook, security incidents, the weekly summary",
           "每種事件可個別開關：匯出、匯入、清理、驗證、錯誤、磁碟預估、資安事件、每週摘要",
-          "イベントごとにオン／オフ：エクスポート、インポート、クリーンアップ、検証、エラー、ディスク見通し、セキュリティインシデント、週次サマリー"),
+          "イベントごとにオン/オフ：エクスポート、インポート、クリーンアップ、検証、エラー、ディスク見通し、セキュリティインシデント、週次サマリー"),
         t("Messages in English, Traditional Chinese or Japanese; security notifications are laid out for phones",
           "訊息可用英文、繁體中文或日文；資安通知針對手機排版",
           "メッセージは英語・繁体字中国語・日本語。セキュリティ通知はスマートフォン向けにレイアウト"),
@@ -546,7 +548,7 @@ def notify_integrate():
          ("⇄", ("OpenSearch and Data Node", "OpenSearch 與 Data Node", "OpenSearch と Data Node"),
           ("OpenSearch 2.x and 3.x directly for fast export and Bulk import, with host failover; Graylog 7 Data Node through a certificate from Graylog.",
            "直接連 OpenSearch 2.x、3.x 做快速匯出與 Bulk 匯入，可多主機容錯；Graylog 7 Data Node 透過 Graylog 簽發的憑證連線。",
-           "高速エクスポートと Bulk インポートでは OpenSearch 2.x／3.x に直接接続（ホストのフェイルオーバーあり）。Graylog 7 Data Node は Graylog 発行の証明書で接続。")),
+           "高速エクスポートと Bulk インポートでは OpenSearch 2.x/3.x に直接接続（ホストのフェイルオーバーあり）。Graylog 7 Data Node は Graylog 発行の証明書で接続。")),
          ("≣", ("nginx", "nginx", "nginx"),
           ("The reverse proxy in front of Graylog sends its access log by syslog; the web UI gives you the exact log format to paste.",
            "Graylog 前面的反向代理以 syslog 送出存取記錄；網頁介面提供可直接貼上的記錄格式設定。",
@@ -614,7 +616,7 @@ def screens():
     return section("screens", t("Screens", "畫面", "画面"),
                    t("Light and dark themes, English, Traditional Chinese and Japanese. Click to enlarge.",
                      "淺色與深色主題，英文、繁體中文、日文介面。點一下可放大。",
-                     "ライト／ダークテーマ、英語・繁体字中国語・日本語。クリックで拡大します。"),
+                     "ライト/ダークテーマ、英語・繁体字中国語・日本語。クリックで拡大します。"),
                    f'<div class="shots">{figs}</div>', alt=True)
 
 
@@ -639,9 +641,9 @@ def install():
              t("Archives: <code>/data/graylog-archives</code> (any mounted path)", "歸檔：<code>/data/graylog-archives</code>（可為任何掛載路徑）", "アーカイブ：<code>/data/graylog-archives</code>（任意のマウント先）"),
              t("Logs: <code>journalctl -u jt-glogarch -f</code>", "記錄：<code>journalctl -u jt-glogarch -f</code>", "ログ：<code>journalctl -u jt-glogarch -f</code>")]),
         ("c-upgrade", "↻", t("Upgrade", "升級", "アップグレード"),
-         t("Upgrades never lose data, never leave the service unusable and never stop scheduled archiving; each release is tested against state written by older ones.",
-           "升級絕不遺失資料、絕不讓服務無法使用、絕不中斷排程歸檔；每一版都以舊版寫出的狀態實測。",
-           "アップグレードはデータを失わず、サービスを使えなくせず、スケジュールされたアーカイブを止めません。各リリースは旧版が書いた状態で試験しています。"),
+         t("Upgrades are designed to keep the data, keep the service usable and keep scheduled archiving running; each release is tested against state written by older ones.",
+           "升級的設計目標：不遺失資料、服務維持可用、排程歸檔不中斷；每一版都以舊版寫出的狀態實測。",
+           "アップグレードは、データを失わない・サービスを使える状態に保つ・スケジュールされたアーカイブを止めない、を目標に設計し、各リリースを旧版が書いた状態で試験しています。"),
          up, [t("An Ubuntu 22.04 → 24.04 upgrade underneath is handled: the steps before the reinstall need only bash and Python's standard library",
                 "底下的 Ubuntu 22.04 → 24.04 升級也考慮在內：重新安裝前的步驟只需要 bash 與 Python 標準函式庫",
                 "下での Ubuntu 22.04 → 24.04 アップグレードにも対応：再インストール前の手順は bash と Python 標準ライブラリだけで動きます"),
@@ -672,7 +674,7 @@ def install():
 
 def specs():
     S = [("▣", ("Host", "主機", "ホスト"), ("Linux with systemd", "具 systemd 的 Linux", "systemd のある Linux"),
-          [("Ubuntu 22.04 / 24.04, Debian 12", "Ubuntu 22.04／24.04、Debian 12", "Ubuntu 22.04／24.04、Debian 12"),
+          [("Ubuntu 24.04 or newer, Debian 12 or newer", "Ubuntu 24.04 以上、Debian 12 以上", "Ubuntu 24.04 以降、Debian 12 以降"),
            ("Python 3.10 or newer", "Python 3.10 以上", "Python 3.10 以上"),
            ("4 cores for archiving alone, 8 when Graylog shares the VM", "只做歸檔 4 核心，與 Graylog 同機 8 核心", "アーカイブのみ 4 コア、Graylog と同居なら 8 コア")]),
          ("☰", ("Graylog", "Graylog", "Graylog"), ("measured on 6.3 to 7.2", "於 6.3～7.2 實測", "6.3〜7.2 で実測"),
@@ -689,7 +691,7 @@ def specs():
            ("The index can be rebuilt from the files: <code>glogarch db-rebuild</code>", "索引可由檔案重建：<code>glogarch db-rebuild</code>", "索引はファイルから再構築可能：<code>glogarch db-rebuild</code>")]),
          ("⧉", ("Languages", "語言", "言語"), ("interface, notifications and reports", "介面、通知與報表", "画面・通知・レポート"),
           [("English, Traditional Chinese, Japanese", "英文、繁體中文、日文", "英語・繁体字中国語・日本語"),
-           ("Light and dark themes", "淺色與深色主題", "ライト／ダークテーマ"),
+           ("Light and dark themes", "淺色與深色主題", "ライト/ダークテーマ"),
            ("PDF reports with CJK fonts", "PDF 報表支援中日文字型", "CJK フォント対応の PDF レポート")]),
          ("⇲", ("License", "授權", "ライセンス"), ("AGPL-3.0-or-later", "AGPL-3.0-or-later", "AGPL-3.0-or-later"),
           [("Source on GitHub, changelog in three languages", "原始碼在 GitHub，變更紀錄有三種語言", "ソースは GitHub、変更履歴は 3 言語"),
@@ -704,8 +706,8 @@ def build():
     PREFIX["p"] = "h"
     title = reg("title_home", "jt-glogarch — Graylog Open Archive", "jt-glogarch — Graylog Open 歸檔工具", "jt-glogarch — Graylog Open アーカイブ")
     desc = reg("desc_home", "Archive and restore for Graylog Open 6.x and 7.x, with an independent audit trail, PDF reports, content packs, security incidents and AI chat.",
-               "Graylog Open 6.x／7.x 的歸檔與還原工具，另有獨立行為稽核、PDF 報表、內容套件、資安事件與智慧問答。",
-               "Graylog Open 6.x／7.x のアーカイブとリストア。独立した操作監査、PDF レポート、コンテンツパック、セキュリティインシデント、AI チャットも。")
+               "Graylog Open 6.x/7.x 的歸檔與還原工具，另有獨立行為稽核、PDF 報表、內容套件、資安事件與智慧問答。",
+               "Graylog Open 6.x/7.x のアーカイブとリストア。独立した操作監査、PDF レポート、コンテンツパック、セキュリティインシデント、AI チャットも。")
     body = (header(nav()) + hero() + modes() + fit() + uses() + features() + flow() + security() + ai() + audit() + reports() + packs()
             + notify_integrate() + secdesign() + screens() + install() + specs() + dialogs() + footer())
     return page(title, desc, body, "home")

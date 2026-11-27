@@ -1,4 +1,4 @@
-# jt-glogarch v1.37.0
+# jt-glogarch v1.38.0
 
 **Language**: **English** | [繁體中文](README-zh_TW.md) | [日本語](README-ja.md)  
 **Website**: <https://jasoncheng7115.github.io/jt-glogarch/>
@@ -6,7 +6,7 @@
 **Graylog Open Archive** — Archive & restore logs for Graylog Open (6.x / 7.x)
 
 [![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.37.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.38.0-green.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
 
 Graylog Open does not include the Archive feature available in the Enterprise edition.
@@ -207,7 +207,7 @@ GELF mode also has:
 
 ### Notifications
 
-Telegram • Discord • Slack • Microsoft Teams • Nextcloud Talk • Zulip • Email (SMTP)
+Telegram • Discord • Slack • Microsoft Teams • Nextcloud Talk • Zulip • Standard webhook (HMAC) • Email (SMTP)
 
 Triggers: export complete, import complete, cleanup complete, errors, verification failed, sensitive operations, audit alerts.
 Messages in English / Traditional Chinese / Japanese.
@@ -403,7 +403,7 @@ if nginx forwarding is disabled.
 - Python 3.10+
 - Graylog 6.x or 7.x (Open edition)
 - OpenSearch 2.x (optional, for direct mode)
-- Linux (Ubuntu 22.04 / Debian 12 / RHEL 9 tested)
+- Linux: Ubuntu 24.04 or newer, Debian 12 or newer (RHEL 9 also tested)
 
 
 ### Install (5 minutes)
@@ -1052,6 +1052,7 @@ collapses the channel's settings to keep the page tidy.
 | Microsoft Teams | Webhook URL |
 | Nextcloud Talk | Server URL, Token, Username, Password |
 | Zulip | Server URL, Bot email, Bot API key, Stream (Topic optional, default `jt-glogarch`) |
+| Standard webhook (v1.38.0) | URL, signing secret (optional), verify TLS. JSON body `{source, host, title, message, time}`; with a secret, `X-JT-Signature: sha256=<HMAC-SHA256(secret, X-JT-Timestamp + "." + body)>` |
 | Email (SMTP) | Host, Port, TLS, User, Password, From, To |
 
 Click **Send test notification** to verify all enabled channels work. Test messages

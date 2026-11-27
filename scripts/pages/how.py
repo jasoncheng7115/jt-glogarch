@@ -87,11 +87,11 @@ def arch():
     d.edge("M795,332 L795,352", "main nohead")
     d.text(905, 346, L("scan · _bulk", "掃描・_bulk", "走査・_bulk"), "el", anchor="end", w=100, into=d.labels)
     d.edge("M455,332 L455,376 L920,376 L920,456 L940,456", "", L("chat completions", "對話請求", "チャット要求"), 700, 370, w=150)
-    d.edge("M870,428 L906,428 L906,558 L940,558", "", L("send", "送出", "送信"), 912, 520, anchor="start")
+    d.edge("M870,428 L906,428 L906,558 L940,558", "", L("send", "送出", "送信"), 900, 530, anchor="end")
     d.edge("M625,458 L625,500 L924,500 L924,660 L940,660", "dash", L("download, when enabled", "下載（啟用時）", "ダウンロード（有効時）"), 760, 494, w=160)
     for x in (170, 460, 750):
         d.edge(f"M{x},558 L{x},618", "data", both=True)
-    d.text(466, 594, L("read / write", "讀取／寫入", "読み書き"), "el", anchor="start", into=d.labels)
+    d.text(466, 594, L("read / write", "讀取/寫入", "読み書き"), "el", anchor="start", into=d.labels)
     legend = [("l main", t("records and requests", "記錄與請求", "レコードと要求")), ("l data", t("control and files", "控制與檔案", "制御とファイル")),
               ("l dash", t("optional", "選用", "任意")), ("k-core", t("entry points", "進入點", "入口")), ("k-svc", t("workers (threads)", "工作執行緒", "ワーカー（スレッド）")),
               ("k-file", t("on disk", "磁碟上", "ディスク上")), ("k-ext", t("outside jt-glogarch", "jt-glogarch 以外", "jt-glogarch の外"))]
@@ -155,7 +155,7 @@ def export():
           "進度只算寫入的筆數，抓了又丟掉的掃描看起來會像卡住——上面那條規則就是讓它不會發生",
           "進捗は書き込んだ件数で数えるため、取得して捨てる走査は止まって見えます。上の規則がそれを防ぎます"),
     ])
-    body = (f'<div class="two top"><div><h3>{t("Graylog API mode", "Graylog API 模式", "Graylog API モード")}</h3>{api}</div>'
+    body = (f'<div class="two top steps-pair"><div><h3>{t("Graylog API mode", "Graylog API 模式", "Graylog API モード")}</h3>{api}</div>'
             f'<div><h3>{t("OpenSearch Direct mode", "OpenSearch Direct 模式", "OpenSearch Direct モード")}</h3>{os_}</div></div>'
             f'<div class="reccard"><h3>{t("Deduplication: one rule", "重複資料刪除：只有一條規則", "重複排除：規則は 1 つ")}</h3>{rules}</div>')
     return section("export", t("Export", "匯出", "エクスポート"),
@@ -169,13 +169,13 @@ def guard():
     st = steps([
         (t("Sample", "取樣", "取得"), t("Graylog's metrics about every 15 seconds, on a fixed cadence independent of chunk size.", "約每 15 秒讀一次 Graylog 指標，固定節奏，與分段大小無關。", "約 15 秒ごとに Graylog の指標を読みます（チャンクの大きさに関係なく一定）。")),
         (t("Heap", "Heap", "ヒープ"), t("Heap after garbage collection, full GCs and GC time — not the raw used/max, which counts garbage.", "看 GC 後的 heap、Full GC 與 GC 耗時，而不是包含垃圾物件的瞬間使用率。", "GC 後のヒープ・フル GC・GC 時間を見ます。ゴミを含む使用率そのものではありません。")),
-        (t("Journal", "Journal", "ジャーナル"), t("Uncommitted journal entries and the input, process and output buffers, on a sustained rise.", "未提交的 journal 筆數與 input／process／output buffer 持續上升時。", "未コミットのジャーナル件数と入力・処理・出力バッファが上がり続けるとき。")),
+        (t("Journal", "Journal", "ジャーナル"), t("Uncommitted journal entries and the input, process and output buffers, on a sustained rise.", "未提交的 journal 筆數與 input/process/output buffer 持續上升時。", "未コミットのジャーナル件数と入力・処理・出力バッファが上がり続けるとき。")),
         (t("Pace", "放慢", "減速"), t("API exports wait between pages, from 0 at 70 % up to 5 seconds at 90 %.", "API 匯出在頁與頁之間等待，70 % 時為 0，90 % 時最多 5 秒。", "API エクスポートはページ間で待ちます（70 % で 0 秒〜90 % で最大 5 秒）。")),
         (t("Pause", "暫停", "一時停止"), t("Until the signal drains; the job shows “Paused — source under load”. Unreadable metrics count as pressure.", "直到指標回落；作業顯示「已暫停：來源負載過高」。讀不到指標也視為有壓力。", "指標が下がるまで。ジョブに「一時停止：送信元が高負荷」と出ます。読めない指標も負荷とみなします。")),
         (t("Stop once", "停止一次", "1 回停止"), t("If it never drains, the run stops once, keeps what it archived, and retries after 60 minutes.", "若一直沒有回落，這次執行停止一次，保留已歸檔的部分，60 分鐘後再試。", "下がらなければ実行を 1 回だけ止め、アーカイブ済みは残し、60 分後に再試行します。")),
     ])
     body = st + f'<p class="note">{t("Why: on busy or HDD-backed storage a heavy export loads the same OpenSearch cluster Graylog indexes into, and can wedge Graylog until it is restarted. Every fast path — OpenSearch Direct export and Bulk import included — is throttled the same way; Bulk watches OpenSearch heap and this host’s free memory.", "原因：在忙碌或使用 HDD 的儲存上，大量匯出會壓到 Graylog 正在寫入的同一個 OpenSearch 叢集，可能讓 Graylog 卡到必須重啟。所有快速路徑（含 OpenSearch Direct 匯出與 Bulk 匯入）都一樣會調速；Bulk 會留意 OpenSearch heap 與本機剩餘記憶體。", "理由：忙しい、または HDD のストレージでは、大量のエクスポートが Graylog の書き込み先と同じ OpenSearch に負荷をかけ、再起動まで Graylog を詰まらせることがあります。OpenSearch Direct エクスポートと Bulk インポートを含むすべての高速経路を同じように制御し、Bulk は OpenSearch のヒープとこのホストの空きメモリを見ます。")}</p>'
-    return section("guard", t("Backpressure: never wedge Graylog", "背壓保護：絕不讓 Graylog 卡住", "負荷制御：Graylog を詰まらせない"),
+    return section("guard", t("Backpressure: keep Graylog responsive", "背壓保護：不讓 Graylog 卡住", "負荷制御：Graylog を詰まらせない"),
                    t("An export is a guest on Graylog's cluster. It watches the host and gives way.", "匯出是 Graylog 叢集的客人：留意主人的狀況，必要時讓路。",
                      "エクスポートは Graylog クラスタの客です。様子を見て、道を譲ります。"), body)
 
@@ -201,7 +201,7 @@ def importer():
              + "</div>")
     body = f'<h3>{t("Preflight, before the first message", "第一筆送出前的預檢", "最初のメッセージの前の事前チェック")}</h3>{pre}' \
            f'<h3>{t("Two ways in", "兩種寫入方式", "2 つの書き込み方法")}</h3>{modes}' \
-           f'<p class="note">{t("Compliance goal: zero lost messages and zero indexer failures. Archives are read in batches, never loaded whole — customer archives reach 1.2 GB compressed. Import slows down and shrinks its batch when the target’s journal, buffers or heap, or this host’s memory, are under pressure.", "合規目標：零遺失、零 indexer 失敗。歸檔以批次讀取，絕不整檔載入（實際客戶的歸檔壓縮後可達 1.2 GB）。目標的 journal、buffer、heap 或本機記憶體吃緊時，匯入會放慢並縮小批次。", "コンプライアンスの目標は、欠落ゼロ・indexer 失敗ゼロ。アーカイブは一括で読み込まずバッチで読みます（実際の顧客のアーカイブは圧縮で 1.2 GB に達します）。送り先のジャーナル・バッファ・ヒープ、またはこのホストのメモリが逼迫すると、速度を落としバッチを小さくします。")}</p>'
+           f'<p class="note">{t("Compliance goal: zero lost messages and zero indexer failures. Archives are read in batches, never loaded whole — customer archives reach 1.2 GB compressed. Import slows down and shrinks its batch when the target’s journal, buffers or heap, or this host’s memory, are under pressure.", "合規目標：零遺失、零 indexer 失敗。歸檔以批次讀取，不會整檔載入（實際客戶的歸檔壓縮後可達 1.2 GB）。目標的 journal、buffer、heap 或本機記憶體吃緊時，匯入會放慢並縮小批次。", "コンプライアンスの目標は、欠落ゼロ・indexer 失敗ゼロ。アーカイブは一括で読み込まずバッチで読みます（実際の顧客のアーカイブは圧縮で 1.2 GB に達します）。送り先のジャーナル・バッファ・ヒープ、またはこのホストのメモリが逼迫すると、速度を落としバッチを小さくします。")}</p>'
     return section("import", t("Import", "匯入", "インポート"),
                    t("Before anything is sent, the target is checked and prepared; afterwards the result is reconciled.", "送出任何資料前先檢查並準備目標；送完再核對結果。",
                      "何かを送る前に送り先を確認して準備し、送った後に結果を照合します。"), body, alt=True)
@@ -302,15 +302,15 @@ def ai():
 
 
 def upgrade():
-    P = [("1", ("Never lose data", "絕不遺失資料", "データを失わない"),
+    P = [("1", ("Keep the data", "不遺失資料", "データを失わない"),
           ("A change applied to state written by an older version may only go in the safe direction automatically: a cleanup never starts deleting what the previous version kept.",
-           "套用在舊版狀態上的變更，只會自動往安全的方向：清理絕不會開始刪除舊版原本保留的資料。",
+           "套用在舊版狀態上的變更，只會自動往安全的方向：清理不會開始刪除舊版原本保留的資料。",
            "旧版の状態に適用する変更は、安全な方向だけ自動で行います。旧版が保持していたものをクリーンアップが消し始めることはありません。")),
-         ("2", ("Never leave it unusable", "絕不讓系統無法使用", "使えない状態にしない"),
+         ("2", ("Keep it usable", "系統維持可用", "使える状態を保つ"),
           ("The service must start and serve; <code>/api/health</code> must report the new version before a release counts as done.",
            "服務必須能啟動並提供服務；<code>/api/health</code> 回報新版本後才算完成發版。",
            "サービスは起動して応答しなければならず、<code>/api/health</code> が新しいバージョンを返して初めてリリース完了です。")),
-         ("3", ("Never stop scheduled archiving", "絕不中斷排程歸檔", "スケジュールされたアーカイブを止めない"),
+         ("3", ("Keep scheduled archiving running", "排程歸檔不中斷", "スケジュールされたアーカイブを止めない"),
           ("Every schedule must survive and be registered; the first 03:00 run after an unattended upgrade must work.",
            "每個排程都必須保留並重新註冊；無人值守升級後的第一次 03:00 執行必須正常。",
            "すべてのスケジュールが残って登録されなければならず、無人アップグレード後の最初の 03:00 の実行が動く必要があります。")),
@@ -358,11 +358,11 @@ def bounds():
           "アーカイブは設定した保持期間か、手動削除でしか消えません"),
         t("The AI cannot write: there are no write tools", "AI 無法寫入：沒有任何寫入工具", "AI は書き込めません。書き込みツールがありません"),
         t("Security analysis reads counts and never message bodies", "資安分析只讀計數，不讀訊息內容", "セキュリティ分析は件数だけを読み、本文は読みません"),
-        t("Graylog's internal event index sets are never offered for clearing", "Graylog 內部的事件索引集永遠不會出現在可清空清單中",
+        t("Graylog's internal event index sets are never offered for clearing", "Graylog 內部的事件索引集不會出現在可清空清單中",
           "Graylog 内部のイベント用インデックスセットは消去の候補に出しません"),
     ], "ticks no")
     body = (f'<div class="two top"><div class="reccard"><h3>{t("It writes to Graylog only when you ask", "只有在您要求時才寫入 Graylog", "Graylog に書くのは頼まれたときだけ")}</h3>{writes}</div>'
-            f'<div class="reccard"><h3>{t("What it never does", "絕不會做的事", "決してしないこと")}</h3>{never}</div></div>')
+            f'<div class="reccard"><h3>{t("What it does not do", "不會做的事", "しないこと")}</h3>{never}</div></div>')
     return section("bounds", t("Boundaries", "邊界", "境界"),
                    t("A tool that reads your whole logging platform should be clear about what it touches.", "一個能讀取整個記錄平台的工具，應該清楚交代它會碰到什麼。",
                      "ログ基盤全体を読めるツールは、何に触れるかを明確にすべきです。"), body)
